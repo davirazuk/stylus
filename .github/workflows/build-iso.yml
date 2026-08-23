@@ -62,11 +62,17 @@ jobs:
       - name: Construir a imagem do construtor
         run: docker build -t stylus-builder -f tools/Containerfile tools
 
+      # `pacman -Sy` aqui, e não só na construção da imagem. A lista de pacotes
+      # que a imagem carrega é a do momento em que ELA foi construída, e o
+      # Arch move rápido: a conferência de nomes reprovou lib32-sdl2-compat,
+      # que existe no multilib, porque a lista embutida estava atrás do
+      # espelho. Sincronizar na hora faz a conferência falar do repositório de
+      # agora, que é sobre o que ela pretende falar.
       - name: Conferir o perfil
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.conferir }}
         run: |
           docker run --rm --privileged -v "$PWD":/profile -w /profile \
-            stylus-builder ./tools/check.sh
+            stylus-builder bash -c 'pacman -Sy --noconfirm >/dev/null && ./tools/check.sh'
 
       - name: mkarchiso
         run: |
