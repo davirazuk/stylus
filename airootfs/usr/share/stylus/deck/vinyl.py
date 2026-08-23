@@ -151,6 +151,52 @@ def library_root():
     return roots[0] if roots else os.path.expanduser("~/Music")
 
 
+def _configured_roots():
+    """Só as pastas que ALGUÉM escolheu — sem os palpites.
+
+    A diferença importa: `music_roots()` termina com `~/Music`, `~/Músicas`,
+    `/srv/music` e companhia, que são chutes para a primeira execução. Varrer
+    tudo isso como se fosse estante encheria a grade com o que houver em
+    qualquer uma delas.
+    """
+    env = [p for p in (os.environ.get("STYLUS_LIBRARY") or "").split(os.pathsep) if p]
+    return [os.path.normpath(p) for p in
+            (env + _read_library_conf(_USER_LIBRARY_CONF)
+                 + _read_library_conf(_SYSTEM_LIBRARY_CONF))]
+
+
+def library_roots():
+    """TODAS as estantes que existem agora, sem repetir.
+
+    A coleção deixou de caber num lugar só. O `stylus webdav` monta o
+    servidor do celular numa pasta e a acrescenta à configuração; antes disto
+    ela era escrita, montada, e simplesmente ignorada — porque a estante só
+    olhava para a PRIMEIRA pasta que existisse, e a primeira era a local.
+    Uma pasta configurada que o sistema não varre é pior do que não ter
+    configurado nada: a pessoa fez o que era para fazer e não aconteceu nada.
+
+    Desduplica por caminho real, senão um link para a mesma pasta faz cada
+    disco aparecer duas vezes na grade.
+    """
+    out, vistos = [], set()
+    for p in _configured_roots():
+        if not os.path.isdir(p):
+            continue
+        try:
+            chave = os.path.realpath(p)
+        except OSError:
+            chave = p
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        out.append(p)
+    if out:
+        return out
+    # Nada configurado ainda: vale o palpite, e só o primeiro que existir.
+    r = library_root()
+    return [r] if os.path.isdir(r) else []
+
+
 class _Roots(list):
     """MUSIC_ROOTS continua sendo uma lista para quem já a usava, mas relê a
     configuração a cada iteração em vez de congelar o que valia na importação."""
@@ -675,8 +721,24 @@ def folder_names(folder):
 
 
 def shelf(root=None, artist=None, min_tracks=SHELF_MIN_TRACKS):
-    """As pastas que contam como disco na estante."""
-    root = root or library_root()
+    """As pastas que contam como disco na estante.
+
+    Sem `root`, varre TODAS as estantes configuradas — a local e a do celular
+    montada pelo `stylus webdav`, por exemplo. Com `root`, varre só aquela,
+    que é como as ferramentas que trabalham numa pasta específica chamam.
+    """
+    if root is None:
+        raizes = library_roots()
+        if len(raizes) != 1:
+            out = []
+            for r in raizes:
+                out.extend(_shelf_one(r, artist, min_tracks))
+            return out
+        root = raizes[0]
+    return _shelf_one(root, artist, min_tracks)
+
+
+def _shelf_one(root, artist=None, min_tracks=SHELF_MIN_TRACKS):
     base = os.path.join(root, artist) if artist else root
     if not os.path.isdir(base):
         return []

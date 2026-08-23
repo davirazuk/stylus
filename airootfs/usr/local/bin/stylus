@@ -48,6 +48,7 @@ cat <<EOF
 
   ${a}as máquinas${o}
     ${b}stylus phone${o} ${d}[...]${o}       o celular: estado, sincronizar, playlists
+    ${b}stylus webdav${o} ${d}[...]${o}      põe a coleção do celular na estante, sem copiar
     ${b}stylus audio${o}              o caminho do sinal, medido, não prometido
     ${b}stylus app${o} ${d}NOME${o}          instala o que não vem em pacote
     ${b}stylus gpu${o}                driver de vídeo
@@ -119,6 +120,7 @@ case "$cmd" in
         exec less -R /usr/share/stylus/keybindings.txt ;;
     aur|yay)     exec install-yay "$@" ;;
     phone)       exec stylus-phone "$@" ;;
+    webdav)      exec stylus-webdav "$@" ;;
     audio)       exec stylus-audio "$@" ;;
     app)         exec stylus-app "$@" ;;
     gpu)         exec stylus-gpu "$@" ;;

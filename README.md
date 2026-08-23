@@ -63,6 +63,7 @@ Não tem suíte de escritório. Nunca vai ter.
 | | |
 |---|---|
 | `stylus phone` | o celular: estado, sincronizar, playlists, scrobbles |
+| `stylus webdav` | põe a coleção do celular na estante, sem copiar nada |
 | `stylus audio` | o caminho do sinal, medido |
 | `stylus app NOME` | Clone Hero, qobuz-dl, Proton-GE, o que não vem em pacote |
 | `stylus update` | traz o STYLUS novo do GitHub |
@@ -90,6 +91,29 @@ sem ter que ler as duas.
 - **junta o que você ouviu no celular** à memória da coleção, para o desgaste
   dos discos refletir a escuta inteira e não só metade dela;
 - funciona **por wifi**, não só por cabo.
+
+### E quando não se quer copiar
+
+`stylus phone` **copia** — é para a música ficar nos dois lados. Mas quem tem
+200 GB no celular e 60 no computador não quer copiar: quer pôr para tocar.
+
+`stylus webdav` monta o servidor WebDAV do celular como uma pasta, e os discos
+que estão lá aparecem **na mesma estante** que os de casa — sem duplicar um
+arquivo sequer.
+
+```
+stylus webdav ligar http://192.168.0.10:8080/   # o endereço que o app mostra
+stylus webdav sozinho                           # e a cada login
+```
+
+Montado como **só leitura**: pôr um disco não escreve nada, e um `rm`
+distraído numa pasta montada apagaria a música do celular de verdade. Para
+mandar arquivo, `stylus phone`, que sabe o que está fazendo.
+
+Por baixo é o `rclone`, que já estava aqui — monta em espaço de usuário, sem
+root, sem linha no `/etc/fstab`, e guarda a senha ofuscada em vez de em texto
+puro num arquivo de sistema. Um servidor num celular muda de IP e cai o tempo
+todo; nada disso merece root.
 
 ---
 

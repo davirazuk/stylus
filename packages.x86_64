@@ -148,6 +148,10 @@ libdiscid
 # ── acquiring ──────────────────────────────────────────────────────────────
 yt-dlp
 rclone
+# rclone monta em espaço de usuário pelo FUSE, e quem faz isso é o
+# fusermount3. Sem ele o `stylus webdav` configura tudo certo e falha na
+# montagem, que é o pior lugar para descobrir uma dependência.
+fuse3
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  THE PHONE

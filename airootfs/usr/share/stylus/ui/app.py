@@ -741,6 +741,13 @@ class PhoneScreen(Screen):
 
     ACOES = [
         ("ver o que está diferente", ["stylus-phone", "status"]),
+        # O WebDAV não copia nada: monta o celular e os discos de lá entram
+        # na estante junto com os de casa. Fica aqui, e não numa seção
+        # própria, porque quem procura isso está procurando "o celular".
+        ("pôr a coleção do celular na estante (WebDAV)",
+         ["stylus-term", "WebDAV", "stylus-webdav", "ligar"]),
+        ("tirar a coleção do celular da estante",
+         ["stylus-webdav", "desligar"]),
         ("sincronizar agora", ["stylus-phone", "sync", "--apply"]),
         ("só mandar o que falta lá", ["stylus-phone", "push", "--apply"]),
         ("mandar as playlists", ["stylus-phone", "playlists", "--apply"]),
