@@ -1,0 +1,51 @@
+# Sourced by SDDM's Xsession (and by ~/.xinitrc) before the window manager
+# starts, so these apply to every graphical application, not just ones launched
+# from a terminal.
+
+# Machines with no GPU render node (VMs on plain VGA, hardware with no driver)
+# have no working hardware OpenGL, and GL applications - alacritty among them -
+# come up blank rather than failing outright. Mesa's software renderer handles
+# them fine. Real hardware keeps hardware acceleration.
+[ -e /dev/dri/renderD128 ] || export LIBGL_ALWAYS_SOFTWARE=1
+
+# Qt reads one variable, and a machine has two Qt majors on it with separate
+# plugin directories. "qt5ct" names a plugin that exists for Qt5 only, so every
+# Qt6 application - VLC, qBittorrent, OBS, Kdenlive - came up in the default
+# light palette in the middle of a dark desktop, ignoring the qt6ct
+# configuration sitting right next to the qt5ct one.
+#
+# The GTK platform theme is the one value that serves both, and it takes its
+# repaints Qt applications for free, something neither qt5ct nor qt6ct would
+# have done. It is chosen only when the plugin is really on disk for both Qt
+# versions, so a machine without it keeps exactly the behaviour it had.
+if [ -e /usr/lib/qt6/plugins/platformthemes/libqgtk3.so ] &&
+   [ -e /usr/lib/qt/plugins/platformthemes/libqgtk3.so ]; then
+    export QT_QPA_PLATFORMTHEME=gtk3
+else
+    export QT_QPA_PLATFORMTHEME=qt5ct
+fi
+# Qt's own automatic scaling is left off: it disagrees with GTK about how much
+# to scale, so on the same screen half the desktop came out one size and half
+# another. stylus-scale gives both toolkits the same number a few lines down.
+export QT_AUTO_SCREEN_SCALE_FACTOR=0
+export XCURSOR_THEME=Adwaita
+export XCURSOR_SIZE=24
+
+# ── Screen density ───────────────────────────────────────────────────────────
+#  Nothing here used to scale with the screen. A laptop with a 3200x1800 or 4K
+#  panel - an ordinary second-hand machine now, not an exotic one - got a bar
+#  four millimetres tall and text at a third of its intended size, with nothing
+#  in the interface to fix it with.
+#
+#  On an ordinary screen this changes nothing at all: below 120 dpi it sets the
+#  same values that were hardcoded above. It has to be sourced rather than run,
+#  because a child process cannot export into this one.
+if command -v stylus-scale >/dev/null 2>&1; then
+    eval "$(stylus-scale --env 2>/dev/null)"
+    command -v xrdb >/dev/null 2>&1 && stylus-scale --xrdb 2>/dev/null | xrdb -merge -
+fi
+
+export EDITOR=vim
+export VISUAL=vim
+export BROWSER=xdg-open
+export _JAVA_AWT_WM_NONREPARENTING=1

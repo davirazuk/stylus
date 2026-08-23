@@ -1,0 +1,14 @@
+configuration {
+    modi:                "drun,run,window";
+    show-icons:          true;
+    icon-theme:          "Papirus-Dark";
+    font:                "JetBrainsMono Nerd Font 11";
+    display-drun:        "  programas";
+    display-run:         "  comando";
+    display-window:      "  janelas";
+    drun-display-format: "{name}";
+    terminal:            "xfce4-terminal";
+    sidebar-mode:        false;
+}
+
+@theme "~/.config/rofi/stylus.rasi"

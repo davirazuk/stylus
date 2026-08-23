@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-deck — põe um disco e abre o deck
+# ═══════════════════════════════════════════════════════════════════════════
+#      stylus deck "Radiohead/In Rainbows"    o disco inteiro, na ordem
+#      stylus deck loveless                   acha pelo nome, sem o caminho
+#      stylus deck                            sorteia um da estante
+#      stylus deck --silent  DISCO            sem som E sem sinal (só o desenho)
+#      stylus deck --quiet   DISCO            sinal de verdade, silêncio na sala
+#      stylus deck --no-scope DISCO           só toca, sem tela  (= stylus play)
+#
+#  --silent e --quiet não são a mesma coisa e a diferença importa para
+#  conferir o desenho: --silent (--ao=null) não produz sinal nenhum, então o
+#  sulco ao vivo fica reto e não há o que julgar. --quiet manda o áudio para
+#  um sink nulo e aponta o deck para o monitor desse sink — a forma de onda é
+#  a de verdade, o alto-falante é que não toca.
+#
+#  Por que um lançador em vez de mandar tocar e pronto: o deck prefere falar
+#  com um mpv por socket IPC, porque assim sabe a posição exata E a ordem das
+#  faixas do lado inteiro. O MPRIS sozinho dá a faixa atual e mais nada, e o
+#  braço precisa saber quanto falta do LADO, não da música.
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+SHARE=/usr/share/stylus
+DECK=$SHARE/deck
+PY="$DECK/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+export PYTHONPATH="$DECK${PYTHONPATH:+:$PYTHONPATH}"
+
+SOCK="$HOME/.local/share/stylus/deck.sock"
+NULL_SINK=stylus_quiet
+SILENT=0; QUIET=0; SCOPE=1; TARGET=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --silent)   SILENT=1; shift ;;
+        --quiet)    QUIET=1; shift ;;
+        --no-scope) SCOPE=0; shift ;;
+        -h|--help)  sed -n '4,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *)          TARGET=$1; shift ;;
+    esac
+done
+
+# ── achar o disco ──────────────────────────────────────────────────────────
+# Um caminho é um caminho. Qualquer outra coisa é um NOME, e procurar o nome
+# na estante é o que faz `stylus deck loveless` funcionar — que é como uma
+# pessoa pensa num disco, e não "barra home barra músicas barra".
+if [[ -z $TARGET ]]; then
+    TARGET=$("$PY" -c 'import vinyl,sys; d=vinyl.draw_record(); print(d or "", end="")')
+    [[ -n $TARGET ]] || { echo "stylus: não achei disco nenhum. \`stylus library\` diz onde estou procurando." >&2; exit 1; }
+    echo "stylus: sorteei ${TARGET##*/}"
+elif [[ ! -e $TARGET ]]; then
+    FOUND=$("$PY" - "$TARGET" <<'PYEOF'
+import os, sys, difflib, vinyl
+want = sys.argv[1].lower()
+cands = vinyl.shelf(min_tracks=1)
+# casamento exato de pasta primeiro, depois "artista/disco", depois o mais
+# parecido — nessa ordem porque digitar o nome inteiro certo tem que ganhar
+# de um palpite difuso que por acaso pontuou mais.
+exact = [c for c in cands if os.path.basename(c).lower() == want]
+part  = [c for c in cands if want in os.path.join(*vinyl.folder_names(c)).lower()]
+best  = difflib.get_close_matches(want, [os.path.basename(c).lower() for c in cands], n=1, cutoff=0.6)
+pick = (exact or part or [c for c in cands if best and os.path.basename(c).lower() == best[0]])
+print(pick[0] if pick else "", end="")
+PYEOF
+)
+    [[ -n $FOUND ]] || { echo "stylus: não achei nenhum disco chamado \"$TARGET\"." >&2; exit 1; }
+    [[ $FOUND == "$TARGET" ]] || echo "stylus: ${FOUND##*/}"
+    TARGET=$FOUND
+fi
+TARGET="${TARGET/#\~/$HOME}"
+command -v mpv >/dev/null || { echo "stylus: o mpv não está instalado." >&2; exit 1; }
+
+# Socket velho de uma sessão morta faz o deck achar que há um mpv. E pôr um
+# disco é um ato EXCLUSIVO: dois tocadores ao mesmo tempo deixam a barra e o
+# deck mostrando um disco enquanto sai o som do outro.
+if command -v playerctl >/dev/null; then
+    for _p in $(playerctl -l 2>/dev/null); do
+        [[ $_p == mpv* ]] && continue
+        playerctl -p "$_p" pause 2>/dev/null || true
+    done
+fi
+rm -f "$SOCK"; mkdir -p "$(dirname "$SOCK")"
+
+mpv_args=(--input-ipc-server="$SOCK" --no-video --term-status-msg= --really-quiet
+          --audio-display=no --gapless-audio=yes
+          # O mpv reamostra por conta própria se deixarem. Aqui não: o
+          # servidor de áudio já está configurado para seguir a taxa do
+          # arquivo, e um resampler no tocador desfaz isso em silêncio.
+          --audio-samplerate=0 --audio-format=)
+(( SILENT )) && mpv_args+=(--ao=null)
+if (( QUIET )); then
+    if ! pactl list sinks short 2>/dev/null | grep -q "\b$NULL_SINK\b"; then
+        NULL_MOD=$(pactl load-module module-null-sink \
+            sink_name="$NULL_SINK" \
+            sink_properties=device.description=STYLUS-Quiet 2>/dev/null)
+    fi
+    mpv_args+=(--audio-device="pulse/$NULL_SINK")
+    export STYLUS_DECK_SOURCE="$NULL_SINK.monitor"
+fi
+
+# Os arquivos vão UM A UM, não a pasta. Dando a pasta, o mpv enfileira tudo
+# que houver dentro dela — cover.jpg inclusive — e no fim do disco ele tenta
+# "tocar" a imagem e fecha, além de reportar um índice de faixa que não existe
+# no álbum. A lista sai do vinyl.track_paths, a MESMA que o Album lê, então o
+# índice do mpv e o índice do disco são o mesmo número por construção.
+if [[ -d $TARGET ]]; then
+    mapfile -t -d '' _tracks < <("$PY" -c '
+import os, sys, vinyl
+sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])))' "$TARGET" 2>/dev/null)
+    if (( ${#_tracks[@]} )); then
+        mpv_args+=(--loop-playlist=no "${_tracks[@]}")
+    else
+        mpv_args+=(--loop-playlist=no "$TARGET")   # álbum em Disc 01/Disc 02
+    fi
+else
+    mpv_args+=("$TARGET")
+fi
+
+mpv "${mpv_args[@]}" &
+MPV=$!
+cleanup() {
+    kill "$MPV" 2>/dev/null
+    rm -f "$SOCK"
+    [[ -n ${NULL_MOD:-} ]] && pactl unload-module "$NULL_MOD" 2>/dev/null
+}
+trap cleanup EXIT
+for _ in $(seq 1 50); do [[ -S $SOCK ]] && break; sleep 0.1; done
+
+if (( SCOPE )); then
+    STYLUS_DECK_RITUAL=1 "$PY" "$DECK/scope.py"
+else
+    wait "$MPV"
+fi

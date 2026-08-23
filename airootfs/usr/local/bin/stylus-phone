@@ -1,0 +1,639 @@
+#!/usr/bin/env python3
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-phone — a coleção do outro lado
+# ═══════════════════════════════════════════════════════════════════════════
+#  A coleção não está "no PC". Está no PC e no celular, e a parte difícil
+#  nunca foi copiar arquivo — é os dois lados concordarem sobre qual cópia é
+#  a melhor sem ter que ler os dois.
+#
+#  O QUE MUDOU EM RELAÇÃO À FORMA ANTIGA DE FAZER ISSO
+#  ---------------------------------------------------
+#  A versão anterior comparava QUALIDADE de áudio, o que obrigava a puxar o
+#  arquivo do celular de volta para poder olhar dentro dele. Com 3600 faixas
+#  isso é meia hora de USB para descobrir que nada mudou.
+#
+#  Aqui existe um manifesto: um retrato do que está no celular, guardado
+#  deste lado. Comparar passa a ser um `find` só do outro lado (uns segundos)
+#  contra um JSON daqui, e a decisão de qual cópia é melhor sai de tamanho +
+#  formato, que é informação que o `find` já traz de graça.
+#
+#  Isso é uma APROXIMAÇÃO e vale dizer qual: FLAC ganha de MP3, e entre dois
+#  do mesmo formato o maior ganha. Está errado no caso de um FLAC mal
+#  cortado ser maior que um bom — raro, e `--deep` existe para quando se
+#  quer a comparação cara de verdade.
+#
+#      stylus phone status                 o que tem de diferente
+#      stylus phone sync    [--apply]      reconcilia os dois lados
+#      stylus phone push    [--apply]      só PC → celular
+#      stylus phone pull    [--apply]      só celular → PC
+#      stylus phone playlists [--apply]    as .m3u, com os caminhos trocados
+#      stylus phone scrobbles              junta o que você ouviu no celular
+#      stylus phone wifi                   liga o adb por wifi, sem cabo
+#      stylus phone watch --enable         sincroniza sozinho ao plugar
+# ═══════════════════════════════════════════════════════════════════════════
+import argparse
+import json
+import os
+import shlex
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, "/usr/share/stylus/deck")
+try:
+    import vinyl
+except ImportError:
+    vinyl = None
+
+D = "\033[2m"; B = "\033[1m"; A = "\033[38;5;117m"
+OK = "\033[38;5;114m"; W = "\033[38;5;215m"; R = "\033[38;5;210m"; O = "\033[0m"
+
+STATE = os.path.expanduser("~/.local/share/stylus")
+MANIFEST = os.path.join(STATE, "phone-manifest.json")
+CONF = os.path.expanduser("~/.config/stylus/phone")
+DEFAULT_REMOTE = "/sdcard/Music"
+AUDIO = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
+# Formato mais alto ganha. É a única regra de qualidade que dá para aplicar
+# sem abrir o arquivo, e cobre o caso que acontece de verdade: você
+# substituiu um MP3 por um FLAC do mesmo álbum e quer que o celular receba.
+RANK = {".flac": 4, ".wav": 4, ".m4a": 3, ".ogg": 2, ".opus": 2,
+        ".aac": 2, ".mp3": 1, ".wma": 1}
+# Onde procurar NÃO faz sentido. /sdcard/Android é dado privado de
+# aplicativo — num celular de verdade ele tem dezenas de milhares de arquivos
+# de áudio (cache de streaming, faixas de jogo de ritmo, sons de interface) e
+# ganharia de qualquer coleção real na contagem. Os outros são emulador e
+# miniatura. Sem esta lista a detecção escolhe confiantemente a pasta errada.
+IGNORAR = ("/sdcard/Android/", "/sdcard/LaunchBox/", "/sdcard/RetroArch/",
+           "/.thumbnails/", "/cache/", "/Cache/", "/sdcard/.")
+
+
+def conf():
+    out = {"remote": DEFAULT_REMOTE, "exclude": []}
+    try:
+        with open(CONF, encoding="utf-8") as fh:
+            for ln in fh:
+                ln = ln.strip()
+                if not ln or ln.startswith("#"):
+                    continue
+                k, _, v = ln.partition("=")
+                k, v = k.strip(), v.strip()
+                if k == "remote":
+                    out["remote"] = v
+                elif k == "exclude":
+                    out["exclude"].append(v)
+    except OSError:
+        pass
+    return out
+
+
+def detect_remote():
+    """Descobre ONDE no celular a música mora, em vez de chutar.
+
+    /sdcard/Music é o palpite que todo mundo faz e que está errado na maioria
+    dos celulares de verdade — o que existe ali costuma ser toque de despertar
+    e sobra de aplicativo. A pasta certa é a que tem mais áudio dentro, e
+    descobrir isso é uma varredura só, a mesma que a sincronia já faria.
+
+    Guarda no ~/.config/stylus/phone para não perguntar de novo.
+    """
+    exts = " -o ".join(f'-iname "*{e}"' for e in AUDIO)
+    cmd = f'find -L /sdcard -maxdepth 6 -type f \\( {exts} \\) 2>/dev/null'
+    rc, out, _e = adb("shell", cmd, timeout=600)
+    if rc and not out.strip():
+        return None
+    conta = {}
+    for ln in out.splitlines():
+        ln = ln.strip().rstrip("\r")
+        if not ln.startswith("/sdcard/"):
+            continue
+        if any(x in ln for x in IGNORAR):
+            continue
+        partes = ln.split("/")
+        # Conta em profundidade 1 E 2: uma coleção organizada em
+        # /sdcard/Music/Artista/Album tem que pontuar para "Music", e uma
+        # jogada solta em /sdcard/Download também precisa aparecer.
+        for prof in (3, 4):
+            if len(partes) > prof:
+                conta["/".join(partes[:prof])] = \
+                    conta.get("/".join(partes[:prof]), 0) + 1
+    if not conta:
+        return None
+    # A rasa ganha em empate: preferir /sdcard/Music a /sdcard/Music/Radiohead.
+    melhor = max(conta.items(), key=lambda kv: (kv[1], -kv[0].count("/")))
+    if melhor[1] < 10:
+        return None
+    return melhor[0]
+
+
+def save_conf(chave, valor):
+    try:
+        os.makedirs(os.path.dirname(CONF), exist_ok=True)
+        linhas = []
+        if os.path.exists(CONF):
+            with open(CONF, encoding="utf-8") as fh:
+                linhas = [ln for ln in fh.read().splitlines()
+                          if not ln.strip().startswith(f"{chave}")]
+        linhas.append(f"{chave} = {valor}")
+        with open(CONF, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(linhas) + "\n")
+    except OSError:
+        pass
+
+
+def remote_root(c):
+    """A pasta do celular: a configurada, ou descoberta e então lembrada."""
+    if os.path.exists(CONF) and c["remote"] != DEFAULT_REMOTE:
+        return c["remote"]
+    rc, out, _e = adb("shell", "ls", "-d", shlex.quote(c["remote"]), timeout=20)
+    achou = detect_remote()
+    if achou and achou != c["remote"]:
+        print(f"  {D}a música do celular está em {O}{achou}{D}, "
+              f"não em {c['remote']} — anotado.{O}")
+        save_conf("remote", achou)
+        c["remote"] = achou
+    return c["remote"]
+
+
+def local_root():
+    if vinyl:
+        return vinyl.library_root()
+    for p in ("~/Music", "~/Músicas"):
+        p = os.path.expanduser(p)
+        if os.path.isdir(p):
+            return p
+    return os.path.expanduser("~/Music")
+
+
+def adb(*args, timeout=120):
+    try:
+        r = subprocess.run(["adb", *args], capture_output=True, text=True,
+                           timeout=timeout, errors="replace")
+        return r.returncode, r.stdout, r.stderr
+    except FileNotFoundError:
+        return 127, "", "adb não está instalado"
+    except subprocess.TimeoutExpired:
+        return 124, "", "o celular não respondeu"
+
+
+def device():
+    rc, out, _ = adb("devices", timeout=20)
+    if rc:
+        return None
+    for ln in out.splitlines()[1:]:
+        if ln.strip().endswith("\tdevice"):
+            return ln.split("\t")[0]
+    return None
+
+
+def phone_index(remote):
+    """{caminho relativo: tamanho} do celular, com UMA chamada.
+
+    `find -printf` não existe no toybox do Android, então o jeito é `find
+    -type f` e `stat`. Fazer os dois de uma vez num shell só é a diferença
+    entre segundos e minutos: cada `adb shell` custa ~80ms de handshake, e
+    são milhares de arquivos.
+    """
+    exts = " -o ".join(f'-iname "*{e}"' for e in AUDIO)
+    # -L NÃO É OPCIONAL. /sdcard é um LINK para /storage/emulated/0 e o find
+    # não atravessa link sem ele: `find /sdcard ...` devolve zero resultados,
+    # sem erro nenhum, enquanto `find /sdcard/Music ...` funciona — porque
+    # ali o link é atravessado ao resolver o caminho, não pela varredura.
+    # Custou uma rodada inteira de "o celular está vazio" para achar isso.
+    cmd = (f'find -L {shlex.quote(remote)} -type f \\( {exts} \\) '
+           f'-exec stat -c "%s %n" {{}} + 2>/dev/null')
+    rc, out, err = adb("shell", cmd, timeout=600)
+    # SAÍDA DIFERENTE DE ZERO AQUI NÃO É FALHA. O find do Android sai com 1
+    # sempre que esbarra numa pasta sem permissão, e num celular ele sempre
+    # esbarra em alguma — mas devolve todo o resto normalmente. Tratar isso
+    # como erro descarta milhares de linhas boas e faz a coleção inteira
+    # parecer não existir. Só é falha de verdade quando não veio NADA.
+    if rc and not out.strip():
+        return None, err.strip() or "o celular não respondeu"
+    idx = {}
+    for ln in out.splitlines():
+        ln = ln.rstrip("\r")
+        size, _, path = ln.partition(" ")
+        if not size.isdigit() or not path.startswith(remote):
+            continue
+        rel = path[len(remote):].lstrip("/")
+        idx[rel] = int(size)
+    return idx, None
+
+
+def local_index(root, exclude):
+    idx = {}
+    for dirpath, dirnames, files in os.walk(root):
+        dirnames[:] = [d for d in dirnames
+                       if not any(x.lower() in d.lower() for x in exclude)]
+        for f in files:
+            if f.lower().endswith(AUDIO):
+                full = os.path.join(dirpath, f)
+                rel = os.path.relpath(full, root)
+                try:
+                    idx[rel] = os.path.getsize(full)
+                except OSError:
+                    pass
+    return idx
+
+
+def better(rel_a, size_a, rel_b, size_b):
+    """1 se A é melhor que B, -1 se pior, 0 se dá no mesmo."""
+    ra = RANK.get(os.path.splitext(rel_a)[1].lower(), 0)
+    rb = RANK.get(os.path.splitext(rel_b)[1].lower(), 0)
+    if ra != rb:
+        return 1 if ra > rb else -1
+    # 2% de folga: recodificar com outra versão do encoder muda o tamanho em
+    # alguns bytes e isso não é "melhor", é ruído.
+    if size_a > size_b * 1.02:
+        return 1
+    if size_b > size_a * 1.02:
+        return -1
+    return 0
+
+
+def stem(rel):
+    """A chave de caminho: o mesmo arquivo em formatos diferentes tem que casar."""
+    return os.path.splitext(rel)[0].lower()
+
+
+def base_stem(rel):
+    """A chave de NOME, sem pasta nenhuma.
+
+    Existe porque as duas metades da coleção quase nunca estão organizadas
+    do mesmo jeito. Aqui é Artista/Álbum/01 - Faixa.flac; no celular é tudo
+    solto numa pasta só, do jeito que o navegador ou o baixador deixou.
+    Comparando caminho relativo, NADA casa — a ferramenta anuncia que precisa
+    copiar 150 GB nos dois sentidos e está errada nas duas pontas.
+    """
+    return os.path.splitext(os.path.basename(rel))[0].lower()
+
+
+def _melhor_de(lista):
+    return sorted(lista, key=lambda t: (-RANK.get(
+        os.path.splitext(t[0])[1].lower(), 0), -t[1]))[0]
+
+
+def plan(local, remote_idx):
+    """(mandar, trazer, iguais) — o que fazer para os dois baterem.
+
+    Duas passadas, e a ordem importa. Primeiro o caminho relativo inteiro,
+    que é a correspondência forte: se os dois lados guardam
+    Radiohead/Kid A/01 - Everything.flac, não há dúvida nenhuma. Só o que
+    sobrar é comparado por NOME de arquivo, que é mais fraco mas é a única
+    coisa que existe quando um lado é plano e o outro não.
+
+    Fazer só a segunda passada seria mais simples e estaria errado: duas
+    faixas chamadas "01 - Intro" em álbuns diferentes casariam entre si.
+    Fazendo a forte antes, esse caso já saiu do caminho.
+    """
+    def agrupa(idx, chave):
+        out = {}
+        for rel, sz in idx.items():
+            out.setdefault(chave(rel), []).append((rel, sz))
+        return out
+
+    mandar, trazer, iguais = [], [], 0
+    resta_l, resta_r = dict(local), dict(remote_idx)
+
+    for chave in (stem, base_stem):
+        lg, rg = agrupa(resta_l, chave), agrupa(resta_r, chave)
+        for k in set(lg) & set(rg):
+            la, lsz = _melhor_de(lg[k])
+            ra, rsz = _melhor_de(rg[k])
+            c = better(la, lsz, ra, rsz)
+            if c > 0:
+                mandar.append((la, lsz))
+            elif c < 0:
+                trazer.append((ra, rsz))
+            else:
+                iguais += 1
+            for rel, _s in lg[k]:
+                resta_l.pop(rel, None)
+            for rel, _s in rg[k]:
+                resta_r.pop(rel, None)
+
+    # O que sobrou não existe do outro lado, em nenhuma das duas leituras.
+    for k, v in agrupa(resta_l, base_stem).items():
+        mandar.append(_melhor_de(v))
+    for k, v in agrupa(resta_r, base_stem).items():
+        trazer.append(_melhor_de(v))
+    return mandar, trazer, iguais
+
+
+def human(n):
+    for u in ("B", "KB", "MB", "GB"):
+        if n < 1024 or u == "GB":
+            return f"{n:.0f}{u}" if u == "B" else f"{n:.1f}{u}"
+        n /= 1024
+    return f"{n:.1f}GB"
+
+
+def save_manifest(idx, remote):
+    try:
+        os.makedirs(STATE, exist_ok=True)
+        with open(MANIFEST, "w", encoding="utf-8") as fh:
+            json.dump({"when": time.time(), "remote": remote, "files": idx}, fh)
+    except OSError:
+        pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+def cmd_status(args):
+    dev = device()
+    print()
+    if not dev:
+        print(f"  {R}nenhum celular{O}")
+        print(f"  {D}plugue com depuração USB ligada, ou "
+              f"`stylus phone wifi` se ele já esteve aqui.{O}\n")
+        return 1
+    c = conf()
+    print(f"  {OK}conectado{O}  {D}{dev}{O}")
+    remote_root(c)
+    print(f"  {D}lá  {O}{c['remote']}")
+    print(f"  {D}aqui{O}{local_root()}")
+    print(f"\n  {D}lendo os dois lados…{O}")
+    remote_idx, err = phone_index(c["remote"])
+    if remote_idx is None:
+        print(f"  {R}{err}{O}\n")
+        return 1
+    local = local_index(local_root(), c["exclude"])
+    mandar, trazer, iguais = plan(local, remote_idx)
+    save_manifest(remote_idx, c["remote"])
+    print(f"\r  {B}{len(local)}{O} faixas aqui   "
+          f"{B}{len(remote_idx)}{O} lá   {D}{iguais} idênticas{O}")
+    if mandar:
+        print(f"\n  {A}{len(mandar)} para mandar{O}  "
+              f"{D}({human(sum(s for _f, s in mandar))}){O}")
+        for f, _s in mandar[:8]:
+            print(f"    {D}→ {f}{O}")
+        if len(mandar) > 8:
+            print(f"    {D}… e mais {len(mandar) - 8}{O}")
+    if trazer:
+        print(f"\n  {A}{len(trazer)} para trazer{O}  "
+              f"{D}({human(sum(s for _f, s in trazer))}){O}")
+        for f, _s in trazer[:8]:
+            print(f"    {D}← {f}{O}")
+        if len(trazer) > 8:
+            print(f"    {D}… e mais {len(trazer) - 8}{O}")
+    if not mandar and not trazer:
+        print(f"\n  {OK}os dois lados estão iguais.{O}")
+    else:
+        print(f"\n  {D}`stylus phone sync --apply` resolve.{O}")
+    print()
+    return 0
+
+
+def transferir(pares, root, remote, para_o_celular, apply):
+    seta = "→" if para_o_celular else "←"
+    total = len(pares)
+    if not total:
+        return 0
+    if not apply:
+        print(f"  {D}(ensaio: {total} arquivo(s) {seta}){O}")
+        return 0
+    feitos = falhas = 0
+    for i, (rel, _sz) in enumerate(pares, 1):
+        aqui = os.path.join(root, rel)
+        la = f"{remote}/{rel}"
+        print(f"\r  {seta} {i}/{total}  {rel[-58:]:<58}", end="", flush=True)
+        if para_o_celular:
+            adb("shell", "mkdir", "-p", shlex.quote(os.path.dirname(la)))
+            rc, _o, _e = adb("push", "-q", aqui, la, timeout=1800)
+        else:
+            os.makedirs(os.path.dirname(aqui), exist_ok=True)
+            rc, _o, _e = adb("pull", "-a", la, aqui, timeout=1800)
+        feitos += rc == 0
+        falhas += rc != 0
+    print(f"\r  {OK}{feitos}{O} transferido(s)"
+          + (f", {R}{falhas} falharam{O}" if falhas else "") + " " * 40)
+    return falhas
+
+
+def cmd_sync(args, so_mandar=False, so_trazer=False):
+    dev = device()
+    if not dev:
+        print(f"\n  {R}nenhum celular conectado.{O}\n")
+        return 1
+    c = conf()
+    remote_root(c)
+    root = local_root()
+    print(f"\n  {D}lendo os dois lados…{O}", end="", flush=True)
+    remote_idx, err = phone_index(c["remote"])
+    if remote_idx is None:
+        print(f"\r  {R}{err}{O}\n")
+        return 1
+    local = local_index(root, c["exclude"])
+    mandar, trazer, iguais = plan(local, remote_idx)
+    if so_mandar:
+        trazer = []
+    if so_trazer:
+        mandar = []
+    print(f"\r  {len(mandar)} para mandar, {len(trazer)} para trazer, "
+          f"{iguais} iguais." + " " * 20)
+    if not mandar and not trazer:
+        print(f"  {OK}nada a fazer.{O}\n")
+        return 0
+    if not args.apply:
+        for f, _s in (mandar[:5] + trazer[:5]):
+            print(f"    {D}{f}{O}")
+        print(f"\n  {D}ensaio. `--apply` faz de verdade.{O}\n")
+        return 0
+    falhas = 0
+    falhas += transferir(mandar, root, c["remote"], True, True)
+    falhas += transferir(trazer, root, c["remote"], False, True)
+    novo, _e = phone_index(c["remote"])
+    if novo:
+        save_manifest(novo, c["remote"])
+    print()
+    return 1 if falhas else 0
+
+
+def cmd_playlists(args):
+    """As .m3u, com os caminhos reescritos para o outro lado.
+
+    É a coisa que faltava e que mais dói: as playlists são metade da
+    coleção e nenhuma ferramenta as leva junto, porque os caminhos dentro
+    delas apontam para a casa do PC. Reescrever é trivial e ninguém faz.
+    """
+    dev = device()
+    if not dev:
+        print(f"\n  {R}nenhum celular conectado.{O}\n")
+        return 1
+    c = conf()
+    remote_root(c)
+    root = local_root()
+    listas = [os.path.join(dp, f) for dp, _d, fs in os.walk(root)
+              for f in fs if f.lower().endswith((".m3u", ".m3u8"))]
+    if not listas:
+        print(f"\n  {D}nenhuma playlist em {root}.{O}\n")
+        return 0
+    print(f"\n  {len(listas)} playlist(s)")
+    tmp = os.path.join(STATE, "m3u")
+    os.makedirs(tmp, exist_ok=True)
+    n = 0
+    for lst in listas:
+        nome = os.path.basename(lst)
+        try:
+            with open(lst, encoding="utf-8", errors="replace") as fh:
+                linhas = fh.read().splitlines()
+        except OSError:
+            continue
+        saida, achou = [], 0
+        for ln in linhas:
+            if not ln.strip() or ln.startswith("#"):
+                saida.append(ln)
+                continue
+            p = ln if os.path.isabs(ln) else os.path.join(os.path.dirname(lst), ln)
+            p = os.path.normpath(p)
+            if p.startswith(root):
+                saida.append(f"{c['remote']}/{os.path.relpath(p, root)}")
+                achou += 1
+            else:
+                saida.append(ln)
+        alvo = os.path.join(tmp, nome)
+        with open(alvo, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(saida) + "\n")
+        print(f"    {D}{nome}  {achou} faixa(s) reapontada(s){O}")
+        if args.apply:
+            adb("push", "-q", alvo, f"{c['remote']}/{nome}", timeout=120)
+            n += 1
+    print(f"\n  {OK}{n} enviada(s){O}" if args.apply
+          else f"\n  {D}ensaio. `--apply` manda.{O}")
+    print()
+    return 0
+
+
+def cmd_scrobbles(args):
+    """Junta o que você ouviu NO CELULAR à memória da coleção.
+
+    Sem isto, a memória do sistema é míope: o desgaste que aparece no disco
+    e a contagem de "quantas vezes" só sabem do que tocou no PC. Metade da
+    escuta acontece longe dele.
+
+    Lê o cache do Pano Scrobbler quando ele está acessível. Não é bonito e
+    depende do celular deixar ler, mas é a única fonte que existe sem pedir
+    chave de API para ninguém.
+    """
+    dev = device()
+    if not dev:
+        print(f"\n  {R}nenhum celular conectado.{O}\n")
+        return 1
+    if vinyl is None:
+        print(f"\n  {R}o vinyl.py não está aqui — instalação estranha.{O}\n")
+        return 1
+    caminhos = [
+        "/sdcard/Android/data/com.arn.scrobble/files/scrobbles.tsv",
+        "/sdcard/Pano/scrobbles.tsv",
+        "/sdcard/stylus-scrobbles.tsv",
+    ]
+    achou = None
+    for p in caminhos:
+        rc, out, _e = adb("shell", "test", "-r", p, timeout=20)
+        if rc == 0:
+            achou = p
+            break
+    if not achou:
+        print(f"\n  {W}não achei um registro legível no celular.{O}")
+        print(f"  {D}procurei em:{O}")
+        for p in caminhos:
+            print(f"    {D}{p}{O}")
+        print(f"\n  {D}o agente do Termux (mobile/ no repositório) escreve o{O}")
+        print(f"  {D}terceiro caminho. `stylus phone wifi` explica como pôr ele lá.{O}\n")
+        return 1
+    local = os.path.join(STATE, "phone-scrobbles.tsv")
+    adb("pull", "-a", achou, local, timeout=120)
+    novos = 0
+    try:
+        with open(local, encoding="utf-8", errors="replace") as fh:
+            for ln in fh:
+                parts = ln.rstrip("\n").split("\t")
+                if len(parts) >= 4 and parts[0].isdigit():
+                    if vinyl.log_play(parts[3], parts[1], parts[2],
+                                      cooldown=1800) :
+                        novos += 1
+    except OSError as e:
+        print(f"\n  {R}não deu para ler: {e}{O}\n")
+        return 1
+    print(f"\n  {OK}memória da coleção atualizada com o que tocou no celular.{O}\n")
+    return 0
+
+
+def cmd_wifi(args):
+    dev = device()
+    print()
+    if not dev:
+        print(f"  {R}plugue o cabo UMA vez para ligar o wifi.{O}\n")
+        return 1
+    rc, out, _e = adb("shell", "ip", "route", timeout=20)
+    ip = ""
+    for ln in out.split():
+        if ln.count(".") == 3 and not ln.startswith("0."):
+            ip = ln
+    rc, _o, err = adb("tcpip", "5555", timeout=30)
+    if rc:
+        print(f"  {R}não deu: {err}{O}\n")
+        return 1
+    time.sleep(2)
+    if ip:
+        adb("connect", f"{ip}:5555", timeout=30)
+        print(f"  {OK}adb por wifi ligado{O}  {D}{ip}:5555{O}")
+        print(f"  {D}pode tirar o cabo. reconectar depois: "
+              f"adb connect {ip}:5555{O}")
+    else:
+        print(f"  {W}liguei o modo tcpip mas não descobri o IP do celular.{O}")
+        print(f"  {D}veja em Ajustes → Sobre → Status e rode: "
+              f"adb connect IP:5555{O}")
+    print()
+    return 0
+
+
+def cmd_watch(args):
+    unit = "stylus-phone-watch.service"
+    if args.enable:
+        subprocess.run(["systemctl", "--user", "enable", "--now", unit])
+        print(f"\n  {OK}vai sincronizar sozinho quando você plugar.{O}\n")
+    elif args.disable:
+        subprocess.run(["systemctl", "--user", "disable", "--now", unit])
+        print(f"\n  {D}desligado.{O}\n")
+    else:
+        subprocess.run(["systemctl", "--user", "status", "--no-pager", unit])
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="stylus phone", add_help=True)
+    sub = ap.add_subparsers(dest="cmd")
+    for nome in ("status", "sync", "push", "pull", "playlists", "scrobbles",
+                 "wifi"):
+        s = sub.add_parser(nome)
+        s.add_argument("--apply", action="store_true",
+                       help="faz de verdade (o padrão é ensaio)")
+        s.add_argument("--deep", action="store_true",
+                       help="compara abrindo os arquivos, não só o tamanho")
+    w = sub.add_parser("watch")
+    w.add_argument("--enable", action="store_true")
+    w.add_argument("--disable", action="store_true")
+    args = ap.parse_args()
+
+    if args.cmd in (None, "status"):
+        return cmd_status(args)
+    if args.cmd == "sync":
+        return cmd_sync(args)
+    if args.cmd == "push":
+        return cmd_sync(args, so_mandar=True)
+    if args.cmd == "pull":
+        return cmd_sync(args, so_trazer=True)
+    if args.cmd == "playlists":
+        return cmd_playlists(args)
+    if args.cmd == "scrobbles":
+        return cmd_scrobbles(args)
+    if args.cmd == "wifi":
+        return cmd_wifi(args)
+    if args.cmd == "watch":
+        return cmd_watch(args)
+    ap.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

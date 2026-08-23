@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus — the front door
+# ═══════════════════════════════════════════════════════════════════════════
+#  Everything this system does about music hangs off this one command, on
+#  purpose. A collection tool that is fourteen separate scripts is fourteen
+#  things to remember; this is one thing with rooms in it.
+#
+#  The bare `stylus` says what is on right now, because that is the question
+#  asked most often and it should not need a subcommand.
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+SHARE=/usr/share/stylus
+DECK=$SHARE/deck
+TOOLS=$SHARE/tools
+PY="$DECK/venv/bin/python3"
+[[ -x $PY ]] || PY=python3
+export PYTHONPATH="$DECK${PYTHONPATH:+:$PYTHONPATH}"
+
+d=$'\033[2m'; b=$'\033[1m'; a=$'\033[38;5;117m'; o=$'\033[0m'
+
+usage() {
+cat <<EOF
+
+  ${b}stylus${o} ${d}— o sistema, do lado da música${o}
+
+  ${a}ouvir${o}
+    ${b}stylus${o}                    o que está tocando, e onde no disco
+    ${b}stylus deck${o} ${d}[DISCO]${o}      põe um disco e abre o deck: a cerimônia
+                              inteira, com o disco girando na tela
+    ${b}stylus play${o} ${d}DISCO${o}        toca o lado inteiro, na ordem, sem tela
+    ${b}stylus record${o} ${d}[DISCO]${o}    sorteia um da estante e mostra os lados,
+                              puxando para o que faz tempo que não toca
+    ${b}stylus shelf${o}              a estante em grade de capas
+    ${b}stylus scope${o}              só o instrumento: o vetorscópio, sem disco
+
+  ${a}a coleção${o}
+    ${b}stylus library${o} ${d}[PASTA]${o}   mostra ou define onde ela fica
+    ${b}stylus diary${o} ${d}[N]${o}         o que você pôs, quando, e quantas vezes
+    ${b}stylus check${o}              o que está quebrado aí dentro
+    ${b}stylus gaps${o} ${d}ARTISTA${o}      que discos desse artista faltam
+    ${b}stylus covers${o} ${d}[--apply]${o}  cover.jpg nas pastas que não têm
+    ${b}stylus lyrics${o} ${d}[DISCO]${o}    procura e grava .lrc ao lado dos arquivos
+    ${b}stylus tags${o} ${d}[DISCO]${o}      arruma tags e capa embutida
+    ${b}stylus rip${o}                rasga o CD que está na gaveta, para a estante
+    ${b}stylus get${o} ${d}URL|FILA${o}      baixa e arquiva na estante
+
+  ${a}as máquinas${o}
+    ${b}stylus phone${o} ${d}[...]${o}       o celular: estado, sincronizar, playlists
+    ${b}stylus audio${o}              o caminho do sinal, medido, não prometido
+    ${b}stylus app${o} ${d}NOME${o}          instala o que não vem em pacote
+    ${b}stylus gpu${o}                driver de vídeo
+    ${b}stylus update${o}             atualiza o sistema
+
+  ${d}sem argumento nenhum, responde a pergunta que se faz mais vezes.${o}
+
+EOF
+}
+
+need() { command -v "$1" >/dev/null || { echo "stylus: falta o $1" >&2; return 1; }; }
+
+cmd=${1:-}
+[[ -n $cmd ]] && shift || true
+
+case "$cmd" in
+    ""|now)      exec "$PY" "$TOOLS/now.py" "$@" ;;
+    ui|big)      exec stylus-ui "$@" ;;
+    deck)        exec stylus-deck "$@" ;;
+    play)        exec stylus-deck --no-scope "$@" ;;
+    scope)       exec "$PY" "$DECK/scope.py" "$@" ;;
+    record)      exec "$PY" "$TOOLS/record.py" "$@" ;;
+    shelf)       exec stylus-shelf "$@" ;;
+    library)     exec "$PY" "$TOOLS/library.py" "$@" ;;
+    diary)       exec "$PY" "$TOOLS/diary.py" "$@" ;;
+    check)       exec "$PY" "$TOOLS/check_library.py" "$@" ;;
+    gaps)        exec "$PY" "$TOOLS/discover.py" "$@" ;;
+    covers)      exec "$PY" "$TOOLS/extract_covers.py" "$@" ;;
+    lyrics)      exec "$PY" "$TOOLS/lyrics.py" "$@" ;;
+    tags)        exec "$PY" "$TOOLS/embed_metadata.py" "$@" ;;
+    rip)         exec "$PY" "$TOOLS/rip.py" "$@" ;;
+    get)         exec "$PY" "$TOOLS/get.py" "$@" ;;
+    suggest)     exec "$PY" "$TOOLS/suggest_playlists.py" "$@" ;;
+    phone)       exec stylus-phone "$@" ;;
+    audio)       exec stylus-audio "$@" ;;
+    app)         exec stylus-app "$@" ;;
+    gpu)         exec stylus-gpu "$@" ;;
+    update)      exec stylus-update "$@" ;;
+    -h|--help|help) usage ;;
+    *)
+        # Um nome que não é subcomando quase sempre é um DISCO — "stylus
+        # loveless" tem que fazer a coisa óbvia em vez de imprimir a ajuda.
+        if "$PY" -c "import sys, vinyl; sys.exit(0 if vinyl.resolve_album(None,'','$cmd') or __import__('os').path.isdir('$cmd') else 1)" 2>/dev/null; then
+            exec stylus-deck "$cmd" "$@"
+        fi
+        echo "stylus: não conheço \"$cmd\", e não achei nenhum disco com esse nome." >&2
+        echo "        \`stylus --help\` lista o que existe." >&2
+        exit 1
+        ;;
+esac

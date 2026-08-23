@@ -1,0 +1,3 @@
+tools/vinyl-out/
+__pycache__/
+*.pyc

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# stylus-ui — a tela cheia. É a cara do sistema; `stylus ui` chama isto.
+set -uo pipefail
+SHARE=/usr/share/stylus
+PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+export PYTHONPATH="$SHARE/deck:$SHARE/ui${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" "$SHARE/ui/app.py" "$@"

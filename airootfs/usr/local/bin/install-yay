@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+if command -v yay &>/dev/null; then
+    echo "O yay já está instalado."
+    exit 0
+fi
+echo "==> Instalando o yay (auxiliar do AUR)…"
+sudo pacman -S --needed git base-devel
+cd /tmp
+git clone https://aur.archlinux.org/yay-bin.git
+cd yay-bin
+makepkg -si --noconfirm
+cd /
+rm -rf /tmp/yay-bin
+echo "✓ yay instalado. Use 'yay -S <pacote>' para instalar pacotes do AUR."

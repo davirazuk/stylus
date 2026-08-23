@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  stylus-gpu-fallback — a machine that boots to a black screen has no way back
+#
+#  The NVIDIA driver's packaging blacklists nouveau, which is correct while the
+#  NVIDIA driver works. When it does not — the open modules on a card older than
+#  Turing, a DKMS build that failed against a new kernel, a driver update that
+#  landed without its module — the machine is left with no graphics driver at
+#  all. Not slow: black. There is no desktop to run `stylus-gpu --fix` from and
+#  nothing on screen that says what happened.
+#
+#  This runs before the login screen and asks one question: did the NVIDIA
+#  driver actually take the card? If it did, nothing happens and the service
+#  costs a few milliseconds. If it did not, nouveau is loaded by name — which a
+#  blacklist does not prevent — and the student gets a desktop. A slow one, with
+#  a notification waiting in it that names the real problem.
+#
+#  It deliberately does nothing on a laptop with two graphics chips: there the
+#  integrated one is still drawing, the session is not at risk, and loading a
+#  second driver underneath a working machine is a worse trade.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=Garantir que a máquina tenha driver de vídeo antes da tela de login
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=display-manager.service graphical.target
+ConditionPathExists=/usr/local/bin/stylus-gpu
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/stylus-gpu --fallback
+# Never hold up a boot. Whatever went wrong here, a login screen that appears
+# is better than one that does not.
+TimeoutStartSec=20
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=graphical.target

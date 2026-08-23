@@ -1,0 +1,258 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   STYLUS — GTK 3
+
+   This used to be an accent override on top of adw-gtk3-dark: it repainted
+   Adwaita's blue and left everything else to that theme. Which would be fine,
+   except adw-gtk3 was in neither package list. GTK falls back silently when a
+   named theme is missing, so what actually shipped was stock Adwaita wearing a
+   green selection bar - and on a desktop that is dark green throughout,
+   opening Thunar or GParted produced a window from a different distribution.
+
+   So this stands on its own now. It assumes nothing about the theme underneath
+   and states every colour it needs, which means the file manager looks the
+   same on a machine that has adw-gtk3 and one that does not.
+
+   schemes by substituting those exact strings:
+
+     #07080b base      #0d0f14 surface   #141820 hover     #040507 deep
+     #e2e7f0 text      #c3cbd8 subtext   #7e899c dim
+     #5bcefa accent    #5bcefa accent-2  #7fd7ff bright
+   ───────────────────────────────────────────────────────────────────────── */
+
+@define-color stylus_base    #07080b;
+@define-color stylus_surface #0d0f14;
+@define-color stylus_hover   #141820;
+@define-color stylus_deep    #040507;
+@define-color stylus_text    #e2e7f0;
+@define-color stylus_subtext #c3cbd8;
+@define-color stylus_dim     #7e899c;
+@define-color stylus_accent  #5bcefa;
+@define-color stylus_accent2 #5bcefa;
+@define-color stylus_bright  #7fd7ff;
+
+/* The names GTK and most themes look for, so an application that asks the
+   theme for a colour rather than being styled by selector still lands on the
+   STYLUS palette. */
+@define-color theme_bg_color @stylus_base;
+@define-color theme_fg_color @stylus_text;
+@define-color theme_base_color @stylus_base;
+@define-color theme_text_color @stylus_text;
+@define-color theme_selected_bg_color @stylus_accent;
+@define-color theme_selected_fg_color @stylus_deep;
+@define-color insensitive_bg_color @stylus_base;
+@define-color insensitive_fg_color @stylus_dim;
+@define-color borders #141820;
+@define-color accent_color @stylus_accent;
+@define-color accent_bg_color @stylus_accent;
+@define-color accent_fg_color @stylus_deep;
+@define-color window_bg_color @stylus_base;
+@define-color window_fg_color @stylus_text;
+@define-color view_bg_color @stylus_base;
+@define-color view_fg_color @stylus_text;
+@define-color headerbar_bg_color @stylus_surface;
+
+/* ── Surfaces ───────────────────────────────────────────────────────────── */
+window, dialog, messagedialog, .background {
+    background-color: @stylus_base;
+    color: @stylus_text;
+}
+
+headerbar, .titlebar, toolbar, .toolbar, actionbar {
+    background-color: @stylus_surface;
+    color: @stylus_text;
+    border-color: @stylus_hover;
+}
+headerbar { box-shadow: inset 0 -1px @stylus_hover; }
+
+.statusbar, statusbar {
+    background-color: @stylus_deep;
+    color: @stylus_dim;
+    font-size: 90%;
+}
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+button {
+    background-image: none;
+    background-color: @stylus_surface;
+    color: @stylus_text;
+    border: 1px solid @stylus_hover;
+    border-radius: 7px;
+    padding: 4px 10px;
+    transition: background-color 120ms ease-out;
+}
+button:hover  { background-color: @stylus_hover; border-color: @stylus_accent; }
+button:active,
+button:checked { background-color: @stylus_accent; color: @stylus_deep;
+                 border-color: @stylus_accent; }
+button:disabled { background-color: @stylus_base; color: @stylus_dim;
+                  border-color: @stylus_surface; }
+button.flat { background-color: transparent; border-color: transparent; }
+button.flat:hover { background-color: @stylus_hover; border-color: transparent; }
+button.suggested-action { background-color: @stylus_accent; color: @stylus_deep;
+                          border-color: @stylus_accent; }
+button.destructive-action { background-color: #f5a9b8; color: @stylus_deep;
+                            border-color: #f5a9b8; }
+
+entry, spinbutton {
+    background-color: @stylus_deep;
+    color: @stylus_text;
+    border: 1px solid @stylus_hover;
+    border-radius: 7px;
+    caret-color: @stylus_accent;
+}
+entry:focus, entry:focus-within, spinbutton:focus {
+    border-color: @stylus_accent;
+    box-shadow: inset 0 0 0 1px @stylus_accent;
+}
+entry placeholder, entry text placeholder { color: @stylus_dim; }
+
+check, radio {
+    background-color: @stylus_deep;
+    border: 1px solid @stylus_hover;
+}
+check:checked, radio:checked,
+checkbutton check:checked, radiobutton radio:checked {
+    background-color: @stylus_accent;
+    border-color: @stylus_accent;
+    color: @stylus_deep;
+}
+switch { background-color: @stylus_hover; }
+switch:checked { background-color: @stylus_accent; }
+
+progressbar progress, levelbar block.filled, scale highlight {
+    background-color: @stylus_accent;
+}
+scale trough, progressbar trough { background-color: @stylus_hover; }
+
+/* ── Selection ──────────────────────────────────────────────────────────── */
+selection, *:selected, *:selected:focus {
+    background-color: @stylus_accent;
+    color: @stylus_deep;
+}
+/* A selected row in a window that has lost focus should stay legible rather
+   than turning into grey on grey. */
+*:selected:backdrop { background-color: @stylus_hover; color: @stylus_text; }
+
+/* ── The file manager ───────────────────────────────────────────────────────
+   Thunar is built from these widgets: a places sidebar, a path bar of linked
+   toggle buttons, a treeview for the detailed list and an iconview for the
+   grid. Styling them here reaches Thunar, and every other GTK application
+   that lists files, without needing a selector only Thunar answers to.       */
+
+placessidebar, .sidebar {
+    background-color: @stylus_deep;
+    color: @stylus_subtext;
+}
+placessidebar list, .sidebar list { background-color: transparent; }
+placessidebar row, .sidebar row {
+    border-radius: 7px;
+    margin: 1px 5px;
+    min-height: 30px;
+}
+/* The row's own label and icon, explicitly. Colour set on the sidebar does not
+   reach them - they were rendering close to the near-black background, so the
+   shortcuts were legible only if you already knew what they said. */
+placessidebar row label, .sidebar row label,
+placessidebar row image, .sidebar row image { color: @stylus_subtext; }
+placessidebar row:hover label, .sidebar row:hover label,
+placessidebar row:hover image, .sidebar row:hover image { color: @stylus_text; }
+placessidebar row:selected label, .sidebar row:selected label,
+placessidebar row:selected image, .sidebar row:selected image { color: @stylus_deep; }
+placessidebar row:hover, .sidebar row:hover { background-color: @stylus_hover; }
+placessidebar row:selected, .sidebar row:selected,
+list row:selected {
+    background-color: @stylus_accent;
+    color: @stylus_deep;
+}
+placessidebar separator { background-color: @stylus_hover; }
+
+treeview.view, iconview {
+    background-color: @stylus_base;
+    color: @stylus_text;
+}
+/* No alternating-row rule here: GTK 3 dropped rules-hint, and :nth-child on a
+   treeview matches the widget rather than its rows, so it silently did nothing.
+   The hover highlight is what makes a long list followable. */
+treeview.view:hover { background-color: @stylus_hover; }
+treeview.view:selected, iconview:selected, iconview .cell:selected {
+    background-color: @stylus_accent;
+    color: @stylus_deep;
+}
+treeview.view:selected:backdrop { background-color: @stylus_hover; color: @stylus_text; }
+treeview.view expander { color: @stylus_dim; }
+treeview.view expander:hover { color: @stylus_accent2; }
+
+/* Column headers. They look like buttons because they are, and they do sort. */
+treeview.view header button {
+    background-color: @stylus_surface;
+    color: @stylus_subtext;
+    border: none;
+    border-right: 1px solid @stylus_hover;
+    border-bottom: 1px solid @stylus_hover;
+    border-radius: 0;
+    padding: 5px 8px;
+    font-weight: normal;
+}
+treeview.view header button:hover { background-color: @stylus_hover; color: @stylus_text; }
+treeview.view header button:active { background-color: @stylus_accent; color: @stylus_deep; }
+
+/* The path bar: linked toggle buttons, the current directory being the checked
+   one. It should be obvious which that is. */
+.path-bar button, .linked > button { border-radius: 0; border-right-width: 0; }
+.path-bar button:first-child, .linked > button:first-child {
+    border-top-left-radius: 7px; border-bottom-left-radius: 7px;
+}
+.path-bar button:last-child, .linked > button:last-child {
+    border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+    border-right-width: 1px;
+}
+.path-bar button:checked { background-color: @stylus_accent; color: @stylus_deep; }
+
+/* ── Menus, tabs, tooltips ──────────────────────────────────────────────── */
+menu, .menu, popover.background {
+    background-color: @stylus_surface;
+    color: @stylus_text;
+    border: 1px solid @stylus_hover;
+    border-radius: 8px;
+}
+menuitem:hover, .menu menuitem:hover, popover modelbutton:hover {
+    background-color: @stylus_accent;
+    color: @stylus_deep;
+}
+menu separator, popover separator { background-color: @stylus_hover; }
+
+notebook > header { background-color: @stylus_surface; border-color: @stylus_hover; }
+notebook > header > tabs > tab { color: @stylus_dim; border-color: transparent; }
+notebook > header > tabs > tab:checked {
+    color: @stylus_text;
+    box-shadow: inset 0 -3px @stylus_accent;
+}
+notebook > header > tabs > tab:hover { color: @stylus_text; }
+
+tooltip, tooltip.background {
+    background-color: @stylus_deep;
+    color: @stylus_text;
+    border: 1px solid @stylus_hover;
+    border-radius: 7px;
+}
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────────
+   The launcher's treatment: thin, dark, and only solid enough to find, so a
+   grey stock scrollbar does not show through the green.                     */
+scrollbar { background-color: transparent; border: none; }
+scrollbar trough { background-color: transparent; border: none; }
+scrollbar slider {
+    background-color: alpha(@stylus_text, 0.16);
+    border: none;
+    border-radius: 8px;
+    min-width: 7px;
+    min-height: 40px;
+    margin: 2px;
+}
+scrollbar slider:hover  { background-color: alpha(@stylus_text, 0.30); }
+scrollbar slider:active { background-color: @stylus_accent; }
+
+separator { background-color: @stylus_hover; }
+*:link, button.link { color: @stylus_accent2; }
+infobar.warning { background-color: #f0bd76; color: @stylus_deep; }
+infobar.error   { background-color: #f5a9b8; color: @stylus_deep; }

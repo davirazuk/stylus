@@ -1,0 +1,4 @@
+# STYLUS generates Brazilian Portuguese and US English on the live medium.
+# glibc's own (fully commented) locale.gen is kept beside this as locale.gen.pacnew.
+pt_BR.UTF-8 UTF-8
+en_US.UTF-8 UTF-8

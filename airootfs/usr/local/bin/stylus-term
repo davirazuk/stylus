@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+#  stylus-term — run a command in a terminal window, from something that has none
+#
+#      stylus-term "Título da janela" comando argumentos...
+#
+#  Several STYLUS tools have to run in a terminal: they ask for a sudo password,
+#  print what they are doing for minutes at a time, and end with a question.
+#  Started from the launcher - which has no terminal - they would appear to do
+#  nothing at all.
+#
+#  Three things this handles that a hardcoded `xfce4-terminal -x` did not:
+#  which terminal is actually installed, that xfce4-terminal spells the "run
+#  this" flag differently from everyone else, and that the window has to
+#  outlive the launcher, which quits the moment it starts something.
+# ─────────────────────────────────────────────────────────────────────────────
+set -u
+
+TITLE=${1:-STYLUS}
+shift || true
+
+if (( ! $# )); then
+    echo "uso: stylus-term \"Título\" comando [args...]" >&2
+    exit 2
+fi
+
+TERMINAL=""
+for candidate in xfce4-terminal alacritty kitty foot xterm; do
+    command -v "$candidate" >/dev/null 2>&1 && { TERMINAL=$candidate; break; }
+done
+
+if [[ -z $TERMINAL ]]; then
+    # No terminal at all is a broken install rather than an ordinary state, so
+    # say so somewhere the person can see it instead of failing silently.
+    command -v notify-send >/dev/null 2>&1 &&
+        notify-send -a STYLUS -u critical "$TITLE" \
+            "Nenhum terminal instalado. Execute '$1' na linha de comando."
+    exit 1
+fi
+
+# xfce4-terminal needs -x to pass a command with arguments; -e takes a single
+# string it then re-parses, which mangles anything containing spaces. kitty and
+# foot take the command with no flag at all.
+case $TERMINAL in
+    xfce4-terminal) RUN=(-T "$TITLE" -x) ;;
+    alacritty)      RUN=(-t "$TITLE" -e) ;;
+    kitty)          RUN=(-T "$TITLE") ;;
+    foot)           RUN=(-T "$TITLE") ;;
+    *)              RUN=(-T "$TITLE" -e) ;;
+esac
+
+# The window stays open on the last line rather than vanishing: whatever it
+# printed - a summary, an error, an instruction to reboot - is the entire point
+# of having opened a window, and it is unreadable if it closes with the command.
+#
+# printf %q so a command with spaces or quotes survives being handed to bash -lc
+# as one string.
+printf -v CMD '%q ' "$@"
+
+exec setsid "$TERMINAL" "${RUN[@]}" bash -lc "
+    $CMD
+    status=\$?
+    if (( status != 0 )); then
+        printf '\n  Terminou com erro (código %s).\n' \"\$status\"
+    fi
+    printf '\n'
+    read -rp '  Pressione Enter para fechar… '
+"

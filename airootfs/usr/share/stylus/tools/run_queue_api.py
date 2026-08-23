@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+"""Sequential Qobuz queue runner driving the GUI's HTTP API directly.
+
+Why not run_queue.sh:
+
+  * The API's `_download_overrides()` builds its override dict with
+    `data.get("embed_art", False)` — an absent key becomes a real `False`,
+    and `as_bool(False, cfg_default)` returns that `False` because it is a
+    genuine bool. An explicit-but-unsent flag therefore BEATS config.ini.
+    Posting a bare {"urls": ...} silently disables og_cover and embed_art
+    even though config.ini turns both on. Every flag we care about is now
+    sent explicitly.
+  * `^Completed$` log-grepping races: the line is emitted per *album* inside
+    the downloader, but the worker thread is still tagging/moving files
+    afterwards. `download_active` is the real gate.
+  * No duplicate check, no multi-disc handling, no per-album error capture.
+
+Completion signal: POST /api/download with an empty url list. The route
+checks `state["download_active"]` BEFORE it validates the urls, so a busy
+backend answers "A download is already running." and an idle one answers
+"No URLs provided". Side-effect free, and authoritative in a way the log
+is not.
+
+Each album is finished completely — download, move, retag, lyrics, embed,
+master playlist, manifest — before the next one starts, so an interruption
+never leaves a half-filed album behind.
+
+Usage:  run_queue_api.py <queue-file> [--limit N] [--dry]
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import unicodedata
+import urllib.error
+import urllib.request
+
+API = "http://127.0.0.1:8765/api"
+QOBUZ_DIR = "/home/davirazuk/Qobuz Downloads"
+LIB = "/home/davirazuk/Músicas/Fortnite Balls"
+TOOLS = "/home/davirazuk/.local/share/stylus/tools"
+LOG = "/tmp/qobuz-gui.log"
+PROGRESS = "/home/davirazuk/.local/share/stylus-queue6-progress.tsv"
+
+DL_TIMEOUT = 3600     # per album, seconds
+POLL = 5
+
+
+def post(path, payload):
+    req = urllib.request.Request(
+        API + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode())
+        except Exception:
+            return {"ok": False, "error": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def busy():
+    """True while a download is running. See module docstring."""
+    r = post("/download", {"urls": ""})
+    return "already running" in str(r.get("error", ""))
+
+
+def norm(s):
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    s = re.sub(r"\b(the|a|an)\b", "", s)
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def in_library(artist, album):
+    ad = os.path.join(LIB, artist)
+    if not os.path.isdir(ad):
+        # artist folder may differ in punctuation
+        na = norm(artist)
+        match = [d for d in os.listdir(LIB)
+                 if os.path.isdir(os.path.join(LIB, d)) and norm(d) == na]
+        if not match:
+            return None
+        ad = os.path.join(LIB, match[0])
+    nb = norm(album)
+    for d in os.listdir(ad):
+        p = os.path.join(ad, d)
+        if os.path.isdir(p) and norm(d) == nb:
+            n = len([f for f in os.listdir(p) if f.lower().endswith(".flac")])
+            if n:
+                return f"{os.path.basename(ad)}/{d} ({n} tracks)"
+    return None
+
+
+def staging_dirs():
+    if not os.path.isdir(QOBUZ_DIR):
+        return []
+    return sorted(d for d in os.listdir(QOBUZ_DIR)
+                  if os.path.isdir(os.path.join(QOBUZ_DIR, d)))
+
+
+def flatten_discs(folder):
+    """Multi-disc releases land in `Disc N/` subfolders (multiple_disc_one_dir
+    is off). integrate_album.py only looks at the top level, so merge them up
+    first, renumbering continuously so track order survives."""
+    path = os.path.join(QOBUZ_DIR, folder)
+    subs = sorted(d for d in os.listdir(path)
+                  if os.path.isdir(os.path.join(path, d)))
+    if not subs:
+        return 0
+    moved = 0
+    offset = 0
+    for sub in subs:
+        sp = os.path.join(path, sub)
+        flacs = sorted(f for f in os.listdir(sp) if f.lower().endswith(".flac"))
+        hi = 0
+        for f in flacs:
+            m = re.match(r"^(\d+)[.\s-]+(.+)\.flac$", f)
+            if not m:
+                continue
+            num, title = int(m.group(1)), m.group(2)
+            hi = max(hi, num)
+            dst = os.path.join(path, f"{offset + num:02d}. {title}.flac")
+            os.rename(os.path.join(sp, f), dst)
+            moved += 1
+        offset += hi
+        for leftover in os.listdir(sp):
+            src = os.path.join(sp, leftover)
+            dst = os.path.join(path, leftover)
+            if not os.path.exists(dst) and os.path.isfile(src):
+                os.rename(src, dst)
+        try:
+            os.rmdir(sp)
+        except OSError:
+            pass
+    return moved
+
+
+def log_size():
+    try:
+        return os.path.getsize(LOG)
+    except OSError:
+        return 0
+
+
+def log_since(offset):
+    try:
+        with open(LOG, "rb") as f:
+            f.seek(offset)
+            return f.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def record(status, artist, album, detail):
+    with open(PROGRESS, "a", encoding="utf-8") as f:
+        f.write(f"{time.strftime('%H:%M:%S')}\t{status}\t{artist}\t{album}\t{detail}\n")
+    print(f"  -> {status}: {detail}", flush=True)
+
+
+def main():
+    queue_file = sys.argv[1]
+    dry = "--dry" in sys.argv
+    limit = None
+    if "--limit" in sys.argv:
+        limit = int(sys.argv[sys.argv.index("--limit") + 1])
+
+    entries = []
+    for line in open(queue_file, encoding="utf-8"):
+        line = line.strip()
+        if not line.startswith("http"):
+            continue
+        url, artist, album = line.split("|")
+        entries.append((url, artist, album))
+    if limit:
+        entries = entries[:limit]
+
+    print(f"{len(entries)} entries from {queue_file}\n", flush=True)
+    counts = {"ok": 0, "skip": 0, "fail": 0}
+
+    for i, (url, artist, album) in enumerate(entries, 1):
+        print(f"[{i}/{len(entries)}] {artist} — {album}", flush=True)
+
+        have = in_library(artist, album)
+        if have:
+            counts["skip"] += 1
+            record("SKIP", artist, album, f"already in library: {have}")
+            continue
+        if dry:
+            record("WOULD-GET", artist, album, url)
+            continue
+
+        # Staging must be empty: the post-download folder is identified by
+        # being the only thing there.
+        stray = staging_dirs()
+        if stray:
+            record("FAIL", artist, album, f"staging not empty: {stray}")
+            counts["fail"] += 1
+            continue
+
+        off = log_size()
+        r = post("/download", {
+            "urls": url,
+            "quality": 27,          # Hi-Res; falls back on its own when absent
+            "embed_art": True,
+            "og_cover": True,       # full-resolution cover.jpg
+            "no_fallback": False,   # lower quality beats no album at all
+            "no_cover": False,
+            "no_db": True,          # library check is our authority, not its db
+            "albums_only": False,
+            "no_m3u": False,
+        })
+        if not r.get("ok"):
+            counts["fail"] += 1
+            record("FAIL", artist, album, f"queue rejected: {r.get('error')}")
+            continue
+
+        waited = 0
+        time.sleep(3)
+        while busy() and waited < DL_TIMEOUT:
+            time.sleep(POLL)
+            waited += POLL
+        if waited >= DL_TIMEOUT:
+            counts["fail"] += 1
+            record("FAIL", artist, album, f"timed out after {DL_TIMEOUT}s")
+            continue
+
+        time.sleep(2)
+        tail = log_since(off)
+        dirs = staging_dirs()
+        if not dirs:
+            reason = "no folder produced"
+            for marker in ("not available", "not streamable", "non_streamable",
+                           "Already downloaded", "Error", "error"):
+                if marker in tail:
+                    hit = [ln for ln in tail.splitlines() if marker in ln]
+                    if hit:
+                        reason = hit[-1].strip()[:160]
+                        break
+            counts["fail"] += 1
+            record("FAIL", artist, album, reason)
+            continue
+
+        folder = dirs[0]
+        fpath = os.path.join(QOBUZ_DIR, folder)
+        n_disc = flatten_discs(folder)
+        if n_disc:
+            print(f"  flattened {n_disc} tracks from disc subfolders", flush=True)
+        n_flac = len([f for f in os.listdir(fpath) if f.lower().endswith(".flac")])
+        if not n_flac:
+            counts["fail"] += 1
+            record("FAIL", artist, album, f"folder '{folder}' has no FLACs")
+            continue
+
+        res = subprocess.run(
+            [sys.executable, "integrate_album.py", folder, artist, album],
+            cwd=TOOLS, capture_output=True, text=True)
+        out = (res.stdout or "") + (res.stderr or "")
+        if "Integrated:" not in out:
+            counts["fail"] += 1
+            record("FAIL", artist, album, f"integrate failed: {out.strip()[-200:]}")
+            continue
+
+        # Safety net: integrate embeds art + whatever .lrc it fetched; this
+        # catches anything it missed without rescanning the whole library.
+        dest = None
+        for d in os.listdir(LIB):
+            if norm(d) == norm(artist):
+                cand = os.path.join(LIB, d)
+                for sub in os.listdir(cand):
+                    if norm(sub) == norm(album):
+                        dest = os.path.join(cand, sub)
+        if dest:
+            subprocess.run([sys.executable, "embed_metadata.py", "--apply", dest],
+                           cwd=TOOLS, capture_output=True, text=True)
+
+        counts["ok"] += 1
+        quality = ""
+        m = re.search(r"\[(\d+)B-([\d.]+)kHz\]", folder)
+        if m:
+            quality = f"{m.group(1)}bit/{m.group(2)}kHz"
+        record("OK", artist, album, f"{n_flac} tracks {quality}")
+
+    print(f"\n=== done: ok={counts['ok']} skip={counts['skip']} "
+          f"fail={counts['fail']}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

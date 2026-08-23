@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# stylus-shelf — a estante em grade de capas, fora da tela cheia.
+#
+# É a MESMA ideia da interface, disponível na área de trabalho sem sair do
+# que você está fazendo: uma grade, não uma lista. Uma lista com trezentos
+# nomes é um índice, e a resposta honesta a um índice acaba sendo
+# "embaralha"; numa estante você passa o olho e alguma capa chama.
+set -uo pipefail
+PY=/usr/share/stylus/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
+export PYTHONPATH=/usr/share/stylus/deck
+CACHE="$HOME/.cache/stylus/shelf.tsv"
+mkdir -p "$(dirname "$CACHE")"
+
+RAIZ=$("$PY" -c 'import vinyl; print(vinyl.library_root())')
+# Refaz o índice quando a raiz mudou de data — varrer custa ~1s e fazer isso
+# a cada abertura deixaria o menu lento sem motivo.
+if [[ ! -s $CACHE || $RAIZ -nt $CACHE ]]; then
+    "$PY" - <<'PYEOF' > "$CACHE"
+import os, vinyl
+vistos = vinyl.last_played()
+for f in vinyl.shelf(min_tracks=1):
+    art, nome = vinyl.folder_names(f)
+    cap = ""
+    try:
+        for c in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg"):
+            if os.path.isfile(os.path.join(f, c)):
+                cap = os.path.join(f, c); break
+    except OSError:
+        pass
+    print(f"{art}\t{nome}\t{cap}\t{f}")
+PYEOF
+fi
+
+escolha=$(awk -F'\t' '{
+    if ($3 != "") printf "%s — %s\0icon\x1f%s\n", $1, $2, $3
+    else          printf "%s — %s\n", $1, $2 }' "$CACHE" |
+    rofi -dmenu -i -p "estante" -show-icons \
+         -theme /usr/share/stylus/rofi-shelf.rasi \
+         -kb-accept-alt "" -kb-custom-1 "Shift+Return") || exit 0
+[[ -n $escolha ]] || exit 0
+alvo=$(awk -F'\t' -v q="$escolha" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE")
+[[ -n $alvo ]] || exit 0
+# Shift+Enter (código 10 do rofi) abre com o disco na tela.
+if [[ ${ROFI_RETV:-0} -eq 10 ]]; then
+    exec stylus-deck "$alvo"
+fi
+exec stylus-deck --no-scope "$alvo"

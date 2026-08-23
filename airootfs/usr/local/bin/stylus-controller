@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+#  stylus-controller — controles de videogame: o que está ligado e como parear
+#
+#      stylus-controller           o que está conectado agora
+#      stylus-controller --test    testar os botões de um controle
+#      stylus-controller --pair    como colocar cada controle em modo de pareamento
+#
+#  "O controle não funciona" is almost never one problem. It is: the kernel
+#  driver did not claim it, or it did and SDL cannot reach /dev/hidraw so there
+#  is no rumble and the buttons are labelled wrong, or it is a Bluetooth pad
+#  that was never paired because nobody knows the button combination. Each of
+#  those looks identical from the sofa.
+#
+#  So this says which one it is, in Portuguese, without anybody having to know
+#  what evtest or lsusb are.
+# ─────────────────────────────────────────────────────────────────────────────
+set -uo pipefail
+
+c_reset=$'\033[0m'; c_b=$'\033[1m'; c_grn=$'\033[1;32m'
+c_dim=$'\033[2m'; c_yel=$'\033[1;33m'; c_red=$'\033[1;31m'
+
+# The kernel's list of input devices. A variable so the test suite can point it
+# at a file describing a controller this machine does not have - which is the
+# only way to check that a DualSense is recognised as one without a DualSense.
+DEVICES=${STYLUS_CONTROLLER_DEVICES:-/proc/bus/input/devices}
+
+# ── What is connected ────────────────────────────────────────────────────────
+#  Read from /proc/bus/input/devices rather than through a tool, so this needs
+#  nothing installed. Each block is one device; the ones with a "js" handler
+#  are the ones the kernel considers gamepads.
+list_pads() {   # emits: <js device>\t<name>\t<vendor>:<product>
+    local name="" handlers="" ids=""
+    while IFS= read -r line; do
+        case $line in
+            'N: Name='*) name=${line#*=}; name=${name//\"/} ;;
+            'I: '*)      ids=$line ;;
+            'H: Handlers='*)
+                handlers=${line#*=}
+                if [[ $handlers == *js* ]]; then
+                    local js="" vendor="" product="" word
+                    for word in $handlers; do
+                        [[ $word == js* ]] && js=$word
+                    done
+                    vendor=$(sed -n 's/.*Vendor=\([0-9a-f]*\).*/\1/p' <<<"$ids")
+                    product=$(sed -n 's/.*Product=\([0-9a-f]*\).*/\1/p' <<<"$ids")
+                    printf '%s\t%s\t%s:%s\n' "$js" "$name" "$vendor" "$product"
+                fi
+                name=""; handlers=""; ids="" ;;
+        esac
+    done < "$DEVICES" 2>/dev/null
+}
+
+# The families the kernel has a real driver for. Anything else still works as a
+# plain gamepad; it just has no name worth printing.
+family_for() {  # family_for <vendor:product>
+    case ${1%%:*} in
+        054c) case $1 in
+                  054c:0ce6|054c:0df2) echo "DualSense (PS5)" ;;
+                  054c:05c4|054c:09cc|054c:0ba0) echo "DualShock 4 (PS4)" ;;
+                  054c:0268) echo "DualShock 3 (PS3)" ;;
+                  *) echo "controle da Sony" ;;
+              esac ;;
+        057e) case $1 in
+                  057e:2009) echo "Switch Pro" ;;
+                  057e:2006|057e:2007) echo "Joy-Con" ;;
+                  *) echo "controle da Nintendo" ;;
+              esac ;;
+        045e) echo "controle do Xbox" ;;
+        2dc8) echo "8BitDo" ;;
+        28de) echo "controle da Valve" ;;
+        *)    echo "" ;;
+    esac
+}
+
+# Can this account reach the hidraw node? That is the difference between a
+# controller that rumbles and reports its real name, and one that does not.
+hidraw_ok() {
+    local node found=1
+    for node in /dev/hidraw*; do
+        [[ -e $node ]] || continue
+        found=0
+        [[ -r $node && -w $node ]] && return 0
+    done
+    return $(( found ? 2 : 1 ))
+}
+
+report() {
+    printf '\n  %sIFOS — controles%s\n\n' "$c_b" "$c_reset"
+
+    local any=0 js name ids family
+    while IFS=$'\t' read -r js name ids; do
+        [[ -n $js ]] || continue
+        any=1
+        family=$(family_for "$ids")
+        printf '    %s%s%s\n' "$c_grn" "$name" "$c_reset"
+        if [[ -n $family ]]; then
+            printf '      %s%s · /dev/input/%s%s\n' "$c_dim" "$family" "$js" "$c_reset"
+        else
+            printf '      %s/dev/input/%s%s\n' "$c_dim" "$js" "$c_reset"
+        fi
+        if [[ ! -r /dev/input/$js ]]; then
+            printf '      %s!%s Este usuário não consegue ler o controle.\n' "$c_yel" "$c_reset"
+        fi
+        printf '\n'
+    done < <(list_pads)
+
+    if (( ! any )); then
+        printf '    Nenhum controle conectado.\n\n'
+        printf '    Ligue por cabo USB, ou pareie por Bluetooth:\n'
+        printf '      %sifos-controller --pair%s\n\n' "$c_b" "$c_reset"
+        return
+    fi
+
+    hidraw_ok
+    case $? in
+        0) printf '    %s✓%s Vibração, giroscópio e os nomes certos dos botões disponíveis.\n\n' \
+                  "$c_grn" "$c_reset" ;;
+        1) printf '    %s!%s O sistema encontrou o controle, mas este usuário não tem acesso\n' \
+                  "$c_yel" "$c_reset"
+           printf '      completo a ele: a vibração e o giroscópio não vão funcionar, e os\n'
+           printf '      jogos podem mostrar os botões com os nomes errados.\n\n'
+           printf '      Costuma ser um sistema que ainda não recebeu as regras novas.\n'
+           printf '      Rode %sifos-update%s e reinicie.\n\n' "$c_b" "$c_reset" ;;
+        *) : ;;
+    esac
+
+    printf '    Para testar os botões:  %sifos-controller --test%s\n\n' "$c_b" "$c_reset"
+}
+
+pair_help() {
+    cat <<EOF
+
+  ${c_b}Parear um controle por Bluetooth${c_reset}
+
+  Coloque o controle em modo de pareamento e ele aparece na lista do Bluetooth
+  na barra (o ícone de Bluetooth, clique com o botão esquerdo).
+
+    ${c_grn}DualSense (PS5)${c_reset}
+      Segure ${c_b}Create${c_reset} (o botão à esquerda do touchpad) e o botão ${c_b}PS${c_reset} juntos
+      até a barra de luz piscar rápido em azul.
+
+    ${c_grn}DualShock 4 (PS4)${c_reset}
+      Segure ${c_b}Share${c_reset} e o botão ${c_b}PS${c_reset} juntos até a barra de luz piscar
+      branco em pulsos duplos.
+
+    ${c_grn}Switch Pro / Joy-Con${c_reset}
+      Segure o botão ${c_b}Sync${c_reset} (redondo, ao lado do conector USB-C, ou entre
+      os gatilhos SL/SR no Joy-Con) até as luzes correrem de um lado ao outro.
+
+    ${c_grn}Xbox (Series / One)${c_reset}
+      Ligue o controle, depois segure o botão ${c_b}Pair${c_reset} (em cima, ao lado do
+      conector) até o botão Xbox piscar rápido.
+
+  Por cabo USB não é preciso parear nada: basta ligar.
+
+EOF
+}
+
+test_pad() {
+    local js=""
+    while IFS=$'\t' read -r js _name _ids; do break; done < <(list_pads)
+    if [[ -z $js ]]; then
+        printf '\n  Nenhum controle conectado para testar.\n\n'
+        return 1
+    fi
+    if [[ ! -r /dev/input/$js ]]; then
+        printf '\n  %s✗%s Sem permissão para ler /dev/input/%s.\n\n' "$c_red" "$c_reset" "$js"
+        return 1
+    fi
+
+    printf '\n  %sTestando /dev/input/%s%s — aperte os botões e mexa as alavancas.\n' \
+           "$c_b" "$js" "$c_reset"
+    printf '  %sCtrl+C para sair.%s\n\n' "$c_dim" "$c_reset"
+
+    # struct js_event is 8 bytes: __u32 time, __s16 value, __u8 type, __u8 number.
+    # Type 0x01 is a button, 0x02 an axis; either may be OR'd with 0x80 on the
+    # initial burst the driver sends to describe the device's resting state,
+    # which is not somebody pressing anything and must not be printed.
+    python3 - "/dev/input/$js" <<'PY'
+import struct
+import sys
+
+BUTTONS = {
+    0: "A / ✕",   1: "B / ○",   2: "X / △",  3: "Y / □",
+    4: "L1 / LB", 5: "R1 / RB", 6: "L2",     7: "R2",
+    8: "Select",  9: "Start",  10: "guia",  11: "L3", 12: "R3",
+}
+AXES = {
+    0: "alavanca esquerda ↔", 1: "alavanca esquerda ↕",
+    2: "gatilho esquerdo",    3: "alavanca direita ↔",
+    4: "alavanca direita ↕",  5: "gatilho direito",
+    6: "direcional ↔",        7: "direcional ↕",
+}
+
+try:
+    handle = open(sys.argv[1], "rb", buffering=0)
+except OSError as error:
+    print("  não deu para abrir: %s" % error)
+    raise SystemExit(1)
+
+try:
+    while True:
+        data = handle.read(8)
+        if not data or len(data) < 8:
+            break
+        _time, value, kind, number = struct.unpack("<IhBB", data)
+        if kind & 0x80:          # the driver describing the resting state
+            continue
+        if kind & 0x01:
+            name = BUTTONS.get(number, "botão %d" % number)
+            print("  %-24s %s" % (name, "pressionado" if value else "solto"))
+        elif kind & 0x02 and abs(value) > 8000:
+            name = AXES.get(number, "eixo %d" % number)
+            print("  %-24s %+d" % (name, value))
+except KeyboardInterrupt:
+    print()
+PY
+}
+
+case ${1:-} in
+    -h|--help) sed -n '3,7p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    --pair)    pair_help; exit 0 ;;
+    --test)    test_pad; exit $? ;;
+    "")        report; exit 0 ;;
+    *)  printf 'stylus-controller: opção desconhecida: %s\n' "$1" >&2
+        sed -n '3,7p' "$0" | sed 's/^# \?//' >&2
+        exit 2 ;;
+esac

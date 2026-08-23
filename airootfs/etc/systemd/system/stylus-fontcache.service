@@ -1,0 +1,31 @@
+[Unit]
+Description=Build the fontconfig cache before the desktop starts
+Documentation=man:fc-cache(1)
+# The cache cannot be baked into the image: mkarchiso builds inside a nested
+# user namespace on overlayfs, where fontconfig mistakes repeated inode numbers
+# for symlink loops, skips every font directory and writes nothing.
+#
+# So it is built here instead. Without it the first process to ask for a font
+# pays for scanning ~100 font files off squashfs - which is i3, and it blocks
+# in Pango long enough that the live session shows a black screen for about a
+# minute, with any terminal that opens meanwhile rendering blank.
+#
+# Ordering before the display manager means that cost is paid during boot,
+# where plymouth is on screen, instead of after login against a black desktop.
+Before=display-manager.service
+After=local-fs.target
+ConditionPathExists=/usr/bin/fc-cache
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# No --force: on an installed system the cache is already warm and this returns
+# almost immediately.
+ExecStart=/usr/bin/fc-cache --system-only
+TimeoutStartSec=180
+Nice=-5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=0
+
+[Install]
+WantedBy=multi-user.target

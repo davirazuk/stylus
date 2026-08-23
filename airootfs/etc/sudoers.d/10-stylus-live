@@ -1,0 +1,8 @@
+# STYLUS live medium only.
+#
+# The live user runs the installer, which needs root. This file exists solely on
+# the ISO's read-only root and is never copied into an installed system - there,
+# the user you create gets ordinary password-prompted sudo via %wheel.
+#
+# Must be mode 0440; see file_permissions in profiledef.sh.
+stylus ALL=(ALL:ALL) NOPASSWD: ALL

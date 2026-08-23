@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-audio — o caminho do sinal, medido, não prometido
+# ═══════════════════════════════════════════════════════════════════════════
+#  Toda distribuição que se diz boa de áudio afirma alguma coisa sobre o
+#  caminho do sinal e não te dá jeito nenhum de conferir. Isto é o jeito.
+#
+#  Responde três perguntas, nessa ordem, porque é essa a ordem em que elas
+#  importam:
+#
+#    1. A que taxa o grafo está rodando AGORA?
+#    2. O arquivo que está tocando tem essa mesma taxa, ou está sendo
+#       convertido no caminho?
+#    3. Se está sendo convertido, QUEM está segurando o grafo na outra taxa?
+#
+#  A terceira é a que nenhuma ferramenta responde e é a única acionável. Um
+#  grafo compartilhado só toca numa taxa por vez: se o navegador abriu um
+#  stream de 48k, o seu FLAC de 44,1k vai ser reamostrado e não há
+#  configuração no mundo que evite isso enquanto aquela aba estiver aberta.
+#  Saber qual aba é resolve; "ative o modo bit-perfect" não resolve.
+#
+#      stylus audio            o estado agora
+#      stylus audio --watch    acompanha, para ver a taxa mudar entre faixas
+#      stylus audio --devices  o que cada conversor aceita de verdade
+# ═══════════════════════════════════════════════════════════════════════════
+import argparse
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+D = "\033[2m"; B = "\033[1m"; A = "\033[38;5;117m"
+OK = "\033[38;5;114m"; WARN = "\033[38;5;215m"; BAD = "\033[38;5;210m"; O = "\033[0m"
+
+AUDIO_EXT = (".flac", ".wav", ".mp3", ".ogg", ".opus", ".m4a", ".aac", ".wma", ".ape")
+
+
+def run(cmd, timeout=6):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def pw_dump():
+    out = run(["pw-dump"], timeout=10)
+    try:
+        return json.loads(out) if out.strip() else []
+    except json.JSONDecodeError:
+        return []
+
+
+def graph_rate(dump):
+    """A taxa em que o grafo está rodando, do nó Core.
+
+    Vem do objeto Core e não de um sink: o sink pode anunciar o que quiser, o
+    relógio do grafo é um só e é ele que decide se houve conversão.
+    """
+    for o in dump:
+        if o.get("type", "").endswith("Core"):
+            p = (o.get("info") or {}).get("props") or {}
+            r = p.get("default.clock.rate")
+            forced = p.get("default.clock.force-rate")
+            allowed = p.get("default.clock.allowed-rates")
+            if r:
+                return int(forced or r), allowed
+    # Cai para o pw-metadata, que existe mesmo quando o dump não traz o Core.
+    m = re.search(r"clock\.rate.*?(\d{4,6})", run(["pw-metadata", "-n", "settings"]))
+    return (int(m.group(1)) if m else 0), None
+
+
+def sinks(dump):
+    out = []
+    for o in dump:
+        if o.get("type", "").endswith("Node"):
+            p = (o.get("info") or {}).get("props") or {}
+            if p.get("media.class") in ("Audio/Sink", "Audio/Source"):
+                out.append(p)
+    return out
+
+
+def streams(dump):
+    """Quem está tocando alguma coisa, e a que taxa cada um pediu."""
+    out = []
+    for o in dump:
+        if not o.get("type", "").endswith("Node"):
+            continue
+        info = o.get("info") or {}
+        p = info.get("props") or {}
+        if p.get("media.class") != "Stream/Output/Audio":
+            continue
+        rate = 0
+        for par in (info.get("params") or {}).get("Format", []) or []:
+            if isinstance(par, dict) and par.get("rate"):
+                rate = int(par["rate"])
+        out.append({
+            "name": p.get("application.name") or p.get("node.name") or "?",
+            "binary": p.get("application.process.binary") or "",
+            "rate": rate or int(p.get("audio.rate") or 0),
+            "state": info.get("state") or "",
+        })
+    return out
+
+
+def playing_file():
+    """O arquivo que está tocando, via MPRIS, e a taxa REAL dele no disco."""
+    url = run(["playerctl", "metadata", "--format", "{{xesam:url}}"], timeout=12).strip()
+    if not url.startswith("file://"):
+        return None, 0, 0
+    from urllib.parse import unquote
+    path = unquote(url[7:])
+    if not os.path.isfile(path):
+        return None, 0, 0
+    out = run(["ffprobe", "-v", "quiet", "-select_streams", "a:0",
+               "-show_entries", "stream=sample_rate,bits_per_raw_sample,bits_per_sample",
+               "-of", "default=nw=1", path], timeout=10)
+    rate = bits = 0
+    for line in out.splitlines():
+        k, _, v = line.partition("=")
+        if k == "sample_rate" and v.isdigit():
+            rate = int(v)
+        elif k in ("bits_per_raw_sample", "bits_per_sample") and v.isdigit() and int(v):
+            bits = bits or int(v)
+    return path, rate, bits
+
+
+def card_caps():
+    """O que cada placa aceita, lido do descritor e não de um catálogo."""
+    out = []
+    for stream0 in sorted(glob.glob("/proc/asound/card*/stream0")):
+        try:
+            txt = open(stream0, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        card = stream0.split("/")[3]
+        name = ""
+        try:
+            name = open(f"/proc/asound/{card}/id", encoding="utf-8").read().strip()
+        except OSError:
+            pass
+        rates, fmts = set(), set()
+        for m in re.finditer(r"Rates: ([\d, ]+)", txt):
+            rates.update(int(x) for x in re.findall(r"\d+", m.group(1)))
+        for m in re.finditer(r"Format: (\S+)", txt):
+            fmts.add(m.group(1))
+        out.append((name or card, sorted(rates), sorted(fmts), txt.splitlines()[0][:60]))
+    return out
+
+
+def rates_of(v):
+    """Extrai as taxas de um valor que pode vir de três formas.
+
+    O pw-dump devolve allowed-rates ora como lista de inteiros, ora como
+    string "[ 44100 48000 ]", ora como um número solto — depende da versão e
+    de por onde a propriedade passou. Puxar os dígitos cobre as três sem
+    tentar adivinhar qual é.
+    """
+    if v is None:
+        return []
+    if isinstance(v, (int, float)):
+        return [int(v)]
+    if isinstance(v, str):
+        return [int(x) for x in re.findall(r"\d{4,6}", v)]
+    out = []
+    for item in v:
+        out.extend(rates_of(item))
+    return out
+
+
+def bar(label, value, colour=A):
+    print(f"  {D}{label:<22}{O}{colour}{value}{O}")
+
+
+def report(once=True):
+    dump = pw_dump()
+    if not dump:
+        print(f"  {BAD}o PipeWire não respondeu.{O} "
+              f"{D}systemctl --user status pipewire{O}")
+        return 1
+    rate, allowed = graph_rate(dump)
+    path, frate, fbits = playing_file()
+    strs = [s for s in streams(dump) if s["state"] == "running"]
+
+    print()
+    print(f"  {B}o caminho do sinal{O}")
+    bar("grafo agora", f"{rate/1000:g} kHz" if rate else "?")
+    allowed_rates = rates_of(allowed)
+    if allowed_rates:
+        bar("taxas permitidas",
+            " ".join(f"{v/1000:g}" for v in allowed_rates) + " kHz", D)
+
+    dev = next((p for p in sinks(dump)
+                if p.get("media.class") == "Audio/Sink"
+                and p.get("node.name", "").startswith("alsa_output")), None)
+    if dev:
+        bar("saída", dev.get("node.description") or dev.get("node.name", "?"))
+        multi = dev.get("api.alsa.multirate")
+        bar("pode trocar de taxa", "sim" if multi else "NÃO",
+            OK if multi else WARN)
+
+    print()
+    if path:
+        print(f"  {B}o que está tocando{O}")
+        bar("arquivo", os.path.basename(path))
+        bar("no disco", f"{frate/1000:g} kHz"
+                        + (f" / {fbits} bit" if fbits else ""))
+        if not rate or not frate:
+            pass
+        elif frate == rate:
+            print(f"\n  {OK}▸ sem conversão. o arquivo está chegando "
+                  f"como foi gravado.{O}")
+        else:
+            print(f"\n  {BAD}▸ REAMOSTRADO {frate/1000:g} → {rate/1000:g} kHz{O}")
+            outros = [s for s in strs if s["rate"] and s["rate"] != frate]
+            if outros:
+                print(f"  {D}    quem está segurando o grafo nessa taxa:{O}")
+                for s in outros:
+                    print(f"  {D}      {s['name']} "
+                          f"({s['rate']/1000:g} kHz){O}")
+                print(f"  {D}    feche isso e a próxima faixa já abre em "
+                      f"{frate/1000:g}.{O}")
+            elif allowed_rates and frate not in allowed_rates:
+                print(f"  {D}    {frate/1000:g} kHz não está na lista de taxas "
+                      f"permitidas. veja /etc/pipewire/pipewire.conf.d/{O}")
+            else:
+                print(f"  {D}    nada mais está tocando — o dispositivo ainda "
+                      f"não soltou a taxa anterior.{O}")
+                print(f"  {D}    ele solta sozinho depois de alguns segundos "
+                      f"parado.{O}")
+    else:
+        print(f"  {D}nada tocando de um arquivo local agora.{O}")
+        print(f"  {D}ponha um disco — `stylus record --play` — e rode de novo.{O}")
+    print()
+    return 0
+
+
+def devices():
+    print()
+    print(f"  {B}o que cada conversor aceita{O}  {D}(do descritor, "
+          f"não de um catálogo){O}")
+    caps = card_caps()
+    if not caps:
+        print(f"  {D}nenhuma placa USB com descritor legível. "
+              f"placas internas não expõem isto.{O}\n")
+        return 0
+    for name, rates, fmts, first in caps:
+        print(f"\n  {A}{name}{O}  {D}{first}{O}")
+        if rates:
+            print(f"    {D}taxas   {O}" + " ".join(f"{r/1000:g}" for r in rates) + " kHz")
+        if fmts:
+            print(f"    {D}formatos{O} " + " ".join(fmts))
+    print()
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--watch", action="store_true",
+                    help="fica acompanhando, para ver a taxa mudar entre faixas")
+    ap.add_argument("--devices", action="store_true",
+                    help="o que cada conversor aceita")
+    args = ap.parse_args()
+    if args.devices:
+        return devices()
+    if not args.watch:
+        return report()
+    try:
+        while True:
+            os.system("clear")
+            report()
+            print(f"  {D}ctrl-c para sair{O}")
+            time.sleep(2.0)
+    except KeyboardInterrupt:
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

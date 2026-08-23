@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=STYLUS — modo música
+Comment=A tela cheia, e nada mais
+Exec=/usr/local/bin/stylus-session music
+TryExec=/usr/local/bin/stylus-session
+Type=Application
+DesktopNames=STYLUS

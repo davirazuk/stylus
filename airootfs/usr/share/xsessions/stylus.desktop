@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=STYLUS
+Comment=Modo música ou área de trabalho, o que você escolheu por último
+Exec=/usr/local/bin/stylus-session
+TryExec=/usr/local/bin/stylus-session
+Type=Application
+DesktopNames=STYLUS

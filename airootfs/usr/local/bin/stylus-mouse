@@ -1,0 +1,544 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+#  stylus-mouse — velocidade do mouse, e o que cada botão dele faz
+#
+#      stylus-mouse                 os mouses ligados e a velocidade atual
+#      stylus-mouse --speed N       velocidade, de -10 (lento) a 10 (rápido)
+#      stylus-mouse --faster        um passo mais rápido
+#      stylus-mouse --slower        um passo mais lento
+#      stylus-mouse --flat          sem aceleração (para jogos e para desenhar)
+#      stylus-mouse --adaptive      com aceleração (o padrão do sistema)
+#      stylus-mouse --natural       inverte o sentido da rolagem
+#      stylus-mouse --test          mostra o que cada botão do mouse envia
+#      stylus-mouse --learn         usa um botão do mouse para trocar a sensibilidade
+#      stylus-mouse --cycle         passa para o próximo nível de sensibilidade
+#      stylus-mouse --forget        desfaz o --learn
+#      stylus-mouse --apply         reaplica o que foi salvo (roda no login)
+#
+#  The DPI button on a gaming mouse is the thing this exists for. On almost
+#  every one of them that button is handled inside the mouse itself: it changes
+#  the sensor's resolution in firmware and sends nothing at all to the computer.
+#  Linux therefore cannot show a DPI indicator, cannot bind the button, and
+#  cannot tell you it was pressed - and from the desk that is indistinguishable
+#  from a broken button.
+#
+#  So: --test says plainly whether the button emits anything, which settles it
+#  in five seconds; and the speed controls here do the job the DPI button was
+#  being pressed for, on any mouse, whether or not it has one.
+#
+#  And when a button *does* reach the computer - which on these mice is usually
+#  a side button even when the DPI one is deaf - --learn turns it into a DPI
+#  button in software. Press it, and the pointer speed steps through three
+#  levels with the current one named on screen. That is what the DPI button was
+#  for; this is the same thing done where the computer can see it.
+#
+#  Buttons are read from X, not from /dev/input. That is not a preference, it
+#  is the only thing that works: systemd grants a logged-in user access to an
+#  input device only when it is a joystick - see the "joysticks" stanza in
+#  /usr/lib/udev/rules.d/70-uaccess.rules - so a mouse's event node is
+#  root-only, and reading it as a student silently found nothing at all. That
+#  was the first version of this, and it was the reason the DPI button was
+#  never detected.
+#
+#  Going through X is also the better answer on its own terms. X already
+#  delivers every button and key the mouse sends to the session, so what this
+#  sees is exactly what an application would see: if the button does not show
+#  up here, no program on the machine can use it, and that is the answer.
+#
+#  Mice whose DPI really can be set from the computer are the ones libratbag
+#  supports, which is most Logitech, Razer, SteelSeries and Roccat hardware.
+#  That is `piper` in the STYLUS Software catalog, under Hardware.
+# ─────────────────────────────────────────────────────────────────────────────
+set -uo pipefail
+
+c_reset=$'\033[0m'; c_b=$'\033[1m'; c_grn=$'\033[1;32m'
+c_dim=$'\033[2m'; c_yel=$'\033[1;33m'; c_red=$'\033[1;31m'
+
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/stylus/mouse"
+# The running watcher's pid. By pid rather than by `pkill -f`, which matches the
+# pattern against every command line on the machine: a terminal displaying this
+# file, an editor with it open, or the shell of a script that merely mentions
+# the daemon all match, and pkill kills them. That is not hypothetical - it
+# killed the shell running the test suite.
+PIDFILE="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/stylus-mouse.pid"
+
+# The kernel's list of input devices, and the X property names libinput uses.
+# A variable so the test suite can point it at a file describing a mouse this
+# machine does not have.
+DEVICES=${STYLUS_MOUSE_DEVICES:-/proc/bus/input/devices}
+
+PROP_SPEED="libinput Accel Speed"
+PROP_PROFILE="libinput Accel Profile Enabled"
+PROP_NATURAL="libinput Natural Scrolling Enabled"
+
+have_x() { [[ -n ${DISPLAY:-} ]] && command -v xinput >/dev/null 2>&1; }
+
+# ── Which devices are mice ───────────────────────────────────────────────────
+#  xinput is the right source for the X device ids, but it is not installed on
+#  every machine and says nothing about what the hardware is. The kernel list
+#  answers "what is plugged in"; xinput answers "what can be configured".
+xinput_pointers() {   # emits: <id>\t<name>
+    have_x || return 0
+    # [[:space:]], not a literal space: xinput separates the name from the id
+    # with a tab, and the first version of this matched nothing at all on a
+    # real machine while looking perfectly reasonable.
+    xinput list --short 2>/dev/null |
+        sed -n 's/^[^a-zA-Z]*\(.*[^[:space:]]\)[[:space:]]*id=\([0-9][0-9]*\).*slave[[:space:]]*pointer.*/\2\t\1/p'
+}
+
+# The kernel's view: blocks that carry a "mouse" handler are pointing devices.
+kernel_mice() {       # emits: <event device>\t<name>\t<vendor>:<product>
+    local name="" handlers="" ids=""
+    while IFS= read -r line; do
+        case $line in
+            'N: Name='*) name=${line#*=}; name=${name//\"/} ;;
+            'I: '*)      ids=$line ;;
+            'H: Handlers='*)
+                handlers=${line#*=}
+                if [[ $handlers == *mouse* ]]; then
+                    local event="" word vendor="" product=""
+                    for word in $handlers; do
+                        [[ $word == event* ]] && event=$word
+                    done
+                    vendor=$(sed -n 's/.*Vendor=\([0-9a-f]*\).*/\1/p' <<<"$ids")
+                    product=$(sed -n 's/.*Product=\([0-9a-f]*\).*/\1/p' <<<"$ids")
+                    [[ -n $event ]] && printf '%s\t%s\t%s:%s\n' "$event" "$name" "$vendor" "$product"
+                fi
+                name=""; handlers=""; ids="" ;;
+        esac
+    done < "$DEVICES" 2>/dev/null
+}
+
+# Vendors libratbag has a device database for. Not a promise that a given model
+# is in it - only Piper can answer that - but enough to avoid sending somebody
+# to install a program that will open and report nothing, which is what happens
+# on the budget mice built around SINOWEALTH and Holtek controllers.
+ratbag_vendor() {   # ratbag_vendor <vendor:product>
+    case ${1%%:*} in
+        046d|1532|1038|1e7d|0b05|2516) return 0 ;;   # Logitech, Razer, SteelSeries,
+        *)                             return 1 ;;   # Roccat, ASUS, Cooler Master
+    esac
+}
+
+# Touchpads are pointers too, and they have their own configuration in
+# /etc/X11/xorg.conf.d/30-touchpad.conf. Changing the speed here should not
+# quietly retune the laptop's touchpad along with the mouse on the desk.
+is_touchpad() { [[ ${1,,} == *touchpad* || ${1,,} == *trackpad* ]]; }
+
+# ── Reading and writing the settings ─────────────────────────────────────────
+current_speed() {
+    have_x || return 1
+    local id name
+    while IFS=$'\t' read -r id name; do
+        is_touchpad "$name" && continue
+        xinput list-props "$id" 2>/dev/null |
+            sed -n "s/.*$PROP_SPEED ([0-9]*)://p" | tr -d ' \t' | head -1
+        return 0
+    done < <(xinput_pointers)
+    return 1
+}
+
+apply_prop() {  # apply_prop <property> <values...>
+    have_x || return 1
+    local prop=$1; shift
+    local id name applied=1
+    while IFS=$'\t' read -r id name; do
+        is_touchpad "$name" && continue
+        # Not every pointer has every property - a tablet or a virtual device
+        # will not - so a failure on one is not a failure overall.
+        xinput list-props "$id" 2>/dev/null | grep -q "$prop" || continue
+        xinput set-prop "$id" "$prop" "$@" 2>/dev/null && applied=0
+    done < <(xinput_pointers)
+    return $applied
+}
+
+save() {    # save <key> <value>
+    mkdir -p "$(dirname "$CONF")" 2>/dev/null || return 0
+    local tmp="$CONF.new"
+    { [[ -f $CONF ]] && grep -v "^$1=" "$CONF"; printf '%s=%s\n' "$1" "$2"; } \
+        > "$tmp" 2>/dev/null && mv "$tmp" "$CONF"
+}
+
+load() {    # load <key> [default]
+    [[ -f $CONF ]] || { printf '%s' "${2:-}"; return; }
+    local value
+    value=$(sed -n "s/^$1=//p" "$CONF" | tail -1)
+    printf '%s' "${value:-${2:-}}"
+}
+
+# libinput takes -1..1. A student setting "3" means something between the
+# default and the fastest, not three times the speed.
+to_libinput() { awk -v n="$1" 'BEGIN{ v=n/10; if (v>1) v=1; if (v<-1) v=-1; printf "%.2f", v }'; }
+from_libinput() { awk -v v="$1" 'BEGIN{ printf "%d", (v*10) + (v>=0 ? 0.5 : -0.5) }'; }
+
+set_speed() {   # set_speed <-10..10>
+    local step=$1 value
+    [[ $step =~ ^-?[0-9]+$ ]] || { echo "stylus-mouse: velocidade tem de ser um número de -10 a 10" >&2; return 2; }
+    (( step > 10 )) && step=10
+    (( step < -10 )) && step=-10
+    value=$(to_libinput "$step")
+    if apply_prop "$PROP_SPEED" "$value"; then
+        save SPEED "$step"
+        printf '  Velocidade do mouse: %s%s%s\n' "$c_b" "$step" "$c_reset"
+        if command -v notify-send >/dev/null 2>&1; then
+            timeout 3 notify-send -a STYLUS -t 1200 \
+                --hint=string:x-dunst-stack-tag:stylus-mouse \
+                "Velocidade do mouse" "$step" 2>/dev/null || true
+        fi
+        return 0
+    else
+        printf '  %s!%s Nenhum mouse aceitou a mudança.\n' "$c_yel" "$c_reset"
+        return 1
+    fi
+}
+
+# ── A DPI button, in software ────────────────────────────────────────────────
+#  Three levels, because that is what the button on the mouse does. Written as
+#  the -10..10 scale the rest of the tool uses rather than as DPI numbers: the
+#  sensor's resolution is not being changed and saying otherwise would be a lie.
+CYCLE_STEPS=(0 3 6)
+CYCLE_NAMES=(normal rápido "muito rápido")
+
+cycle_speed() {
+    local current index=0 i
+    current=$(load SPEED 0)
+    for i in "${!CYCLE_STEPS[@]}"; do
+        if [[ ${CYCLE_STEPS[i]} == "$current" ]]; then
+            index=$(( (i + 1) % ${#CYCLE_STEPS[@]} ))
+            break
+        fi
+    done
+    # A speed set by hand is not one of the three; the next press starts the
+    # cycle from the beginning rather than pretending it was.
+    apply_prop "$PROP_SPEED" "$(to_libinput "${CYCLE_STEPS[index]}")" || return 1
+    save SPEED "${CYCLE_STEPS[index]}"
+    printf '  Sensibilidade: %s%s%s\n' "$c_b" "${CYCLE_NAMES[index]}" "$c_reset"
+    if command -v notify-send >/dev/null 2>&1; then
+        timeout 3 notify-send -a STYLUS -t 1200 \
+            --hint=string:x-dunst-stack-tag:stylus-mouse \
+            "Sensibilidade do mouse" "${CYCLE_NAMES[index]}" 2>/dev/null || true
+    fi
+    return 0
+}
+
+# Everything the mouse sends, as X sees it.
+#
+# `xinput test-xi2 --root` asks the server for raw events on the root window:
+# every button and every key, whatever has focus, with no grab and no special
+# privilege. Two lines matter - the event type, then the detail on the line
+# after it - so the type is remembered until its detail arrives.
+#
+# Emits "button N" or "key N". A key detail is an X keycode, which is the
+# kernel code plus eight; it is kept as X sees it, since that is the only form
+# anything else here will ever compare against.
+x_events() {
+    xinput test-xi2 --root 2>/dev/null |
+    awk '
+        /RawButtonPress/ { kind = "button"; next }
+        /RawKeyPress/    { kind = "key";    next }
+        /^ *detail:/     { if (kind != "") { print kind, $2; fflush(); kind = "" } next }
+        /^EVENT/         { kind = "" }
+    '
+}
+
+# What to call an X button number, for somebody reading the output.
+button_name() {
+    case $1 in
+        1) echo "botão esquerdo" ;;
+        2) echo "botão do meio" ;;
+        3) echo "botão direito" ;;
+        4|5) echo "rodinha" ;;
+        6|7) echo "rodinha para o lado" ;;
+        8) echo "botão lateral (voltar)" ;;
+        9) echo "botão lateral (avançar)" ;;
+        *) echo "botão $1" ;;
+    esac
+}
+
+# Watch for the learned button and cycle when it is pressed.
+#
+# Through X for the same reason as everything else above, and it costs nothing:
+# xinput blocks on the X socket until something is pressed.
+stop_daemon() {
+    local pid
+    [[ -r $PIDFILE ]] || return 0
+    pid=$(cat "$PIDFILE" 2>/dev/null)
+    # Only if it is still one of ours: pids are reused, and killing whatever
+    # inherited this number would be worse than leaving a watcher running.
+    if [[ $pid =~ ^[0-9]+$ ]] &&
+       grep -qa 'stylus-mouse' "/proc/$pid/cmdline" 2>/dev/null; then
+        kill "$pid" 2>/dev/null
+    fi
+    rm -f "$PIDFILE"
+}
+
+watch_button() {
+    local want; want=$(load BUTTON)
+    # A bare number is what the first version stored: a kernel event code,
+    # from a device it was never able to read. Nothing was ever bound through
+    # it, so it is ignored rather than migrated.
+    [[ $want == button:* || $want == key:* ]] || return 1
+    have_x || return 1
+
+    mkdir -p "$(dirname "$PIDFILE")" 2>/dev/null
+    printf '%s\n' "$$" > "$PIDFILE" 2>/dev/null
+    trap 'rm -f "$PIDFILE"' EXIT
+
+    local kind=${want%%:*} number=${want#*:}
+    local seen_kind seen_number
+    x_events |
+    while read -r seen_kind seen_number; do
+        [[ $seen_kind == "$kind" && $seen_number == "$number" ]] || continue
+        cycle_speed >/dev/null
+    done
+}
+
+learn_button() {
+    if ! have_x; then
+        printf '\n  %s✗%s Isto precisa da sessão gráfica; abra pelo menu do STYLUS.\n\n' \
+               "$c_red" "$c_reset"
+        return 1
+    fi
+
+    printf '\n  %sAperte agora o botão que você quer usar para trocar a sensibilidade.%s\n' \
+           "$c_b" "$c_reset"
+    printf '  Pode ser o de DPI, se ele chegar até aqui, ou um dos laterais.\n'
+    printf '  %sOs três botões normais e a rodinha não valem — já têm função.%s\n\n' \
+           "$c_dim" "$c_reset"
+
+    # Buttons 1-7 are left, middle, right and the wheel: taking one of those
+    # would cost somebody their left click.
+    #
+    # Process substitution rather than a pipe, so the loop runs in this shell
+    # and what it captures survives it.
+    local kind="" number="" k n
+    while read -r k n; do
+        case "$k:$n" in button:[1-7]) continue ;; esac
+        kind=$k; number=$n
+        break
+    done < <(timeout 30 bash -c "$(declare -f x_events); x_events" 2>/dev/null)
+
+    if [[ -z $kind || -z $number ]]; then
+        printf '  Nenhum botão chegou ao X em 30 segundos.\n\n'
+        printf '  Se você apertou o botão de DPI, é porque ele é resolvido dentro do\n'
+        printf '  mouse e não manda nada — nenhum programa desta máquina consegue vê-lo,\n'
+        printf '  e não há como usá-lo. Tente de novo com um botão lateral, que quase\n'
+        printf '  sempre chega:\n\n'
+        printf '    %sifos-mouse --learn%s\n\n' "$c_b" "$c_reset"
+        return 1
+    fi
+
+    save BUTTON "$kind:$number"
+    if [[ $kind == button ]]; then
+        printf '  %s✓%s %s: agora ele passa entre %s.\n\n' \
+               "$c_grn" "$c_reset" "$(button_name "$number")" "${CYCLE_NAMES[*]}"
+    else
+        printf '  %s✓%s A tecla que esse botão manda (código %s) agora passa entre %s.\n\n' \
+               "$c_grn" "$c_reset" "$number" "${CYCLE_NAMES[*]}"
+    fi
+
+    # Working immediately, not after the next login. Telling somebody their new
+    # button will start working tomorrow is most of the way to it never being
+    # believed to work at all. setsid so it survives this terminal closing.
+    stop_daemon
+    setsid "$0" --daemon </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    printf '  Já pode testar: aperte o botão.\n\n'
+    return 0
+}
+
+# ── Report ───────────────────────────────────────────────────────────────────
+report() {
+    printf '\n  %sIFOS — mouse%s\n\n' "$c_b" "$c_reset"
+
+    local any=0 event name ids
+    while IFS=$'\t' read -r event name ids; do
+        [[ -n $name ]] || continue
+        any=1
+        if is_touchpad "$name"; then
+            printf '    %s%s%s\n      %stouchpad · /dev/input/%s%s\n\n' \
+                   "$c_grn" "$name" "$c_reset" "$c_dim" "$event" "$c_reset"
+        else
+            printf '    %s%s%s\n      %s/dev/input/%s%s\n\n' \
+                   "$c_grn" "$name" "$c_reset" "$c_dim" "$event" "$c_reset"
+        fi
+    done < <(kernel_mice)
+
+    (( any )) || printf '    Nenhum mouse encontrado.\n\n'
+
+    if ! have_x; then
+        if [[ -z ${DISPLAY:-} ]]; then
+            printf '    %s!%s Sem sessão gráfica: a velocidade só pode ser mudada dentro do desktop.\n\n' \
+                   "$c_yel" "$c_reset"
+        else
+            printf '    %s!%s O xinput não está instalado, então a velocidade não pode ser ajustada.\n' \
+                   "$c_yel" "$c_reset"
+            printf '      Instale em: STYLUS Software → Hardware.\n\n'
+        fi
+        return
+    fi
+
+    local raw step
+    raw=$(current_speed)
+    if [[ -n $raw ]]; then
+        step=$(from_libinput "$raw")
+        printf '    Velocidade: %s%s%s  %s(-10 lento … 10 rápido)%s\n\n' \
+               "$c_b" "$step" "$c_reset" "$c_dim" "$c_reset"
+    fi
+
+    cat <<EOF
+    ${c_b}O botão de DPI do mouse${c_reset}
+    Na maioria dos mouses de jogo esse botão é resolvido dentro do próprio
+    mouse: ele troca a resolução do sensor e não manda nada para o computador.
+    O sistema não tem como mostrar, nem como avisar que foi apertado — o que
+    da mesa é igualzinho a um botão quebrado.
+
+    Para saber em qual dos dois casos o seu está:
+
+      ${c_b}stylus-mouse --test${c_reset}
+
+    E para mudar a sensibilidade de qualquer mouse, com ou sem esse botão:
+
+      ${c_b}stylus-mouse --speed 4${c_reset}      ${c_dim}ou --faster / --slower${c_reset}
+
+    ${c_b}Um botão de DPI que funciona${c_reset}
+    Se algum botão do mouse chega ao computador — quase sempre um dos laterais,
+    mesmo quando o de DPI é surdo — ele pode virar o botão de sensibilidade:
+
+      ${c_b}stylus-mouse --learn${c_reset}
+
+    Aperte o botão que quiser e pronto: ele passa a alternar entre normal,
+    rápido e muito rápido, dizendo na tela em qual está. Não é o DPI do sensor,
+    é o mesmo efeito feito onde o computador enxerga.
+
+EOF
+
+    # Said about the mouse actually plugged in, because "install Piper" is bad
+    # advice for most of them: the budget mice built on SINOWEALTH and Holtek
+    # controllers are not in libratbag's database, and Piper opens on an empty
+    # list with nothing to explain why.
+    local ids=""
+    while IFS=$'\t' read -r _event name ids; do
+        is_touchpad "$name" && continue
+        break
+    done < <(kernel_mice)
+
+    if [[ -n $ids ]] && ratbag_vendor "$ids"; then
+        printf '    Este mouse é de um fabricante que o libratbag costuma reconhecer,\n'
+        printf '    então dá para tentar configurar o DPI pelo computador com o\n'
+        printf '    %sPiper%s (STYLUS Software → Hardware).\n\n' "$c_b" "$c_reset"
+    elif [[ -n $ids ]]; then
+        printf '    O %sPiper%s provavelmente não vai reconhecer este mouse: ele cobre\n' \
+               "$c_b" "$c_reset"
+        printf '    principalmente Logitech, Razer, SteelSeries e Roccat. A velocidade\n'
+        printf '    aqui funciona em qualquer mouse e é o caminho para este.\n\n'
+    fi
+}
+
+# ── Test ─────────────────────────────────────────────────────────────────────
+test_buttons() {
+    if ! have_x; then
+        printf '\n  %s✗%s Isto precisa da sessão gráfica; abra pelo menu do STYLUS.\n\n' \
+               "$c_red" "$c_reset"
+        return 1
+    fi
+
+    local name="" _event _ids
+    while IFS=$'\t' read -r _event name _ids; do
+        is_touchpad "$name" && continue
+        break
+    done < <(kernel_mice)
+
+    printf '\n  %sTestando: %s%s\n' "$c_b" "${name:-o mouse}" "$c_reset"
+    printf '  Aperte todos os botões, inclusive o de DPI, e gire a rodinha.\n'
+    printf '  %sIsto mostra o que o X recebe — ou seja, exatamente o que um\n' "$c_dim"
+    printf '  programa qualquer receberia.%s\n' "$c_reset"
+    printf '  %sCtrl+C para sair.%s\n\n' "$c_dim" "$c_reset"
+
+    local kind number extra=0
+    while read -r kind number; do
+        if [[ $kind == button ]]; then
+            printf '  %s  %s(botão %s)%s\n' "$(button_name "$number")" \
+                   "$c_dim" "$number" "$c_reset"
+            (( number > 7 )) && extra=1
+        else
+            printf '  tecla, código %s  %s(o mouse está enviando uma tecla)%s\n' \
+                   "$number" "$c_dim" "$c_reset"
+            extra=1
+        fi
+    done < <(x_events)
+
+    printf '\n'
+    if (( ! extra )); then
+        printf '  Só os botões normais apareceram.\n'
+        printf '  Se o de DPI não imprimiu nada, ele é resolvido dentro do mouse e não\n'
+        printf '  chega ao X — nenhum programa desta máquina consegue vê-lo, e não há o\n'
+        printf '  que consertar. Use  %sifos-mouse --speed N%s  para a sensibilidade,\n' \
+               "$c_b" "$c_reset"
+        printf '  ou  %sifos-mouse --learn%s  para pôr essa função num botão lateral.\n\n' \
+               "$c_b" "$c_reset"
+    else
+        printf '  Os botões acima chegam ao X e podem virar o botão de sensibilidade:\n'
+        printf '    %sifos-mouse --learn%s\n\n' "$c_b" "$c_reset"
+    fi
+}
+
+# ── Entry points ─────────────────────────────────────────────────────────────
+case ${1:-} in
+    -h|--help) sed -n '3,14p' "$0" | sed 's/^# \?//'; exit 0 ;;
+
+    --speed)   set_speed "${2:-}"; exit $? ;;
+    --faster)  set_speed "$(( $(load SPEED 0) + 2 ))"; exit $? ;;
+    --slower)  set_speed "$(( $(load SPEED 0) - 2 ))"; exit $? ;;
+
+    --flat)
+        # 0 1: adaptive off, flat on. Flat is what a game wants - the pointer
+        # moves the same distance for the same hand movement every time.
+        if apply_prop "$PROP_PROFILE" 0 1; then
+            save PROFILE flat; printf '  Aceleração desligada.\n'; exit 0
+        fi
+        printf '  %s!%s Nenhum mouse aceitou a mudança.\n' "$c_yel" "$c_reset"; exit 1 ;;
+    --adaptive)
+        if apply_prop "$PROP_PROFILE" 1 0; then
+            save PROFILE adaptive; printf '  Aceleração ligada.\n'; exit 0
+        fi
+        printf '  %s!%s Nenhum mouse aceitou a mudança.\n' "$c_yel" "$c_reset"; exit 1 ;;
+    --natural)
+        natural=$(load NATURAL 0)
+        natural=$(( natural ? 0 : 1 ))
+        if apply_prop "$PROP_NATURAL" "$natural"; then
+            save NATURAL "$natural"
+            printf '  Rolagem invertida: %s.\n' \
+                   "$( ((natural)) && echo ligada || echo desligada)"
+            exit 0
+        fi
+        printf '  %s!%s Nenhum mouse aceitou a mudança.\n' "$c_yel" "$c_reset"; exit 1 ;;
+
+    --apply)
+        # Runs at login, after the settings have been chosen once. Silent: it
+        # has no terminal to print to and nothing to say when it works.
+        have_x || exit 0
+        [[ -f $CONF ]] || exit 0
+        speed=$(load SPEED)
+        [[ -n $speed ]] && apply_prop "$PROP_SPEED" "$(to_libinput "$speed")"
+        [[ $(load PROFILE) == flat ]]     && apply_prop "$PROP_PROFILE" 0 1
+        [[ $(load PROFILE) == adaptive ]] && apply_prop "$PROP_PROFILE" 1 0
+        natural=$(load NATURAL)
+        [[ -n $natural ]] && apply_prop "$PROP_NATURAL" "$natural"
+        exit 0 ;;
+
+    --test)    test_buttons; exit $? ;;
+    --learn)   learn_button; exit $? ;;
+    --cycle)   cycle_speed; exit $? ;;
+    --forget)
+        save BUTTON ""
+        printf '  O botão foi esquecido.\n'; exit 0 ;;
+    --daemon)
+        # Started at login next to --apply. Exits immediately and silently when
+        # no button has been learned, which is the ordinary case.
+        watch_button; exit $? ;;
+    "")        report; exit 0 ;;
+    *)  printf 'stylus-mouse: opção desconhecida: %s\n' "$1" >&2
+        sed -n '3,14p' "$0" | sed 's/^# \?//' >&2
+        exit 2 ;;
+esac

@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+#  stylus-scale — work out how big this screen's pixels are, and say what the
+#  session should do about it.
+#
+#      stylus-scale            report what it found, for a human
+#      stylus-scale --env      shell assignments to eval in .xprofile
+#      stylus-scale --xrdb     X resource lines to pipe into xrdb -merge
+#      stylus-scale --bar      the polybar height and dpi for this screen
+#      stylus-scale --machine  everything this machine was measured at, and what
+#                            the desktop decided to do about it
+#
+#  Nothing here scaled with the screen. A laptop with a 3200x1800 or 4K panel -
+#  which is an ordinary second-hand machine now, not an exotic one - got a
+#  32-pixel bar about four millimetres tall, 11pt text at a third of its
+#  intended size, and a 24-pixel cursor you could lose. It was not broken, it
+#  was unusable, and there was nothing in the interface to fix it with.
+#
+#  GTK 3 only scales by whole numbers, so there are two separate levers and
+#  they are used for different ranges:
+#
+#    Xft.dpi     scales text and anything that asks the X server how big a
+#                point is. Continuous, so it covers the awkward middle.
+#    GDK_SCALE   scales whole widgets, including borders and icons, but only
+#                by an integer. Worth it at 2x; at 1.5x it overshoots badly.
+#
+#  Physical size comes from EDID and is not always honest - projectors often
+#  report 0mm, and some panels lie. Anything that produces an absurd answer
+#  falls back to judging by resolution alone.
+# ─────────────────────────────────────────────────────────────────────────────
+set -u
+
+# Tests set this to a captured `xrandr --query` instead of running one.
+xrandr_query() {
+    if [[ -n ${STYLUS_XRANDR:-} ]]; then
+        printf '%s\n' "$STYLUS_XRANDR"
+    else
+        xrandr --query 2>/dev/null
+    fi
+}
+
+# The line for the output the user is actually looking at: the primary one, or
+# the first connected one if nothing is marked primary.
+primary_line() {
+    local out
+    out=$(xrandr_query | grep -E '^[^ ]+ connected primary ' | head -1)
+    [[ -z $out ]] && out=$(xrandr_query | grep -E '^[^ ]+ connected ' | head -1)
+    printf '%s' "$out"
+}
+
+DPI=96
+WIDTH=0
+HEIGHT=0
+SOURCE=default
+
+line=$(primary_line)
+if [[ -n $line ]]; then
+    # "eDP-1 connected primary 3840x2160+0+0 (normal ...) 344mm x 193mm"
+    if [[ $line =~ ([0-9]+)x([0-9]+)\+[0-9]+\+[0-9]+ ]]; then
+        WIDTH=${BASH_REMATCH[1]}
+        HEIGHT=${BASH_REMATCH[2]}
+    fi
+    mm=0
+    [[ $line =~ ([0-9]+)mm\ x\ ([0-9]+)mm ]] && mm=${BASH_REMATCH[1]}
+
+    if (( WIDTH > 0 && mm > 0 )); then
+        # round(width_px / (mm / 25.4))
+        DPI=$(( (WIDTH * 254 + mm * 5) / (mm * 10) ))
+        SOURCE=edid
+    fi
+
+    # An EDID that reports a 3-inch or 3-metre screen is telling us nothing,
+    # and one that reports 0mm - which projectors routinely do, and so do some
+    # laptop panels - tells us nothing either. In both cases judge by the pixel
+    # count instead: a panel with this many pixels across is a high-density one
+    # whatever it claims to be.
+    #
+    # The 0mm case has to be checked separately. It skips the calculation
+    # above, so DPI is still sitting at the 96 default, which is inside the
+    # sane range and would have passed straight through - a 4K laptop that
+    # reports no physical size would have been treated as an ordinary screen.
+    if [[ $SOURCE != edid ]] || (( DPI < 60 || DPI > 400 )); then
+        SOURCE=resolution
+        if   (( WIDTH >= 3000 )); then DPI=192
+        elif (( WIDTH >= 2400 )); then DPI=144
+        else                           DPI=96
+        fi
+    fi
+fi
+
+# ── What to do about it ──────────────────────────────────────────────────────
+#  Density alone is not enough to justify scaling, and deciding on it alone was
+#  a bug that reached real machines. An 11.6-inch 1080p laptop measures about
+#  190 dpi, which crossed the old 180 threshold and set GDK_SCALE=2 - halving
+#  the desktop to 960x540 logical pixels, which is smaller than most dialogs.
+#  Ordinary 13 to 15 inch 1080p laptops measure 142-166 dpi and were getting a
+#  50% font increase they never needed. Those are the commonest student laptops
+#  there are.
+#
+#  So both things have to be true: the pixels must be small AND there must be
+#  enough of them to give some away. Anything 1080p or below is now left
+#  completely alone, exactly as it behaved before any of this existed.
+if   (( WIDTH >= 3000 && HEIGHT >= 1700 && DPI >= 180 )); then
+    # 4K-class. Doubling leaves 1920x1080 or better to work in.
+    GDK_SCALE=2; XFT_DPI=192; CURSOR=48; BAR_HEIGHT=58
+elif (( WIDTH >= 2560 && HEIGHT >= 1440 && DPI >= 150 )); then
+    # QHD+ class. Text is scaled but widgets are not: doubling here would leave
+    # 1280x720, which is tighter than it looks once the bar is subtracted.
+    GDK_SCALE=1; XFT_DPI=144; CURSOR=36; BAR_HEIGHT=46
+else
+    GDK_SCALE=1; XFT_DPI=96;  CURSOR=24; BAR_HEIGHT=32
+fi
+
+case ${1:-report} in
+    --env)
+        # GDK_SCALE=1 is left unset rather than exported: exporting it pins GTK
+        # to 1 and stops it honouring anything else later.
+        (( GDK_SCALE > 1 )) && printf 'export GDK_SCALE=%s\n' "$GDK_SCALE"
+        # Qt's own automatic scaling is switched off in .xprofile because it
+        # disagrees with GTK on mixed-DPI setups and the two halves of the
+        # desktop ended up different sizes. Give it the same number instead.
+        printf 'export QT_FONT_DPI=%s\n' "$XFT_DPI"
+        (( GDK_SCALE > 1 )) && printf 'export QT_SCALE_FACTOR=%s\n' "$GDK_SCALE"
+        printf 'export XCURSOR_SIZE=%s\n' "$CURSOR"
+        printf 'export STYLUS_BAR_HEIGHT=%s\n' "$BAR_HEIGHT"
+        # The bar's fonts are sized in points and polybar converts them with
+        # its own dpi setting, so this is the one knob that scales the text.
+        printf 'export STYLUS_BAR_DPI=%s\n' "$XFT_DPI"
+        ;;
+    --xrdb)
+        printf 'Xft.dpi: %s\n' "$XFT_DPI"
+        printf 'Xcursor.size: %s\n' "$CURSOR"
+        ;;
+    --bar)
+        printf '%s %s\n' "$BAR_HEIGHT" "$XFT_DPI"
+        ;;
+    --dpi)
+        printf '%s\n' "$DPI"
+        ;;
+    --machine)
+        # One place to see every decision the desktop makes from the hardware,
+        # so "why does mine look different from his" has an answer that does not
+        # involve reading four scripts.
+        ram_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null)
+        cores=$(nproc 2>/dev/null)
+        printf 'Memória     %s MiB\n' "$(( ${ram_kb:-0} / 1024 ))"
+        printf 'Núcleos     %s\n' "${cores:-?}"
+        printf 'Vídeo       %s\n' \
+            "$( [ -e /dev/dri/renderD128 ] && echo 'aceleração por hardware' \
+                                           || echo 'software (sem driver de GPU)' )"
+        printf 'Tela        %sx%s, %s dpi (%s)\n' "$WIDTH" "$HEIGHT" "$DPI" "$SOURCE"
+        printf '\n'
+        printf 'Escala      fontes %s dpi, widgets %sx, cursor %s px\n' \
+            "$XFT_DPI" "$GDK_SCALE" "$CURSOR"
+        printf 'Barra       %s px de altura, %s dpi\n' "$BAR_HEIGHT" "$XFT_DPI"
+        if [ ! -e /dev/dri/renderD128 ]; then
+            printf 'Composição  xrender (software)\n'
+        elif [ "${ram_kb:-99999999}" -lt 3670016 ] || [ "${cores:-99}" -lt 4 ]; then
+            printf 'Composição  sem animações (máquina modesta)\n'
+        else
+            printf 'Composição  com animações\n'
+        fi
+        printf '\nzram        %s\n' \
+            "$(swapon --show=NAME,SIZE --noheadings 2>/dev/null | grep zram || echo 'não ativo')"
+        ;;
+    *)
+        printf 'Tela      %sx%s\n' "$WIDTH" "$HEIGHT"
+        printf 'Densidade %s dpi (%s)\n' "$DPI" "$SOURCE"
+        printf 'Fontes    Xft.dpi %s\n' "$XFT_DPI"
+        printf 'Widgets   GDK_SCALE %s\n' "$GDK_SCALE"
+        printf 'Cursor    %s px\n' "$CURSOR"
+        printf 'Barra     %s px, dpi %s\n' "$BAR_HEIGHT" "$XFT_DPI"
+        ;;
+esac

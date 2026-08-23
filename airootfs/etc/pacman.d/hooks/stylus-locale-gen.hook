@@ -1,0 +1,15 @@
+# remove from airootfs!
+# Insurance: make sure the locales listed in /etc/locale.gen really are compiled
+# into the image, regardless of whether glibc's own hook fires during pacstrap.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = glibc
+
+[Action]
+Description = STYLUS: generating locales...
+When = PostTransaction
+Depends = glibc
+Exec = /usr/bin/locale-gen

@@ -1,0 +1,7 @@
+work/
+out/
+.pkgcache/
+__pycache__/
+*.pyc
+airootfs/usr/share/stylus/deck/venv/
+airootfs/usr/share/stylus/deck/*.bak

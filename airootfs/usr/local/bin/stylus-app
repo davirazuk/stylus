@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-app — instala o que não vem em pacote
+# ═══════════════════════════════════════════════════════════════════════════
+#  Nem tudo que uma máquina de música e jogos precisa está nos repositórios
+#  do Arch, e empacotar tudo à mão seria um trabalho que não acaba. Isto é a
+#  lista curta do que importa aqui, com a receita de cada um.
+#
+#      stylus app                lista o que dá para instalar
+#      stylus app clonehero      instala
+#      stylus app --all          tudo
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+c_g=$'\033[1;32m'; c_d=$'\033[2m'; c_b=$'\033[1;34m'; c_r=$'\033[1;31m'; c_0=$'\033[0m'
+info() { printf '%s==>%s %s\n' "$c_b" "$c_0" "$*"; }
+ok()   { printf '%s  ✓%s %s\n' "$c_g" "$c_0" "$*"; }
+die()  { printf '%s==> ERRO:%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
+
+OPT=/opt/stylus
+BIN=$HOME/.local/bin
+mkdir -p "$BIN"
+
+precisa_root() { [[ $EUID -eq 0 ]] || exec sudo -E "$0" "$@"; }
+
+app_clonehero() {
+    # O Clone Hero é distribuído como um zip do site oficial, sem pacote e
+    # sem URL estável de versão — por isso o link fixo "latest". É o jogo que
+    # justifica metade da pasta de charts do celular.
+    precisa_root "$@"
+    local url="https://clonehero.net/assets/release/clonehero-linux.zip"
+    local dest=$OPT/clonehero
+    info "Baixando Clone Hero…"
+    mkdir -p "$dest"
+    local tmp; tmp=$(mktemp -d)
+    curl -fL --progress-bar "$url" -o "$tmp/ch.zip" || die "não deu para baixar"
+    bsdtar -xf "$tmp/ch.zip" -C "$dest" --strip-components=1 || \
+        bsdtar -xf "$tmp/ch.zip" -C "$dest" || die "o zip veio estranho"
+    rm -rf "$tmp"
+    chmod +x "$dest"/*.x86_64 "$dest"/Clone*Hero 2>/dev/null || true
+    local exe; exe=$(find "$dest" -maxdepth 1 -type f \
+        \( -name '*.x86_64' -o -name 'Clone*Hero' \) | head -1)
+    [[ -n $exe ]] || die "não achei o executável dentro do zip"
+    printf '#!/bin/sh\nexec %q "$@"\n' "$exe" > /usr/local/bin/clonehero
+    chmod 0755 /usr/local/bin/clonehero
+    cat > /usr/share/applications/clonehero.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Clone Hero
+Exec=clonehero
+Icon=applications-games
+Categories=Game;
+EOF
+    ok "Clone Hero em $dest"
+}
+
+app_qobuzdl() {
+    # pip e não pacman porque não está nos repositórios; --user para não
+    # brigar com o gerenciador de pacotes por /usr/lib/python.
+    info "Instalando qobuz-dl…"
+    python3 -m pip install --user --upgrade --break-system-packages qobuz-dl \
+        || die "o pip falhou"
+    ok "qobuz-dl — configure com: qobuz-dl -r"
+}
+
+app_heroic() {
+    precisa_root "$@"
+    info "Heroic vem do AUR; instalando com o yay…"
+    command -v yay >/dev/null || die "instale o yay primeiro: stylus app yay"
+    sudo -u "${SUDO_USER:-$USER}" yay -S --needed --noconfirm heroic-games-launcher-bin
+}
+
+app_yay() {
+    precisa_root "$@"
+    command -v yay >/dev/null && { ok "o yay já está aqui"; return; }
+    info "Compilando o yay…"
+    pacman -S --needed --noconfirm git base-devel
+    local tmp; tmp=$(mktemp -d); chown "${SUDO_USER:-$USER}" "$tmp"
+    sudo -u "${SUDO_USER:-$USER}" git clone -q https://aur.archlinux.org/yay-bin.git "$tmp/yay"
+    (cd "$tmp/yay" && sudo -u "${SUDO_USER:-$USER}" makepkg -si --noconfirm)
+    rm -rf "$tmp"; ok "yay"
+}
+
+app_protonge() {
+    info "Proton-GE mais recente…"
+    local dir="$HOME/.steam/root/compatibilitytools.d"
+    [[ -n ${SUDO_USER:-} ]] && dir="$(getent passwd "$SUDO_USER" | cut -d: -f6)/.steam/root/compatibilitytools.d"
+    mkdir -p "$dir"
+    local url; url=$(curl -fsSL https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest \
+        | grep -o 'https://[^"]*\.tar\.gz' | head -1)
+    [[ -n $url ]] || die "não achei o lançamento"
+    curl -fL --progress-bar "$url" | bsdtar -xf - -C "$dir" || die "falhou"
+    ok "Proton-GE em $dir — reinicie o Steam"
+}
+
+APPS="clonehero qobuzdl heroic yay protonge"
+
+if [[ $# -eq 0 ]]; then
+    echo
+    echo "  ${c_d}o que dá para instalar daqui:${c_0}"
+    for a in $APPS; do printf '    %s\n' "$a"; done
+    echo
+    echo "  ${c_d}stylus app clonehero${c_0}"
+    echo
+    exit 0
+fi
+if [[ ${1:-} == --all ]]; then
+    for a in $APPS; do "app_$a" || true; done
+    exit 0
+fi
+for a in "$@"; do
+    case " $APPS " in
+        *" $a "*) "app_$a" ;;
+        *) die "não conheço \"$a\". \`stylus app\` lista." ;;
+    esac
+done

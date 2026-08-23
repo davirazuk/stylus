@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# A interface do modo música, reaberta se cair.
+#
+# Não é paranoia: no modo música ela é a ÚNICA coisa na tela, então um erro
+# não tratado nela deixa a máquina com um fundo preto e nenhuma forma de sair
+# a não ser pelo teclado, que é o que uma pessoa no sofá não tem à mão.
+#
+# Reinício em cascata (1s, 2s, 4s… até 30s) para que um defeito que impeça a
+# abertura não vire um laço quente consumindo a bateria.
+set -uo pipefail
+espera=1
+while true; do
+    inicio=$SECONDS
+    /usr/local/bin/stylus-ui
+    (( SECONDS - inicio > 20 )) && espera=1 || espera=$(( espera < 30 ? espera * 2 : 30 ))
+    sleep "$espera"
+done

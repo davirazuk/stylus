@@ -1,0 +1,329 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  STYLUS — package list
+# ═══════════════════════════════════════════════════════════════════════════
+#  Two rules decided this list.
+#
+#  1. Nothing goes in the audio path that is not needed to get the file to
+#     the DAC unchanged. No system-wide equaliser, no "audio enhancer", no
+#     resampler that runs when it does not have to. A distribution that ships
+#     DSP on by default cannot honestly call itself bit-perfect, and the
+#     whole point of this one is that the record plays as it was pressed.
+#
+#  2. Everything else is either music, or games, or the hardware needed to
+#     run those two on any machine you sit down at. There is no office suite
+#     here and there never will be.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── base and kernel ────────────────────────────────────────────────────────
+base
+linux
+linux-headers
+linux-firmware
+linux-firmware-marvell
+sof-firmware
+amd-ucode
+intel-ucode
+mkinitcpio
+mkinitcpio-archiso
+mkinitcpio-nfs-utils
+sudo
+polkit
+
+# ── the shell you land in ──────────────────────────────────────────────────
+fish
+bash-completion
+less
+man-db
+man-pages
+nano
+vim
+git
+rsync
+pv
+tmux
+htop
+btop
+tree
+unzip
+zip
+7zip
+wget
+curl
+jq
+python
+python-pip
+xdg-utils
+xdg-user-dirs
+terminus-font
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  AUDIO — the reason this exists
+# ═══════════════════════════════════════════════════════════════════════════
+# PipeWire rather than bare ALSA because a single-application-exclusive DAC is
+# a worse daily experience than a graph that can be told not to touch the
+# samples — and it can: see /etc/pipewire and /etc/wireplumber in this
+# profile, which allow the whole 44.1k family instead of pinning 48k and
+# resampling everything that is not.
+pipewire
+pipewire-audio
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+wireplumber
+# rtkit is what lets the graph actually get the realtime priority it asks
+# for. Without it every xrun is a click in the middle of a quiet passage.
+rtkit
+alsa-utils
+alsa-firmware
+alsa-plugins
+alsa-ucm-conf
+# Looking at the graph is how you prove a claim about it. `stylus-audio`
+# reads the numbers; qpwgraph shows you the wires.
+qpwgraph
+pavucontrol
+pamixer
+playerctl
+
+# ── bluetooth, with the codecs that are not embarrassing ───────────────────
+bluez
+bluez-utils
+blueman
+libldac
+libfreeaptx
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  MUSIC — players, the library, and getting records into it
+# ═══════════════════════════════════════════════════════════════════════════
+strawberry
+mpv
+cmus
+# The deck (the record on screen) is Python + OpenGL. These are its runtime,
+# not optional extras: /usr/share/stylus/deck does not start without them.
+python-numpy
+python-pygame
+python-pillow
+python-mutagen
+python-requests
+python-gobject
+python-musicbrainzngs
+python-discid
+# PyOpenGL is not packaged in the official repositories, under this or any
+# other name. The deck gets it from a venv that customize_airootfs.sh builds
+# inside the chroot at ISO build time, so the live medium works offline —
+# see /usr/share/stylus/deck/venv.
+
+# ── tags, cover art, and the shape of the collection ───────────────────────
+picard
+ffmpeg
+sox
+
+# ── formats. A collection is not one codec. ────────────────────────────────
+flac
+opus-tools
+lame
+wavpack
+cuetools
+# Ripping your own CDs is not a legacy feature for someone who buys records.
+# whipper over abcde: it checks the rip against AccurateRip, which is the
+# difference between "a file" and "a copy you can trust".
+whipper
+cdparanoia
+cdrdao
+libdiscid
+
+# ── acquiring ──────────────────────────────────────────────────────────────
+yt-dlp
+rclone
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  THE PHONE
+# ═══════════════════════════════════════════════════════════════════════════
+# The library is not "on the PC". It is on the PC and on the phone, and the
+# hard part is keeping the two honest about which copy is the better one.
+# `stylus-phone` does that over cable or over wifi; these are what it needs.
+android-tools
+android-udev
+mtpfs
+gvfs-mtp
+libmtp
+openssh
+syncthing
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  GAMES
+# ═══════════════════════════════════════════════════════════════════════════
+steam
+lutris
+gamemode
+lib32-gamemode
+mangohud
+lib32-mangohud
+gamescope
+wine
+wine-mono
+wine-gecko
+winetricks
+vkd3d
+lib32-vkd3d
+vulkan-tools
+sdl2-compat
+lib32-sdl2-compat
+# Clone Hero ships as a plain download, not a package. `stylus-app clonehero`
+# fetches and installs it; these are what it needs once it is on disk.
+libgdiplus
+gtk3
+lib32-gtk3
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  GRAPHICS — every vendor, because the ISO has to boot on a stranger's box
+# ═══════════════════════════════════════════════════════════════════════════
+# NVIDIA's proprietary driver is deliberately NOT here. Building it into the
+# live medium means a dkms build at boot on hardware that may not need it;
+# the live session runs on nouveau/modesetting and `stylus-gpu` installs the
+# right driver after you install, which is also when it can see the card.
+mesa
+lib32-mesa
+mesa-utils
+vulkan-radeon
+lib32-vulkan-radeon
+vulkan-intel
+lib32-vulkan-intel
+vulkan-nouveau
+lib32-vulkan-nouveau
+vulkan-swrast
+lib32-vulkan-swrast
+vulkan-icd-loader
+lib32-vulkan-icd-loader
+libva-utils
+intel-media-driver
+vpl-gpu-rt
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  DESKTOP — i3, because a listening machine should get out of the way
+# ═══════════════════════════════════════════════════════════════════════════
+xorg-server
+xorg-xinit
+xorg-xrandr
+xorg-xset
+xorg-xsetroot
+xorg-xinput
+xorg-xprop
+xorg-xwininfo
+xf86-input-libinput
+i3-wm
+i3lock
+xss-lock
+polybar
+rofi
+picom
+dunst
+libnotify
+feh
+maim
+xclip
+xdotool
+arandr
+autorandr
+gammastep
+alacritty
+thunar
+thunar-volman
+thunar-archive-plugin
+xarchiver
+gvfs
+udisks2
+udiskie
+tumbler
+mousepad
+sddm
+qt5-quickcontrols2
+polkit-gnome
+xsettingsd
+fastfetch
+
+# ── look ───────────────────────────────────────────────────────────────────
+ttf-jetbrains-mono-nerd
+noto-fonts
+noto-fonts-emoji
+noto-fonts-cjk
+otf-font-awesome
+adw-gtk-theme
+papirus-icon-theme
+adwaita-icon-theme
+adwaita-cursors
+qt5ct
+qt6ct
+kvantum
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HARDWARE — so it boots on whatever is in front of you
+# ═══════════════════════════════════════════════════════════════════════════
+networkmanager
+network-manager-applet
+nm-connection-editor
+wpa_supplicant
+iwd
+iw
+wireless_tools
+wireless-regdb
+b43-fwcutter
+broadcom-wl
+modemmanager
+usb_modeswitch
+dhcpcd
+systemd-resolvconf
+openvpn
+ethtool
+usbutils
+pciutils
+dmidecode
+lsscsi
+hdparm
+smartmontools
+nvme-cli
+mmc-utils
+brightnessctl
+power-profiles-daemon
+acpi
+zram-generator
+upower
+
+# ── disks and filesystems ──────────────────────────────────────────────────
+parted
+gptfdisk
+gparted
+dosfstools
+e2fsprogs
+btrfs-progs
+xfsprogs
+f2fs-tools
+exfatprogs
+ntfs-3g
+mtools
+lvm2
+mdadm
+cryptsetup
+ddrescue
+testdisk
+squashfs-tools
+
+# ── booting and installing ─────────────────────────────────────────────────
+grub
+efibootmgr
+os-prober
+syslinux
+edk2-shell
+refind
+memtest86+
+memtest86+-efi
+plymouth
+arch-install-scripts
+archinstall
+reflector
+dialog
+# The live medium needs to work inside a VM too — that is how anyone sane
+# tries a new distro before giving it a disk.
+qemu-guest-agent
+open-vm-tools
+virtualbox-guest-utils-nox
+hyperv

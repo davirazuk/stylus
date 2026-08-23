@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# stylus-mode — troca entre MÚSICA e ÁREA DE TRABALHO, como um Steam Deck.
+#
+#     stylus-mode              diz em qual você está
+#     stylus-mode desktop      vai para a área de trabalho
+#     stylus-mode music        volta para a tela cheia
+#     stylus-mode toggle       o outro, seja qual for
+#
+# Encerra a sessão X para trocar. Com o autologin ligado (que é o padrão
+# deste sistema) isso é meio segundo de tela preta e você está do outro lado.
+set -uo pipefail
+F="$HOME/.config/stylus/mode"
+mkdir -p "$(dirname "$F")"
+cur=$(cat "$F" 2>/dev/null || echo music)
+
+case "${1:-}" in
+    "")        echo "$cur"; exit 0 ;;
+    music|desktop) novo=$1 ;;
+    toggle)    novo=$([[ $cur == music ]] && echo desktop || echo music) ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *)         echo "stylus-mode: música ou área de trabalho, só isso." >&2; exit 1 ;;
+esac
+
+[[ $novo == "$cur" ]] && { echo "já está no modo $novo"; exit 0; }
+echo "$novo" > "$F"
+
+# Avisar ANTES de derrubar a sessão: sem isto a tela some sem explicação e
+# parece que alguma coisa quebrou.
+command -v notify-send >/dev/null && \
+    notify-send --app-name=STYLUS --urgency=low \
+        "modo $([[ $novo == music ]] && echo MÚSICA || echo 'ÁREA DE TRABALHO')" \
+        "voltando em um segundo…" 2>/dev/null || true
+sleep 0.6
+if command -v i3-msg >/dev/null && i3-msg -t get_version >/dev/null 2>&1; then
+    exec i3-msg exit
+fi
+exec loginctl terminate-session "${XDG_SESSION_ID:-self}"

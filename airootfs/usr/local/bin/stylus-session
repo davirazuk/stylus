@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-session — decide em qual dos dois modos a máquina liga
+# ═══════════════════════════════════════════════════════════════════════════
+#  MODO MÚSICA     a tela cheia, e nada mais. É o modo padrão e é o que a
+#                  máquina é: você senta, escolhe um disco, e pronto.
+#  MODO ÁREA DE    o i3 de verdade, com barra, terminal e o resto. Está aqui
+#  TRABALHO        porque um computador precisa ser um computador às vezes.
+#
+#  Os dois são sessões X separadas com o MESMO gerenciador de janelas por
+#  baixo (i3), e só isto: uma configuração enxuta contra a completa. Ter o
+#  mesmo WM nos dois é o que faz o Steam abrir igual nos dois lados — um modo
+#  sem gerenciador de janela nenhum deixa qualquer diálogo de jogo sem
+#  decoração e sem foco, que é o defeito clássico de "modo grande" caseiro.
+#
+#  Trocar de modo é `stylus-mode`, e o que ele faz é escrever o arquivo
+#  abaixo e encerrar a sessão. O SDDM entra de novo sozinho e este script lê
+#  o arquivo novo. Sem root, sem serviço, sem mágica.
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+MODE_FILE="$HOME/.config/stylus/mode"
+mkdir -p "$(dirname "$MODE_FILE")"
+mode=$(cat "$MODE_FILE" 2>/dev/null || echo music)
+[[ ${1:-} ]] && mode=$1
+
+export STYLUS_MODE="$mode"
+# xdg-user-dirs cria ~/Música etc. na primeira vez; sem isto a primeira
+# execução acha que a coleção não existe.
+command -v xdg-user-dirs-update >/dev/null && xdg-user-dirs-update
+
+# Primeira vez nesta conta: perguntar onde fica a coleção antes de qualquer
+# outra coisa. Um sistema de música que abre numa estante vazia parece
+# quebrado, e a causa é sempre a mesma pergunta não respondida.
+if [[ ! -s $HOME/.config/stylus/library ]]; then
+    /usr/share/stylus/first-run.sh || true
+fi
+
+case "$mode" in
+    desktop)
+        exec i3
+        ;;
+    *)
+        exec i3 -c /usr/share/stylus/i3-music.config
+        ;;
+esac

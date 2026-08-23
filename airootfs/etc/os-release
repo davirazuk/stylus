@@ -1,0 +1,10 @@
+NAME=STYLUS
+PRETTY_NAME="STYLUS"
+ID=stylus
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="0;36"
+LOGO=stylus
+HOME_URL="https://github.com/davirazuk/stylus"
+SUPPORT_URL="https://github.com/davirazuk/stylus/issues"
+BUG_REPORT_URL="https://github.com/davirazuk/stylus/issues"

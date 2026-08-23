@@ -1,0 +1,89 @@
+[global]
+    monitor = 0
+    follow = mouse
+    width = 340
+    # dunst 1.12 replaced the single-number height and NxN offset with tuples;
+    # the old forms still work but warn on every start.
+    height = (0, 180)
+    origin = top-right
+    offset = (12, 12)
+    separator_height = 2
+    padding = 12
+    horizontal_padding = 12
+    frame_width = 2
+    frame_color = "#5bcefa"
+    font = JetBrainsMono Nerd Font 10
+    format = "<b>%s</b>\n%b"
+    corner_radius = 8
+    gap_size = 6
+    icon_theme = "Papirus-Dark, Adwaita"
+    enable_recursive_icon_lookup = true
+
+    # Papirus ships icons up to 512px, and dunst draws them at whatever size it
+    # finds. One notification carrying a large application icon would stretch
+    # to several times the height of the others.
+    min_icon_size = 16
+    max_icon_size = 48
+    icon_corner_radius = 4
+    text_icon_padding = 10
+
+    # The volume and brightness keys send a progress bar (osd.sh sets
+    # int:value). The default is a 10px block with a frame around it, which next
+    # to a single line of text reads as a second window. Thin, rounded, no
+    # frame - and left unstyled otherwise, because an unstyled bar already takes
+    # its colour from frame_color, which is the STYLUS accent.
+    progress_bar = true
+    progress_bar_height = 6
+    progress_bar_corner_radius = 3
+    progress_bar_frame_width = 0
+    progress_bar_min_width = 140
+    progress_bar_max_width = 316
+
+    # A notification you cannot dismiss by clicking is a notification you wait
+    # out. Left runs the action and then closes: a notification that says
+    # "clique aqui para consertar" has to do that when clicked, and it did not -
+    # the action was on middle click, which nobody was ever going to find.
+    # do_action on one with no action does nothing, so this costs the plain ones
+    # nothing. Right still clears the stack.
+    mouse_left_click = do_action, close_current
+    mouse_middle_click = close_current
+    mouse_right_click = close_all
+
+    # Five at a time. Plugging in a device or losing the network can produce a
+    # burst, and without a limit they tile down the whole side of the screen.
+    notification_limit = 5
+    stack_duplicates = true
+    hide_duplicate_count = false
+    # "yes" rather than the named urgency_descending: both mean sort by
+    # urgency, but the named values only exist in newer dunst and this one is
+    # understood by every version.
+    sort = yes
+    # Deep enough to be a history. Twenty was dunst's own default and covers
+    # about an hour on a working day; the notification centre is only worth
+    # opening if what you half-saw this morning is still in it.
+    history_length = 100
+    separator_color = frame
+
+    # A game or a video does not get interrupted by a battery notice. The
+    # message waits for the fullscreen window to go away and arrives then,
+    # rather than being lost - which is the whole reason there is a history.
+    fullscreen = delay
+
+[urgency_low]
+    background = "#07080b"
+    foreground = "#e2e7f0"
+    timeout = 5
+
+[urgency_normal]
+    background = "#07080b"
+    foreground = "#e2e7f0"
+    timeout = 8
+
+[urgency_critical]
+    background = "#f5a9b8"
+    foreground = "#07080b"
+    frame_color = "#f5a9b8"
+    timeout = 0
+    # The exception: something urgent enough to never time out is urgent enough
+    # to interrupt a game.
+    fullscreen = show

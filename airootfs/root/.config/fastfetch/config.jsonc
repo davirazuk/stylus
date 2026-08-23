@@ -1,0 +1,60 @@
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+
+  // Root's config, and deliberately not a copy of the one in /etc/skel.
+  //
+  // Root autologins on tty1 (see getty@tty1.service.d/autologin.conf) - the
+  // Linux console, not a terminal emulator. Two things are different there and
+  // both used to be got wrong here:
+  //
+  //   No Nerd Font. The console font is ter-116n (etc/vconsole.conf), which
+  //   has no private use area at all, so every icon in the keys came out as a
+  //   blank box. The keys are plain words here. The wordmark still works: it
+  //   is drawn with U+2588 FULL BLOCK, which Terminus does have.
+  //
+  //   No truecolor. The kernel console has sixteen colours and ignores the
+  //   24-bit escape sequences, so the #00a86b hexes the desktop config uses
+  //   would come out as whatever the console felt like. ANSI colour names are
+  //   the right choice on this side, and are what the console's own palette
+  //   maps to.
+  //
+  // What was wrong beyond that: the keys were English on a Portuguese system,
+  // and were scattered across green / cyan / yellow / magenta - four hues that
+  // appear nowhere else in STYLUS, which is the exact thing the desktop config
+  // was changed away from. One accent, like everywhere else.
+
+  "logo": {
+    "type": "file",
+    "source": "/usr/share/stylus/logo.txt",
+    "color": {
+      "1": "green",
+      "2": "white"
+    },
+    "padding": { "top": 1, "left": 2 }
+  },
+
+  "display": {
+    "separator": "  ",
+    "key": { "width": 10 },
+    "color": { "keys": "green" }
+  },
+
+  // Flat rather than grouped. This is the rescue console: it is read to find
+  // out what a machine is when something is wrong, and headings and blank
+  // lines cost rows on an 80x25 screen that may already be scrolling.
+  "modules": [
+    { "type": "title", "fqdn": false },
+    "separator",
+    { "type": "os",       "key": "OS" },
+    { "type": "kernel",   "key": "Kernel" },
+    { "type": "uptime",   "key": "Ligado" },
+    { "type": "packages", "key": "Pacotes" },
+    { "type": "shell",    "key": "Shell" },
+    { "type": "cpu",      "key": "CPU" },
+    { "type": "memory",   "key": "RAM" },
+    { "type": "disk",     "key": "Disco", "folders": "/" },
+    { "type": "localip",  "key": "Rede" },
+    "separator",
+    { "type": "colors", "symbol": "circle", "paddingLeft": 1 }
+  ]
+}

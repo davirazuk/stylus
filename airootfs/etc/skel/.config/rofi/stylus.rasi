@@ -1,0 +1,99 @@
+/* STYLUS theme for rofi.
+   Shipped as a real file: the config used to reference @theme "catppuccin-mocha",
+   a theme that does not exist in rofi's built-in set, so rofi failed to start.
+
+* {
+    base:       #07080b;
+    mantle:     #05070a;
+    surface0:   #0d0f14;
+    surface1:   #141820;
+    text:       #e2e7f0;
+    subtext0:   #c3cbd8;
+    overlay0:   #7e899c;
+    blue:       #5bcefa;
+    mauve:      #5bcefa;
+    red:        #f5a9b8;
+
+    background-color:   transparent;
+    text-color:         @text;
+    margin:             0;
+    padding:            0;
+    spacing:            0;
+}
+
+window {
+    background-color:   @base;
+    border:             2px;
+    border-color:       @blue;
+    border-radius:      12px;
+    width:              620px;
+    padding:            0;
+}
+
+mainbox {
+    padding:            14px;
+    spacing:            12px;
+}
+
+inputbar {
+    background-color:   @surface0;
+    border-radius:      8px;
+    padding:            10px 14px;
+    spacing:            10px;
+    children:           [ prompt, entry ];
+}
+
+prompt {
+    text-color:         @blue;
+    vertical-align:     0.5;
+}
+
+entry {
+    placeholder:        "procurar…";
+    placeholder-color:  @overlay0;
+    vertical-align:     0.5;
+}
+
+listview {
+    columns:            1;
+    lines:              9;
+    fixed-height:       false;
+    scrollbar:          false;
+    spacing:            4px;
+}
+
+element {
+    padding:            9px 12px;
+    border-radius:      8px;
+    spacing:            12px;
+}
+
+element normal.normal   { text-color: @text; }
+element alternate.normal { text-color: @text; }
+element selected.normal {
+    background-color:   @blue;
+    text-color:         @base;
+}
+element urgent.normal   { text-color: @red; }
+
+element-icon {
+    size:               1.15em;
+    vertical-align:     0.5;
+}
+
+element-text {
+    vertical-align:     0.5;
+    /* A literal colour: rofi's grammar for `highlight` takes a colour, not a
+       property reference, so `bold @mauve` fails to parse. Same hex as @mauve;
+    highlight:          bold #5bcefa;
+}
+
+message {
+    background-color:   @surface0;
+    border-radius:      8px;
+    padding:            10px;
+}
+
+textbox {
+    text-color:         @subtext0;
+}
