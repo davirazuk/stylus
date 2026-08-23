@@ -82,12 +82,20 @@ for base, _d, files in os.walk("airootfs"):
     if "deck/venv" in base:
         continue
     for f in files:
-        if not f.endswith(".py"):
-            continue
         p = os.path.join(base, f)
+        # Não é só .py: o stylus-audio e o stylus-phone são python sem
+        # extensão nenhuma, e o stylus-phone usa vinyl. Filtrar por nome
+        # deixava justamente os dois comandos maiores de fora da conferência.
+        if not f.endswith(".py"):
+            try:
+                with open(p, "rb") as fh:
+                    if b"python" not in fh.readline():
+                        continue
+            except OSError:
+                continue
         try:
             arvore = ast.parse(open(p, encoding="utf-8").read())
-        except (OSError, SyntaxError):
+        except (OSError, SyntaxError, UnicodeDecodeError):
             continue
         for no in ast.walk(arvore):
             if (isinstance(no, ast.Attribute)
