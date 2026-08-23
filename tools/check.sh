@@ -246,10 +246,13 @@ done < <(find . -path ./work -prune -o -path ./out -prune -o \
 (( outra )) || ok "toda a arte é do STYLUS"
 
 sec "modos de arquivo"
+# Fora o __pycache__: o `python -m py_compile` deixa .pyc ao lado do arquivo, e
+# um .pyc não é para ser executável. Reprovar por causa dele é reprovar por
+# causa de lixo de ferramenta, e é assim que se ensina a ignorar a conferência.
 n=0
 while IFS= read -r -d '' f; do
     [[ -x $f ]] || { bad "não executável: ${f#./}"; n=$((n+1)); }
-done < <(find airootfs/usr/local/bin -type f -print0)
+done < <(find airootfs/usr/local/bin -type f -not -path '*/__pycache__/*' -print0)
 (( n == 0 )) && ok "todo binário em /usr/local/bin é executável"
 
 sec "as duas listas de pacote"

@@ -45,6 +45,8 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus deck [DISCO]` | põe um disco e abre o deck: a cerimônia inteira |
 | `stylus record` | sorteia um da estante, puxando para os esquecidos |
 | `stylus shelf` | a estante em grade de capas |
+| `stylus lado` | em que lado do disco você está, e quanto falta |
+| `stylus parede` | o papel de parede vira o disco que está tocando |
 | `stylus ui` | a tela cheia (é o que o modo música abre) |
 
 ### A coleção
@@ -71,6 +73,34 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus claude` | o Claude Code, com a fonte do sistema aberta do lado |
 | `stylus atalhos` | a lista de atalhos de teclado |
 | `stylus instalar` | instala no computador (a partir do pendrive) |
+
+---
+
+## Virar o lado, e a parede
+
+O README abre dizendo que a coisa toda é escolher um objeto, ele mandar por
+quarenta minutos e você ter que levantar e virar. A máquina sabia disso — a
+barra mostrava "vira em 12 min" — mas ninguém nunca era **avisado** na hora: o
+lado acabava, o próximo arquivo entrava, e a diferença entre ouvir um disco e
+ouvir uma playlist simplesmente não acontecia. Um contador que só conta não é
+um acontecimento.
+
+`stylus lado` diz onde você está agora; o serviço que roda na sessão avisa
+quando o lado **vira**, e só para frente — arrastar a barra para trás é
+procurar uma faixa, não virar o disco. Quem quiser a coisa inteira liga
+`STYLUS_SIDE_PAUSE=1` e o som para no fim do lado, como pararia.
+
+```
+stylus parede            o disco de agora vira o papel de parede
+stylus parede --sozinho  e continua virando, a cada disco novo
+stylus parede --restaurar
+```
+
+O desenho não é a capa: vem da **intensidade medida** do álbum, faixa por
+faixa. Dois discos diferentes dão duas paredes diferentes, e a sua não existe
+na máquina de mais ninguém. Medir custa — o primeiro disco leva de segundos a
+minutos — então o resultado fica em cache e o segundo login é instantâneo.
+Desligado até você pedir: papel de parede é seu.
 
 ---
 

@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""stylus-wallpaper — o papel de parede é o disco que está tocando.
+
+POR QUE ISTO EXISTE
+-------------------
+O gerador (`deck/tools/vinyl_wallpaper.py`) já existia e desenhava um papel
+de parede a partir da intensidade MEDIDA de um álbum de verdade: dois discos
+diferentes dão dois desenhos diferentes, e o seu não existe na máquina de
+mais ninguém. Só que nada no sistema o chamava. Ele era uma coisa bonita que
+só rodava se você soubesse que ele estava lá.
+
+Isto o liga ao que está tocando. O modo área de trabalho passa a ficar com a
+cara do disco que está no prato.
+
+    stylus wallpaper                 o disco de agora (ou o último tocado)
+    stylus wallpaper DISCO           um disco específico
+    stylus wallpaper --sorteio       um da estante, ao acaso
+    stylus wallpaper --estilo ridges groove (padrão) ou ridges
+    stylus wallpaper --seguir        fica olhando: mudou de disco, muda a tela
+    stylus wallpaper --sozinho       liga o --seguir a cada login
+    stylus wallpaper --restaurar     volta ao papel de parede do sistema
+
+DUAS COISAS QUE ISTO TEM QUE RESPEITAR
+--------------------------------------
+1. Desenhar CUSTA: o gerador decodifica o álbum inteiro para medir a
+   intensidade. Um disco novo leva de segundos a minutos. Por isso o
+   resultado é guardado em cache pelo caminho do disco — o segundo login com
+   o mesmo disco é instantâneo — e o `--seguir` só redesenha quando o DISCO
+   muda, nunca quando a faixa muda.
+2. Papel de parede é do usuário. Nada disto acontece sozinho até alguém
+   pedir com `--sozinho`, e `--restaurar` desfaz por inteiro.
+"""
+import argparse
+import hashlib
+import os
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, "/usr/share/stylus/deck")
+try:
+    import vinyl
+except Exception as e:                                    # noqa: BLE001
+    sys.exit(f"stylus-wallpaper: preciso do vinyl.py do deck: {e}")
+
+DECK = "/usr/share/stylus/deck"
+GERADOR = os.path.join(DECK, "tools", "vinyl_wallpaper.py")
+PADRAO = "/usr/share/backgrounds/stylus/stylus.png"
+
+CACHE = os.path.expanduser("~/.cache/stylus/wallpapers")
+CONF = os.path.expanduser("~/.config/stylus/wallpaper")
+INTERVALO = 5.0
+
+
+def python_do_deck():
+    """O venv quando ele existe, o python do sistema quando não.
+
+    O gerador usa numpy e pillow, que vêm em pacote; o venv existe pelo
+    PyOpenGL do deck e tem --system-site-packages, então os dois servem.
+    """
+    venv = os.path.join(DECK, "venv", "bin", "python3")
+    return venv if os.access(venv, os.X_OK) else sys.executable
+
+
+def resolucao():
+    """A tela maior que houver — o feh --bg-fill corta o resto.
+
+    Sem X (um serviço que subiu cedo demais, uma sessão de console), cai num
+    tamanho comum em vez de morrer: o desenho não fica errado, fica menor.
+    """
+    try:
+        saida = subprocess.run(["xrandr", "--current"], check=False,
+                               capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return "2560x1600"
+    melhor = 0
+    escolha = "2560x1600"
+    for linha in saida.splitlines():
+        if " connected" not in linha:
+            continue
+        for campo in linha.split():
+            if "x" in campo and campo.split("x")[0].isdigit():
+                try:
+                    w, h = campo.split("+")[0].split("x")
+                    w, h = int(w), int(h)
+                except ValueError:
+                    continue
+                if w * h > melhor:
+                    melhor, escolha = w * h, f"{w}x{h}"
+                break
+    return escolha
+
+
+def alvo_de_cache(pasta, estilo, res):
+    # O caminho do disco decide o arquivo. Não entra a data: a intensidade de
+    # um álbum não muda, e usar mtime faria todo `touch` na pasta jogar fora
+    # minutos de decodificação.
+    chave = hashlib.sha1(f"{os.path.realpath(pasta)}|{estilo}|{res}"
+                         .encode()).hexdigest()[:16]
+    return os.path.join(CACHE, f"{chave}.png")
+
+
+def tocando():
+    """A pasta do disco que está tocando agora, ou o último que tocou."""
+    try:
+        snap = vinyl.Session().snapshot()
+    except Exception:                                     # noqa: BLE001
+        snap = {}
+    caminho = snap.get("path") or ""
+    if caminho:
+        pasta = os.path.dirname(caminho)
+        if os.path.isdir(pasta):
+            return pasta
+    try:
+        f = vinyl.resolve_album(snap.get("path"), snap.get("artist", "") or "",
+                                snap.get("album", "") or "")
+        if f:
+            return f
+    except Exception:                                     # noqa: BLE001
+        pass
+    # last_played() é {pasta: quando}, não uma pasta. Devolvê-lo direto punha
+    # um dicionário no lugar de um caminho e o desenho saía "não existe: {...}".
+    try:
+        vistos = vinyl.last_played() or {}
+    except Exception:                                     # noqa: BLE001
+        return None
+    if not vistos:
+        return None
+    pasta = max(vistos, key=vistos.get)
+    return pasta if os.path.isdir(pasta) else None
+
+
+def desenhar(pasta, estilo, res, quieto=False):
+    """Devolve o png (do cache ou recém-desenhado), ou None."""
+    png = alvo_de_cache(pasta, estilo, res)
+    if os.path.isfile(png) and os.path.getsize(png) > 0:
+        return png
+    os.makedirs(CACHE, exist_ok=True)
+    if not os.path.isfile(GERADOR):
+        print(f"stylus-wallpaper: falta {GERADOR}", file=sys.stderr)
+        return None
+    if not quieto:
+        print(f"  desenhando {os.path.basename(pasta)}… "
+              f"(mede o álbum inteiro; da próxima vez é instantâneo)")
+    tmp = png + ".parcial"
+    r = subprocess.run([python_do_deck(), GERADOR, "--album", pasta,
+                        "--style", estilo, "--res", res, "--out", tmp],
+                       check=False,
+                       stdout=subprocess.DEVNULL if quieto else None,
+                       stderr=subprocess.PIPE, text=True)
+    if r.returncode != 0 or not os.path.isfile(tmp):
+        # Sem o .parcial pela metade: um png truncado faz o feh falhar em
+        # silêncio e a tela fica preta sem nada dizer por quê.
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        if not quieto and r.stderr:
+            print("  " + r.stderr.strip().splitlines()[-1], file=sys.stderr)
+        return None
+    os.replace(tmp, png)
+    return png
+
+
+def pendurar(png):
+    try:
+        return subprocess.run(["feh", "--no-fehbg", "--bg-fill", png],
+                              check=False,
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        print("stylus-wallpaper: falta o feh", file=sys.stderr)
+        return False
+
+
+def ligado():
+    return os.path.isfile(CONF)
+
+
+def estilo_guardado(padrao="groove"):
+    try:
+        with open(CONF, encoding="utf-8") as fh:
+            v = fh.read().strip()
+        return v if v in ("groove", "ridges") else padrao
+    except OSError:
+        return padrao
+
+
+def uma_vez(pasta, estilo, res, quieto=False):
+    png = desenhar(pasta, estilo, res, quieto=quieto)
+    if not png:
+        return 1
+    if not pendurar(png):
+        return 1
+    if not quieto:
+        print(f"  {os.path.basename(pasta)} está na parede")
+    return 0
+
+
+def seguir(estilo, res):
+    """Redesenha quando o DISCO muda. Nunca quando a faixa muda."""
+    atual = None
+    while True:
+        pasta = tocando()
+        if pasta and pasta != atual:
+            atual = pasta
+            uma_vez(pasta, estilo, res, quieto=True)
+        time.sleep(INTERVALO)
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("album", nargs="?", default=None)
+    ap.add_argument("--estilo", "--style", dest="estilo",
+                    choices=("groove", "ridges"), default=None)
+    ap.add_argument("--sorteio", action="store_true")
+    ap.add_argument("--seguir", action="store_true")
+    ap.add_argument("--sozinho", action="store_true")
+    ap.add_argument("--restaurar", action="store_true")
+    # O que a sessão gráfica chama: não faz nada até alguém pedir --sozinho.
+    ap.add_argument("--se-ligado", action="store_true")
+    args = ap.parse_args()
+
+    if args.restaurar:
+        try:
+            os.unlink(CONF)
+        except OSError:
+            pass
+        if os.path.isfile(PADRAO) and pendurar(PADRAO):
+            print("  de volta ao papel de parede do sistema")
+        return 0
+
+    estilo = args.estilo or estilo_guardado()
+
+    if args.sozinho:
+        os.makedirs(os.path.dirname(CONF), exist_ok=True)
+        with open(CONF, "w", encoding="utf-8") as fh:
+            fh.write(estilo + "\n")
+        print(f"  ligado: a cada login, estilo {estilo}.")
+        print("  `stylus wallpaper --restaurar` desfaz.")
+
+    if args.se_ligado and not ligado():
+        return 0
+
+    res = resolucao()
+
+    if args.seguir or (args.se_ligado and ligado()):
+        try:
+            seguir(estilo, res)
+        except KeyboardInterrupt:
+            pass
+        return 0
+
+    if args.sorteio:
+        pasta = vinyl.draw_record()
+    elif args.album:
+        pasta = args.album if os.path.isdir(args.album) else \
+            vinyl.resolve_album(None, "", args.album)
+    else:
+        pasta = tocando()
+
+    if not pasta:
+        print("stylus-wallpaper: não achei disco nenhum. "
+              "Toque alguma coisa, ou passe o nome de um disco.", file=sys.stderr)
+        return 1
+    return uma_vez(pasta, estilo, res)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

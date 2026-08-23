@@ -34,6 +34,8 @@ cat <<EOF
                               puxando para o que faz tempo que não toca
     ${b}stylus shelf${o}              a estante em grade de capas
     ${b}stylus lado${o}               em que lado do disco você está, e quanto falta
+    ${b}stylus parede${o} ${d}[DISCO]${o}    põe o disco que está tocando de papel de
+                              parede — o desenho vem da intensidade dele
     ${b}stylus scope${o}              só o instrumento: o vetorscópio, sem disco
 
   ${a}a coleção${o}
@@ -110,6 +112,8 @@ case "$cmd" in
         fi
         ;;
     mode)        exec stylus-mode "$@" ;;
+    # O papel de parede desenhado a partir do disco que está tocando.
+    wallpaper|parede|fundo) exec stylus-wallpaper "$@" ;;
     # Em que lado do disco você está, agora.
     side|lado)   exec stylus-side-watch --once "$@" ;;
     # Estes três existiam como uma FUNÇÃO do fish chamada `stylus`, que ficava

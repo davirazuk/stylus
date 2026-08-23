@@ -36,6 +36,10 @@ exec --no-startup-id ~/.config/picom/launch.sh
 # Pointed one level too high, feh simply exits and the desktop comes up on the
 # X root's grey stipple, which reads as "the theme did not load".
 exec --no-startup-id feh --no-fehbg --bg-fill /usr/share/backgrounds/stylus/stylus.png
+# E, se a pessoa ligou com `stylus parede --sozinho`, o papel de parede passa a
+# ser o DISCO que está tocando, desenhado a partir da intensidade medida dele.
+# Sem isso ligado, esta linha sai imediatamente e não faz nada.
+exec --no-startup-id stylus-wallpaper --se-ligado
 exec --no-startup-id nm-applet
 exec --no-startup-id blueman-applet
 exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
