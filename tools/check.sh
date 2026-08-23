@@ -74,7 +74,9 @@ while IFS= read -r -d '' l; do
         # /dev/null é MÁSCARA — é assim que se desliga um gerador do systemd,
         # não é um link apontando para o nada.
         /dev/null) continue ;;
-        /usr/lib/*) continue ;;
+        # /usr/lib e /usr/share vêm de PACOTE: existem dentro da ISO e não
+        # aqui. /etc/localtime aponta para o zoneinfo do tzdata, por exemplo.
+        /usr/lib/*|/usr/share/*) continue ;;
         /*) [[ -e airootfs$alvo ]] && continue ;;
         *)  [[ -e $(dirname "$l")/$alvo ]] && continue ;;
     esac
@@ -88,7 +90,7 @@ sec "nada de IFOS sobrando"
 # veio o maquinário de hardware, o outro explica a herança para quem for
 # mexer aqui. O resto do repositório não pode ter sobra de nome antigo.
 resto=$(grep -rIl --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
-        --exclude-dir=.pkgcache --exclude=check.sh \
+        --exclude-dir=.pkgcache --exclude-dir=.claude --exclude=check.sh \
         --exclude=README.md --exclude=CLAUDE.md \
         -e '\bifos\b' -e '\bIFOS\b' . 2>/dev/null || true)
 if [[ -z $resto ]]; then ok "o repositório é só do STYLUS"
@@ -114,6 +116,32 @@ for s in airootfs/usr/share/xsessions/*.desktop; do
     exe=$(grep -m1 '^Exec=' "$s" | cut -d= -f2 | awk '{print $1}')
     [[ -f airootfs$exe ]] && ok "sessão $(basename "$s")" || bad "sessão $(basename "$s") aponta para $exe, que não existe"
 done
+
+sec "o que o systemd exige para não parar o boot"
+# Sem /etc/localtime o systemd-firstboot entra no meio da inicialização e
+# PERGUNTA o fuso horário num prompt, na tela, para sempre. A ISO parece
+# travada e não está. Custou uma construção inteira para descobrir, e é uma
+# linha para conferir.
+for f in etc/localtime etc/hostname etc/locale.conf etc/os-release; do
+    [[ -e airootfs/$f ]] && ok "$f" || bad "falta airootfs/$f"
+done
+[[ -e airootfs/etc/passwd ]] && grep -q '^stylus:' airootfs/etc/passwd \
+    && ok "o usuário do live medium existe" || bad "sem usuário stylus em /etc/passwd"
+
+sec "nenhuma imagem sobrando de outra distribuição"
+# Substituição de texto não alcança PNG: o splash do menu de boot continuou
+# dizendo o nome da outra distribuição na primeira ISO, e ele é o primeiro
+# quadro que alguém vê.
+outra=0
+while IFS= read -r -d '' img; do
+    rel=${img#./}
+    velha="$HOME/Projetos/ifos/${rel//stylus/ifos}"
+    if [[ -f $velha ]] && cmp -s "$img" "$velha"; then
+        bad "ainda é a arte antiga: $rel"; outra=1
+    fi
+done < <(find . -path ./work -prune -o -path ./out -prune -o \
+              -name '*.png' -print0 2>/dev/null)
+(( outra )) || ok "toda a arte é do STYLUS"
 
 sec "modos de arquivo"
 n=0

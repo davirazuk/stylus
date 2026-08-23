@@ -22,7 +22,7 @@ import os
 import sys
 
 try:
-    from PIL import Image, ImageDraw, ImageFilter
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
 except ImportError:
     sys.exit("precisa do Pillow:  pip install --user Pillow")
 
@@ -149,6 +149,64 @@ def logo(size=320):
     return img.resize((size, size), Image.LANCZOS)
 
 
+def _fonte(px):
+    """Uma fonte de verdade, ou o que houver. O menu de boot é o único lugar
+    onde o NOME precisa aparecer — em todo o resto a imagem se explica."""
+    for p in ("/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
+              "/usr/share/fonts/TTF/JetBrainsMonoNL-Regular.ttf",
+              "/usr/share/fonts/TTF/DejaVuSans.ttf",
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, px)
+            except OSError:
+                pass
+    import glob as _g
+    for p in _g.glob("/usr/share/fonts/**/*.ttf", recursive=True)[:1]:
+        try:
+            return ImageFont.truetype(p, px)
+        except OSError:
+            pass
+    return ImageFont.load_default()
+
+
+def splash(w=640, h=480):
+    """O fundo do menu do syslinux.
+
+    640x480 porque é o que o vesamenu do syslinux usa; qualquer outra coisa
+    ele redimensiona feio. Este é o PRIMEIRO frame do sistema — foi
+    justamente ele que passou batido na primeira ISO e continuou dizendo o
+    nome da outra distribuição, porque é imagem e nenhuma substituição de
+    texto alcança imagem.
+    """
+    img = base(w, h)
+    img = grooves(img, w * 0.5, h * 1.62, h * 0.55, h * 2.4, 190, 1,
+                  GROOVE, GROOVE_HI)
+    ang = math.radians(-30)
+    x0, y0 = w * 0.60, h * 0.10
+    img = agulha(img, x0, y0, x0 + math.cos(ang) * w * 0.26,
+                 y0 - math.sin(ang) * w * 0.26)
+    img = vinheta(img, 0.55)
+    d = ImageDraw.Draw(img)
+    f = _fonte(46)
+    texto = "S T Y L U S"
+    try:
+        bb = d.textbbox((0, 0), texto, font=f)
+        tw, th = bb[2] - bb[0], bb[3] - bb[1]
+    except AttributeError:
+        tw, th = d.textsize(texto, font=f)
+    d.text(((w - tw) / 2, h * 0.30 - th / 2), texto, font=f, fill=(226, 231, 240))
+    f2 = _fonte(15)
+    sub2 = "a agulha é o único ponto em que um objeto vira som"
+    try:
+        bb = d.textbbox((0, 0), sub2, font=f2)
+        sw = bb[2] - bb[0]
+    except AttributeError:
+        sw = d.textsize(sub2, font=f2)[0]
+    d.text(((w - sw) / 2, h * 0.30 + th * 1.35), sub2, font=f2, fill=(126, 137, 156))
+    return img
+
+
 ASCII = r"""
         ▁▁▁▁▁▁▁▁▁
      ▗▄▟▀▔     ▔▀▙▄▖
@@ -167,6 +225,8 @@ ASCII = r"""
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="airootfs")
+    ap.add_argument("--syslinux", default="syslinux",
+                    help="onde fica o splash do menu de boot")
     args = ap.parse_args()
     out = args.out
 
@@ -186,6 +246,11 @@ def main():
     salva(logo(320), "usr/share/plymouth/themes/stylus/logo.png")
     salva(logo(256), "usr/share/icons/hicolor/256x256/apps/stylus.png")
     salva(logo(64), "usr/share/icons/hicolor/64x64/apps/stylus.png")
+
+    sp = os.path.join(args.syslinux, "splash.png")
+    os.makedirs(args.syslinux, exist_ok=True)
+    splash().save(sp)
+    print(f"  {sp}  640x480")
 
     p = os.path.join(out, "usr/share/stylus/logo.txt")
     os.makedirs(os.path.dirname(p), exist_ok=True)
