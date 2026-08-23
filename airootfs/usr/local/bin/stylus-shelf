@@ -11,10 +11,19 @@ export PYTHONPATH=/usr/share/stylus/deck
 CACHE="$HOME/.cache/stylus/shelf.tsv"
 mkdir -p "$(dirname "$CACHE")"
 
-RAIZ=$("$PY" -c 'import vinyl; print(vinyl.library_root())')
-# Refaz o índice quando a raiz mudou de data — varrer custa ~1s e fazer isso
-# a cada abertura deixaria o menu lento sem motivo.
-if [[ ! -s $CACHE || $RAIZ -nt $CACHE ]]; then
+# TODAS as raízes, não só a primeira. Desde que a estante pode estar em mais
+# de um lugar (a de casa e a do celular, montada pelo `stylus webdav`), olhar
+# só para a primeira significa que disco novo no celular nunca refaz o índice
+# — a grade abriria sem ele até alguém mexer na pasta de casa.
+mapfile -t RAIZES < <("$PY" -c 'import vinyl; print("\n".join(vinyl.library_roots()))')
+# Refaz o índice quando alguma raiz mudou de data — varrer custa ~1s e fazer
+# isso a cada abertura deixaria o menu lento sem motivo.
+refazer=0
+[[ -s $CACHE ]] || refazer=1
+for _r in "${RAIZES[@]}"; do
+    [[ -n $_r && $_r -nt $CACHE ]] && refazer=1
+done
+if (( refazer )); then
     "$PY" - <<'PYEOF' > "$CACHE"
 import os, vinyl
 vistos = vinyl.last_played()
