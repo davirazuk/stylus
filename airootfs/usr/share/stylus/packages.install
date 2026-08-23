@@ -165,7 +165,13 @@ vkd3d
 lib32-vkd3d
 vulkan-tools
 sdl2-compat
-lib32-sdl2-compat
+# lib32-sdl2-compat saiu daqui, e não por escolha de projeto: o espelho não o
+# serve — nem depois de um `pacman -Sy` na hora, o que descarta lista velha.
+# Deve estar em trânsito para o multilib-testing, como acontece quando um
+# pacote é reconstruído. Um nome que o pacman não resolve não é um aviso: o
+# mkarchiso morre nele, e a ISO inteira não sai por causa de uma biblioteca
+# de 32 bits que o Steam e o Wine trazem sozinhos como dependência quando
+# precisam. O sdl2-compat de 64 bits continua logo acima.
 libgdiplus
 gtk3
 lib32-gtk3
