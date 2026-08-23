@@ -72,6 +72,25 @@ if command -v i3 >/dev/null; then
     done
 fi
 
+sec "a tela cheia, sem tela"
+# O deck tinha teste e a interface não — e ela é a CARA da máquina: no modo
+# música é a única coisa na tela, e um erro não tratado nela deixa o
+# computador preto. Roda com o vídeo "dummy" do SDL, então não precisa de X.
+UITEST=airootfs/usr/share/stylus/ui/tools/test_ui.py
+# PYGAME_HIDE_SUPPORT_PROMPT: o pygame cumprimenta em stdout ao ser importado,
+# e o cumprimento cairia no meio do relatório.
+export PYGAME_HIDE_SUPPORT_PROMPT=1
+if [[ -f $UITEST ]] && python3 -c 'import pygame' 2>/dev/null; then
+    if out=$(python3 "$UITEST" 2>&1); then
+        ok "$(grep -oE '[0-9]+ passaram' <<<"$out" | tail -1) na interface"
+    else
+        bad "a interface tem seção quebrada:"
+        grep -E '✗' <<<"$out" | head -6 | sed 's/^/      /'
+    fi
+else
+    printf '  %s—%s pygame não instalado aqui; a interface não foi exercitada\n' "$y" "$z"
+fi
+
 sec "links simbólicos"
 # Link absoluto aponta para dentro da ISO, não para este computador: /etc/x
 # tem que ser conferido como airootfs/etc/x. Sem isso metade dos links do
