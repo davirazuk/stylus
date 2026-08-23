@@ -123,6 +123,9 @@ bindsym $mod+Shift+a   exec $termrun "Programas" stylus-app
 # The installer. It was bound to `install-stylus`, which has never been the
 # name of anything: the command is stylus-install. Booting the USB stick and
 # pressing the documented key did nothing whatsoever.
+# O Claude Code, com a fonte do sistema aberta do lado. Numa distribuição
+# feita por uma pessoa só, este é o atalho para "consertar isso agora".
+bindsym $mod+c         exec $termrun "Claude Code" stylus-claude
 bindsym $mod+Shift+i   exec $termrun "Instalar o STYLUS" sudo stylus-install
 bindsym $mod+q         kill
 bindsym $mod+Shift+q   kill

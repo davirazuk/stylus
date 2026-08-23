@@ -20,6 +20,7 @@
   Mod+E              arquivos
   Mod+Shift+A        catálogo de programas, jogos e drivers
   Mod+Shift+I        instalar o STYLUS no computador
+  Mod+C              Claude Code, na fonte do sistema
   Mod+Escape         processos (btop)
   Mod+F1             esta lista
 

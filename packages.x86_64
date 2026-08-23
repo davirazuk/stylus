@@ -38,6 +38,10 @@ man-pages
 nano
 vim
 git
+# Claude Code procura com o ripgrep quando ele existe, e cai para uma busca
+# muito mais lenta quando não. São cinco megabytes e o `stylus claude` é
+# metade da manutenção desta distribuição agora.
+ripgrep
 rsync
 pv
 tmux

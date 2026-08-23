@@ -46,6 +46,10 @@ man-pages
 nano
 vim
 git
+# Claude Code procura com o ripgrep quando ele existe, e cai para uma busca
+# muito mais lenta quando não. São cinco megabytes e o `stylus claude` é
+# metade da manutenção desta distribuição agora.
+ripgrep
 rsync
 pv
 tmux
@@ -61,6 +65,12 @@ curl
 jq
 python
 python-pip
+# A segunda via do `stylus claude`: quando o instalador oficial não vem
+# inteiro, ele cai para `npm install -g --prefix ~/.local`. Só na máquina
+# instalada — na ISO seriam sessenta megabytes de RAM para um caminho de
+# reserva.
+nodejs
+npm
 xdg-utils
 xdg-user-dirs
 terminus-font

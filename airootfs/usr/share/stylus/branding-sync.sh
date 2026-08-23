@@ -72,9 +72,22 @@ ok "$(find "$DST/usr/local/bin" -maxdepth 1 -name 'stylus*' 2>/dev/null | wc -l)
 # ── 2. o STYLUS propriamente dito ──────────────────────────────────────────
 info "Deck, tela cheia e ferramentas…"
 copiar usr/share/stylus
-copiar usr/lib/systemd/user/stylus-phone-watch.service
+# Todas as unidades de usuário, por glob e não por lista. Escrito à mão, isto
+# trazia só a do celular — e a do lado do disco, acrescentada depois, ficava
+# para trás sem ninguém notar: o aviso de virar o lado simplesmente nunca
+# chegava numa máquina instalada, e nada explicava.
+for u in "$SRC"/usr/lib/systemd/user/stylus-*.service; do
+    [[ -e $u ]] || continue
+    copiar "usr/lib/systemd/user/$(basename "$u")"
+done
 for s in stylus stylus-desktop stylus-music; do
     copiar "usr/share/xsessions/$s.desktop"
+done
+# Os lançadores do menu (Mod+D). O sync.sh já copia usr/share/applications
+# numa máquina que existe; numa que acabou de nascer, aqui.
+for f in "$SRC"/usr/share/applications/stylus-*.desktop; do
+    [[ -e $f ]] || continue
+    copiar "usr/share/applications/$(basename "$f")"
 done
 ok "/usr/share/stylus"
 

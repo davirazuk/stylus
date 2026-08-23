@@ -68,6 +68,7 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus app NOME` | Clone Hero, qobuz-dl, Proton-GE, o que não vem em pacote |
 | `stylus update` | traz o STYLUS novo do GitHub |
 | `stylus mode` | troca entre música e área de trabalho |
+| `stylus claude` | o Claude Code, com a fonte do sistema aberta do lado |
 | `stylus atalhos` | a lista de atalhos de teclado |
 | `stylus instalar` | instala no computador (a partir do pendrive) |
 
@@ -114,6 +115,45 @@ Por baixo é o `rclone`, que já estava aqui — monta em espaço de usuário, s
 root, sem linha no `/etc/fstab`, e guarda a senha ofuscada em vez de em texto
 puro num arquivo de sistema. Um servidor num celular muda de IP e cai o tempo
 todo; nada disso merece root.
+
+---
+
+## Consertar
+
+```
+stylus claude
+```
+
+Este sistema é mantido por uma pessoa e um Claude, e até agora o Claude
+trabalhava de longe: um contêiner sem placa de som, sem disco e sem tela, onde
+dava para ler o código e não dava para ver nada acontecer. Foi assim que o
+instalador chegou a formatar o disco para só então descobrir que faltava uma
+linha no `pacman.conf`.
+
+`stylus claude` acaba com isso. Ele instala o Claude Code, deixa a **fonte**
+do sistema em `~/stylus` — um clone de git seu, para editar — e escreve as
+instruções desta máquina em `~/.claude/CLAUDE.md`: onde acaba a fonte e começa
+o sistema, o que é seguro olhar, e o que não se faz.
+
+O ciclo é curto:
+
+```
+# edite em ~/stylus, e então
+~/stylus/tools/check.sh
+sudo STYLUS_SOURCE=~/stylus/airootfs /usr/share/stylus/sync.sh
+```
+
+Isso aplica **este clone** na máquina, sem passar pelo GitHub. Deu certo,
+commit e push; da próxima vez o `stylus update` traz para todo mundo.
+
+A regra que vale aqui, e está escrita nas instruções para não ser esquecida:
+**conserta-se a fonte, não a máquina.** Editar `/usr/local/bin` à mão funciona
+até o próximo `stylus update`, que copia a fonte por cima e apaga o conserto
+sem dizer nada — duas semanas depois o defeito volta e ninguém liga uma coisa
+à outra.
+
+Também vem com `/aplicar` (aplica e diz o que reiniciar) e `/diagnostico`
+(junta o estado real da máquina antes de qualquer palpite).
 
 ---
 

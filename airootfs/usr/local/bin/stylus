@@ -54,6 +54,8 @@ cat <<EOF
     ${b}stylus apps${o} ${d}[NOME]${o}       instala o que não vem em pacote
     ${b}stylus gpu${o}                driver de vídeo
     ${b}stylus mode${o} ${d}[música|área]${o} troca entre a tela cheia e a área de trabalho
+    ${b}stylus claude${o} ${d}[...]${o}      o Claude Code aqui dentro, com a fonte do
+                              sistema do lado e a máquina para olhar
     ${b}stylus atalhos${o}            a lista de atalhos de teclado
     ${b}stylus instalar${o}           instala o STYLUS no computador (medium ao vivo)
     ${b}stylus update${o}             atualiza o sistema
@@ -121,6 +123,9 @@ case "$cmd" in
         exec sudo stylus-install "$@" ;;
     atalhos|keys|teclas)
         exec less -R /usr/share/stylus/keybindings.txt ;;
+    # O Claude Code, nesta máquina. Editar a fonte e VER acontecer é a coisa
+    # que nenhuma sessão remota consegue fazer.
+    claude|ia)   exec stylus-claude "$@" ;;
     aur|yay)     exec install-yay "$@" ;;
     phone)       exec stylus-phone "$@" ;;
     webdav)      exec stylus-webdav "$@" ;;

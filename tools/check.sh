@@ -392,17 +392,87 @@ done < <(sed 's/#.*//' airootfs/etc/skel/.config/i3/config |
 if (( ${#faltando[@]} == 0 )); then ok "todo arquivo que a área de trabalho abre existe"
 else bad "apontam para o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
-sec "o que o instalador chama e precisa existir"
+sec "o que os comandos chamam em /usr/share/stylus"
 # O stylus-install chamava /usr/share/stylus/branding-sync.sh, que NÃO EXISTIA
 # — e chamava com `|| warn`. A instalação terminava dizendo "concluída" e
-# entregava um Arch com i3 sem um comando `stylus` na máquina.
+# entregava um Arch com i3 sem um comando `stylus` na máquina. Agora vale para
+# TODO comando, não só para o instalador: era o instalador porque foi lá que
+# doeu, e não há motivo para o próximo não doer noutro lugar.
+#
+# Dois caminhos não existem no repositório de propósito:
+#   deck/venv/…   o venv é construído dentro do chroot (o PyOpenGL não está
+#                 nos repositórios do Arch), então aqui ele não pode existir.
+#   lock/stylus-  é prefixo de nome montado em tempo de execução, não arquivo.
 faltando=()
 while read -r caminho; do
+    case $caminho in
+        /usr/share/stylus/deck/venv/*|/usr/share/stylus/lock/stylus-) continue ;;
+    esac
     [[ -e airootfs$caminho ]] || faltando+=("$caminho")
 done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
-              airootfs/usr/local/bin/stylus-install | sort -u)
-if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que o instalador chama existe"
-else bad "o instalador chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+              airootfs/usr/local/bin/* | sort -u)
+if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
+else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "os lançadores do menu"
+# Um .desktop com Exec para um comando que não existe some do menu sem erro
+# nenhum — o rofi simplesmente não o lista, e não há onde ler o porquê.
+faltando=()
+for d in airootfs/usr/share/applications/*.desktop; do
+    [[ -e $d ]] || continue
+    linha=$(grep -m1 '^Exec=' "$d") || { faltando+=("$(basename "$d"): sem Exec="); continue; }
+    # O primeiro campo é o programa; o resto são argumentos e pode ser
+    # qualquer coisa (inclusive aspas, que é o caso do stylus-term).
+    prog=${linha#Exec=}; prog=${prog%% *}
+    [[ -x airootfs/usr/local/bin/$prog ]] || command -v "$prog" >/dev/null \
+        || faltando+=("$(basename "$d") -> $prog")
+done
+if (( ${#faltando[@]} == 0 )); then
+    ok "todo .desktop do menu abre um comando que existe"
+else bad "lançador apontando para o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "o branding-sync entrega o STYLUS inteiro"
+# Não confere por leitura: RODA o branding-sync para uma pasta temporária e
+# olha o que caiu lá. É a única conferência do repositório que executa a coisa
+# de verdade, e existe porque a lista de permissão dele é escrita à mão — ela
+# trazia só a unidade do celular, e a do lado do disco, acrescentada depois,
+# ficava para trás em silêncio: numa máquina instalada o aviso de virar o lado
+# simplesmente nunca chegava.
+#
+# Tudo que é `stylus*` em /usr/local/bin e toda unidade de usuário TÊM que
+# chegar. E o que é só do medium ao vivo NÃO pode chegar: o sudo sem senha e o
+# usuário `stylus` do pendrive dentro da máquina de alguém são um defeito de
+# segurança, não um esquecimento.
+tmp=$(mktemp -d)
+mkdir -p "$tmp/usr" "$tmp/etc"
+if STYLUS_SOURCE=airootfs bash airootfs/usr/share/stylus/branding-sync.sh "$tmp" >/dev/null 2>&1; then
+    faltando=(); vazou=()
+    while read -r f; do
+        [[ -e $tmp/${f#airootfs/} ]] || faltando+=("${f#airootfs/}")
+    done < <({ find airootfs/usr/local/bin -maxdepth 1 -name 'stylus*'
+               # Duas buscas e não uma: `find A -name X -o -path Y` só desce em
+               # A, então o -path das unidades nunca casava e a metade que esta
+               # conferência existe para pegar não era conferida.
+               find airootfs/usr/lib/systemd/user -maxdepth 1 -name 'stylus-*.service' 2>/dev/null; })
+    for f in usr/share/stylus/claude/CLAUDE.md usr/share/stylus/packages.install \
+             etc/skel/.config/i3/config etc/os-release etc/pipewire; do
+        [[ -e $tmp/$f ]] || faltando+=("$f")
+    done
+    for f in etc/sudoers.d/10-stylus-live etc/sysusers.d/stylus.conf \
+             etc/tmpfiles.d/stylus-home.conf etc/mkinitcpio.conf.d/archiso.conf \
+             usr/local/bin/choose-mirror usr/local/bin/livecd-sound; do
+        [[ -e $tmp/$f ]] && vazou+=("$f")
+    done
+    if (( ${#faltando[@]} == 0 && ${#vazou[@]} == 0 )); then
+        ok "$(find "$tmp/usr/local/bin" -name 'stylus*' | wc -l) comandos e $(find "$tmp/usr/lib/systemd/user" -name '*.service' 2>/dev/null | wc -l) unidades chegam, e nada do medium vaza"
+    else
+        (( ${#faltando[@]} )) && { bad "o branding-sync não leva:"; printf '      %s\n' "${faltando[@]}"; }
+        (( ${#vazou[@]} ))    && { bad "o branding-sync leva o que é só do medium:"; printf '      %s\n' "${vazou[@]}"; }
+    fi
+else
+    bad "o branding-sync falhou ao copiar para uma pasta de teste"
+fi
+rm -rf "$tmp"
 
 sec "os serviços que a instalação liga"
 # O script que roda no chroot usa `set -e`, e `systemctl enable` de unidade

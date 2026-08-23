@@ -31,6 +31,14 @@ Se ele pedir "conserta meu PC": você conserta o **código**, ele roda
 pendrive, isso é o trabalho — mas confirme o dispositivo antes de gravar.
 `tools/flash.sh` recusa disco interno de propósito; não contorne isso.
 
+**Exceção 2 — você está NUMA máquina STYLUS.** Se `/etc/os-release` disser
+`ID=stylus`, esta sessão não é um contêiner: é o computador de alguém, com o
+áudio tocando. Aí existe `~/.claude/CLAUDE.md` (instalado pelo `stylus
+claude`) e ele manda no que é sobre a máquina — aplicar pelo `sync.sh` e pelo
+`stylus-update` passa a ser justamente o serviço. Este arquivo continua
+mandando em tudo que é sobre o código. O resto da tabela acima continua de pé
+em qualquer caso: `stylus-install` formata disco nos dois lugares.
+
 ---
 
 ## 2. Como se testa aqui
@@ -89,6 +97,8 @@ airootfs/
     packages.install       o que uma máquina INSTALADA recebe (o instalador lê)
     packages.live-only     o que fica só na ISO, com o motivo escrito
     branding-sync.sh       copia o STYLUS para o sistema recém-instalado
+    claude/                as instruções do Claude Code NA máquina, e os
+                             comandos /aplicar e /diagnostico
     ui/tools/test_ui.py    a tela cheia exercitada sem X (o check.sh roda)
     sync.sh                copia o airootfs por cima do sistema vivo
 ```
@@ -171,6 +181,16 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
 - **Empurrar ETIQUETA não passa pelo proxy de git da sessão do Claude** (ramo
   passa). A Release sai por marcador `[release]` na mensagem do commit, e o
   `gh release create` cria a etiqueta do lado do servidor.
+- **A lista do `branding-sync.sh` é escrita à mão, e por isso esquece.** Ela
+  trazia `stylus-phone-watch.service` por nome; a unidade do lado do disco,
+  acrescentada depois, ficava para trás — numa máquina instalada o aviso de
+  virar o lado simplesmente nunca chegava, e nada explicava. Agora vai por
+  glob, e o `check.sh` RODA o branding-sync para uma pasta temporária e
+  confere o que caiu lá. É a única conferência que executa a coisa de
+  verdade, e é a que pega o que leitura não pega.
+- **`find A -name X -o -path Y` só desce em A.** A conferência acima nasceu
+  com essa forma e a metade das unidades nunca era conferida — ela passava
+  verde exatamente sobre o defeito que existia para pegar. Duas buscas.
 - **A ISO liga no MODO MÚSICA.** Então é lá que o instalador precisa estar:
   a interface mostra a seção INSTALAR quando existe `/run/archiso`, e só
   nesse caso. Antes não havia caminho nenhum do pendrive até o instalador.
