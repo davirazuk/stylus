@@ -37,12 +37,14 @@ import unicodedata
 import urllib.error
 import urllib.request
 
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
 API = "http://127.0.0.1:8765/api"
-QOBUZ_DIR = "/home/davirazuk/Qobuz Downloads"
-LIB = "/home/davirazuk/Músicas/Fortnite Balls"
-TOOLS = "/home/davirazuk/.local/share/stylus/tools"
+QOBUZ_DIR = os.environ.get("STYLUS_QOBUZ_DIR") or os.path.expanduser("~/Qobuz Downloads")
+LIB = raiz()
+TOOLS = os.path.expanduser("~/.local/share/stylus/tools")
 LOG = "/tmp/qobuz-gui.log"
-PROGRESS = "/home/davirazuk/.local/share/stylus-queue6-progress.tsv"
+PROGRESS = os.path.expanduser("~/.local/share/stylus/queue-progress.tsv")
 
 DL_TIMEOUT = 3600     # per album, seconds
 POLL = 5

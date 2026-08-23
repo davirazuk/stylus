@@ -10,11 +10,6 @@
 #  would bury the installer behind a window most people would not think to
 #  close.
 #
-#  The first login on an installed machine. The welcome screen shows its
-#  first-run tips once and then never again; covering it on the one occasion it
-#  appears would mean nobody ever reads it. From the second login on, the
-#  launcher opens normally.
-#
 #  Not wanted at all? Delete the matching exec line from ~/.config/i3/config.
 #  Nothing else depends on it, and Mod+G still opens the launcher by hand.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -22,11 +17,14 @@ set -u
 
 command -v stylus-ui >/dev/null || exit 0
 
-# Live media: the installer offer comes first.
+# Live media: the desktop mode of the USB stick is where somebody goes to
+# partition a disk or look at hardware before installing, so it stays a plain
+# desktop. Music mode - which is what the medium actually boots into - is the
+# full-screen shelf already.
 [[ -d /run/archiso ]] && exit 0
 
-# First login: let the welcome screen have the screen to itself.
-STAMP="${XDG_CONFIG_HOME:-$HOME/.config}/stylus/welcome-done"
-[[ -e $STAMP ]] || exit 0
-
+# This used to also require a `welcome-done` stamp, written by a stylus-welcome
+# that does not exist in this distribution. The file was therefore never
+# created, the test never passed, and the launcher this line exists to open
+# never once opened by itself on any machine.
 exec stylus-ui

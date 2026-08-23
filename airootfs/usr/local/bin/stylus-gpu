@@ -113,36 +113,44 @@ nvidia_arch() {
 # Which driver that generation needs. One word, so stylus-install can ask for it
 # without duplicating any of the knowledge above.
 #
-#   open        nvidia-open-dkms  — Turing and newer. NVIDIA's own recommended
-#                                   driver for these, and the one that will go
-#                                   on receiving them.
-#   proprietary nvidia-dkms       — Maxwell, Pascal, Volta. The open modules do
-#                                   not bind on these at all. This is also the
-#                                   safe answer for a card nothing recognises,
-#                                   because it covers strictly more hardware
-#                                   than the open one does.
-#   legacy470   nvidia-470xx-dkms — Kepler. Not in the official repositories.
-#   legacy390   nvidia-390xx-dkms — Fermi. Not in the official repositories
-#                                   either, and old enough that nouveau is a
-#                                   defensible answer on its own.
+#   open        nvidia-open-dkms  — Turing and newer, e o padrão para o que
+#                                   não se reconhece. Hoje é o ÚNICO driver da
+#                                   NVIDIA que ainda está nos repositórios
+#                                   oficiais.
+#   legacy580   nvidia-580xx-dkms — Maxwell, Pascal, Volta. Fora dos repos.
+#   legacy470   nvidia-470xx-dkms — Kepler. Fora dos repos.
+#   legacy390   nvidia-390xx-dkms — Fermi. Fora dos repos, e velho o bastante
+#                                   para o nouveau ser resposta defensável.
 #
-# The two legacy names are named, never installed automatically: they live in
-# the AUR, and a name that has been dropped there fails halfway through a build
-# rather than at the start. What --fix does with them is offer them.
+# O `proprietary` saiu daqui, e não por gosto: o Arch trocou os pacotes
+# principais da NVIDIA pelos módulos abertos, e `nvidia-dkms` (assim como
+# `nvidia`) simplesmente não existe mais nos repositórios. Enquanto ele foi a
+# resposta para Maxwell/Pascal/Volta E o padrão para placa não reconhecida,
+# o instalador pedia ao pacstrap um pacote inexistente — que é exatamente o
+# "target not found" que este trabalho começou consertando, só que na parte
+# de vídeo.
+#
+# A partir da série 590 o próprio driver da NVIDIA deixou de suportar Pascal
+# e anteriores, então essas placas dependem do ramo 580, que vive na AUR. Os
+# nomes legacy são DITOS, nunca instalados sozinhos: um nome que caiu na AUR
+# falha no meio de uma compilação em vez de falhar no começo. O que o --fix
+# faz com eles é oferecer.
 nvidia_driver_for() {   # nvidia_driver_for [arch]
     case ${1:-$(nvidia_arch)} in
         blackwell|ada|ampere|turing)  echo open ;;
-        volta|pascal|maxwell)         echo proprietary ;;
+        volta|pascal|maxwell)         echo legacy580 ;;
         kepler)                       echo legacy470 ;;
         fermi)                        echo legacy390 ;;
-        *)                            echo proprietary ;;
+        # Placa que nada reconhece é quase sempre mais nova do que esta lista,
+        # não mais velha: o aberto é o palpite certo, e é o que existe.
+        *)                            echo open ;;
     esac
 }
 
 nvidia_driver_pkg() {   # nvidia_driver_pkg <choice>
     case $1 in
         open)        echo nvidia-open-dkms ;;
-        proprietary) echo nvidia-dkms ;;
+        legacy580)   echo nvidia-580xx-dkms ;;
         legacy470)   echo nvidia-470xx-dkms ;;
         legacy390)   echo nvidia-390xx-dkms ;;
     esac
@@ -263,7 +271,7 @@ MISSING=()    # package names, without which something is broken
 SUGGEST=()    # package names worth having, whose absence is not a fault
 NOTES=()      # true, worth saying, and not a fault either
 ACTIONS=()    # tokens: multilib dkms initramfs reboot modeset nouveau-blacklist
-              #         swap-proprietary force-nouveau early-kms nvidia-unbound
+              #         force-nouveau early-kms nvidia-unbound
 NV_ARCH=""    # which NVIDIA generation this is, once diagnose_nvidia has run
 NV_WANT=""    # which driver that generation needs: open/proprietary/legacy*
 
@@ -495,11 +503,15 @@ diagnose_nvidia() {
     # machine draws on the processor and looks perfectly configured doing it.
     if pkg nvidia-open-dkms || pkg nvidia-open; then
         case $NV_WANT in
-            proprietary)
-                problem "O driver instalado é o de módulos abertos, e ele não funciona nesta placa ($(arch_label "$NV_ARCH")). Ele carrega, não pega a placa, e o desenho continua no processador. O driver certo aqui é o fechado."
-                action swap-proprietary ;;
-            legacy470|legacy390)
-                problem "O driver instalado não funciona nesta placa ($(arch_label "$NV_ARCH")): ela é antiga demais para qualquer driver NVIDIA que ainda esteja nos repositórios."
+            # Maxwell/Pascal/Volta caíram junto com o `nvidia-dkms`: os pacotes
+            # principais do Arch passaram a ser os de módulos abertos, e a
+            # partir da série 590 o driver da NVIDIA nem suporta mais essas
+            # placas. O que resta nos repositórios não pega a placa, e o que
+            # pegaria (ramo 580) está na AUR. É o mesmo caso das outras
+            # legacy: dizer o nome, oferecer o nouveau, não compilar nada
+            # sozinho.
+            legacy580|legacy470|legacy390)
+                problem "O driver instalado não funciona nesta placa ($(arch_label "$NV_ARCH")): não há driver NVIDIA para ela nos repositórios oficiais — o que serviria ($(nvidia_driver_pkg "$NV_WANT")) está na AUR."
                 action force-nouveau ;;
         esac
     fi
@@ -511,8 +523,7 @@ diagnose_nvidia() {
         # what an unsupported card looks like from the outside.
         if nvidia_bound; then
             good "Módulo nvidia carregado e com a placa nas mãos"
-        elif has_action swap-proprietary || has_action force-nouveau ||
-             has_action hw-fault; then
+        elif has_action force-nouveau || has_action hw-fault; then
             # Why it took no card is already established above, either from the
             # card's generation or from the driver's own words. Saying it again
             # in vaguer language helps nobody.
@@ -599,9 +610,14 @@ diagnose_nvrm() {
     [[ -n $log ]] || return 0
 
     if grep -q 'not supported by the NVIDIA open kernel modules' <<<"$log"; then
-        has_action swap-proprietary ||
-            { problem "O próprio driver disse que esta placa não é suportada pelos módulos abertos. O driver fechado (nvidia-dkms) funciona nela."
-              action swap-proprietary; }
+        # Antes isto mandava trocar pelo `nvidia-dkms`. Esse pacote não existe
+        # mais: o Arch passou os pacotes principais da NVIDIA para os módulos
+        # abertos. Então o que a mensagem do driver quer dizer, hoje, é que
+        # esta placa não tem driver da NVIDIA nos repositórios — e o caminho
+        # que sobra é o nouveau, com o ramo da AUR dito em voz alta.
+        has_action force-nouveau ||
+            { problem "O próprio driver disse que esta placa não é suportada pelos módulos abertos — e não há driver fechado da NVIDIA nos repositórios oficiais para trocar. O nouveau funciona nela; o driver que funcionaria ($(nvidia_driver_pkg "${NV_WANT:-legacy580}")) está na AUR."
+              action force-nouveau; }
     fi
 
     # "supported through the NVIDIA 470.xx Legacy drivers" - and the xx is
@@ -923,21 +939,6 @@ fix() {
         action reboot
     fi
 
-    # The open modules on a card they do not cover.
-    if has_action swap-proprietary; then
-        printf '    Trocando os módulos abertos pelo driver fechado da NVIDIA,\n'
-        printf '    que é o que funciona numa placa %s.\n\n' "$(arch_label "${NV_ARCH:-desconhecida}")"
-        # lib32-nvidia-utils belongs in this list and was missing from it:
-        # replacing nvidia-utils without replacing its 32-bit half leaves the
-        # two at different versions, which is the Steam 0x3008 failure. pacman
-        # skips it when it is already current, so naming it costs nothing.
-        MISSING+=(nvidia-dkms dkms nvidia-utils lib32-nvidia-utils)
-        local base; base=$(kernel_pkgbase); [[ -n $base ]] && MISSING+=("${base}-headers")
-        action drop-open
-        action early-kms
-        action reboot
-    fi
-
     # And the other direction. A card too old for anything in the repositories
     # has exactly one driver that works today, and it is the free one - which
     # cannot load while nvidia-utils is telling modprobe to blacklist it.
@@ -1233,7 +1234,7 @@ case ${1:-} in
 
     --check)
         diagnose
-        printf '\n  %sIFOS — vídeo%s\n' "$c_b" "$c_reset"
+        printf '\n  %sSTYLUS — vídeo%s\n' "$c_b" "$c_reset"
         print_cards
         printf '  %sSituação%s\n\n' "$c_b" "$c_reset"
         print_findings
@@ -1241,7 +1242,7 @@ case ${1:-} in
             printf '  Está tudo certo.\n\n'
             exit 0
         fi
-        printf '  Para consertar:  %sifos-gpu --fix%s\n\n' "$c_b" "$c_reset"
+        printf '  Para consertar:  %sstylus-gpu --fix%s\n\n' "$c_b" "$c_reset"
         exit 1 ;;
 
     # --fix --yes is the same repair with nobody watching: every question
@@ -1251,7 +1252,7 @@ case ${1:-} in
     --fix)
         case ${2:-} in -y|--yes|--auto) AUTO=1 ;; esac
         diagnose
-        printf '\n  %sIFOS — vídeo%s\n' "$c_b" "$c_reset"
+        printf '\n  %sSTYLUS — vídeo%s\n' "$c_b" "$c_reset"
         print_cards
         printf '  %sSituação%s\n\n' "$c_b" "$c_reset"
         print_findings
@@ -1269,7 +1270,7 @@ case ${1:-} in
 esac
 
 # ── Report (no arguments) ────────────────────────────────────────────────────
-printf '\n  %sIFOS — vídeo%s\n' "$c_b" "$c_reset"
+printf '\n  %sSTYLUS — vídeo%s\n' "$c_b" "$c_reset"
 
 if [[ -z $(gpu_lines) ]]; then
     printf '\n  Nenhuma placa detectada (o lspci não encontrou nada).\n\n'
@@ -1284,7 +1285,7 @@ if healthy; then
 else
     printf '  %sSituação%s\n\n' "$c_b" "$c_reset"
     print_findings
-    printf '  Para consertar:  %sifos-gpu --fix%s\n\n' "$c_b" "$c_reset"
+    printf '  Para consertar:  %sstylus-gpu --fix%s\n\n' "$c_b" "$c_reset"
 fi
 
 if has_dgpu; then

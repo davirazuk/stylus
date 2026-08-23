@@ -81,8 +81,12 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
+            // The subtitle under the name. It said "IFMS · Campus Dourados",
+            // which is the school the other distribution was built for and has
+            // nothing to do with this one — on the very first screen anybody
+            // sees. This is what STYLUS is instead.
             Text {
-                text: "IFMS · Campus Dourados"
+                text: "a agulha é o único ponto em que um objeto vira som"
                 font.pixelSize: 11
                 color: "#7e899c"
                 anchors.horizontalCenter: parent.horizontalCenter

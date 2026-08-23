@@ -115,7 +115,14 @@ ask_yesno() {
 [[ $EUID -eq 0 ]] || die "Execute como root:  sudo stylus-install"
 
 case ${1:-} in
-    --advanced) exec archinstall --config /usr/share/stylus/archinstall-preset.json ;;
+    --advanced)
+        # Straight to upstream archinstall. There is no STYLUS preset to hand it
+        # - the option is documented as "the original archinstall instead of
+        # this one", for somebody who wants the full manual installer, and a
+        # --config pointing at a file that is not on the medium made archinstall
+        # abort at launch with a stack trace instead of opening.
+        command -v archinstall >/dev/null || die "archinstall não está neste medium."
+        exec archinstall ;;
     -h|--help)  cat <<'AJUDA'; exit 0 ;;
 stylus-install — instalador guiado do STYLUS
 
@@ -504,6 +511,10 @@ GPU_SEEN=$(lspci 2>/dev/null | grep -Ei 'vga|3d controller|display controller' |
 # Proton included, fails without it in a way that names neither the loader nor
 # the driver. It usually arrives as a dependency of vulkan-radeon or
 # vulkan-intel, which is a guarantee only for as long as those are installed.
+#
+# The software renderer is in packages.install for every machine, not here: it
+# is what draws a desktop when the vendor driver does not come up, which is the
+# one moment somebody needs a desktop to repair it from.
 MESA_SET="mesa lib32-mesa vulkan-icd-loader lib32-vulkan-icd-loader"
 [[ $GPUS == *intel* ]] && MESA_SET+=" vulkan-intel lib32-vulkan-intel"
 [[ $GPUS == *amd*   ]] && MESA_SET+=" vulkan-radeon lib32-vulkan-radeon"
@@ -518,8 +529,9 @@ MESA_SET="mesa lib32-mesa vulkan-icd-loader lib32-vulkan-icd-loader"
 # generations before it; they do not conflict and libva picks by device at run
 # time. Choosing one from the marketing name in lspci would be a guess, and
 # guessing wrong is silent. AMD decodes through mesa, which is already here.
-MESA_SET+=" libva-utils"
-[[ $GPUS == *intel* ]] && MESA_SET+=" intel-media-driver libva-intel-driver"
+# vpl-gpu-rt alongside them: it is the runtime the newest Intel chips (Tiger
+# Lake on) decode through, and the two libva drivers do not cover it.
+[[ $GPUS == *intel* ]] && MESA_SET+=" intel-media-driver libva-intel-driver vpl-gpu-rt"
 
 if [[ $GPUS == *nvidia* ]]; then
     # Which NVIDIA driver, decided here rather than asked.
@@ -536,12 +548,17 @@ if [[ $GPUS == *nvidia* ]]; then
     #
     # The machine already knows. lspci prints the chip codename and stylus-gpu
     # turns it into the driver name, so this asks nothing and says what it found.
-    NV_DRIVER=$(stylus-gpu --nvidia-driver 2>/dev/null || echo proprietary)
-    NV_PKG=$(stylus-gpu --nvidia-pkg 2>/dev/null || echo nvidia-dkms)
+    # Os padrões de reserva apontam para o driver ABERTO, não para o fechado.
+    # `nvidia-dkms` não existe mais nos repositórios — o Arch trocou os pacotes
+    # principais da NVIDIA pelos módulos abertos — então este `||` era um
+    # "target not found" esperando a primeira máquina em que o stylus-gpu não
+    # respondesse.
+    NV_DRIVER=$(stylus-gpu --nvidia-driver 2>/dev/null || echo open)
+    NV_PKG=$(stylus-gpu --nvidia-pkg 2>/dev/null || echo nvidia-open-dkms)
     NV_ARCH_LABEL=$(stylus-gpu --nvidia-label 2>/dev/null || echo "geração não reconhecida")
 
     case $NV_DRIVER in
-        legacy470|legacy390)
+        legacy580|legacy470|legacy390)
             # Old enough that nothing in the official repositories drives it.
             # Installing an NVIDIA driver here would blacklist nouveau and
             # leave the machine with no graphics driver whatsoever.
@@ -549,9 +566,13 @@ if [[ $GPUS == *nvidia* ]]; then
 
 $GPU_SEEN
 
-Esta placa NVIDIA é antiga demais para os drivers da NVIDIA que ainda existem
-nos repositórios. O driver livre (nouveau) é o que funciona nela, e é o que
-vai ser instalado.
+Esta placa NVIDIA não tem driver da NVIDIA nos repositórios oficiais: o que
+funcionaria nela ($NV_PKG) está na AUR, e compilar da AUR no meio de uma
+instalação falha no meio, não no começo.
+
+O driver livre (nouveau) é o que funciona nela agora, e é o que vai ser
+instalado. Depois, com o sistema de pé, \`stylus-gpu --fix\` diz o que dá para
+melhorar.
 
 Continuar?" || exit 1
             GPU_CHOICE=nouveau ;;
@@ -601,7 +622,15 @@ case $GPU_CHOICE in
         # why the machine is slow.
         [[ $GPUS == *intel* || $GPUS == *amd* ]] && GPU_PKGS+=(nvidia-prime)
         ENABLE_MULTILIB=1 ;;
-    nouveau|mesa)
+    nouveau)
+        # nouveau's Vulkan driver is a separate package from mesa and is what a
+        # game finds when it asks the loader for a device. Without it the card
+        # has a working desktop and no Vulkan at all, which reads as "Steam
+        # opens and every game refuses to start".
+        # shellcheck disable=SC2206
+        GPU_PKGS=($MESA_SET vulkan-nouveau lib32-vulkan-nouveau)
+        ENABLE_MULTILIB=1 ;;
+    mesa)
         # shellcheck disable=SC2206
         GPU_PKGS=($MESA_SET)
         ENABLE_MULTILIB=1 ;;
@@ -650,6 +679,166 @@ printf '\n===== STYLUS install started %s =====\n' "$(date -Is)"
 
 cleanup() { set +e; swapoff "$MNT/swapfile" 2>/dev/null; umount -R "$MNT" 2>/dev/null; }
 trap cleanup EXIT
+
+# ── Repositories, clock and keyring — while the disk is still untouched ──────
+#
+# Every failure this section exists for used to happen *after* the partition
+# table had been rewritten and the root filesystem made: there is nothing to
+# undo a wipe with, and "pacstrap falhou" forty minutes in is the worst place
+# on the whole path to find out that a package name or a signature was wrong.
+# So the repositories are made to work, and the package list is checked against
+# them, before a single byte is written to the disk.
+
+# The clock, because package signatures are checked against it. A machine whose
+# CMOS battery is dead comes up in 2010, where every signature in the repository
+# is dated in the future and pacman refuses all of them with a message about GPG
+# that mentions neither the clock nor the year. The mirror's own Date: header is
+# the cheapest true answer available, and it is the same request pacman is about
+# to make anyway.
+acertar_relogio() {
+    local cabecalho deles agora fora
+    cabecalho=$(curl -sSI --max-time 8 https://archlinux.org/ 2>/dev/null |
+                sed -n 's/^[Dd]ate: //p' | tr -d '\r' | head -1)
+    [[ -n $cabecalho ]] || return 0
+    deles=$(date -d "$cabecalho" +%s 2>/dev/null) || return 0
+    [[ $deles =~ ^[0-9]+$ ]] || return 0
+    agora=$(date +%s)
+    fora=$(( deles > agora ? deles - agora : agora - deles ))
+    if (( fora > 600 )); then
+        warn "O relógio da máquina estava $(( fora / 60 )) minutos fora do ar — acertando."
+        date -s "@$deles" >/dev/null 2>&1 || true
+        hwclock --systohc 2>/dev/null || true
+    fi
+    timedatectl set-ntp true 2>/dev/null || true
+}
+
+# multilib, on the LIVE medium.
+#
+# This is the bug that made "installation isn't working": lib32-gamemode is in
+# the package list for every machine, and the graphics drivers add lib32-mesa
+# and the rest. The live medium's /etc/pacman.conf is the stock one that comes
+# out of the pacman package - archiso does not install the build profile's
+# pacman.conf into the image - and in that file multilib is commented out. So
+# pacstrap stopped at `target not found: lib32-gamemode`, on a disk it had
+# already formatted, on every single machine.
+#
+# The profile now ships airootfs/etc/pacman.conf with multilib on, which fixes
+# it at the source; this stays because the installer also runs on a system
+# updated from an older ISO, and because it is two lines.
+ligar_multilib() {
+    pacman-conf --repo-list 2>/dev/null | grep -qx multilib && return 0
+    sed -i '/^#\[multilib\]/,/^#Include = .*mirrorlist/ s/^#//' /etc/pacman.conf
+    pacman-conf --repo-list 2>/dev/null | grep -qx multilib && return 0
+    printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
+    pacman-conf --repo-list 2>/dev/null | grep -qx multilib
+}
+
+info "Acertando o relógio…"
+acertar_relogio
+
+info "Ordenando os espelhos de download…"
+reflector --latest 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist 2>/dev/null \
+    || warn "reflector falhou; mantendo a lista de espelhos atual."
+
+if ligar_multilib; then
+    ok "Repositório multilib disponível (programas de 32 bits, Steam, jogos)"
+else
+    warn "Não deu para ligar o repositório multilib. Os pacotes de 32 bits ficam
+      de fora e o Steam não vai rodar até alguém ligá-lo à mão."
+fi
+
+info "Baixando a lista de pacotes…"
+pacman -Sy --noconfirm >/dev/null 2>&1 || die "Não foi possível baixar a lista de pacotes dos espelhos.
+
+A rede respondeu quando o instalador começou, então isto costuma ser um espelho
+fora do ar. Rode o instalador de novo — ele escolhe outros — ou confira a
+conexão.
+
+Nada foi alterado no disco."
+
+# The keyring, here rather than in the new root. `pacstrap -K` creates the
+# target's keyring by populating it from THIS system's /usr/share/pacman/
+# keyrings, so an ISO older than the last key rotation hands the new system a
+# set of keys that cannot verify today's packages - and the error names a
+# package, never the keyring. Updating it on the live medium first is what makes
+# an ISO from six months ago still install.
+info "Conferindo o chaveiro de assinaturas…"
+pacman -S --needed --noconfirm archlinux-keyring >/dev/null 2>&1 \
+    || warn "Não deu para atualizar o chaveiro; seguindo com o que veio no medium."
+
+# ── The package list ────────────────────────────────────────────────────────
+# A file, not an array in here. It was an array in here, and that is exactly
+# how an installed STYLUS ended up being a different distribution from the ISO
+# that installed it: nobody remembers to edit two lists. The list the ISO
+# carries is the one that gets installed, and tools/check.sh is what keeps it
+# in step with packages.x86_64.
+LISTA_PACOTES=${STYLUS_PACKAGE_LIST:-/usr/share/stylus/packages.install}
+[[ -r $LISTA_PACOTES ]] || die "A lista de pacotes não está no medium: $LISTA_PACOTES
+
+Isso não deveria acontecer numa ISO do STYLUS. Nada foi alterado no disco."
+
+mapfile -t PACKAGES < <(sed 's/#.*//' "$LISTA_PACOTES" | tr -s '[:space:]' '\n' | grep -v '^$')
+# A truncated or empty list would install a machine with no desktop on it and
+# only say so at the login screen that never appears.
+(( ${#PACKAGES[@]} >= 100 )) || die "A lista de pacotes veio com só ${#PACKAGES[@]} nomes ($LISTA_PACOTES).
+
+Ela está truncada ou corrompida. Nada foi alterado no disco."
+
+(( ${#HW_PKGS[@]} ))  && PACKAGES+=("${HW_PKGS[@]}")
+(( ${#GPU_PKGS[@]} )) && PACKAGES+=("${GPU_PKGS[@]}")
+
+# Every name in that list, checked against the repositories that are actually
+# configured, with the disk still intact.
+#
+# One name that no longer exists is enough to end a `pacstrap` - and it ends it
+# at the end, after the download. Upstream renames packages, splits them, and
+# drops them; this list is long and some of it is old. Checked here, a bad name
+# costs a line on the screen instead of a formatted disk and forty minutes.
+info "Conferindo os nomes dos pacotes…"
+mapfile -t SEM_PACOTE < <(LC_ALL=C pacman -Si -- "${PACKAGES[@]}" 2>&1 >/dev/null |
+                          sed -n 's/^error: package .\(.*\). was not found$/\1/p' | sort -u)
+if (( ${#SEM_PACOTE[@]} )); then
+    faltando=" ${SEM_PACOTE[*]} "
+    # Without any one of these there is nothing to boot afterwards, so this is a
+    # stop and not a warning: the problem is the repositories, not one name.
+    for p in base linux mkinitcpio grub sudo networkmanager; do
+        [[ $faltando == *" $p "* ]] || continue
+        die "O repositório não está oferecendo nem o pacote '$p'.
+
+Isso não é um nome errado — é o espelho respondendo com uma lista incompleta ou
+antiga. Rode o instalador de novo (ele escolhe outros espelhos).
+
+Nada foi alterado no disco."
+    done
+
+    restantes=()
+    for p in "${PACKAGES[@]}"; do
+        [[ $faltando == *" $p "* ]] || restantes+=("$p")
+    done
+    PACKAGES=("${restantes[@]}")
+
+    warn "Estes pacotes não existem mais nos repositórios e ficaram de fora:"
+    printf '      %s\n' "${SEM_PACOTE[@]}"
+    printf '\n'
+    if [[ $faltando == *" lib32-"* ]]; then
+        printf '      Os que começam com lib32- são o repositório multilib desligado.\n'
+        printf '      Sem eles o Steam e os jogos de 32 bits não abrem; o resto do\n'
+        printf '      sistema funciona igual.\n\n'
+    fi
+    read -rp "  Instalar mesmo assim? Digite SIM para seguir: " go2
+    [[ $go2 == SIM ]] || die "Cancelado — nada foi alterado."
+fi
+
+# Anything lib32-* that survived means the installed system has to keep multilib
+# turned on, or pacman would stop being able to update those packages and would
+# warn about them on every upgrade. lib32-gamemode is in the list for every
+# machine, so this is not only the graphics case - and ENABLE_MULTILIB was only
+# ever set by the graphics question, which left `skip` with orphaned packages.
+for p in "${PACKAGES[@]}"; do
+    [[ $p == lib32-* ]] && { ENABLE_MULTILIB=1; break; }
+done
+
+ok "${#PACKAGES[@]} pacotes conferidos"
 
 snapshot_parts() { lsblk -rpno NAME "$DISK" | tail -n +2 | sort; }
 
@@ -714,132 +903,24 @@ if [[ $FIRMWARE == UEFI ]]; then
     ok "Usando a partição EFI $ESP_PART (não foi reformatada)"
 fi
 
-info "Ordenando os espelhos de download…"
-reflector --latest 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist 2>/dev/null \
-    || warn "reflector falhou; mantendo a lista de espelhos atual."
-
-PACKAGES=(
-    # ── base system ──────────────────────────────────────────────────────────
-    base linux linux-firmware linux-headers mkinitcpio
-    # A second kernel to fall back on when an update breaks the first one.
-    linux-lts linux-lts-headers
-    amd-ucode intel-ucode
-    grub efibootmgr os-prober dosfstools
-    # Assinar o próprio carregador de boot, para a máquina poder iniciar com o
-    # Secure Boot ligado sem ninguém precisar da senha da BIOS. É o caso dos
-    # computadores da escola, onde o Secure Boot não se desliga. `stylus-secureboot`
-    # usa estes dois; sem eles a ferramenta existe e não faz nada, o que é a
-    # pior das duas situações. São pequenos e ninguém precisa saber que existem.
-    sbsigntools mokutil
-    e2fsprogs btrfs-progs exfatprogs ntfs-3g
-    sudo man-db man-pages bash-completion pacman-contrib reflector
-    git vim nano openssh rsync wget curl unzip zip 7zip unrar
-
-    # ── networking ───────────────────────────────────────────────────────────
-    networkmanager network-manager-applet nm-connection-editor wpa_supplicant
-    ufw
-
-    # ── audio and bluetooth ──────────────────────────────────────────────────
-    pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber
-    pavucontrol pamixer playerctl brightnessctl power-profiles-daemon
-    zram-generator
-    # The good Bluetooth codecs. PipeWire can speak AAC, aptX and LDAC, but only
-    # if these are installed - they are optional dependencies, so nothing pulls
-    # them in and a pair of headphones falls back to SBC without saying so.
-    # SBC at the default bitpool is the reason Bluetooth audio has a reputation
-    # for sounding muddy, and it is the codec every STYLUS machine has been using.
-    # Three small libraries, and the difference is audible on the headphones a
-    # student already owns.
-    libfreeaptx libldac fdk-aac
-    # For as long as a game is open: the processor on the performance governor,
-    # the game's scheduling and I/O priority above everything else, and the
-    # screen not blanking. It ends when the game does, so it costs a machine
-    # nothing while nobody is playing - which is why the launcher can turn it
-    # on for every game without asking.
-    #
-    # lib32-gamemode is not optional and used to be. gamemoderun works by
-    # LD_PRELOAD, and a 32-bit program handed a 64-bit preload cannot load it -
-    # so a 32-bit game got no treatment at all, and anything running a Chromium
-    # sandbox inside itself got worse than nothing: Steam's steamwebhelper dies
-    # on a preload it cannot load, with "Unexpected Transport Error (0x3008)"
-    # and no mention of GameMode anywhere in it.
-    gamemode lib32-gamemode
-    # Running out of memory on a 4 GiB machine does not produce an error, it
-    # produces a machine that stops responding for minutes while the kernel
-    # thrashes, and often never recovers - the kernel's own OOM killer waits
-    # until there is no memory left at all, by which time the desktop has been
-    # unusable for a long time. earlyoom watches the free-memory figure and
-    # kills the single worst offender while the machine is still answering.
-    # On the hardware this distribution exists for, that is the difference
-    # between losing one browser tab and losing the session.
-    earlyoom
-    bluez bluez-utils blueman
-
-    # ── desktop ──────────────────────────────────────────────────────────────
-    xorg-server xorg-xinit xorg-xrandr xorg-xsetroot xf86-input-libinput
-    # The i3 config runs `xset s 600` and `xset dpms 0 0 720` at login. Without
-    # this the line fails and neither thing happens: the screen never blanks,
-    # and xss-lock never gets the cue it locks on. A laptop then sits unlocked
-    # with the backlight on until the battery runs out.
-    xorg-xset
-    # xinput: the only way to read or set libinput's per-device properties,
-    # which is where the mouse speed and acceleration profile live. stylus-mouse
-    # is built on it, and without it there was nothing on the machine that
-    # could look at a mouse at all.
-    xorg-xinput
-    # lspci, which stylus-gpu reads to decide whether the machine has a discrete
-    # card - which is how the launcher knows to send a game to it. It was in
-    # packages.x86_64 for the ISO but not here, so an installed system had the
-    # tool and nothing for it to read.
-    pciutils
-    # glxinfo, which answers the one question `stylus-gpu --check` cannot get from
-    # the package list: what is actually drawing. Without it a machine with
-    # every driver installed and still rendering on the CPU - the exact state
-    # that stops Steam from opening - reports itself as healthy.
-    mesa-utils
-    i3-wm i3lock xss-lock libnotify polybar rofi picom dunst feh
-    xfce4-terminal alacritty xterm
-    thunar thunar-volman thunar-archive-plugin gvfs gvfs-mtp gvfs-smb tumbler
-    # thunar-volman only automounts while Thunar is running; udiskie does it
-    # for the desktop itself, which is where a pendrive is actually plugged in.
-    udisks2 udiskie
-    xarchiver mousepad gthumb
-    # sddm-greeter links against Qt5, not qt6-declarative; without this the
-    # stylus login theme's `import QtQuick.Controls 2.15` fails to resolve and
-    # SDDM silently falls back to its stock theme.
-    sddm qt5-quickcontrols2 polkit polkit-gnome plymouth
-    xdg-user-dirs xdg-utils xdg-desktop-portal xdg-desktop-portal-gtk
-    maim xclip xdotool arandr htop xfce4-taskmanager fastfetch dialog gammastep
-    # Notices a projector being plugged in and lays the screens out; see the
-    # note in packages.x86_64.
-    autorandr
-    webkit2gtk-4.1 python-gobject adwaita-icon-theme adwaita-cursors
-
-    # ── the applications a student actually needs on day one ─────────────────
-    firefox firefox-i18n-pt-br
-    libreoffice-fresh libreoffice-fresh-pt-br
-    evince vlc mpv
-    ffmpeg gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav
-    qalculate-gtk
-    flatpak timeshift
-
-    # ── printing and scanning ────────────────────────────────────────────────
-    cups cups-pdf system-config-printer
-
-    # ── fonts and theming ────────────────────────────────────────────────────
-    ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji noto-fonts-cjk
-    noto-fonts-extra ttf-liberation otf-font-awesome
-    adw-gtk-theme papirus-icon-theme qt5ct qt6ct kvantum
-
-    # ── shell ────────────────────────────────────────────────────────────────
-    fish
-)
-
 info "Instalando o sistema base — esta é a parte demorada…"
-(( ${#HW_PKGS[@]} ))  && PACKAGES+=("${HW_PKGS[@]}")
-(( ${#GPU_PKGS[@]} )) && PACKAGES+=("${GPU_PKGS[@]}")
 
-pacstrap -K "$MNT" "${PACKAGES[@]}" || die "pacstrap falhou. Veja $LOG"
+# One retry, and only one. What this catches is a mirror that disappears in the
+# middle of a two-gigabyte download: everything already fetched is in the new
+# root's cache, so the second run resumes instead of starting over, and picking
+# fresh mirrors first is what stops it from walking into the same dead one.
+if ! pacstrap -K "$MNT" "${PACKAGES[@]}"; then
+    warn "O download parou no meio. Escolhendo outros espelhos e tentando de novo…"
+    reflector --latest 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist 2>/dev/null || true
+    pacstrap -K "$MNT" "${PACKAGES[@]}" || die "A instalação dos pacotes falhou duas vezes.
+
+A mensagem exata do pacman está no fim de $LOG — é ela que diz qual foi o
+problema. As duas causas comuns são a rede caindo no meio do download e o
+espaço em disco acabando.
+
+O disco já foi particionado e formatado; rodar o instalador de novo continua
+de onde parou, porque o que já foi baixado ficou no disco."
+fi
 ok "Pacotes instalados"
 
 info "Escrevendo o fstab…"
@@ -860,8 +941,24 @@ fi
 
 # STYLUS identity goes in before the user is created, so useradd copies the STYLUS
 # /etc/skel rather than a vanilla one.
+#
+# Not a warning. `pacstrap` installs packages; every single thing that makes
+# this machine STYLUS - the commands, the deck, the full-screen shelf, the
+# audio configuration, /etc/skel - comes from here and from nowhere else. This
+# line used to end in `|| warn`, and branding-sync.sh did not exist at all, so
+# the installer printed "Instalação concluída" and handed over a plain Arch
+# with i3 on it and no `stylus` command anywhere. Failing loudly is the only
+# honest answer: there is nothing to fall back to.
 info "Aplicando a identidade visual e as configurações do STYLUS…"
-/usr/share/stylus/branding-sync.sh "$MNT" || warn "A sincronização da identidade visual relatou um problema."
+/usr/share/stylus/branding-sync.sh "$MNT" || die "Não foi possível copiar o STYLUS para o sistema novo.
+
+Os pacotes foram instalados, mas o que faz esta máquina ser o STYLUS — os
+comandos, o deck, a tela cheia, a configuração de áudio — não chegou lá. Um
+sistema assim não é o STYLUS, e por isso a instalação para aqui em vez de
+dizer que deu certo.
+
+As linhas acima dizem o que falhou. Rode o instalador de novo: o que já foi
+baixado continua no disco, então a segunda vez é rápida."
 
 info "Configurando o sistema instalado…"
 
@@ -960,7 +1057,12 @@ fi
 
 mkinitcpio -P
 
-useradd -m -G wheel,audio,video,input,storage,network,lp -s /usr/bin/fish "${STYLUS_USERNAME}"
+# optical, because `stylus rip` reads the CD drive directly and cdparanoia
+# needs the device, not a mount. rfkill, because the wifi key on a laptop is a
+# kill switch and toggling it without the group silently does nothing. uucp,
+# for USB DACs that present as serial devices.
+useradd -m -G wheel,audio,video,input,storage,optical,network,rfkill,uucp,lp \
+        -s /usr/bin/fish "${STYLUS_USERNAME}"
 
 # GameMode can only lower a game's nice value for users in its own group, and
 # raising the game above the browser is most of what GameMode is for on these
@@ -981,28 +1083,51 @@ install -d -m 750 /etc/sudoers.d
 echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/10-wheel
 chmod 440 /etc/sudoers.d/10-wheel
 
-systemctl enable NetworkManager.service
-systemctl enable bluetooth.service
-systemctl enable sddm.service
-systemctl enable systemd-timesyncd.service
-systemctl enable fstrim.timer
-# The socket, not the service. cups is socket-activated: with cups.socket the
-# daemon is started the first time something actually prints or opens a printer
-# dialog, and a machine that never sees a printer never starts it at all.
-# Enabling the service instead ran a daemon at every boot of every machine in
-# the lab for the benefit of the one with a printer attached.
-systemctl enable cups.socket
-systemctl enable ufw.service
-systemctl enable paccache.timer
-# Without this the bar's power profile module has nothing to talk to and stays
-# blank, since powerprofilesctl reaches the daemon over D-Bus.
-systemctl enable power-profiles-daemon.service
-systemctl enable earlyoom.service
-# Checks, before the login screen, that some graphics driver actually took the
-# card - and loads nouveau if none did. It is what stops a failed NVIDIA driver
-# from turning into a machine with no desktop to repair it from. Costs
-# milliseconds on every machine where nothing is wrong.
-systemctl enable stylus-gpu-fallback.service
+# ── Os serviços ─────────────────────────────────────────────────────────────
+# Este arquivo roda com `set -e`, e um `systemctl enable` de unidade que não
+# existe SAI COM ERRO. Escritos soltos, como estavam, qualquer pacote que
+# saísse da lista derrubava a configuração inteira — depois do pacstrap, com
+# o disco já formatado e antes do grub-install, ou seja: máquina que não liga.
+#
+# Foi o que quase aconteceu ao tirar a impressão daqui: o `cups` saiu da lista
+# de pacotes e o `systemctl enable cups.socket` ficou. Por isso agora há duas
+# listas e uma função.
+essenciais() {          # sem estes não há máquina utilizável
+    systemctl enable "$@"
+}
+opcionais() {           # a falta de um não justifica perder a instalação
+    local u
+    for u in "$@"; do
+        systemctl enable "$u" 2>/dev/null ||
+            printf '  ! %s não pôde ser ligado (o pacote não está instalado?)\n' "$u"
+    done
+}
+
+essenciais NetworkManager.service sddm.service
+systemctl set-default graphical.target
+
+opcionais bluetooth.service systemd-timesyncd.service fstrim.timer \
+          ufw.service paccache.timer \
+          power-profiles-daemon.service earlyoom.service \
+          rtkit-daemon.service \
+          stylus-gpu-fallback.service stylus-fontcache.service
+#
+# O que cada um dos nossos faz, para quem for mexer nesta lista:
+#   stylus-gpu-fallback  confere, antes da tela de login, se algum driver
+#                        pegou a placa — e carrega o nouveau se nenhum pegou.
+#                        É o que impede um driver NVIDIA quebrado de virar uma
+#                        máquina sem área de trabalho para consertá-la.
+#   stylus-fontcache     o cache do fontconfig antes do greeter. Sem ele o
+#                        primeiro a pedir uma fonte paga a varredura inteira,
+#                        e o primeiro é o i3 — que trava no Pango tempo
+#                        suficiente para parecer que a máquina não ligou.
+#   rtkit-daemon         é o que deixa o PipeWire pegar a prioridade de tempo
+#                        real que ele pede. Sem isso cada falha de buffer vira
+#                        um clique no meio de uma parte silenciosa.
+#   power-profiles       sem ele o módulo da barra não tem com quem falar.
+#
+# Impressão não está aqui de propósito: este sistema não tem suíte de
+# escritório nem impressão, e o cups saiu junto.
 ufw default deny incoming  || true
 ufw default allow outgoing || true
 ufw --force enable         || true
@@ -1075,7 +1200,40 @@ fi
 
 grub-mkconfig -o /boot/grub/grub.cfg
 
+# The deck's Python environment. PyOpenGL is not in the Arch repositories under
+# this or any other name, so the deck runs out of a venv - the ISO builds one
+# inside its own chroot and branding-sync.sh copies it across. It removes it
+# instead when the version of python it was built against is not the version
+# this machine just installed, because a venv that exists and cannot run is
+# worse than none: stylus-ui prefers the venv whenever it is there.
+DECK=/usr/share/stylus/deck
+if [ -d "${DECK}" ] && [ ! -x "${DECK}/venv/bin/python3" ]; then
+    if python3 -m venv --system-site-packages "${DECK}/venv" 2>/dev/null; then
+        "${DECK}/venv/bin/pip" install --no-cache-dir --quiet \
+            PyOpenGL PyOpenGL-accelerate 2>/dev/null ||
+        "${DECK}/venv/bin/pip" install --no-cache-dir --quiet PyOpenGL 2>/dev/null || true
+    fi
+fi
+
 cp -rn /etc/skel/. "/home/${STYLUS_USERNAME}/" 2>/dev/null || true
+
+# The machine starts in MUSIC mode, because that is what it is. Mod+D or
+# `stylus-mode desktop` goes to the other one, and it is remembered from then on.
+install -d -m 0755 "/home/${STYLUS_USERNAME}/.config/stylus"
+echo music > "/home/${STYLUS_USERNAME}/.config/stylus/mode"
+
+# Which session SDDM offers first. Three STYLUS sessions are installed and with
+# nothing said, the greeter picks whichever sorts first - `stylus-desktop`,
+# the one that is not the point of the machine. This is where SDDM keeps that
+# answer, and seeding it is what makes the FIRST login land in music mode.
+install -d -m 0755 /var/lib/sddm
+cat > /var/lib/sddm/state.conf <<SDDMSTATE
+[Last]
+Session=/usr/share/xsessions/stylus.desktop
+User=${STYLUS_USERNAME}
+SDDMSTATE
+chown -R sddm:sddm /var/lib/sddm 2>/dev/null || true
+
 chown -R "${STYLUS_USERNAME}:${STYLUS_USERNAME}" "/home/${STYLUS_USERNAME}"
 CHROOT
 

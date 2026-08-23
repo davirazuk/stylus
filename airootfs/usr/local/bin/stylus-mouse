@@ -324,7 +324,7 @@ learn_button() {
         printf '  mouse e não manda nada — nenhum programa desta máquina consegue vê-lo,\n'
         printf '  e não há como usá-lo. Tente de novo com um botão lateral, que quase\n'
         printf '  sempre chega:\n\n'
-        printf '    %sifos-mouse --learn%s\n\n' "$c_b" "$c_reset"
+        printf '    %sstylus-mouse --learn%s\n\n' "$c_b" "$c_reset"
         return 1
     fi
 
@@ -349,7 +349,7 @@ learn_button() {
 
 # ── Report ───────────────────────────────────────────────────────────────────
 report() {
-    printf '\n  %sIFOS — mouse%s\n\n' "$c_b" "$c_reset"
+    printf '\n  %sSTYLUS — mouse%s\n\n' "$c_b" "$c_reset"
 
     local any=0 event name ids
     while IFS=$'\t' read -r event name ids; do
@@ -473,13 +473,13 @@ test_buttons() {
         printf '  Só os botões normais apareceram.\n'
         printf '  Se o de DPI não imprimiu nada, ele é resolvido dentro do mouse e não\n'
         printf '  chega ao X — nenhum programa desta máquina consegue vê-lo, e não há o\n'
-        printf '  que consertar. Use  %sifos-mouse --speed N%s  para a sensibilidade,\n' \
+        printf '  que consertar. Use  %sstylus-mouse --speed N%s  para a sensibilidade,\n' \
                "$c_b" "$c_reset"
-        printf '  ou  %sifos-mouse --learn%s  para pôr essa função num botão lateral.\n\n' \
+        printf '  ou  %sstylus-mouse --learn%s  para pôr essa função num botão lateral.\n\n' \
                "$c_b" "$c_reset"
     else
         printf '  Os botões acima chegam ao X e podem virar o botão de sensibilidade:\n'
-        printf '    %sifos-mouse --learn%s\n\n' "$c_b" "$c_reset"
+        printf '    %sstylus-mouse --learn%s\n\n' "$c_b" "$c_reset"
     fi
 }
 

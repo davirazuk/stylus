@@ -27,7 +27,12 @@ try:
 except Exception as e:
     sys.exit(f"preciso do vinyl.py do stylus/deck: {e}")
 
-ROOT = vinyl.LIBRARY_ROOT
+# vinyl.LIBRARY_ROOT nunca existiu — o vinyl expõe library_root(), uma
+# FUNÇÃO, porque a estante pode mudar com o programa aberto. Escrito assim,
+# `stylus record` estourava com AttributeError na primeira linha, em toda
+# máquina: um dos comandos do README, morto desde sempre. Erro de execução,
+# não de sintaxe, e por isso a conferência de python passava por cima dele.
+ROOT = vinyl.library_root()
 
 c_b = "\033[1m"; c_dim = "\033[2m"; c_acc = "\033[38;5;117m"
 c_pink = "\033[38;5;218m"; c_off = "\033[0m"
@@ -77,7 +82,17 @@ def main():
     args = ap.parse_args()
 
     if args.alvo:
-        folder = args.alvo if os.path.isdir(args.alvo) else os.path.join(ROOT, args.alvo)
+        folder = args.alvo
+        if not os.path.isdir(folder):
+            # Procura em TODAS as estantes, não só na de casa: o disco pedido
+            # pelo nome pode estar no celular.
+            for r in vinyl.library_roots():
+                cand = os.path.join(r, args.alvo)
+                if os.path.isdir(cand):
+                    folder = cand
+                    break
+            else:
+                folder = os.path.join(ROOT, args.alvo)
         folder = os.path.expanduser(folder)
         if not os.path.isdir(folder):
             sys.exit(f"não achei: {args.alvo}")
@@ -110,7 +125,15 @@ def main():
         print(f"  {c_dim}tocando o lado inteiro, na ordem…{c_off}\n")
         os.execv(v, cmd)
     else:
-        print(f"  {c_dim}para tocar:  stylus record \"{os.path.relpath(folder, ROOT)}\" --play{c_off}")
+        # O disco pode ter vindo de OUTRA estante que não a de casa — a do
+        # celular, montada pelo stylus webdav. Um relpath contra a raiz errada
+        # devolve um punhado de "../.." que não serve para copiar e colar.
+        rel = folder
+        for r in vinyl.library_roots():
+            if folder.startswith(r.rstrip("/") + "/"):
+                rel = os.path.relpath(folder, r)
+                break
+        print(f"  {c_dim}para tocar:  stylus record \"{rel}\" --play{c_off}")
         print(f"  {c_dim}com o disco na tela:  --ritual{c_off}\n")
     return 0
 

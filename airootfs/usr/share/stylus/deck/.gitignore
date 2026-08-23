@@ -1,3 +1,4 @@
 tools/vinyl-out/
+tools/offline-out/
 __pycache__/
 *.pyc

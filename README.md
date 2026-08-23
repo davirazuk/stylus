@@ -28,7 +28,8 @@ O STYLUS é essa ideia levada a sério num sistema operacional inteiro:
 - **A coleção lembra.** Todo disco que você põe é anotado. Os discos que você
   mais ouve acumulam marcas na superfície e as marcas de cada um são dele.
 - **Dois modos, como num Steam Deck.** *Modo música* é uma tela cheia com a
-  estante em capas, feita para ser usada do sofá e com controle. *Modo área
+  estante em capas, feita para ser usada do sofá e com controle — o
+  direcional anda, A põe o disco, B volta, os ombros pulam faixa. *Modo área
   de trabalho* é um i3 completo. Um botão vai de um ao outro.
 
 Não tem suíte de escritório. Nunca vai ter.
@@ -62,10 +63,13 @@ Não tem suíte de escritório. Nunca vai ter.
 | | |
 |---|---|
 | `stylus phone` | o celular: estado, sincronizar, playlists, scrobbles |
+| `stylus webdav` | põe a coleção do celular na estante, sem copiar nada |
 | `stylus audio` | o caminho do sinal, medido |
 | `stylus app NOME` | Clone Hero, qobuz-dl, Proton-GE, o que não vem em pacote |
 | `stylus update` | traz o STYLUS novo do GitHub |
-| `stylus-mode` | troca entre música e área de trabalho |
+| `stylus mode` | troca entre música e área de trabalho |
+| `stylus atalhos` | a lista de atalhos de teclado |
+| `stylus instalar` | instala no computador (a partir do pendrive) |
 
 ---
 
@@ -87,6 +91,29 @@ sem ter que ler as duas.
 - **junta o que você ouviu no celular** à memória da coleção, para o desgaste
   dos discos refletir a escuta inteira e não só metade dela;
 - funciona **por wifi**, não só por cabo.
+
+### E quando não se quer copiar
+
+`stylus phone` **copia** — é para a música ficar nos dois lados. Mas quem tem
+200 GB no celular e 60 no computador não quer copiar: quer pôr para tocar.
+
+`stylus webdav` monta o servidor WebDAV do celular como uma pasta, e os discos
+que estão lá aparecem **na mesma estante** que os de casa — sem duplicar um
+arquivo sequer.
+
+```
+stylus webdav ligar http://192.168.0.10:8080/   # o endereço que o app mostra
+stylus webdav sozinho                           # e a cada login
+```
+
+Montado como **só leitura**: pôr um disco não escreve nada, e um `rm`
+distraído numa pasta montada apagaria a música do celular de verdade. Para
+mandar arquivo, `stylus phone`, que sabe o que está fazendo.
+
+Por baixo é o `rclone`, que já estava aqui — monta em espaço de usuário, sem
+root, sem linha no `/etc/fstab`, e guarda a senha ofuscada em vez de em texto
+puro num arquivo de sistema. Um servidor num celular muda de IP e cai o tempo
+todo; nada disso merece root.
 
 ---
 
@@ -110,7 +137,7 @@ quem não tem backup.
 ## Construir
 
 ```
-./tools/check.sh     # 123 verificações, segundos
+./tools/check.sh     # as verificações, em segundos
 ./build.sh           # a ISO, em ./out
 tools/flash.sh out/stylus-*.iso
 ```
@@ -119,6 +146,26 @@ tools/flash.sh out/stylus-*.iso
 pacote que não existe, link apontando para arquivo renomeado, config do i3
 que o i3 recusa, ferramenta que o menu promete e não está lá — em segundos,
 contra a meia hora de uma construção.
+
+Numa máquina Arch o `build.sh` usa o `mkarchiso` direto. Em qualquer outra
+distribuição ele cai para um contêiner (`podman`), e as conferências passam a
+rodar lá dentro — onde o shellcheck, o fish e o pacman existem — em vez de
+reprovarem a construção por falta de ferramenta no computador de fora.
+
+### Construir sem computador (pelo celular)
+
+Não dá para construir uma ISO do Arch **no** celular: é preciso montar, fazer
+chroot e criar nós de dispositivo, e nem o Termux nem um proot fazem isso sem
+root de verdade. O que dá é mandar construir e baixar pronta:
+
+1. No GitHub, aba **Actions** → **Construir a ISO** → **Run workflow**.
+2. Uns 30 minutos depois, o arquivo está em **Artifacts**, no fim da página
+   da execução — o navegador do celular baixa direto.
+3. Para gravar no pendrive pelo próprio celular: **EtchDroid** e um cabo OTG.
+   (O `tools/flash.sh` é para quando há um computador; ele recusa disco
+   interno de propósito.)
+
+O `.sha256` vai junto, para conferir que o arquivo chegou inteiro.
 
 ---
 

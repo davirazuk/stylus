@@ -151,6 +151,52 @@ def library_root():
     return roots[0] if roots else os.path.expanduser("~/Music")
 
 
+def _configured_roots():
+    """Só as pastas que ALGUÉM escolheu — sem os palpites.
+
+    A diferença importa: `music_roots()` termina com `~/Music`, `~/Músicas`,
+    `/srv/music` e companhia, que são chutes para a primeira execução. Varrer
+    tudo isso como se fosse estante encheria a grade com o que houver em
+    qualquer uma delas.
+    """
+    env = [p for p in (os.environ.get("STYLUS_LIBRARY") or "").split(os.pathsep) if p]
+    return [os.path.normpath(p) for p in
+            (env + _read_library_conf(_USER_LIBRARY_CONF)
+                 + _read_library_conf(_SYSTEM_LIBRARY_CONF))]
+
+
+def library_roots():
+    """TODAS as estantes que existem agora, sem repetir.
+
+    A coleção deixou de caber num lugar só. O `stylus webdav` monta o
+    servidor do celular numa pasta e a acrescenta à configuração; antes disto
+    ela era escrita, montada, e simplesmente ignorada — porque a estante só
+    olhava para a PRIMEIRA pasta que existisse, e a primeira era a local.
+    Uma pasta configurada que o sistema não varre é pior do que não ter
+    configurado nada: a pessoa fez o que era para fazer e não aconteceu nada.
+
+    Desduplica por caminho real, senão um link para a mesma pasta faz cada
+    disco aparecer duas vezes na grade.
+    """
+    out, vistos = [], set()
+    for p in _configured_roots():
+        if not os.path.isdir(p):
+            continue
+        try:
+            chave = os.path.realpath(p)
+        except OSError:
+            chave = p
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        out.append(p)
+    if out:
+        return out
+    # Nada configurado ainda: vale o palpite, e só o primeiro que existir.
+    r = library_root()
+    return [r] if os.path.isdir(r) else []
+
+
 class _Roots(list):
     """MUSIC_ROOTS continua sendo uma lista para quem já a usava, mas relê a
     configuração a cada iteração em vez de congelar o que valia na importação."""
@@ -483,6 +529,23 @@ def parse_lrc(path):
 
 
 def _probe_duration(path):
+    """A duração de uma faixa, do jeito mais barato que funcionar.
+
+    O mutagen primeiro, o ffprobe depois. Não é micro-otimização: o deck mede
+    TODA faixa do lado ao abrir, e um álbum de vinte faixas custava vinte
+    processos ffprobe antes de a agulha descer — meio segundo de nada numa
+    máquina rápida, um susto numa lenta. O mutagen lê o cabeçalho no mesmo
+    processo, é dependência declarada (python-mutagen), e ainda faz o deck
+    abrir sem o ffprobe instalado. O ffprobe fica como rede de segurança para
+    o formato exótico que o mutagen não conhece.
+    """
+    try:
+        import mutagen
+        f = mutagen.File(path)
+        if f is not None and f.info and f.info.length:
+            return float(f.info.length)
+    except Exception:
+        pass
     try:
         r = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -658,8 +721,24 @@ def folder_names(folder):
 
 
 def shelf(root=None, artist=None, min_tracks=SHELF_MIN_TRACKS):
-    """As pastas que contam como disco na estante."""
-    root = root or library_root()
+    """As pastas que contam como disco na estante.
+
+    Sem `root`, varre TODAS as estantes configuradas — a local e a do celular
+    montada pelo `stylus webdav`, por exemplo. Com `root`, varre só aquela,
+    que é como as ferramentas que trabalham numa pasta específica chamam.
+    """
+    if root is None:
+        raizes = library_roots()
+        if len(raizes) != 1:
+            out = []
+            for r in raizes:
+                out.extend(_shelf_one(r, artist, min_tracks))
+            return out
+        root = raizes[0]
+    return _shelf_one(root, artist, min_tracks)
+
+
+def _shelf_one(root, artist=None, min_tracks=SHELF_MIN_TRACKS):
     base = os.path.join(root, artist) if artist else root
     if not os.path.isdir(base):
         return []
@@ -800,6 +879,29 @@ class Album:
             self._read_tags(self.tracks[0]["path"])
 
     def _read_tags(self, path):
+        # mutagen primeiro, mesma razão de _probe_duration: um processo a menos
+        # no caminho até a agulha descer, e o deck abre sem ffprobe.
+        try:
+            import mutagen
+            f = mutagen.File(path, easy=True)
+            t = getattr(f, "tags", None) or {}
+
+            def first(*chaves):
+                for c in chaves:
+                    v = t.get(c)
+                    if v:
+                        return v[0] if isinstance(v, list) else v
+                return ""
+            nome = first("album")
+            artista = first("albumartist", "album artist", "artist")
+            ano = first("date", "year", "originaldate")
+            if nome or artista or ano:
+                self.name = nome or self.name
+                self.artist = artista or self.artist
+                self.year = str(ano)[:4]
+                return
+        except Exception:
+            pass
         try:
             r = subprocess.run(
                 ["ffprobe", "-v", "error", "-show_entries",

@@ -16,7 +16,9 @@ import glob
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 
-ROOT = "/home/davirazuk/Músicas"
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
+ROOT = raiz()
 COVER_NAMES = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg")
 
 

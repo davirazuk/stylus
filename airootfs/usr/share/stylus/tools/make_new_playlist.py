@@ -28,8 +28,12 @@ import datetime
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 
-LIB = "/home/davirazuk/Músicas"
-ROOT = os.path.join(LIB, "Fortnite Balls")
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
+LIB = raiz()
+# Era um subdiretório com o nome da coleção de uma pessoa; a coleção é a
+# raiz configurada, seja qual for.
+ROOT = LIB
 AUDIO_EXT = (".flac", ".mp3")
 
 

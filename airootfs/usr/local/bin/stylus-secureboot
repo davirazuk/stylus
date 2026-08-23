@@ -155,7 +155,7 @@ show() {
     local v tag msg
     v=$(current_verdict); tag=${v%%|*}; msg=${v#*|}
 
-    printf '\n  %sIFOS — Secure Boot%s\n\n' "$c_b" "$c_reset"
+    printf '\n  %sSTYLUS — Secure Boot%s\n\n' "$c_b" "$c_reset"
 
     if is_uefi; then
         printf '    Firmware ........... UEFI\n'

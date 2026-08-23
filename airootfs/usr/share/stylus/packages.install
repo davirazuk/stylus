@@ -1,17 +1,23 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  STYLUS — package list
+#  packages.install — what an INSTALLED machine gets
 # ═══════════════════════════════════════════════════════════════════════════
-#  Two rules decided this list.
+#  stylus-install reads this file. It exists because the list used to live
+#  inside the installer, and the installer came from another distribution: an
+#  installed machine got LibreOffice, CUPS and Evince, and did NOT get
+#  python-pygame, mpv, steam, flac or any of the rest of STYLUS. Installing
+#  STYLUS did not install STYLUS.
 #
-#  1. Nothing goes in the audio path that is not needed to get the file to
-#     the DAC unchanged. No system-wide equaliser, no "audio enhancer", no
-#     resampler that runs when it does not have to. A distribution that ships
-#     DSP on by default cannot honestly call itself bit-perfect, and the
-#     whole point of this one is that the record plays as it was pressed.
+#  The rule that stops that coming back: everything in packages.x86_64 (the
+#  ISO) has to be here too, unless it is in packages.live-only with the reason
+#  written down. tools/check.sh enforces it.
 #
-#  2. Everything else is either music, or games, or the hardware needed to
-#     run those two on any machine you sit down at. There is no office suite
-#     here and there never will be.
+#  On top of the whole ISO, this adds what only makes sense on a disk: a
+#  second kernel, the firewall, the thing that trims the package cache.
+#
+#  What is NOT here and will not be: an office suite, printing, a photo
+#  manager. That is not an oversight, it is what the README says.
+#
+#  Blank lines and lines starting with # are ignored.
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── base and kernel ────────────────────────────────────────────────────────
@@ -24,10 +30,12 @@ sof-firmware
 amd-ucode
 intel-ucode
 mkinitcpio
-mkinitcpio-archiso
-mkinitcpio-nfs-utils
 sudo
 polkit
+# A second kernel to land on when an update breaks the first one. It is the
+# difference between "it does not boot" and "it boots on the second menu line".
+linux-lts
+linux-lts-headers
 
 # ── the shell you land in ──────────────────────────────────────────────────
 fish
@@ -47,6 +55,7 @@ tree
 unzip
 zip
 7zip
+unrar
 wget
 curl
 jq
@@ -55,34 +64,29 @@ python-pip
 xdg-utils
 xdg-user-dirs
 terminus-font
-# The "choose a folder" dialog stylus-pickfolder opens on first run. Without it
-# the question falls back to a rofi list, which is an index of paths and not a
-# window for picking a folder.
+# A file dialog with no terminal in it: what stylus-pickfolder uses to ask
+# where the collection lives. Without it the question falls back to rofi,
+# which is a list of paths and not a "choose a folder" window.
 zenity
+# pacman's own maintenance: the paccache.timer the install enables comes from
+# here. Without it the package cache grows until it fills a 32 GB disk.
+pacman-contrib
+reflector
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  AUDIO — the reason this exists
 # ═══════════════════════════════════════════════════════════════════════════
-# PipeWire rather than bare ALSA because a single-application-exclusive DAC is
-# a worse daily experience than a graph that can be told not to touch the
-# samples — and it can: see /etc/pipewire and /etc/wireplumber in this
-# profile, which allow the whole 44.1k family instead of pinning 48k and
-# resampling everything that is not.
 pipewire
 pipewire-audio
 pipewire-alsa
 pipewire-pulse
 pipewire-jack
 wireplumber
-# rtkit is what lets the graph actually get the realtime priority it asks
-# for. Without it every xrun is a click in the middle of a quiet passage.
 rtkit
 alsa-utils
 alsa-firmware
 alsa-plugins
 alsa-ucm-conf
-# Looking at the graph is how you prove a claim about it. `stylus-audio`
-# reads the numbers; qpwgraph shows you the wires.
 qpwgraph
 pavucontrol
 pamixer
@@ -94,19 +98,17 @@ bluez-utils
 blueman
 libldac
 libfreeaptx
-# AAC, which is what an iPhone and most cheap headphones speak. Without it the
-# link silently falls back to SBC, which is the whole reason Bluetooth audio
-# has a reputation for sounding muffled.
 libfdk-aac
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  MUSIC — players, the library, and getting records into it
+#  MUSIC
 # ═══════════════════════════════════════════════════════════════════════════
 strawberry
 mpv
 cmus
-# The deck (the record on screen) is Python + OpenGL. These are its runtime,
-# not optional extras: /usr/share/stylus/deck does not start without them.
+# The deck and the full-screen shelf are Python. This is their runtime, not
+# an extra: /usr/share/stylus/deck and /usr/share/stylus/ui do not start
+# without it.
 python-numpy
 python-pygame
 python-pillow
@@ -115,37 +117,22 @@ python-requests
 python-gobject
 python-musicbrainzngs
 python-discid
-# The deck's live groove is drawn from the audio as it plays, captured through
-# PortAudio. scope.py does `import pyaudio` at the top and opens the monitor
-# source in AudioCapture, so without this the deck does not degrade - it does
-# not open at all, with ModuleNotFoundError. It is the one non-OpenGL runtime
-# dependency the deck cannot start without, and it was missing.
+# The deck captures the playing audio through PortAudio to draw the live
+# groove; scope.py imports pyaudio at module load and crashes without it, so
+# the deck simply does not open. See the note in packages.x86_64.
 python-pyaudio
-# PyOpenGL is not packaged in the official repositories, under this or any
-# other name. The deck gets it from a venv that customize_airootfs.sh builds
-# inside the chroot at ISO build time, so the live medium works offline —
-# see /usr/share/stylus/deck/venv.
-
-# ── tags, cover art, and the shape of the collection ───────────────────────
 picard
 ffmpeg
 sox
-
-# ── formats. A collection is not one codec. ────────────────────────────────
 flac
 opus-tools
 lame
 wavpack
 cuetools
-# Ripping your own CDs is not a legacy feature for someone who buys records.
-# whipper over abcde: it checks the rip against AccurateRip, which is the
-# difference between "a file" and "a copy you can trust".
 whipper
 cdparanoia
 cdrdao
 libdiscid
-
-# ── acquiring ──────────────────────────────────────────────────────────────
 yt-dlp
 rclone
 # rclone monta em espaço de usuário pelo FUSE, e quem faz isso é o
@@ -156,9 +143,6 @@ fuse3
 # ═══════════════════════════════════════════════════════════════════════════
 #  THE PHONE
 # ═══════════════════════════════════════════════════════════════════════════
-# The library is not "on the PC". It is on the PC and on the phone, and the
-# hard part is keeping the two honest about which copy is the better one.
-# `stylus-phone` does that over cable or over wifi; these are what it needs.
 android-tools
 android-udev
 mtpfs
@@ -192,38 +176,33 @@ sdl2-compat
 # mkarchiso morre nele, e a ISO inteira não sai por causa de uma biblioteca
 # de 32 bits que o Steam e o Wine trazem sozinhos como dependência quando
 # precisam. O sdl2-compat de 64 bits continua logo acima.
-# Clone Hero ships as a plain download, not a package. `stylus-app clonehero`
-# fetches and installs it; these are what it needs once it is on disk.
 libgdiplus
 gtk3
 lib32-gtk3
+# Running out of memory on a 4 GB machine does not produce an error, it
+# produces a machine that stops answering for minutes. earlyoom kills the
+# single worst offender while it still answers. The install enables it.
+earlyoom
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  GRAPHICS — every vendor, because the ISO has to boot on a stranger's box
+#  GRAPHICS — what fits any card
 # ═══════════════════════════════════════════════════════════════════════════
-# NVIDIA's proprietary driver is deliberately NOT here. Building it into the
-# live medium means a dkms build at boot on hardware that may not need it;
-# the live session runs on nouveau/modesetting and `stylus-gpu` installs the
-# right driver after you install, which is also when it can see the card.
+#  The vendor driver is chosen by the installer, which by then has seen the
+#  card (see MESA_SET/GPU_PKGS in stylus-install). What stays here is what
+#  every machine needs: mesa, the Vulkan loader — which is what a game links
+#  against — and the software renderer, which is what draws the desktop when
+#  the vendor driver does not come up.
 mesa
 lib32-mesa
 mesa-utils
-vulkan-radeon
-lib32-vulkan-radeon
-vulkan-intel
-lib32-vulkan-intel
-vulkan-nouveau
-lib32-vulkan-nouveau
-vulkan-swrast
-lib32-vulkan-swrast
 vulkan-icd-loader
 lib32-vulkan-icd-loader
+vulkan-swrast
+lib32-vulkan-swrast
 libva-utils
-intel-media-driver
-vpl-gpu-rt
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  DESKTOP — i3, because a listening machine should get out of the way
+#  DESKTOP
 # ═══════════════════════════════════════════════════════════════════════════
 xorg-server
 xorg-xinit
@@ -255,6 +234,9 @@ thunar-volman
 thunar-archive-plugin
 xarchiver
 gvfs
+# A collection on another machine on the network. Common enough — an old
+# drive hanging off a router, a NAS — to be worth the few megabytes.
+gvfs-smb
 udisks2
 udiskie
 tumbler
@@ -264,6 +246,13 @@ qt5-quickcontrols2
 polkit-gnome
 xsettingsd
 fastfetch
+# File and open-with dialogs for GTK and Flatpak programs. Without the
+# portal, "choose a file" inside a browser or a game opens an empty window.
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+# A browser. Not an office suite: it is where the lyric sheet, the liner
+# notes and the Bandcamp page the record came from are read.
+firefox
 
 # ── look ───────────────────────────────────────────────────────────────────
 ttf-jetbrains-mono-nerd
@@ -280,21 +269,17 @@ qt6ct
 kvantum
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  HARDWARE — so it boots on whatever is in front of you
+#  HARDWARE
 # ═══════════════════════════════════════════════════════════════════════════
 networkmanager
 network-manager-applet
 nm-connection-editor
 wpa_supplicant
-iwd
 iw
 wireless_tools
 wireless-regdb
-b43-fwcutter
-broadcom-wl
 modemmanager
 usb_modeswitch
-dhcpcd
 systemd-resolvconf
 openvpn
 ethtool
@@ -311,6 +296,8 @@ power-profiles-daemon
 acpi
 zram-generator
 upower
+# The firewall, which the install turns on as "nothing in, everything out".
+ufw
 
 # ── disks and filesystems ──────────────────────────────────────────────────
 parted
@@ -327,27 +314,15 @@ mtools
 lvm2
 mdadm
 cryptsetup
-ddrescue
-testdisk
-squashfs-tools
 
-# ── booting and installing ─────────────────────────────────────────────────
+# ── booting ────────────────────────────────────────────────────────────────
 grub
 efibootmgr
 os-prober
-syslinux
-edk2-shell
-refind
-memtest86+
-memtest86+-efi
 plymouth
-arch-install-scripts
-archinstall
-reflector
 dialog
-# The live medium needs to work inside a VM too — that is how anyone sane
-# tries a new distro before giving it a disk.
-qemu-guest-agent
-open-vm-tools
-virtualbox-guest-utils-nox
-hyperv
+# Signing our own bootloader, so a machine can start with Secure Boot on
+# without anybody needing the BIOS password — the case on school computers,
+# where it cannot be turned off. This is what stylus-secureboot uses.
+sbsigntools
+mokutil

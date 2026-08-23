@@ -34,9 +34,21 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# As conferências rodam ANTES de construir — mas só aqui quando este
+# computador tem com o que conferir. Numa máquina que não é Arch, o
+# as ferramentas de conferência (shellcheck, fish, i3, pacman) costumam não
+# existir, e rodar o check.sh aqui reprovava a construção por falta de
+# FERRAMENTA, não por
+# defeito no perfil. Nesse caso ele roda lá dentro do contêiner, que tem
+# tudo — veja CHECK_NO_CONTEINER mais abaixo.
+CHECK_NO_CONTEINER=0
 if (( CHECK )); then
-    info "Conferindo o perfil…"
-    "$PROFILE/tools/check.sh" || die "conserte o que está acima, ou --no-check."
+    if command -v mkarchiso >/dev/null; then
+        info "Conferindo o perfil…"
+        "$PROFILE/tools/check.sh" || die "conserte o que está acima, ou --no-check."
+    else
+        CHECK_NO_CONTEINER=1
+    fi
 fi
 
 mkdir -p "$OUT" "$CACHE"
@@ -67,10 +79,17 @@ elif command -v podman >/dev/null; then
     IMAGE=stylus-builder
     podman image exists "$IMAGE" || \
         podman build -t "$IMAGE" -f "$PROFILE/tools/Containerfile" "$PROFILE/tools"
+    # As conferências primeiro, dentro do contêiner, onde o shellcheck, o fish,
+    # o i3 e o pacman existem. `&&` e não `;`: reprovar a conferência tem que
+    # impedir a construção, e não virar meia hora de mkarchiso em cima de um
+    # perfil que já se sabe quebrado.
+    conferir=""
+    (( CHECK_NO_CONTEINER )) && conferir='/profile/tools/check.sh && '
     podman run --rm --privileged \
         -v "$PROFILE":/profile:z -v "$WORK":/work:z,dev,suid,exec \
         -v "$OUT":/out:z -v "$CACHE":/var/cache/pacman/pkg:z,dev,suid,exec \
-        "$IMAGE" mkarchiso -v -w /work -o /out /profile || die "o contêiner falhou."
+        "$IMAGE" bash -c "${conferir}mkarchiso -v -w /work -o /out /profile" \
+        || die "o contêiner falhou."
 else
     die "instale o archiso (Arch) ou o podman (qualquer distro)."
 fi

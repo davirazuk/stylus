@@ -6,7 +6,9 @@ tedious: wrong-artist matches, singles/EPs, live records, and compilations.
 import json, os, sys, urllib.parse
 import requests
 
-LIB = "/home/davirazuk/Músicas/Fortnite Balls"
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
+LIB = raiz()
 API = "http://127.0.0.1:8765/api/search"
 
 # Compilations/live/reissue noise. Kept deliberately conservative — better to
