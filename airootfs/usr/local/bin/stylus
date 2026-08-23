@@ -50,7 +50,7 @@ cat <<EOF
     ${b}stylus phone${o} ${d}[...]${o}       o celular: estado, sincronizar, playlists
     ${b}stylus webdav${o} ${d}[...]${o}      põe a coleção do celular na estante, sem copiar
     ${b}stylus audio${o}              o caminho do sinal, medido, não prometido
-    ${b}stylus app${o} ${d}NOME${o}          instala o que não vem em pacote
+    ${b}stylus apps${o} ${d}[NOME]${o}       instala o que não vem em pacote
     ${b}stylus gpu${o}                driver de vídeo
     ${b}stylus mode${o} ${d}[música|área]${o} troca entre a tela cheia e a área de trabalho
     ${b}stylus atalhos${o}            a lista de atalhos de teclado
@@ -122,7 +122,11 @@ case "$cmd" in
     phone)       exec stylus-phone "$@" ;;
     webdav)      exec stylus-webdav "$@" ;;
     audio)       exec stylus-audio "$@" ;;
-    app)         exec stylus-app "$@" ;;
+    # `apps` no plural, e os dois nomes que a função do fish entendia. Ela
+    # aceitava `stylus apps` e foi removida daqui — o que quebrou o comando
+    # para quem já o usava, sem nada dizer o que tinha acontecido. Um alias
+    # custa uma linha; quebrar o dedo de quem já digitava custa mais.
+    app|apps|software|loja) exec stylus-app "$@" ;;
     gpu)         exec stylus-gpu "$@" ;;
     update)      exec stylus-update "$@" ;;
     -h|--help|help) usage ;;

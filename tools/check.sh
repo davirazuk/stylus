@@ -175,15 +175,24 @@ sec "nada de IFOS sobrando"
 # README.md e CLAUDE.md citam o IFOS de propósito: um dá o crédito de onde
 # veio o maquinário de hardware, o outro explica a herança para quem for
 # mexer aqui. O resto do repositório não pode ter sobra de nome antigo.
-# Sem \b. Com ele esta conferência passava com quatro sobras dentro do
-# stylus-controller, porque todas estavam coladas num %s de printf
-# ('%sIFOS — controles', '%sifos-update') — e a borda de palavra à esquerda
-# não casa entre `s` e `i`. Uma conferência que sempre passa é pior do que
-# nenhuma: ela diz que está limpo.
-resto=$(grep -rIli --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
+# Três padrões, e cada um existe por um caso real:
+#
+#   IFOS       maiúsculo, em qualquer posição. Pega '%sIFOS — controles' e o
+#              sal '$6$IFOSlive1$' do /etc/shadow. Nenhuma palavra portuguesa
+#              tem IFOS maiúsculo no meio.
+#   ifos-      minúsculo seguido de hífen: 'ifos-update', 'ifos-controller'.
+#   \bifos\b   minúsculo sozinho.
+#
+# O que NÃO se pode fazer é procurar 'ifos' solto, que foi a primeira tentativa
+# aqui: 'glifos' contém 'ifos', e a conferência passou a acusar comentários em
+# português. E também não se pode exigir \b dos dois lados, que foi a versão
+# original: ela passava com quatro sobras dentro do stylus-controller, porque
+# todas estavam coladas num %s de printf e a borda à esquerda não casa entre
+# `s` e `i`. Uma conferência que sempre passa é pior do que nenhuma.
+resto=$(grep -rIlE --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
         --exclude-dir=.pkgcache --exclude-dir=.claude --exclude=check.sh \
         --exclude=README.md --exclude=CLAUDE.md \
-        -e 'ifos' . 2>/dev/null || true)
+        -e 'IFOS' -e 'ifos-' -e '\bifos\b' . 2>/dev/null || true)
 if [[ -z $resto ]]; then ok "o repositório é só do STYLUS"
 else bad "sobrou nome antigo em:"; echo "$resto" | sed 's/^/      /'; fi
 

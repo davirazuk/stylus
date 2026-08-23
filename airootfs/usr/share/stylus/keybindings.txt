@@ -5,10 +5,15 @@
   Mod é a tecla Super (a do losango, entre Ctrl e Alt).
 
   ── os dois modos ─────────────────────────────────────────────────────
-  Mod+G              a tela cheia da música (a estante em capas)
+  Mod+Ctrl+M         VOLTAR PARA O MODO MÚSICA
+                     (também: o botão MÚSICA na barra, e a primeira linha
+                      do menu de sessão em Mod+Shift+E)
+  Mod+G              a tela cheia da música sem trocar de modo
   Mod+D              o menu de programas
-  stylus-mode        troca entre MÚSICA e ÁREA DE TRABALHO
-                     (no modo música, o último item do menu lateral)
+  Mod+M              a estante em grade de capas
+
+  No modo música, Mod+D volta para a área de trabalho — e o último item do
+  menu lateral faz o mesmo, com o controle.
 
   ── abrir coisas ──────────────────────────────────────────────────────
   Mod+Enter          terminal
