@@ -417,6 +417,44 @@ done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
 if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
 else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
+sec "o que a tela cheia promete"
+# A tela cheia lança comandos por lista de argumentos (as ACOES de cada
+# seção). Um nome errado ali não dá erro visível: o painel de saída mostra o
+# traceback do Popen e a pessoa conclui que a ferramenta está quebrada, não
+# que o nome está. Foi assim que a área de trabalho abria três comandos que
+# nunca existiram; a tela cheia merece a mesma conferência.
+faltando=()
+while read -r cmd; do
+    [[ -n $cmd ]] || continue
+    [[ -x airootfs/usr/local/bin/$cmd ]] && continue
+    command -v "$cmd" >/dev/null && continue
+    faltando+=("$cmd")
+done < <(python3 - <<'PYEOF'
+import ast, sys
+arq = "airootfs/usr/share/stylus/ui/app.py"
+arvore = ast.parse(open(arq, encoding="utf-8").read(), arq)
+vistos = set()
+for no in ast.walk(arvore):
+    # ["stylus-term", "Título", "stylus-qobuz", "abrir"] e ["stylus", "check"]:
+    # o programa é o primeiro item, e o stylus-term recebe o dele no terceiro.
+    if not isinstance(no, ast.List) or not no.elts:
+        continue
+    itens = [e.value for e in no.elts
+             if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    if len(itens) != len(no.elts) or not itens:
+        continue
+    if not itens[0].startswith("stylus"):
+        continue
+    vistos.add(itens[0])
+    if itens[0] == "stylus-term" and len(itens) > 2:
+        vistos.add(itens[2])
+for v in sorted(vistos):
+    print(v)
+PYEOF
+)
+if (( ${#faltando[@]} == 0 )); then ok "todo comando que a tela cheia lança existe"
+else bad "a tela cheia lança o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
 sec "o tocador não pode desfazer a tese"
 # O mpv LÊ o ~/.config/mpv/mpv.conf, e uma linha herdada de outra máquina —
 # `replaygain=track`, `af=loudnorm`, `audio-samplerate=48000` — desfaz o

@@ -727,7 +727,9 @@ class DiaryScreen(Screen):
             T.text(s, f"{it['plays']}x", (row.right - 20, row.y + 20), 21,
                    T.PINK, anchor="topright")
             y += 84
-        self._calendar(s, pygame.Rect(x, r.bottom - 132, r.w - 88, 84))
+        # 190 e não 132: com o valor antigo a legenda do calendário caía
+        # exatamente em cima da linha de dicas, e as duas viravam um borrão.
+        self._calendar(s, pygame.Rect(x, r.bottom - 190, r.w - 88, 104))
         self.app.hint(s, r, "enter põe de novo   ·   ↑↓ anda   ·   s o formato")
 
     # ── a segunda página: o formato ────────────────────────────────────────
@@ -865,8 +867,12 @@ class DiaryScreen(Screen):
         """
         hoje = time.localtime()
         dias = 364
-        cell = min(10, rect.w // 53 - 1)
         gap = 2
+        # O quadradinho vem da largura E da altura disponíveis. Só da largura,
+        # ele ficava preso em 10 px numa tela de 1600 e o ano inteiro ocupava
+        # metade do espaço que tinha, lendo como um enfeite pequeno em vez de
+        # como o gráfico que é.
+        cell = max(4, min(14, rect.w // 53 - gap, rect.h // 7 - gap))
         base = time.time() - dias * 86400
         maxi = max(self.by_day.values()) if self.by_day else 1
         for d in range(dias + 1):
@@ -884,8 +890,12 @@ class DiaryScreen(Screen):
             else:
                 c = T.INK_SOFT
             pygame.draw.rect(s, c, (x, y, cell, cell), border_radius=2)
+        # A legenda vai logo abaixo da ÚLTIMA linha desenhada, não abaixo do
+        # retângulo: o retângulo é o espaço oferecido, e o desenho quase nunca
+        # o preenche inteiro.
+        fim = rect.y + 7 * (cell + gap)
         T.text(s, f"um ano  ·  até {time.strftime('%d/%m', hoje)}",
-               (rect.x, rect.bottom + 6), 15, T.TEXT_FAINT)
+               (rect.x, fim + 8), 15, T.TEXT_FAINT)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -940,8 +950,12 @@ class PhoneScreen(Screen):
             box = pygame.Rect(x, y, 460, 46)
             if sel:
                 T.panel(s, box, T.INK_LIFT, radius=9)
+            # maxw: sem ele, "pôr a coleção do celular na estante (WebDAV)"
+            # era desenhado PARA FORA da caixa e entrava por baixo do painel
+            # de saída, cortado no meio de uma palavra e sem reticências —
+            # que se lê como texto corrompido, não como texto comprido.
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 12),
-                   21, T.TEXT if sel else T.TEXT_DIM)
+                   21, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 28)
             y += 52
         self.app.job_panel(s, pygame.Rect(x + 500, r.y + 120,
                                           r.right - x - 544, r.h - 220),
@@ -963,6 +977,13 @@ class ToolsScreen(Screen):
         ("procurar letras dos discos sem .lrc", ["stylus", "lyrics", "--all"]),
         ("arrumar tags e capa embutida", ["stylus", "tags"]),
         ("rasgar o CD da gaveta", ["stylus", "rip"]),
+        # As duas coisas novas que só existiam no terminal. Aqui é onde quem
+        # está no sofá vai procurá-las — e a tela cheia é o modo em que a
+        # máquina liga.
+        ("baixar do Qobuz e arquivar",
+         ["stylus-term", "Qobuz", "stylus-qobuz", "abrir"]),
+        ("o papel de parede vira o disco de agora",
+         ["stylus-wallpaper"]),
         ("refazer o índice da estante", ["stylus", "reindex"]),
         ("cópia de segurança para o Drive", ["stylus", "backup"]),
         ("atualizar o sistema", ["stylus-update", "--check"]),
@@ -997,7 +1018,7 @@ class ToolsScreen(Screen):
             if sel:
                 T.panel(s, box, T.INK_LIFT, radius=9)
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 11),
-                   20, T.TEXT if sel else T.TEXT_DIM)
+                   20, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 28)
             y += 50
         self.app.job_panel(s, pygame.Rect(x + 510, r.y + 120,
                                           r.right - x - 554, r.h - 220),
@@ -1108,7 +1129,7 @@ class SettingsScreen(Screen):
                 T.panel(s, box, T.INK_LIFT, radius=9)
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 11),
                    20, T.TEXT if sel else (T.TEXT_DIM if cmd else T.TEXT_FAINT),
-                   maxw=530)
+                   maxw=box.w - 30)
             y += 50
         T.text(s, "STYLUS", (x, r.bottom - 150), 40, T.BLUE, bold=True)
         T.text(s, "a agulha é o único ponto em que um objeto vira som.",
