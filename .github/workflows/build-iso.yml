@@ -1,0 +1,87 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Constrói a ISO do STYLUS na nuvem
+# ═══════════════════════════════════════════════════════════════════════════
+#  Existe por um motivo prático: construir uma ISO do Arch exige montar,
+#  fazer chroot e criar nós de dispositivo. Um celular não faz nada disso —
+#  nem no Termux, que roda sem root de verdade. Então quem só tem o celular
+#  na mão não constrói localmente: manda o GitHub construir e baixa pronto.
+#
+#  Do celular:
+#    Actions → "Construir a ISO" → Run workflow → escolha o ramo → Run.
+#    Uns 30 minutos depois, o arquivo aparece em "Artifacts", no fim da
+#    página da execução. Baixa direto pelo navegador do telefone.
+#
+#  Gravar no pendrive pelo celular: EtchDroid + um cabo OTG.
+# ═══════════════════════════════════════════════════════════════════════════
+name: Construir a ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      conferir:
+        description: "Rodar tools/check.sh antes de construir"
+        type: boolean
+        default: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # O runner do GitHub vem com uns 14 GB livres e a construção quer mais
+      # que isso entre o cache de pacotes, o airootfs e o squashfs. O que
+      # ocupa o disco dele são SDKs que nada aqui usa.
+      - name: Abrir espaço no disco
+        run: |
+          echo "antes:"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" \
+                      /usr/local/share/powershell /usr/share/swift || true
+          sudo apt-get clean
+          echo "depois:"; df -h / | tail -1
+
+      # --privileged porque o mkarchiso monta e faz chroot. A imagem é a
+      # mesma que o build.sh usa fora de uma máquina Arch.
+      - name: Construir a imagem do construtor
+        run: docker build -t stylus-builder -f tools/Containerfile tools
+
+      - name: Conferir o perfil
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.conferir }}
+        run: |
+          docker run --rm --privileged -v "$PWD":/profile -w /profile \
+            stylus-builder ./tools/check.sh
+
+      - name: mkarchiso
+        run: |
+          mkdir -p out
+          docker run --rm --privileged \
+            -v "$PWD":/profile -v "$PWD/out":/out -w /profile \
+            stylus-builder mkarchiso -v -w /tmp/work -o /out /profile
+
+      - name: O que saiu
+        id: iso
+        run: |
+          arquivo=$(find out -maxdepth 1 -name '*.iso' | head -1)
+          [ -n "$arquivo" ] || { echo "nenhuma ISO foi produzida"; exit 1; }
+          echo "  $arquivo — $(du -h "$arquivo" | cut -f1)"
+          sha256sum "$arquivo" | tee "$arquivo.sha256"
+          echo "nome=$(basename "$arquivo")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.iso.outputs.nome }}
+          path: |
+            out/*.iso
+            out/*.sha256
+          # Uma ISO não comprime: já é squashfs zstd por dentro. Comprimir de
+          # novo custaria minutos para não economizar nada.
+          compression-level: 0
+          retention-days: 14

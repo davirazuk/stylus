@@ -123,6 +123,26 @@ pacote que não existe, link apontando para arquivo renomeado, config do i3
 que o i3 recusa, ferramenta que o menu promete e não está lá — em segundos,
 contra a meia hora de uma construção.
 
+Numa máquina Arch o `build.sh` usa o `mkarchiso` direto. Em qualquer outra
+distribuição ele cai para um contêiner (`podman`), e as conferências passam a
+rodar lá dentro — onde o shellcheck, o fish e o pacman existem — em vez de
+reprovarem a construção por falta de ferramenta no computador de fora.
+
+### Construir sem computador (pelo celular)
+
+Não dá para construir uma ISO do Arch **no** celular: é preciso montar, fazer
+chroot e criar nós de dispositivo, e nem o Termux nem um proot fazem isso sem
+root de verdade. O que dá é mandar construir e baixar pronta:
+
+1. No GitHub, aba **Actions** → **Construir a ISO** → **Run workflow**.
+2. Uns 30 minutos depois, o arquivo está em **Artifacts**, no fim da página
+   da execução — o navegador do celular baixa direto.
+3. Para gravar no pendrive pelo próprio celular: **EtchDroid** e um cabo OTG.
+   (O `tools/flash.sh` é para quando há um computador; ele recusa disco
+   interno de propósito.)
+
+O `.sha256` vai junto, para conferir que o arquivo chegou inteiro.
+
 ---
 
 ## De onde vem

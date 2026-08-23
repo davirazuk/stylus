@@ -29,11 +29,20 @@ while IFS= read -r -d '' f; do
 done < <(find airootfs tools -type f \( -name '*.sh' -o -perm -u+x \) -print0)
 
 sec "shellcheck"
-while IFS= read -r -d '' f; do
-    head -c 200 "$f" | grep -qE '^#!.*(bash|sh)\b' || continue
-    out=$(shellcheck -S warning "$f" 2>&1) && ok "${f#./}" || {
-        bad "${f#./}"; echo "$out" | head -6 | sed 's/^/      /'; }
-done < <(find airootfs/usr/local/bin airootfs/usr/share/stylus tools -type f -print0 2>/dev/null)
+# Guardado como o fish e o i3 logo abaixo. Sem a guarda, um computador que não
+# tem a ferramenta acusava TODOS os scripts de uma vez — "command not found"
+# repetido vinte e sete vezes — e o build.sh, que roda isto antes de construir,
+# desistia. (E a linha acima não pode COMEÇAR com o nome da ferramenta depois
+# do "#": assim o próprio shellcheck a lê como diretiva e recusa o arquivo.)
+if command -v shellcheck >/dev/null; then
+    while IFS= read -r -d '' f; do
+        head -c 200 "$f" | grep -qE '^#!.*(bash|sh)\b' || continue
+        out=$(shellcheck -S warning "$f" 2>&1) && ok "${f#./}" || {
+            bad "${f#./}"; echo "$out" | head -6 | sed 's/^/      /'; }
+    done < <(find airootfs/usr/local/bin airootfs/usr/share/stylus tools -type f -print0 2>/dev/null)
+else
+    printf '  %s—%s shellcheck não instalado aqui\n' "$y" "$z"
+fi
 
 sec "sintaxe de python"
 while IFS= read -r -d '' f; do
@@ -300,7 +309,16 @@ else
       não liga o multilib — o pacstrap vai morrer com o disco já formatado"
 fi
 
-if (( ! FAST )); then
+if (( ! FAST )) && ! command -v pacman >/dev/null; then
+    sec "nomes de pacote"
+    # Sem pacman não dá para conferir nome nenhum — e o jeito como isto estava
+    # escrito NÃO dizia isso: `pacman -Si ... | sed -n 's/^error: package…'`
+    # com o pacman ausente produz "command not found", que o sed não casa, o
+    # que deixa a lista de ruins vazia, o que imprime "os 239 pacotes existem
+    # nos repositórios". Uma conferência que aprova tudo num computador que não
+    # tem como conferir nada é pior do que não ter conferência: ela mente.
+    printf '  %s—%s pacman não existe aqui; use --fast, ou rode numa máquina Arch\n' "$y" "$z"
+elif (( ! FAST )); then
     sec "nomes de pacote"
     for lista in "$LISTA_ISO" "$LISTA_INST"; do
         [[ -f $lista ]] || continue

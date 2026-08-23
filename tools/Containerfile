@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  A imagem que constrói a ISO fora de uma máquina Arch
+# ═══════════════════════════════════════════════════════════════════════════
+#  O build.sh usa isto quando não acha o mkarchiso no computador — é o
+#  caminho de quem está no Ubuntu, no Fedora, no macOS com podman, ou dentro
+#  de uma máquina de CI. Ele já chamava este arquivo e o arquivo NÃO EXISTIA,
+#  então "construir em qualquer distribuição" falhava na primeira linha, com
+#  um erro do podman sobre um Containerfile ausente.
+#
+#  Precisa rodar privilegiado: o mkarchiso monta, faz chroot e cria nós de
+#  dispositivo. Quem passa --privileged é o build.sh.
+#
+#  Sem comentário dentro de bloco RUN de propósito: nem todo construtor de
+#  imagem tira comentário do meio de uma continuação de linha, e o que
+#  acontece quando não tira é o `#` virar argumento do comando.
+# ═══════════════════════════════════════════════════════════════════════════
+FROM docker.io/library/archlinux:base-devel
+
+# O espelho que vem na imagem costuma estar velho o bastante para dar
+# "key ... is unknown trust" no meio da instalação. O chaveiro primeiro.
+RUN pacman -Sy --noconfirm --needed archlinux-keyring && pacman -Su --noconfirm
+
+# multilib. O STYLUS põe lib32-gamemode, lib32-mesa e companhia em toda
+# máquina; sem ele ligado aqui, a conferência de nomes do check.sh diz que
+# metade dos pacotes de vídeo não existe — e estaria certa, nesta imagem.
+RUN sed -i '/^#\[multilib\]/,/^#Include = .*mirrorlist/ s/^#//' /etc/pacman.conf \
+ && pacman -Sy --noconfirm
+
+# archiso constrói; shellcheck, fish e i3 são o que o check.sh precisa para
+# rodar inteiro em vez de pular três seções em silêncio.
+RUN pacman -S --noconfirm --needed archiso git squashfs-tools mtools shellcheck fish i3-wm \
+ && pacman -Scc --noconfirm
+
+WORKDIR /profile
