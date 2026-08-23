@@ -24,6 +24,15 @@ on:
         default: true
   push:
     tags: ["v*"]
+    # Também em qualquer ramo de trabalho. Não é capricho: o botão "Run
+    # workflow" (workflow_dispatch) só aparece quando o arquivo já está no
+    # ramo PADRÃO do repositório, então enquanto isto viver num ramo de
+    # trabalho não haveria como disparar de jeito nenhum — nem pelo celular,
+    # que é justamente para quem isto existe. Um gatilho de push roda a
+    # partir do próprio ramo empurrado.
+    branches: ["claude/**", "iso/**"]
+    paths-ignore:
+      - "**.md"
 
 permissions:
   contents: read
