@@ -417,6 +417,27 @@ done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
 if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
 else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
+sec "as ferramentas que uma ferramenta chama"
+# Não é só o dispatcher que chama .py de tools/: o stylus-qobuz chama
+# `$TOOLS/run_queue_api.py`, e esse por sua vez chama `integrate_album.py` e
+# `embed_metadata.py` pelo nome, com cwd na própria pasta. Um nome errado aí
+# não dá erro na hora — dá no meio da fila, depois de o disco já ter baixado,
+# que é o pior momento possível para descobrir.
+faltando=()
+while read -r py; do
+    [[ -f airootfs/usr/share/stylus/tools/$py ]] || faltando+=("$py")
+done < <({ grep -ohE '\$TOOLS/[a-z_]+\.py' airootfs/usr/local/bin/* \
+             | sed 's|\$TOOLS/||'
+           # Só o que é invocado como programa: [sys.executable, "x.py", ...].
+           grep -ohE '\[sys\.executable, "[a-z_]+\.py"' \
+                airootfs/usr/share/stylus/tools/*.py \
+             | sed 's|.*"\(.*\)"|\1|'
+           grep -ohE 'python3 [a-z_]+\.py' \
+                airootfs/usr/share/stylus/tools/*.sh 2>/dev/null \
+             | sed 's|python3 ||'; } | sort -u)
+if (( ${#faltando[@]} == 0 )); then ok "toda ferramenta que outra ferramenta chama existe"
+else bad "chamam .py que não existe em tools/:"; printf '      %s\n' "${faltando[@]}"; fi
+
 sec "os lançadores do menu"
 # Um .desktop com Exec para um comando que não existe some do menu sem erro
 # nenhum — o rofi simplesmente não o lista, e não há onde ler o porquê.

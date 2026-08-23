@@ -61,6 +61,7 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus covers` | `cover.jpg` onde falta |
 | `stylus rip` | rasga o CD da gaveta, conferido no AccurateRip |
 | `stylus get URL` | baixa e arquiva na estrutura certa |
+| `stylus qobuz` | a interface do qobuz-dl, e a fila que arquiva disco por disco |
 
 ### As máquinas
 | | |
@@ -146,6 +147,35 @@ Por baixo é o `rclone`, que já estava aqui — monta em espaço de usuário, s
 root, sem linha no `/etc/fstab`, e guarda a senha ofuscada em vez de em texto
 puro num arquivo de sistema. Um servidor num celular muda de IP e cai o tempo
 todo; nada disso merece root.
+
+---
+
+## Encher a estante
+
+```
+stylus qobuz              está instalada? no ar? em que porta?
+stylus qobuz instalar     instala a interface do qobuz-dl
+stylus qobuz abrir        põe no ar e abre no navegador
+stylus qobuz fila ARQ     baixa a fila inteira e arquiva disco por disco
+```
+
+O arquivo da fila é uma linha por disco:
+
+```
+https://open.qobuz.com/album/xxxxx|Talk Talk|Laughing Stock
+```
+
+Cada disco é terminado **por inteiro** — baixa, junta os discos duplos numa
+pasta só renumerando na sequência, move para `Artista/Álbum`, arruma as tags,
+embute a capa, busca a letra, atualiza a playlist mestre — antes de o próximo
+começar. Uma queda de energia no meio nunca deixa meio álbum enfiado na
+estante, e o que já estava lá é pulado em vez de baixado de novo.
+
+O que a fila pede ao backend vai **explícito**, opção por opção. Parece
+excesso de zelo e não é: um pedido pelado faz o backend tratar cada chave
+ausente como um `False` de verdade, e um `False` de verdade ganha do
+`config.ini` — a fila inteira baixaria sem capa embutida e sem `cover.jpg` em
+tamanho cheio, ao contrário do que a configuração manda, em silêncio.
 
 ---
 

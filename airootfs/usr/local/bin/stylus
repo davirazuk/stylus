@@ -50,6 +50,8 @@ cat <<EOF
     ${b}stylus tags${o} ${d}[DISCO]${o}      arruma tags e capa embutida
     ${b}stylus rip${o}                rasga o CD que está na gaveta, para a estante
     ${b}stylus get${o} ${d}URL|FILA${o}      baixa e arquiva na estante
+    ${b}stylus qobuz${o} ${d}[...]${o}       a interface do qobuz-dl, e a fila que
+                              baixa e arquiva disco por disco
 
   ${a}as máquinas${o}
     ${b}stylus phone${o} ${d}[...]${o}       o celular: estado, sincronizar, playlists
@@ -92,6 +94,9 @@ case "$cmd" in
     tags)        exec "$PY" "$TOOLS/embed_metadata.py" "$@" ;;
     rip)         exec "$PY" "$TOOLS/rip.py" "$@" ;;
     get)         exec "$PY" "$TOOLS/get.py" "$@" ;;
+    # A interface web do qobuz-dl e a fila que ela alimenta. As duas filas já
+    # estavam aqui e não havia como chegar nelas nem como pôr a interface no ar.
+    qobuz)       exec stylus-qobuz "$@" ;;
     suggest)     exec "$PY" "$TOOLS/suggest_playlists.py" "$@" ;;
     reindex)
         # A interface guarda um índice da estante para abrir instantaneamente.

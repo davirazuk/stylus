@@ -39,11 +39,17 @@ import urllib.request
 
 from _raiz import raiz   # onde fica a coleção, decidido num lugar só
 
-API = "http://127.0.0.1:8765/api"
+API = os.environ.get("STYLUS_QOBUZ_API") or "http://127.0.0.1:8765/api"
 QOBUZ_DIR = os.environ.get("STYLUS_QOBUZ_DIR") or os.path.expanduser("~/Qobuz Downloads")
 LIB = raiz()
-TOOLS = os.path.expanduser("~/.local/share/stylus/tools")
-LOG = "/tmp/qobuz-gui.log"
+# As ferramentas ficam AO LADO deste arquivo. Isto dizia
+# ~/.local/share/stylus/tools, que não existe em máquina nenhuma: numa
+# instalação elas estão em /usr/share/stylus/tools. Como o caminho só era
+# usado como `cwd=` de um subprocess, o efeito era um FileNotFoundError cru
+# no meio da fila — não um "falhou este álbum", um traceback que parava tudo,
+# depois de o disco já ter sido baixado.
+TOOLS = os.path.dirname(os.path.abspath(__file__))
+LOG = os.environ.get("STYLUS_QOBUZ_LOG") or "/tmp/qobuz-gui.log"
 PROGRESS = os.path.expanduser("~/.local/share/stylus/queue-progress.tsv")
 
 DL_TIMEOUT = 3600     # per album, seconds
@@ -82,6 +88,11 @@ def norm(s):
 
 
 def in_library(artist, album):
+    # Sem a coleção no lugar, "não tenho este disco" é a resposta certa — e
+    # era um FileNotFoundError no os.listdir logo abaixo, na PRIMEIRA linha da
+    # fila, numa máquina onde a estante ainda não tinha sido apontada.
+    if not os.path.isdir(LIB):
+        return None
     ad = os.path.join(LIB, artist)
     if not os.path.isdir(ad):
         # artist folder may differ in punctuation
@@ -162,6 +173,7 @@ def log_since(offset):
 
 
 def record(status, artist, album, detail):
+    os.makedirs(os.path.dirname(PROGRESS), exist_ok=True)
     with open(PROGRESS, "a", encoding="utf-8") as f:
         f.write(f"{time.strftime('%H:%M:%S')}\t{status}\t{artist}\t{album}\t{detail}\n")
     print(f"  -> {status}: {detail}", flush=True)
@@ -175,11 +187,19 @@ def main():
         limit = int(sys.argv[sys.argv.index("--limit") + 1])
 
     entries = []
-    for line in open(queue_file, encoding="utf-8"):
+    for n, line in enumerate(open(queue_file, encoding="utf-8"), 1):
         line = line.strip()
         if not line.startswith("http"):
             continue
-        url, artist, album = line.split("|")
+        # split("|") sem limite estoura com ValueError num álbum que tem "|"
+        # no nome, e a fila INTEIRA morre por causa de uma linha. Com limite,
+        # o que sobra fica no nome do álbum, que é onde ele estava.
+        partes = line.split("|", 2)
+        if len(partes) != 3:
+            print(f"  linha {n} ignorada (não é url|artista|álbum): "
+                  f"{line[:80]}", flush=True)
+            continue
+        url, artist, album = (p.strip() for p in partes)
         entries.append((url, artist, album))
     if limit:
         entries = entries[:limit]
@@ -273,12 +293,18 @@ def main():
         # Safety net: integrate embeds art + whatever .lrc it fetched; this
         # catches anything it missed without rescanning the whole library.
         dest = None
-        for d in os.listdir(LIB):
-            if norm(d) == norm(artist):
-                cand = os.path.join(LIB, d)
-                for sub in os.listdir(cand):
-                    if norm(sub) == norm(album):
-                        dest = os.path.join(cand, sub)
+        for d in os.listdir(LIB) if os.path.isdir(LIB) else []:
+            if norm(d) != norm(artist):
+                continue
+            cand = os.path.join(LIB, d)
+            if not os.path.isdir(cand):
+                continue
+            for sub in os.listdir(cand):
+                if norm(sub) == norm(album):
+                    dest = os.path.join(cand, sub)
+                    break
+            if dest:
+                break
         if dest:
             subprocess.run([sys.executable, "embed_metadata.py", "--apply", dest],
                            cwd=TOOLS, capture_output=True, text=True)

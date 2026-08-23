@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Generic sequential Qobuz queue runner + auto-integrator.
 #
+# PREFIRA o run_queue_api.py — é o que o `stylus qobuz fila` chama. Ele espera
+# pelo `download_active` do backend em vez de contar linhas "Completed" no
+# log, e o cabeçalho dele explica por que essa contagem corre atrás do
+# próprio rabo. Isto aqui fica como a via de quem só tem shell.
+#
 # Reads "url|artist|album" lines from a queue file, downloads them one at a
 # time (the GUI API only permits one active download), and integrates each
 # into the library as soon as it lands rather than batching at the end — so a
@@ -38,8 +43,18 @@ while IFS='|' read -r url artist album; do
 
   ok=0
   for _ in $(seq 1 120); do
+    # Todas as opções, explícitas. Um {"urls": ...} pelado parece o mínimo
+    # educado e NÃO é: o backend monta os overrides com
+    # `data.get("embed_art", False)`, então a chave ausente vira um False de
+    # verdade, e um False de verdade ganha do config.ini. O efeito é a fila
+    # inteira baixar sem capa embutida e sem cover.jpg em tamanho cheio,
+    # exatamente ao contrário do que a configuração manda — em silêncio, e só
+    # se descobre olhando a estante meses depois.
     resp=$(curl -s "$API" -X POST -H "Content-Type: application/json" \
-             -d "{\"urls\": \"$url\"}")
+             -d "{\"urls\": \"$url\", \"quality\": 27, \"embed_art\": true,
+                  \"og_cover\": true, \"no_fallback\": false,
+                  \"no_cover\": false, \"no_db\": true,
+                  \"albums_only\": false, \"no_m3u\": false}")
     if echo "$resp" | grep -q '"ok":true'; then ok=1; break; fi
     sleep 3
   done

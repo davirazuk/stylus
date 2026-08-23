@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-qobuz — a interface do qobuz-dl, e a fila que enche a estante
+# ═══════════════════════════════════════════════════════════════════════════
+#  Este repositório já trazia DUAS ferramentas que conversam com a interface
+#  web do qobuz-dl — `tools/run_queue_api.py` e `tools/run_queue.sh` — e
+#  nenhuma delas era alcançável: nada as chamava, nada instalava a interface
+#  que elas dirigem, e nada a punha no ar. Era uma fila inteira escrita para
+#  um programa que a máquina não tinha.
+#
+#      stylus qobuz              o estado: instalada? no ar? em que porta?
+#      stylus qobuz instalar     instala a interface (pip, dentro da casa)
+#      stylus qobuz abrir        põe no ar e abre no navegador
+#      stylus qobuz servir       põe no ar e fica em segundo plano
+#      stylus qobuz parar        derruba
+#      stylus qobuz log          acompanha o registro dela
+#      stylus qobuz fila ARQ     baixa a fila inteira e arquiva cada disco
+#                                  (linhas "url|artista|álbum")
+#
+#  A fila arquiva UM disco de cada vez, inteiro — baixa, move, retagueia,
+#  busca letra, atualiza a playlist — antes de começar o próximo. Assim uma
+#  queda de energia no meio nunca deixa meio álbum enfiado na estante.
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+SHARE=/usr/share/stylus
+TOOLS=$SHARE/tools
+PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+
+REPO="${STYLUS_QOBUZ_GUI_REPO:-git+https://github.com/peykc/qobuz-dl-gui.git}"
+ESTADO="$HOME/.local/share/stylus"
+PIDFILE="$ESTADO/qobuz-gui.pid"
+LOG="${STYLUS_QOBUZ_LOG:-/tmp/qobuz-gui.log}"
+# 8765 é a porta que as duas filas deste repositório sempre falaram. As outras
+# são as que as variantes conhecidas do programa usam — procurar é mais barato
+# do que a pessoa descobrir sozinha que mudou.
+PORTAS=("${STYLUS_QOBUZ_PORT:-}" 8765 5000 8080 3000)
+
+c_g=$'\033[1;32m'; c_y=$'\033[1;33m'; c_b=$'\033[1;34m'
+c_r=$'\033[1;31m'; c_d=$'\033[2m'; c_0=$'\033[0m'
+info() { printf '%s==>%s %s\n' "$c_b" "$c_0" "$*"; }
+ok()   { printf '%s  ✓%s %s\n' "$c_g" "$c_0" "$*"; }
+warn() { printf '%s  !%s %s\n' "$c_y" "$c_0" "$*"; }
+die()  { printf '%s==> ERRO:%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
+
+# A trava vale para o que ESCREVE, não para o comando inteiro: `stylus qobuz`
+# sozinho e o `--help` só olham, e recusá-los com sudo seria recusar
+# justamente a pergunta que alguém faz quando está tentando entender o que
+# está acontecendo.
+precisa_ser_voce() {
+    [[ $EUID -eq 0 ]] && die \
+        "não rode isto com sudo: instalaria na casa do root e os discos
+       baixariam para /root/Qobuz Downloads, onde você não os vê."
+    return 0
+}
+
+achar_binario() {
+    local c
+    for c in "$HOME/.local/bin/qobuz-dl-gui" /usr/local/bin/qobuz-dl-gui; do
+        [[ -x $c ]] && { printf '%s\n' "$c"; return 0; }
+    done
+    c=$(command -v qobuz-dl-gui 2>/dev/null) && [[ -n $c ]] && \
+        { printf '%s\n' "$c"; return 0; }
+    return 1
+}
+
+viva_em() {  # viva_em PORTA — responde HTTP ali?
+    curl -fsS --max-time 2 -o /dev/null "http://127.0.0.1:$1/" 2>/dev/null
+}
+
+achar_porta() {
+    local p
+    for p in "${PORTAS[@]}"; do
+        [[ -n $p ]] || continue
+        viva_em "$p" && { printf '%s\n' "$p"; return 0; }
+    done
+    return 1
+}
+
+pid_vivo() {
+    local pid
+    [[ -f $PIDFILE ]] || return 1
+    pid=$(cat "$PIDFILE" 2>/dev/null) || return 1
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    # Confere o cmdline, não só a existência do pid: o número pode ter sido
+    # reciclado por outro processo qualquer, e matar um pid reciclado é como
+    # se derruba a coisa errada.
+    grep -qa 'qobuz-dl-gui' "/proc/$pid/cmdline" 2>/dev/null || return 1
+    printf '%s\n' "$pid"
+}
+
+instalar() {
+    precisa_ser_voce
+    command -v pip3 >/dev/null || command -v pip >/dev/null || \
+        die "falta o pip: sudo pacman -S --needed python-pip"
+    info "Instalando a interface do qobuz-dl…"
+    # --user para ficar na casa e --break-system-packages porque no Arch o
+    # /usr/lib/python é do pacman: sem isso o pip recusa e a mensagem dele não
+    # diz o que fazer.
+    "$PY" -m pip install --user --upgrade --break-system-packages "$REPO" \
+        || die "o pip falhou. Sem rede, ou o repositório mudou de lugar:
+       $REPO
+       STYLUS_QOBUZ_GUI_REPO aponta para outro."
+    achar_binario >/dev/null || die \
+        "instalou e não achei o \`qobuz-dl-gui\`. Ele costuma cair em
+       ~/.local/bin — confira se essa pasta está no seu PATH."
+    ok "$(achar_binario)"
+}
+
+servir() {
+    local pid porta bin
+    precisa_ser_voce
+    if porta=$(achar_porta); then
+        ok "já está no ar em http://127.0.0.1:$porta/"
+        printf '%s\n' "$porta"; return 0
+    fi
+    bin=$(achar_binario) || die \
+        "a interface não está instalada. \`stylus qobuz instalar\`"
+    mkdir -p "$ESTADO"
+    info "Subindo a interface… (registro em $LOG)"
+    # QOBUZ_DL_GUI_BROWSER=1: sem isto ele tenta abrir uma janela própria pelo
+    # pywebview, que exige um webkit que esta imagem não traz — e o sintoma é
+    # o programa sair na hora sem dizer por quê. No navegador funciona em
+    # qualquer máquina, e é onde a fila fala com ele de qualquer forma.
+    QOBUZ_DL_GUI_BROWSER=1 setsid "$bin" >>"$LOG" 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" > "$PIDFILE"
+    for _ in $(seq 1 40); do          # até 20 s
+        porta=$(achar_porta) && { ok "no ar em http://127.0.0.1:$porta/"
+                                  printf '%s\n' "$porta"; return 0; }
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.5
+    done
+    warn "não respondeu em 20 s. As últimas linhas do registro:"
+    tail -n 15 "$LOG" 2>/dev/null | sed 's/^/      /'
+    return 1
+}
+
+estado() {
+    local bin porta pid
+    echo
+    if bin=$(achar_binario); then ok "instalada: $bin"
+    else warn "não instalada — \`stylus qobuz instalar\`"; fi
+    if porta=$(achar_porta); then
+        ok "no ar: http://127.0.0.1:$porta/"
+    else
+        printf '  %s·%s fora do ar — `stylus qobuz abrir`\n' "$c_d" "$c_0"
+    fi
+    pid=$(pid_vivo) && printf '  %s·%s subida por nós, pid %s%s\n' \
+        "$c_d" "$c_0" "$pid" "$c_0"
+    printf '  %sdestino dos downloads: %s%s\n' "$c_d" \
+        "${STYLUS_QOBUZ_DIR:-$HOME/Qobuz Downloads}" "$c_0"
+    printf '  %sa estante: %s%s\n' "$c_d" \
+        "$("$PY" -c 'import sys; sys.path.insert(0,"/usr/share/stylus/deck"); import vinyl; print(vinyl.library_root())' 2>/dev/null || echo '?')" "$c_0"
+    echo
+}
+
+case "${1:-}" in
+    ""|estado|status) estado ;;
+    instalar|install) instalar ;;
+    servir|serve)     servir >/dev/null ;;
+    abrir|open)
+        porta=$(servir | tail -1) || exit 1
+        [[ $porta =~ ^[0-9]+$ ]] || die "não descobri a porta"
+        for nav in xdg-open firefox chromium; do
+            command -v "$nav" >/dev/null && { "$nav" "http://127.0.0.1:$porta/" \
+                >/dev/null 2>&1 & break; }
+        done
+        ok "abrindo http://127.0.0.1:$porta/"
+        ;;
+    parar|stop)
+        pid=$(pid_vivo) || { warn "não achei nenhuma que tenhamos subido"; exit 0; }
+        kill "$pid" 2>/dev/null
+        for _ in $(seq 1 20); do pid_vivo >/dev/null || break; sleep 0.25; done
+        pid_vivo >/dev/null && kill -9 "$pid" 2>/dev/null
+        rm -f "$PIDFILE"; ok "parada"
+        ;;
+    log)   exec tail -n 100 -f "$LOG" ;;
+    fila|queue)
+        arq=${2:-}
+        [[ -n $arq && -f $arq ]] || die \
+            "uso: stylus qobuz fila ARQUIVO
+       uma linha por disco, no formato:  url|artista|álbum"
+        porta=$(servir | tail -1) || die "a interface não subiu; sem ela não há fila"
+        shift 2 || shift
+        export STYLUS_QOBUZ_API="http://127.0.0.1:$porta/api"
+        export STYLUS_QOBUZ_LOG="$LOG"
+        export PYTHONPATH="$TOOLS:$SHARE/deck${PYTHONPATH:+:$PYTHONPATH}"
+        exec "$PY" "$TOOLS/run_queue_api.py" "$arq" "$@"
+        ;;
+    -h|--help|help) sed -n '11,22p' "$0" | sed 's/^# \?//' ;;
+    *) die "não conheço \"$1\". \`stylus qobuz --help\`" ;;
+esac
