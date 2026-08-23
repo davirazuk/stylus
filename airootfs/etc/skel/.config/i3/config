@@ -160,6 +160,10 @@ bindsym XF86AudioMute         exec --no-startup-id $osd vol-mute
 bindsym XF86AudioMicMute      exec --no-startup-id $osd mic-mute
 bindsym XF86MonBrightnessUp   exec --no-startup-id $osd bright-up
 bindsym XF86MonBrightnessDown exec --no-startup-id $osd bright-down
+# Virar o lado. Os controles de mídia pulam FAIXA; isto põe a agulha no
+# começo do outro LADO, que é a única coisa que este sistema pede que
+# você faça com as mãos e a única que não dava para fazer.
+bindsym $mod+Shift+v exec --no-startup-id stylus-side-watch --virar
 bindsym XF86AudioPlay         exec --no-startup-id playerctl play-pause
 bindsym XF86AudioNext         exec --no-startup-id playerctl next
 bindsym XF86AudioPrev         exec --no-startup-id playerctl previous

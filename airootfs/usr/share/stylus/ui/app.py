@@ -136,6 +136,17 @@ class NowScreen(Screen):
         if ev.key == pygame.K_n:
             spawn(["playerctl", "next"])
             return True
+        # Virar o lado. v e b no teclado, Y no controle (que chega como "/"):
+        # os ombros já pulam FAIXA, e faltava a única coisa que este sistema
+        # pede que você faça com as mãos.
+        if ev.key in (pygame.K_v, pygame.K_SLASH):
+            self.app.toast("virando o disco…")
+            spawn(["stylus-side-watch", "--virar"])
+            return True
+        if ev.key == pygame.K_b:
+            self.app.toast("voltando um lado…")
+            spawn(["stylus-side-watch", "--voltar"])
+            return True
         if ev.key == pygame.K_p:
             spawn(["playerctl", "previous"])
             return True
@@ -193,7 +204,8 @@ class NowScreen(Screen):
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
                (x, r.bottom - 92), 18, T.TEXT_FAINT, maxw=w)
-        self.app.hint(s, r, "enter abrir o deck   espaço pausa   n/p faixa")
+        self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
+                            "n/p faixa   v/b lado")
 
     def _groove(self, s, rect, frac):
         """A barra de progresso desenhada como um sulco, não como um tubo.
@@ -1517,7 +1529,11 @@ class App:
             if atual:
                 pygame.draw.rect(s, T.BLUE, (10, y - 6, 3, 40), border_radius=2)
             cor = T.TEXT if (atual or foco) else T.TEXT_FAINT
-            T.text(s, sc.icon, (30, y + 2), 22, cor)
+            # T.icon e não sc.icon direto: sem a fonte do Nerd Font, cada
+            # item do trilho vira um retângulo vazio, e uma coluna de nove
+            # caixinhas parece o sistema quebrado. Sem ícone nenhum, o nome
+            # ao lado continua dizendo tudo.
+            T.text(s, T.icon(sc.icon), (30, y + 2), 22, cor)
             T.text(s, sc.name, (62, y + 6), 18, cor)
             if i < len(self.screens):
                 T.text(s, str(i + 1), (w - 18, y + 8), 15, T.TEXT_FAINT,

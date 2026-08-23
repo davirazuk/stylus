@@ -24,6 +24,18 @@ set -u
 MAX=38            # characters before the title is cut short
 SEP=$'\x1f'
 
+# ${#text} e ${text:0:N} contam CARACTERES só quando o locale é UTF-8; com
+# LANG=C eles contam BYTES, e cortar no meio de um "ç" põe meio caractere na
+# barra — o defeito aparece como acento errado, não como falta de fonte. A
+# sessão já garante isto, mas este script também roda sozinho (`media.sh
+# next`) e a barra é onde o estrago aparece.
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *UTF-8|*utf-8|*UTF8|*utf8) : ;;
+    # unset LC_ALL antes: LC_ALL ganha de LC_CTYPE, e sem tirá-lo do caminho
+    # a linha seguinte não muda nada.
+    *) unset LC_ALL; export LC_CTYPE=C.UTF-8 ;;
+esac
+
 command -v playerctl >/dev/null 2>&1 || exit 0
 
 case ${1:-show} in

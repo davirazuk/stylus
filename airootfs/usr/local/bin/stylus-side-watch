@@ -122,6 +122,44 @@ def gravar_agulha(album, indice, pos):
         pass
 
 
+def virar(olho, direcao=+1):
+    """Põe a agulha no começo do outro lado.
+
+    Dá para pular FAIXA desde sempre — os ombros do controle fazem isso — e
+    não dava para pular LADO, que é a única coisa que este sistema pede que
+    você faça com as mãos. Virar um disco não é avançar sete faixas: é pôr a
+    agulha no primeiro sulco do outro lado, e é isso que acontece aqui.
+
+    Cai na PRIMEIRA FAIXA do lado, não no instante em que o lado começa: os
+    dois quase sempre são o mesmo ponto (um lado começa numa faixa), e quando
+    não são, cair no meio de uma faixa não é o que ninguém quer dizer com
+    "virar o disco".
+    """
+    al, i, _lado, _restam = olho.onde()
+    if al is None or not al.sides:
+        return "nada tocando", None, None
+    alvo = i + direcao
+    if alvo < 0:
+        return "já está no primeiro lado", al, i
+    if alvo >= len(al.sides):
+        return "este era o último lado", al, i
+    faixas = al.sides[alvo].get("tracks") or []
+    if not faixas:
+        return "não sei onde esse lado começa", al, i
+    ipc = vinyl._MpvIPC()
+    if not ipc.connect():
+        # Sem o socket não há como pôr a agulha em lugar nenhum: o MPRIS diz
+        # o que está tocando, não manda tocar de um ponto.
+        return ("só dá para virar o disco quando ele foi posto pelo deck "
+                "(`stylus deck`)"), al, i
+    try:
+        ipc.command("set_property", "playlist-pos", int(faixas[0]))
+        ipc.command("set_property", "pause", False)
+    finally:
+        ipc.close()
+    return None, al, i
+
+
 class Olho:
     """Onde o disco está, e o que mudou desde a última olhada."""
 
@@ -173,11 +211,42 @@ def rotulo(lado):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--virar", action="store_true",
+                    help="põe a agulha no começo do próximo lado")
+    ap.add_argument("--voltar", action="store_true",
+                    help="e este põe no começo do lado anterior")
     ap.add_argument("--pause", action="store_true",
                     default=os.environ.get("STYLUS_SIDE_PAUSE") == "1")
     args = ap.parse_args()
 
     olho = Olho()
+
+    if args.virar or args.voltar:
+        erro, al, antes = virar(olho, -1 if args.voltar else +1)
+        if erro:
+            print(erro)
+            return 1
+        # Diz para onde foi. Virar um disco e a tela não mudar nada seria a
+        # mesma falta de acontecimento que este comando existe para consertar.
+        #
+        # Espera o Session enxergar a mudança antes de perguntar: ele pesquisa
+        # numa thread própria, e perguntar no mesmo instante devolve o lado
+        # ANTIGO — o comando funcionaria e diria que não fez nada.
+        # `antes` vem de dentro do virar(): o índice de ANTES do salto. Ler
+        # olho.lado aqui devolveria None (só o laço principal o preenche), e
+        # `i != None` é verdade na primeira volta — o comando sairia dizendo
+        # o lado velho, como se não tivesse feito nada.
+        lado = None; restam = 0.0; i = antes
+        for _ in range(20):                        # até 2 s
+            _al, i, lado, restam = olho.onde()
+            if lado is not None and i != antes:
+                break
+            time.sleep(0.1)
+        olho.lado = i
+        minutos = int((restam or 0.0) // 60)
+        avisar(rotulo(lado), f"{al.name} — {minutos} min deste lado")
+        print(f"{rotulo(lado)} de {len(al.sides)}  ·  {minutos} min")
+        return 0
 
     if args.once:
         al, i, lado, restam = olho.onde()

@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-fontes — por que apareceu uma caixinha no lugar do ícone
+# ═══════════════════════════════════════════════════════════════════════════
+#  Uma caixinha vazia na tela não diz nada sobre a causa, e as causas são
+#  quatro e bem diferentes: a fonte não está instalada, está instalada e o
+#  cache do fontconfig não a viu, está instalada numa versão que MOVEU os
+#  ícones (o Nerd Fonts mudou os Material Design de faixa entre a v2 e a v3),
+#  ou o programa está pedindo uma família com outro nome.
+#
+#  Isto pergunta ao fontconfig, ponto de código por ponto de código, quem tem
+#  cada ícone que este sistema desenha — e diz qual das quatro é.
+#
+#      stylus fontes            o relatório
+#      stylus fontes --fix      refaz o cache do fontconfig e repete
+# ═══════════════════════════════════════════════════════════════════════════
+import os
+import subprocess
+import sys
+
+D = "\033[2m"; B = "\033[1m"; A = "\033[38;5;117m"
+OK = "\033[38;5;114m"; WARN = "\033[38;5;215m"; BAD = "\033[38;5;210m"; O = "\033[0m"
+
+# As famílias que as configurações deste sistema pedem pelo nome.
+FAMILIAS = [
+    ("JetBrainsMono Nerd Font", "ttf-jetbrains-mono-nerd",
+     "a barra, o i3, o rofi, o terminal e a tela cheia"),
+    ("Font Awesome 6 Free", "otf-font-awesome", "os ícones da barra"),
+    ("Noto Sans", "noto-fonts", "texto onde a monoespaçada não serve"),
+    ("Noto Color Emoji", "noto-fonts-emoji", "emoji na barra"),
+]
+
+# Uma amostra do que o sistema desenha, com o nome do que deveria aparecer.
+# Não é a lista inteira: se estes existem, a faixa inteira existe.
+ICONES = [
+    (0xF0025, "álbum (tela cheia, barra)"),
+    (0xF007A, "bateria"),
+    (0xF00B1, "bluetooth"),
+    (0xF05A9, "wi-fi"),
+    (0xF03E4, "tocando (barra)"),
+    (0xF0450, "voltar"),
+    (0xF011,  "desligar (Font Awesome)"),
+    (0xF028,  "volume (Font Awesome)"),
+]
+# Onde os Material Design moravam ANTES do Nerd Fonts v3. Se for AQUI que
+# eles estão, a fonte instalada é v2 e o sistema inteiro está pedindo a faixa
+# nova — que é uma causa completamente diferente de "não instalada".
+FAIXA_V2 = (0xF500, 0xFD46)
+
+
+def sh(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=20).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def tem_fc():
+    return bool(sh(["sh", "-c", "command -v fc-match"]))
+
+
+def quem_tem(ponto):
+    """A família que o fontconfig entrega para este ponto de código, ou None.
+
+    fc-match sempre responde ALGUMA fonte — é o trabalho dele. Por isso a
+    pergunta é feita com :charset=, que faz o casamento só com quem realmente
+    tem o caractere; quando ninguém tem, ele cai na fonte padrão, e é assim
+    que se distingue "tem" de "devolveu qualquer coisa".
+    """
+    fam = sh(["fc-match", "-f", "%{family[0]}", f":charset={ponto:x}"])
+    if not fam:
+        return None
+    # Confere de verdade: a família devolvida realmente lista este ponto?
+    lista = sh(["fc-list", f":charset={ponto:x}", "family"])
+    if not lista:
+        return None
+    return fam
+
+
+def main():
+    if not tem_fc():
+        print(f"\n  {BAD}o fontconfig não está aqui{O} "
+              f"{D}(pacote fontconfig){O}\n")
+        return 1
+
+    if "--fix" in sys.argv:
+        print(f"\n  {D}refazendo o cache do fontconfig…{O}")
+        sh(["fc-cache", "-f"])
+
+    print(f"\n  {B}as famílias que este sistema pede{O}\n")
+    faltando = []
+    for nome, pacote, pra_que in FAMILIAS:
+        achou = sh(["fc-match", "-f", "%{family[0]}", nome])
+        bate = achou.lower().replace(" ", "") == nome.lower().replace(" ", "")
+        marca = f"{OK}✓{O}" if bate else f"{BAD}✗{O}"
+        print(f"    {marca} {nome:<26}{D}{pra_que}{O}")
+        if not bate:
+            print(f"        {WARN}o fontconfig entrega \"{achou}\" no lugar{O}")
+            print(f"        {D}sudo pacman -S --needed {pacote}{O}")
+            faltando.append(pacote)
+
+    print(f"\n  {B}os ícones que o sistema desenha{O}\n")
+    sem = []
+    for ponto, oque in ICONES:
+        fam = quem_tem(ponto)
+        if fam:
+            print(f"    {OK}✓{O} U+{ponto:05X}  {oque:<28}{D}{fam}{O}")
+        else:
+            print(f"    {BAD}✗{O} U+{ponto:05X}  {oque:<28}{BAD}ninguém tem{O}")
+            sem.append(ponto)
+
+    # A pergunta decisiva: os Material Design estão na faixa VELHA?
+    velha = [p for p in (0xF534, 0xF578, 0xF5D2) if quem_tem(p)]
+    nova = [p for p, _ in ICONES if p > 0xF0000 and quem_tem(p)]
+    print()
+    if sem and velha and not nova:
+        print(f"  {WARN}▸ a fonte instalada é do Nerd Fonts v2.{O}")
+        print(f"  {D}    Os ícones existem, na faixa antiga (U+F500…), e este{O}")
+        print(f"  {D}    sistema pede a faixa v3 (U+F0001…). Atualizar resolve:{O}")
+        print(f"  {D}      sudo pacman -Syu ttf-jetbrains-mono-nerd{O}")
+    elif sem:
+        print(f"  {BAD}▸ {len(sem)} ícones não existem em fonte nenhuma desta máquina.{O}")
+        print(f"  {D}    Quase sempre é o cache do fontconfig: `stylus fontes --fix`.{O}")
+        print(f"  {D}    Se não resolver: sudo pacman -S --needed "
+              f"ttf-jetbrains-mono-nerd otf-font-awesome{O}")
+    elif faltando:
+        print(f"  {WARN}▸ os ícones existem, mas uma família pedida pelo nome não.{O}")
+        print(f"  {D}    sudo pacman -S --needed {' '.join(sorted(set(faltando)))}{O}")
+    else:
+        print(f"  {OK}▸ todas as fontes e todos os ícones estão aqui.{O}")
+        print(f"  {D}    Caixinha na tela agora seria outra coisa — um programa{O}")
+        print(f"  {D}    pedindo a família por um nome que não é o dela.{O}")
+
+    # O locale, que é a outra metade das "letras erradas" e não tem nada a ver
+    # com fonte: sem UTF-8 o bash corta o nome do disco no meio de um "ç".
+    loc = (os.environ.get("LC_ALL") or os.environ.get("LC_CTYPE")
+           or os.environ.get("LANG") or "")
+    print(f"\n  {B}o locale{O}  {D}(a outra causa de letra errada, e não é fonte){O}\n")
+    if "utf" in loc.lower():
+        print(f"    {OK}✓{O} {loc}")
+    else:
+        print(f"    {BAD}✗{O} {loc or '(nenhum)'} — sem UTF-8 o bash conta BYTES,")
+        print(f"        {D}e a barra corta o nome do disco no meio de um acento.{O}")
+        print(f"        {D}sudo localectl set-locale LANG=pt_BR.UTF-8, e saia e{O}")
+        print(f"        {D}entre de novo na sessão.{O}")
+    print()
+    return 1 if (sem or faltando) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

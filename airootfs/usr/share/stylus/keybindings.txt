@@ -38,6 +38,7 @@
   ── música ────────────────────────────────────────────────────────────
   Play / Pause       pausa e volta
   Próxima / Anterior pula faixa
+  Mod+Shift+V        VIRAR O LADO (põe a agulha no começo do outro lado)
   Mod+Shift+M        volume, por canal (pavucontrol)
 
   ── tela e som ────────────────────────────────────────────────────────
