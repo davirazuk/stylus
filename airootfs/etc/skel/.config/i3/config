@@ -59,6 +59,10 @@ exec --no-startup-id gammastep -l -20.44:-54.65 -t 6500:3600
 # suspend, so closing a laptop lid does the right thing.
 exec --no-startup-id xset s 600 && xset dpms 0 0 720
 exec --no-startup-id xss-lock --transfer-sleep-lock -- ~/.config/i3/scripts/lock.sh
+# Avisa quando o lado do disco acaba. É a tese do sistema — "no meio você tem
+# que levantar e virar" — e era a única parte dela que nada implementava: a
+# barra CONTAVA ("vira em 12 min") e ninguém nunca era avisado no momento.
+exec --no-startup-id stylus-side-watch
 exec --no-startup-id ~/.config/i3/scripts/battery-watch.sh
 exec --no-startup-id ~/.config/i3/scripts/disk-watch.sh
 # Checks once, shortly after login, whether the graphics driver is actually

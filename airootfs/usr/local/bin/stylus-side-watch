@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""stylus-side-watch — avisa quando o lado acaba.
+
+POR QUE ISTO EXISTE
+-------------------
+É a tese do sistema, e era a única parte dela que não estava implementada.
+
+O README diz: "Você escolhe um objeto, ele manda por quarenta minutos, e no
+meio você tem que levantar e virar." A máquina sabia disso — a barra mostra
+"vira em 12 min" e a tela cheia também — mas ninguém nunca era AVISADO no
+momento. O disco virava sozinho, em silêncio, e a coisa que separa ouvir um
+disco de ouvir uma playlist simplesmente não acontecia.
+
+Um contador que só conta não é a mesma coisa que um acontecimento. Isto aqui
+é o acontecimento.
+
+    stylus-side-watch              fica olhando e avisa (é o que a sessão roda)
+    stylus-side-watch --once       diz em que lado está agora e sai
+    stylus-side-watch --pause      além de avisar, PAUSA no fim do lado
+
+Sobre o --pause: num toca-discos de verdade o lado acaba e o som para —
+é isso que faz você levantar. Aqui é opcional e desligado por padrão, porque
+impor uma pausa a quem só quer ouvir seria trocar uma tese por uma
+implicância. Quem quer a coisa inteira liga com
+`stylus-side-watch --pause`, ou põe STYLUS_SIDE_PAUSE=1 no ambiente.
+"""
+import argparse
+import os
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, "/usr/share/stylus/deck")
+try:
+    import vinyl
+except Exception as e:                                    # noqa: BLE001
+    sys.exit(f"stylus-side-watch: preciso do vinyl.py do deck: {e}")
+
+INTERVALO = 2.0
+# Uma etiqueta de pilha do dunst: o aviso novo SUBSTITUI o anterior em vez de
+# empilhar. Um disco de seis lados não pode deixar seis avisos na tela.
+TAG = "stylus-side"
+
+
+def avisar(titulo, corpo, urgencia="normal"):
+    try:
+        subprocess.run(
+            ["notify-send", "--app-name=STYLUS", f"--urgency={urgencia}",
+             f"--hint=string:x-dunst-stack-tag:{TAG}",
+             "--icon=stylus", titulo, corpo],
+            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def pausar():
+    """Pausa quem estiver tocando, sem saber quem é."""
+    for cmd in (["playerctl", "pause"],
+                ["mpv-ipc-pause"]):          # reservado; o playerctl cobre mpv
+        try:
+            if subprocess.run(cmd, check=False,
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+class Olho:
+    """Onde o disco está, e o que mudou desde a última olhada."""
+
+    def __init__(self):
+        self.sessao = vinyl.Session()
+        self.album = None
+        self.pasta = None
+        self.lado = None
+        self._ti = [None, 0]
+
+    def onde(self):
+        """(álbum, índice do lado, lado, quanto falta) — ou Nones."""
+        snap = self.sessao.snapshot()
+        caminho = snap.get("path") or ""
+        pasta = os.path.dirname(caminho) if caminho else ""
+        chave = pasta or f"{snap.get('artist')}/{snap.get('album')}"
+        if chave and chave != self.pasta:
+            self.pasta = chave
+            self.lado = None                  # disco novo: recomeça a contar
+            try:
+                f = vinyl.resolve_album(snap.get("path"), snap.get("artist", ""),
+                                        snap.get("album", ""))
+                self.album = vinyl.Album(f, envelope=False) if f else None
+            except Exception:                 # noqa: BLE001
+                self.album = None
+        al = self.album
+        if al is None or not al.total or not al.sides:
+            return None, None, None, 0.0
+        idx = vinyl.track_index_for(al, snap, self._ti)
+        pos, _d = self.sessao.position()
+        t_abs = al.album_time(idx, pos)
+        i, lado = al.side_for(t_abs)
+        restam = max(0.0, lado["end"] - t_abs) if lado else 0.0
+        return al, i, lado, restam
+
+
+def rotulo(lado):
+    return (lado or {}).get("label", "LADO").replace("SIDE", "LADO")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--pause", action="store_true",
+                    default=os.environ.get("STYLUS_SIDE_PAUSE") == "1")
+    args = ap.parse_args()
+
+    olho = Olho()
+
+    if args.once:
+        al, i, lado, restam = olho.onde()
+        if al is None:
+            print("nada tocando")
+            return 0
+        ultimo = i >= len(al.sides) - 1
+        print(f"{al.artist} — {al.name}")
+        print(f"{rotulo(lado)} de {len(al.sides)}  ·  "
+              f"{'acaba' if ultimo else 'vira'} em {int(restam // 60)} min")
+        return 0
+
+    while True:
+        try:
+            al, i, lado, _restam = olho.onde()
+        except Exception:                     # noqa: BLE001 — nunca morrer
+            time.sleep(INTERVALO)
+            continue
+
+        if al is not None and lado is not None:
+            if olho.lado is not None and i != olho.lado:
+                # Passou de lado. Só avisa quando ANDA para a frente: um seek
+                # para trás não é o disco virando, é a pessoa procurando uma
+                # faixa, e avisar ali seria puro ruído.
+                if i > olho.lado:
+                    ultimo = i >= len(al.sides) - 1
+                    anterior = al.sides[olho.lado]
+                    if ultimo and i == len(al.sides) - 1:
+                        avisar(f"{rotulo(anterior)} acabou",
+                               f"{al.name} — vire o disco para o "
+                               f"{rotulo(lado)}")
+                    else:
+                        avisar(f"{rotulo(anterior)} acabou",
+                               f"{al.name} — agora o {rotulo(lado)}")
+                    if args.pause and pausar():
+                        avisar(f"{rotulo(anterior)} acabou",
+                               f"{al.name} — pausado. Levante e vire.",
+                               urgencia="critical")
+            olho.lado = i
+        else:
+            olho.lado = None
+
+        time.sleep(INTERVALO)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(0)

@@ -201,7 +201,9 @@ sec "coerência interna"
 faltando=()
 while read -r sub; do
     [[ -x airootfs/usr/local/bin/$sub ]] || faltando+=("$sub")
-done < <(grep -oE 'exec (stylus-[a-z]+)' airootfs/usr/local/bin/stylus | awk '{print $2}' | sort -u)
+# O hífen tem que estar na classe: com [a-z]+ o `stylus-side-watch` era cortado
+# no primeiro hífen e a conferência acusava um `stylus-side` que ninguém escreveu.
+done < <(grep -oE 'exec (stylus-[a-z-]+)' airootfs/usr/local/bin/stylus | awk '{print $2}' | sort -u)
 if (( ${#faltando[@]} == 0 )); then ok "todo stylus-* que o dispatcher chama existe"
 else bad "o dispatcher chama o que não existe: ${faltando[*]}"; fi
 

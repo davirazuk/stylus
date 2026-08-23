@@ -33,6 +33,7 @@ cat <<EOF
     ${b}stylus record${o} ${d}[DISCO]${o}    sorteia um da estante e mostra os lados,
                               puxando para o que faz tempo que não toca
     ${b}stylus shelf${o}              a estante em grade de capas
+    ${b}stylus lado${o}               em que lado do disco você está, e quanto falta
     ${b}stylus scope${o}              só o instrumento: o vetorscópio, sem disco
 
   ${a}a coleção${o}
@@ -107,6 +108,8 @@ case "$cmd" in
         fi
         ;;
     mode)        exec stylus-mode "$@" ;;
+    # Em que lado do disco você está, agora.
+    side|lado)   exec stylus-side-watch --once "$@" ;;
     # Estes três existiam como uma FUNÇÃO do fish chamada `stylus`, que ficava
     # na frente deste arquivo no shell padrão do sistema e respondia "comando
     # desconhecido" para deck, library, phone, record, shelf — a CLI inteira

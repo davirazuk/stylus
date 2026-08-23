@@ -1,0 +1,13 @@
+[Unit]
+Description=STYLUS — avisa quando o lado do disco acaba
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/stylus-side-watch
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
