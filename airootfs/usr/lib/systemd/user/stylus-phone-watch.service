@@ -1,0 +1,12 @@
+[Unit]
+Description=STYLUS — sincroniza o celular quando ele é plugado
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/stylus-phone-watch
+Restart=on-failure
+RestartSec=20
+
+[Install]
+WantedBy=default.target

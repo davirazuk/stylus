@@ -16,11 +16,12 @@ iso_application="STYLUS Live/Install Medium"
 iso_version="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y.%m.%d)"
 install_dir="arch"
 buildmodes=('iso')
-bootmodes=('bios.syslinux.mbr'
-           'bios.syslinux.eltorito'
-           'uefi-x64.systemd-boot.esp'
-           'uefi-x64.systemd-boot.eltorito')
-arch="x86_64"
+# Os nomes granulares (bios.syslinux.mbr, uefi-x64.systemd-boot.esp…) são de
+# um archiso mais novo do que o que está nos repositórios; o de hoje (89) só
+# conhece estes dois, e usar os outros faz a construção morrer na primeira
+# linha. Estes cobrem BIOS e UEFI do mesmo jeito.
+bootmodes=('bios.syslinux'
+           'uefi.systemd-boot')
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"
 # zstd -19 instead of xz: the ISO comes out within a few percent of the same

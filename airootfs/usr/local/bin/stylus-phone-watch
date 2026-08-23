@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Vigia o adb e sincroniza UMA vez por conexão.
+#
+# Rearma só depois de desplugar, e respeita um intervalo mínimo: sem isso, um
+# cabo com mau contato dispara uma sincronia a cada meio segundo. E só avisa
+# quando MEXEU em alguma coisa — notificação que diz "nada mudou" toda vez
+# que você pluga o carregador é ruído, e ruído acaba sendo ignorado junto com
+# o aviso que importava.
+set -uo pipefail
+MIN=1800                       # meia hora entre sincronias
+LOG="$HOME/.local/share/stylus/phone-watch.log"
+mkdir -p "$(dirname "$LOG")"
+ultimo=0
+conectado=0
+
+while true; do
+    if adb devices 2>/dev/null | grep -q "device$"; then
+        agora=$(date +%s)
+        if (( ! conectado )) && (( agora - ultimo > MIN )); then
+            conectado=1; ultimo=$agora
+            {
+                echo "── $(date '+%F %T')"
+                saida=$(stylus-phone sync --apply 2>&1)
+                echo "$saida"
+            } >> "$LOG"
+            # Conta pelos NÚMEROS e não pela frase final: com nada a fazer ele
+            # termina com "nada a fazer", com --apply termina com um resumo —
+            # duas frases diferentes para o mesmo nada.
+            n=$(grep -oE '[0-9]+ transferido' <<<"${saida:-}" | grep -oE '[0-9]+' | head -1)
+            if [[ -n ${n:-} && $n -gt 0 ]]; then
+                notify-send --app-name=STYLUS --urgency=low \
+                    "celular sincronizado" "$n faixa(s)" 2>/dev/null || true
+            fi
+        fi
+    else
+        conectado=0
+    fi
+    sleep 5
+done

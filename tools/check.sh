@@ -87,7 +87,8 @@ sec "nada de IFOS sobrando"
 # README.md e CLAUDE.md citam o IFOS de propósito: um dá o crédito de onde
 # veio o maquinário de hardware, o outro explica a herança para quem for
 # mexer aqui. O resto do repositório não pode ter sobra de nome antigo.
-resto=$(grep -rIl --exclude-dir=.git --exclude=check.sh \
+resto=$(grep -rIl --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
+        --exclude-dir=.pkgcache --exclude=check.sh \
         --exclude=README.md --exclude=CLAUDE.md \
         -e '\bifos\b' -e '\bIFOS\b' . 2>/dev/null || true)
 if [[ -z $resto ]]; then ok "o repositório é só do STYLUS"

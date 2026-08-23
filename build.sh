@@ -57,7 +57,10 @@ mkdir -p "$WORK"
 start=$SECONDS
 if command -v mkarchiso >/dev/null && [[ -f /etc/arch-release || -f /etc/os-release ]]; then
     info "mkarchiso, nativo (isto demora)…"
-    sudo mkarchiso -v -w "$WORK" -o "$OUT" -c "$CACHE" "$PROFILE" \
+    # SEM -c. No mkarchiso, -c são CERTIFICADOS de assinatura, não cache —
+    # passar o diretório de cache ali faz ele abortar dizendo que precisa de
+    # dois certificados. O cache de pacotes vem do pacman.conf do perfil.
+    sudo mkarchiso -v -w "$WORK" -o "$OUT" "$PROFILE" \
         || die "o mkarchiso falhou."
 elif command -v podman >/dev/null; then
     info "sem mkarchiso aqui; construindo dentro de um contêiner…"

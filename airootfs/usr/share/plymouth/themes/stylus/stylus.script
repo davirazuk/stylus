@@ -1,0 +1,38 @@
+# STYLUS boot splash — plymouth "script" plugin.
+# Deliberately minimal: a centred wordmark that breathes, and a message line.
+# If anything here fails plymouth falls back to text mode and the boot carries
+# on regardless.
+
+Window.SetBackgroundTopColor(0.039, 0.180, 0.137);
+Window.SetBackgroundBottomColor(0.020, 0.102, 0.078);
+
+logo.image  = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+logo.x = Window.GetX() + Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2;
+logo.y = Window.GetY() + Window.GetHeight() / 2 - logo.image.GetHeight() / 2;
+logo.sprite.SetPosition(logo.x, logo.y, 1);
+
+tick = 0;
+
+fun refresh_callback() {
+    tick++;
+    logo.sprite.SetOpacity(0.55 + 0.45 * Math.Sin(tick / 15));
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# Status text (fsck progress, "a start job is running", ...)
+message.sprite = Sprite();
+message.sprite.SetPosition(logo.x, logo.y + logo.image.GetHeight() + 40, 2);
+
+fun message_callback(text) {
+    message.image = Image.Text(text, 0.91, 0.96, 0.91);
+    message.sprite.SetImage(message.image);
+    message.sprite.SetX(Window.GetX() + Window.GetWidth() / 2
+                        - message.image.GetWidth() / 2);
+}
+Plymouth.SetMessageFunction(message_callback);
+
+fun display_normal_callback() {
+    message.sprite.SetOpacity(1);
+}
+Plymouth.SetDisplayNormalFunction(display_normal_callback);

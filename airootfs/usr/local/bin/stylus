@@ -81,6 +81,27 @@ case "$cmd" in
     rip)         exec "$PY" "$TOOLS/rip.py" "$@" ;;
     get)         exec "$PY" "$TOOLS/get.py" "$@" ;;
     suggest)     exec "$PY" "$TOOLS/suggest_playlists.py" "$@" ;;
+    reindex)
+        # A interface guarda um índice da estante para abrir instantaneamente.
+        # Apagá-lo é como se manda ela reler o disco.
+        rm -f "$HOME/.cache/stylus/shelf.json" "$HOME/.cache/stylus/shelf.tsv"
+        "$PY" -c 'import vinyl; print(f"{len(vinyl.shelf(min_tracks=1))} discos")'
+        ;;
+    backup)
+        # Só o que é SEU e não dá para baixar de novo: a memória da coleção,
+        # as playlists, a configuração. A música não vai — ela é grande e já
+        # está no celular. Sem remoto configurado, guarda aqui do lado.
+        alvo="${STYLUS_BACKUP:-gdrive:stylus-backup/$(date +%F)}"
+        if command -v rclone >/dev/null && rclone listremotes 2>/dev/null | grep -q .; then
+            rclone copy "$HOME/.local/share/stylus" "$alvo/state" --progress
+            rclone copy "$HOME/.config/stylus" "$alvo/config" --progress
+            echo "em $alvo"
+        else
+            dest="$HOME/stylus-backup-$(date +%F).tar.gz"
+            tar czf "$dest" -C "$HOME" .local/share/stylus .config/stylus 2>/dev/null
+            echo "sem remoto do rclone configurado; guardei em $dest"
+        fi
+        ;;
     phone)       exec stylus-phone "$@" ;;
     audio)       exec stylus-audio "$@" ;;
     app)         exec stylus-app "$@" ;;

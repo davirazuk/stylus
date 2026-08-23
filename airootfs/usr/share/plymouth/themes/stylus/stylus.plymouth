@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=STYLUS
+Description=STYLUS boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/stylus
+ScriptFile=/usr/share/plymouth/themes/stylus/stylus.script

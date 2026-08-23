@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Escolhe a pasta da coleção sem terminal. Tenta descobrir sozinho primeiro,
+# porque na maioria das vezes a resposta certa já está no disco.
+set -uo pipefail
+PY=/usr/share/stylus/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
+export PYTHONPATH=/usr/share/stylus/deck
+
+achado=$("$PY" -c 'import vinyl; r,n = vinyl.best_root(); print(f"{r}\t{n}" if r else "")')
+if [[ -n $achado ]]; then
+    pasta=${achado%%$'\t'*}; n=${achado##*$'\t'}
+    echo "achei $n discos em $pasta"
+fi
+if command -v zenity >/dev/null; then
+    escolha=$(zenity --file-selection --directory \
+        --title="onde fica a sua coleção?" \
+        ${pasta:+--filename="$pasta/"} 2>/dev/null) || exit 0
+elif command -v rofi >/dev/null; then
+    escolha=$(find "$HOME" /mnt /run/media -maxdepth 3 -type d 2>/dev/null \
+        | rofi -dmenu -i -p "coleção") || exit 0
+else
+    escolha=$pasta
+fi
+[[ -n ${escolha:-} ]] || exit 0
+exec stylus library "$escolha"

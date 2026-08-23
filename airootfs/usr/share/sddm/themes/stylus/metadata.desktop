@@ -1,0 +1,11 @@
+[SddmGreeterTheme]
+Name=STYLUS
+Description=STYLUS login theme
+Author=davirazuk
+Version=1.1
+License=MIT
+Type=sddm-theme
+MainScript=Main.qml
+ConfigFile=theme.conf
+Website=https://github.com/davirazuk/stylus
+Screenshot=background.png

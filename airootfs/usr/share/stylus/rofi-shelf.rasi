@@ -1,0 +1,59 @@
+/* A estante no rofi: GRADE, não lista.
+ *
+ * Uma lista com trezentos nomes é um índice, e a resposta honesta a um índice
+ * acaba sendo "embaralha". Numa estante você passa o olho e alguma capa
+ * chama. É por isso que isto é um tema separado do rofi normal do sistema. */
+* {
+    bg:     #07080b;
+    bg-alt: #0d0f14;
+    fg:     #e2e7f0;
+    fg-dim: #7e899c;
+    accent: #5bcefa;
+    background-color: transparent;
+    text-color: @fg;
+}
+window {
+    width: 78%;
+    height: 76%;
+    background-color: @bg;
+    border: 1px;
+    border-color: #20232e;
+    border-radius: 14px;
+    padding: 22px;
+}
+inputbar {
+    children: [ prompt, entry ];
+    padding: 6px 10px 16px 10px;
+    spacing: 12px;
+}
+prompt { text-color: @accent; }
+entry  { placeholder: "que disco?"; placeholder-color: @fg-dim; }
+listview {
+    columns: 6;
+    lines: 3;
+    cycle: false;
+    scrollbar: false;
+    spacing: 16px;
+}
+element {
+    orientation: vertical;
+    padding: 8px;
+    border-radius: 10px;
+    children: [ element-icon, element-text ];
+}
+element-icon {
+    size: 9.5em;
+    horizontal-align: 0.5;
+}
+element-text {
+    horizontal-align: 0.5;
+    vertical-align: 0.5;
+    padding: 8px 2px 0px 2px;
+    text-color: @fg-dim;
+}
+element selected {
+    background-color: @bg-alt;
+    border: 1px;
+    border-color: @accent;
+}
+element selected element-text { text-color: @fg; }
