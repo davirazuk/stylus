@@ -1,5 +1,5 @@
-# STYLUS theme for dialog(1) — used by stylus-welcome, stylus-software and the
-# installer. Without this, dialog uses its default light-blue scheme, which
+# STYLUS theme for dialog(1) — used by the installer, which is the one place
+# this system still puts a TUI in front of somebody. Without this, dialog uses its default light-blue scheme, which
 # looks nothing like the rest of the system.
 
 use_shadow = ON

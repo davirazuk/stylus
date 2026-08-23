@@ -28,7 +28,8 @@ O STYLUS é essa ideia levada a sério num sistema operacional inteiro:
 - **A coleção lembra.** Todo disco que você põe é anotado. Os discos que você
   mais ouve acumulam marcas na superfície e as marcas de cada um são dele.
 - **Dois modos, como num Steam Deck.** *Modo música* é uma tela cheia com a
-  estante em capas, feita para ser usada do sofá e com controle. *Modo área
+  estante em capas, feita para ser usada do sofá e com controle — o
+  direcional anda, A põe o disco, B volta, os ombros pulam faixa. *Modo área
   de trabalho* é um i3 completo. Um botão vai de um ao outro.
 
 Não tem suíte de escritório. Nunca vai ter.
@@ -65,7 +66,9 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus audio` | o caminho do sinal, medido |
 | `stylus app NOME` | Clone Hero, qobuz-dl, Proton-GE, o que não vem em pacote |
 | `stylus update` | traz o STYLUS novo do GitHub |
-| `stylus-mode` | troca entre música e área de trabalho |
+| `stylus mode` | troca entre música e área de trabalho |
+| `stylus atalhos` | a lista de atalhos de teclado |
+| `stylus instalar` | instala no computador (a partir do pendrive) |
 
 ---
 

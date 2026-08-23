@@ -74,9 +74,12 @@ alias free='free -h'
 alias cp='cp -i'
 alias mv='mv -i'
 alias rm='rm -i'
-alias apps='stylus-software'
+# stylus-software e a categoria "escola-online" vieram da outra distribuição e
+# nunca existiram aqui: o catálogo é o `stylus-app` e não há Moodle nenhum.
+alias apps='stylus-app'
 alias launcher='stylus-ui'
-alias moodle='stylus-ui --category escola-online'
+alias deck='stylus-deck'
+alias shelf='stylus-shelf'
 
 # ── Environment ──────────────────────────────────────────────────────────────
 set -gx EDITOR vim

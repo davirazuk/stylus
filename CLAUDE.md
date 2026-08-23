@@ -124,6 +124,18 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   diferente é mantido, o novo vira `.novo`.
 - **`pkill -f <padrão>` casa com o próprio shell da ferramenta Bash** e mata
   a sessão. Use `pgrep` + confira `/proc/<pid>/cmdline`, ou `pkill -x`.
+- **Uma FUNÇÃO do fish chamada `stylus` fica na frente do `/usr/local/bin/stylus`.**
+  Existia uma, herdada, e ela respondia "comando desconhecido" para `deck`,
+  `library`, `phone`, `record` — a CLI inteira do README, morta no shell
+  padrão do sistema. Não crie função com o nome de um comando nosso.
+- **O que a área de trabalho promete tem que existir.** A config do i3 abria
+  `stylus-welcome`, `stylus-software` e `install-stylus` — nenhum dos três
+  jamais existiu — e o `xfce4-terminal`, que não está em pacote nenhum. O
+  `check.sh` agora confere posição de comando (`exec`, `bindsym … exec`,
+  `alias`) e os caminhos que a sessão aponta.
+- **A ISO liga no MODO MÚSICA.** Então é lá que o instalador precisa estar:
+  a interface mostra a seção INSTALAR quando existe `/run/archiso`, e só
+  nesse caso. Antes não havia caminho nenhum do pendrive até o instalador.
 
 ---
 

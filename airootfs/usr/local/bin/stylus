@@ -52,6 +52,8 @@ cat <<EOF
     ${b}stylus app${o} ${d}NOME${o}          instala o que não vem em pacote
     ${b}stylus gpu${o}                driver de vídeo
     ${b}stylus mode${o} ${d}[música|área]${o} troca entre a tela cheia e a área de trabalho
+    ${b}stylus atalhos${o}            a lista de atalhos de teclado
+    ${b}stylus instalar${o}           instala o STYLUS no computador (medium ao vivo)
     ${b}stylus update${o}             atualiza o sistema
 
   ${d}sem argumento nenhum, responde a pergunta que se faz mais vezes.${o}
@@ -104,6 +106,18 @@ case "$cmd" in
         fi
         ;;
     mode)        exec stylus-mode "$@" ;;
+    # Estes três existiam como uma FUNÇÃO do fish chamada `stylus`, que ficava
+    # na frente deste arquivo no shell padrão do sistema e respondia "comando
+    # desconhecido" para deck, library, phone, record, shelf — a CLI inteira
+    # do README, morta no shell em que todo mundo digita. A função saiu; o que
+    # ela tinha de bom veio para cá, onde é o lugar.
+    instalar|install)
+        command -v stylus-install >/dev/null || {
+            echo "stylus: o instalador só existe no medium ao vivo." >&2; exit 1; }
+        exec sudo stylus-install "$@" ;;
+    atalhos|keys|teclas)
+        exec less -R /usr/share/stylus/keybindings.txt ;;
+    aur|yay)     exec install-yay "$@" ;;
     phone)       exec stylus-phone "$@" ;;
     audio)       exec stylus-audio "$@" ;;
     app)         exec stylus-app "$@" ;;

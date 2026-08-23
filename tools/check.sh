@@ -193,6 +193,85 @@ else
     bad "faltam $LISTA_INST e/ou $LISTA_LIVE"
 fi
 
+sec "o que a área de trabalho promete"
+# A configuração do i3 e os aliases do fish prometem programas, e ninguém
+# conferia se eles existiam. Prometiam três que nunca existiram — stylus-welcome
+# (no autostart de toda sessão), stylus-software (no Mod+Shift+A e no alias
+# `apps`) e install-stylus (no Mod+Shift+I, que é COMO SE INSTALA o sistema a
+# partir do pendrive) — além de abrir o xfce4-terminal, que não está em lista
+# de pacote nenhuma, então o Mod+Enter do medium ao vivo não abria nada.
+#
+# Só a POSIÇÃO DE COMANDO conta: `exec`, `bindsym … exec` e `alias x='cmd'`.
+# Um stylus-* dentro de aspas é título de janela ou etiqueta do dunst, não
+# programa, e acusá-lo faria a conferência mentir.
+i3cmds() {
+    sed 's/#.*//' "$@" |
+    grep -oE '\bexec(_always)?[[:space:]]+(--no-startup-id[[:space:]]+)?[^,;]*' |
+    sed -E 's/^exec(_always)?[[:space:]]+//; s/^--no-startup-id[[:space:]]+//' |
+    sed -E 's/^(sudo|setsid)[[:space:]]+//' |
+    sed -E 's/^\$term(run)?[[:space:]]+//' |
+    sed -E 's/^"[^"]*"[[:space:]]*//' |
+    sed -E 's/^sudo[[:space:]]+//' |
+    awk '{print $1}'
+}
+fishcmds() { sed 's/#.*//' "$@" | grep -oE "alias [a-z]+='[^' ]+" | sed "s/.*='//"; }
+
+I3S=(airootfs/etc/skel/.config/i3/config airootfs/usr/share/stylus/i3-music.config)
+FISHC=airootfs/etc/skel/.config/fish/conf.d/stylus.fish
+mapfile -t PROMETIDOS < <({ i3cmds "${I3S[@]}"; fishcmds "$FISHC"; } | sort -u | grep -v '^$')
+
+faltando=()
+for c in "${PROMETIDOS[@]}"; do
+    case $c in
+        stylus-*|install-*) [[ -f airootfs/usr/local/bin/$c ]] || faltando+=("$c") ;;
+    esac
+done
+if (( ${#faltando[@]} == 0 )); then ok "todo stylus-* que a área de trabalho abre existe"
+else bad "a área de trabalho abre o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
+# O terminal, conferido à parte e pelo nome do pacote.
+#
+# Não dá para conferir TODO programa desta forma: o binário e o pacote têm
+# nomes diferentes com frequência (xset vem do xorg-xset, ls do coreutils), e
+# uma conferência que confunde as duas coisas acusa o inocente e vira ruído.
+# O terminal, porém, é nomeado direto na config e foi ele que quebrou: $term
+# era xfce4-terminal, que não está em lista de pacote nenhuma, então o
+# Mod+Enter do medium ao vivo não abria nada. Isso dá para conferir exato.
+if [[ -f $LISTA_INST ]]; then
+    TERMDEF=$(sed -n 's/^set \$term  *//p' airootfs/etc/skel/.config/i3/config | awk '{print $1}')
+    if [[ -z $TERMDEF ]]; then
+        bad "a config do i3 não define \$term"
+    elif nomes "$LISTA_INST" | grep -qx "$TERMDEF" && nomes "$LISTA_ISO" | grep -qx "$TERMDEF"; then
+        ok "o terminal do Mod+Enter ($TERMDEF) está nas duas listas de pacote"
+    else
+        bad "\$term é '$TERMDEF', que não está nas duas listas — Mod+Enter não abre nada"
+    fi
+fi
+
+sec "arquivos que a área de trabalho aponta"
+# keybindings.txt (o Mod+F1) e o papel de parede eram caminhos que não existiam:
+# o feh apontava para backgrounds/stylus.png quando o arquivo é
+# backgrounds/stylus/stylus.png, então a sessão subia com o fundo cinza do X.
+mapfile -t SKELF < <(find airootfs/etc/skel -type f; echo airootfs/usr/share/stylus/i3-music.config)
+# O til numa variavel: escrito direto entre aspas ele e so um caractere
+# de busca, mas o shellcheck avisa (com razao, em geral) que til entre
+# aspas nao expande. Aqui ele NAO deve expandir mesmo - o que se procura
+# e o texto que a config do i3 escreve - entao a variavel diz isso sem
+# ambiguidade, para o aviso nao virar ruido permanente.
+TIL='~'
+faltando=()
+while read -r caminho; do
+    [[ -e airootfs$caminho ]] || faltando+=("$caminho")
+done < <(sed 's/#.*//' "${SKELF[@]}" |
+         grep -ohE '/usr/share/(stylus|backgrounds)/[A-Za-z0-9_./-]+' |
+         sed 's/[.,)]*$//' | sort -u)
+while read -r caminho; do
+    [[ -e airootfs/etc/skel/${caminho#\~/} ]] || faltando+=("$caminho")
+done < <(sed 's/#.*//' airootfs/etc/skel/.config/i3/config |
+         grep -ohE "$TIL/[.]config/[A-Za-z0-9_./-]+" | sed 's/[.,)]*$//' | sort -u)
+if (( ${#faltando[@]} == 0 )); then ok "todo arquivo que a área de trabalho abre existe"
+else bad "apontam para o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
 sec "o que o instalador chama e precisa existir"
 # O stylus-install chamava /usr/share/stylus/branding-sync.sh, que NÃO EXISTIA
 # — e chamava com `|| warn`. A instalação terminava dizendo "concluída" e

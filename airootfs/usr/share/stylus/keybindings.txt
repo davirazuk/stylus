@@ -1,0 +1,66 @@
+
+  STYLUS — atalhos de teclado
+  ═══════════════════════════════════════════════════════════════════════
+
+  Mod é a tecla Super (a do losango, entre Ctrl e Alt).
+
+  ── os dois modos ─────────────────────────────────────────────────────
+  Mod+G              a tela cheia da música (a estante em capas)
+  Mod+D              o menu de programas
+  stylus-mode        troca entre MÚSICA e ÁREA DE TRABALHO
+                     (no modo música, o último item do menu lateral)
+
+  ── abrir coisas ──────────────────────────────────────────────────────
+  Mod+Enter          terminal
+  Mod+E              arquivos
+  Mod+Shift+A        catálogo de programas, jogos e drivers
+  Mod+Shift+I        instalar o STYLUS no computador
+  Mod+Escape         processos (btop)
+  Mod+F1             esta lista
+
+  ── janelas ───────────────────────────────────────────────────────────
+  Mod+Q              fechar
+  Mod+F              tela cheia
+  Mod+setas          mudar o foco          (ou Mod+H J K L)
+  Mod+Shift+setas    mover a janela
+  Mod+B / Mod+V      dividir na horizontal / vertical
+  Mod+W / Mod+S      abas / pilha
+  Mod+Shift+Espaço   flutuar
+  Mod+1 … Mod+9      ir para a área de trabalho N
+  Mod+Shift+1 … 9    mandar a janela para a área N
+
+  ── música ────────────────────────────────────────────────────────────
+  Play / Pause       pausa e volta
+  Próxima / Anterior pula faixa
+  Mod+Shift+M        volume, por canal (pavucontrol)
+
+  ── tela e som ────────────────────────────────────────────────────────
+  Volume + / −       som
+  Brilho + / −       brilho
+  Mod+N              luz noturna
+  Mod+P              organizar as telas
+  Mod+Shift+P        usar a melhor resolução de cada tela
+
+  ── o resto ───────────────────────────────────────────────────────────
+  Print              foto da tela inteira
+  Shift+Print        foto de um pedaço
+  Alt+Print          foto da janela
+  Ctrl+Print         foto para a área de transferência
+  Mod+L              trancar
+  Mod+Shift+E        desligar / reiniciar / sair
+  Mod+Shift+N        notificações
+  Mod+Shift+C        recarregar a configuração do i3
+  Mod+Shift+R        reiniciar o i3 (sem fechar as janelas)
+
+  ── no controle, dentro da tela cheia ─────────────────────────────────
+  direcional         andar
+  A                  pôr o disco / confirmar
+  B                  voltar (abre o menu lateral)
+  X                  empilhar o disco para hoje à noite
+  Y                  procurar
+  LB / RB            faixa anterior / próxima
+  Start / Select     abrir o menu lateral
+
+  ═══════════════════════════════════════════════════════════════════════
+  `stylus --help` lista o que o comando faz.
+

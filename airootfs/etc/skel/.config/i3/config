@@ -4,9 +4,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 set $mod Mod4
-set $term xfce4-terminal
-# xfce4-terminal needs -x (not -e) to run a command with arguments.
-set $termrun xfce4-terminal -x
+# alacritty, because it is the terminal this system actually ships — it is in
+# packages.x86_64 and in packages.install, and xfce4-terminal is in neither.
+# Mod+Return opened nothing at all on the live medium for exactly that reason.
+# Anything that has to RUN something in a window goes through stylus-term,
+# which picks whichever terminal is installed and gets its "run this" flag
+# right (they all spell it differently) instead of hardcoding one here.
+set $term alacritty
+set $termrun stylus-term
 set $menu rofi -show drun
 
 font pango:JetBrainsMono Nerd Font 10
@@ -27,7 +32,10 @@ popup_during_fullscreen smart
 # ── Autostart ────────────────────────────────────────────────────────────────
 exec --no-startup-id dunst
 exec --no-startup-id ~/.config/picom/launch.sh
-exec --no-startup-id feh --no-fehbg --bg-fill /usr/share/backgrounds/stylus.png
+# The wallpaper lives in its own directory (backgrounds/stylus/stylus.png).
+# Pointed one level too high, feh simply exits and the desktop comes up on the
+# X root's grey stipple, which reads as "the theme did not load".
+exec --no-startup-id feh --no-fehbg --bg-fill /usr/share/backgrounds/stylus/stylus.png
 exec --no-startup-id nm-applet
 exec --no-startup-id blueman-applet
 exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
@@ -39,9 +47,13 @@ exec --no-startup-id xdg-user-dirs-update
 # notifies through dunst anyway.
 exec --no-startup-id udiskie --no-tray --automount --notify
 
-# Night light. Warms the screen after sunset, using the coordinates in
-# ~/.config/gammastep/config.ini so it needs no geolocation service. Mod+N.
-exec --no-startup-id gammastep -c ~/.config/gammastep/config.ini
+# Night light. Warms the screen after sunset. The config file it used to be
+# pointed at was never shipped, and gammastep exits with an error when -c names
+# a file that is not there - so the night light simply never ran. The
+# coordinates go on the command line instead, which needs no file and no
+# geolocation service. -l is latitude:longitude; this is Campo Grande, the same
+# default the installer uses for the timezone.
+exec --no-startup-id gammastep -l -20.44:-54.65 -t 6500:3600
 
 # Lock after 10 minutes idle, blank the screen after 12. xss-lock also locks on
 # suspend, so closing a laptop lid does the right thing.
@@ -73,10 +85,6 @@ exec --no-startup-id stylus-mouse --daemon
 # would otherwise reset every time a screen changed.
 exec_always --no-startup-id sh -c 'if command -v autorandr >/dev/null && [ "$(xrandr --query | grep -c " connected")" -gt 1 ]; then autorandr --change --default horizontal --skip-options gamma; fi; exec ~/.config/polybar/launch.sh'
 
-# Welcome screen: offers the installer on live media, first-run tips once on an
-# installed system, then never again.
-exec --no-startup-id stylus-welcome --autostart
-
 # The launcher opens with the session, so the machine starts on the list of
 # what it can do rather than on an empty desktop. Esc closes it and you are on
 # the desktop as before. The script skips live media and the first login, where
@@ -92,7 +100,7 @@ bindsym $mod+g         exec stylus-ui
 # Ctrl+Shift+Esc is the reflex everyone brings from Windows; Mod+Esc is the
 # same idea without clashing with a terminal's Ctrl+Shift bindings. Falls back
 # to htop in a terminal if the graphical one is not installed.
-bindsym $mod+Escape    exec --no-startup-id sh -c 'command -v xfce4-taskmanager >/dev/null && exec xfce4-taskmanager || exec xfce4-terminal --title htop -e htop'
+bindsym $mod+Escape    exec --no-startup-id stylus-term "Processos" btop
 bindsym $mod+n         exec --no-startup-id ~/.config/i3/scripts/nightlight.sh
 # The notification centre: everything the machine said and you did not catch,
 # plus Não perturbe. The bell in the bar is the discoverable way in; this is
@@ -107,8 +115,11 @@ bindsym $mod+p         exec --no-startup-id ~/.config/i3/scripts/screens.sh
 # Mod+P because changing someone's resolution should be something they asked
 # for, not something a script decides at login.
 bindsym $mod+Shift+p   exec --no-startup-id ~/.config/i3/scripts/screens.sh --use-best
-bindsym $mod+Shift+a   exec $termrun stylus-software
-bindsym $mod+Shift+i   exec $termrun sudo install-stylus
+bindsym $mod+Shift+a   exec $termrun "Programas" stylus-app
+# The installer. It was bound to `install-stylus`, which has never been the
+# name of anything: the command is stylus-install. Booting the USB stick and
+# pressing the documented key did nothing whatsoever.
+bindsym $mod+Shift+i   exec $termrun "Instalar o STYLUS" sudo stylus-install
 bindsym $mod+q         kill
 bindsym $mod+Shift+q   kill
 bindsym $mod+Shift+c   reload
@@ -117,7 +128,7 @@ bindsym $mod+Shift+e   exec ~/.config/rofi/powermenu.sh
 bindsym $mod+l         exec --no-startup-id ~/.config/i3/scripts/lock.sh
 
 # Cheatsheet
-bindsym $mod+F1 exec --no-startup-id xfce4-terminal --title stylus-help -x sh -c 'cat /usr/share/stylus/keybindings.txt; read -n1 -s -p "  press any key "'
+bindsym $mod+F1 exec --no-startup-id stylus-term "stylus-help" less -R /usr/share/stylus/keybindings.txt
 
 # ── Screenshots (maim) ───────────────────────────────────────────────────────
 # The modes live in one script rather than three near-identical one-liners
@@ -238,12 +249,12 @@ for_window [class="Gparted"]              floating enable
 for_window [class="Nm-connection-editor"] floating enable
 # Mod+Esc. A task manager is something you glance at and dismiss, so it floats
 # like the other utility windows rather than becoming another tab you have to
-# navigate away from. Both the graphical one and the htop fallback.
-for_window [class="Xfce4-taskmanager"]    floating enable, resize set 900 620, move position center
-for_window [title="^htop$"]               floating enable, resize set 900 620, move position center
-for_window [title="stylus-welcome"]         floating enable, resize set 900 640, move position center
+# navigate away from.
+for_window [title="^Processos$"]            floating enable, resize set 900 620, move position center
 for_window [title="^STYLUS$"]               fullscreen enable
 for_window [title="stylus-help"]            floating enable, resize set 820 640, move position center
+# The installer is a dialog(1) TUI and wants the whole screen to be readable.
+for_window [title="Instalar o STYLUS"]      fullscreen enable
 
 # ── Appearance ───────────────────────────────────────────────────────────────
 gaps inner 10

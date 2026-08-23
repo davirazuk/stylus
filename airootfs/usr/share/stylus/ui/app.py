@@ -959,6 +959,106 @@ class SettingsScreen(Screen):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# INSTALAR — só no medium ao vivo
+# ═══════════════════════════════════════════════════════════════════════════
+def rodando_do_pendrive():
+    """Estamos no medium ao vivo, e não numa máquina instalada?"""
+    return os.path.isdir("/run/archiso")
+
+
+class InstallScreen(Screen):
+    """A porta de entrada do pendrive.
+
+    POR QUE ISTO EXISTE: a ISO liga no MODO MÚSICA — é o que o sistema é — e
+    o modo música não tinha instalador em lugar nenhum. As duas únicas
+    referências a instalar no sistema inteiro chamavam `install-stylus`, um
+    comando que nunca existiu (o certo é `stylus-install`). Ou seja: quem
+    gravava o pendrive, ligava o computador e olhava a tela não tinha
+    NENHUM caminho até o instalador, a não ser adivinhar o nome do comando
+    num terminal que o modo música também não mostra.
+
+    Por isso esta seção é a primeira do trilho quando se está no pendrive, e
+    é nela que a interface abre. Numa máquina já instalada ela não existe.
+    """
+    name = "INSTALAR"
+    icon = "󰋊"
+
+    PASSOS = [
+        ("Instalar o STYLUS neste computador",
+         "as perguntas são poucas e nada é escrito no disco até você confirmar"),
+        ("Só experimentar por enquanto",
+         "o pendrive funciona inteiro; dá para instalar depois"),
+    ]
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.sel = 0
+
+    def key(self, ev):
+        if ev.key in (pygame.K_DOWN, pygame.K_j):
+            self.sel = (self.sel + 1) % len(self.PASSOS)
+        elif ev.key in (pygame.K_UP, pygame.K_k):
+            self.sel = (self.sel - 1) % len(self.PASSOS)
+        elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if self.sel == 0:
+                self.instalar()
+            else:
+                # Para a estante, que é o resto do sistema.
+                self.app._goto(self.app.screens.index(
+                    next(sc for sc in self.app.screens
+                         if isinstance(sc, ShelfScreen))))
+        else:
+            return False
+        return True
+
+    def instalar(self):
+        """Abre o instalador num terminal, por cima da tela cheia.
+
+        Num terminal e não aqui dentro porque o instalador é um diálogo de
+        verdade — ele pergunta senha, mostra o que vai fazer com o disco e
+        espera você digitar SIM. Reescrever isso em pygame seria uma segunda
+        versão da parte do sistema onde um erro apaga o disco de alguém.
+
+        O i3 do modo música põe toda janela em tela cheia, então o terminal
+        toma a tela e a pessoa não precisa achar nada.
+        """
+        self.app.toast("abrindo o instalador…")
+        if not spawn(["stylus-term", "Instalar o STYLUS",
+                      "sudo", "stylus-install"]):
+            self.app.toast("não consegui abrir o instalador")
+
+    def draw(self, s, r):
+        x, y = r.x + 44, r.y + 44
+        T.text(s, "você está rodando do pendrive", (x, y), 19, T.TEXT_FAINT)
+        T.text(s, "Instalar o STYLUS", (x, y + 34), 40, T.TEXT, bold=True)
+        T.text(s, "nada é escrito no disco até você ler o resumo e confirmar.",
+               (x, y + 92), 20, T.TEXT_DIM, maxw=r.w - 90)
+
+        y += 148
+        for i, (rotulo, sub) in enumerate(self.PASSOS):
+            sel = i == self.sel
+            box = pygame.Rect(x, y, min(r.w - 90, 720), 74)
+            T.panel(s, box, T.INK_LIFT if sel else T.INK_SOFT, radius=12,
+                    border=T.BLUE if sel else T.LINE)
+            T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 20, box.y + 14),
+                   23, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 40)
+            T.text(s, sub, (box.x + 34, box.y + 44), 17, T.TEXT_FAINT,
+                   maxw=box.w - 54)
+            y += 86
+
+        y += 18
+        for linha in (
+            "O instalador sabe instalar AO LADO do que já está no computador:",
+            "ele usa só o espaço livre e não formata nada que já existe.",
+        ):
+            T.text(s, linha, (x, y), 18, T.TEXT_FAINT, maxw=r.w - 90)
+            y += 26
+
+        self.app.hint(s, r, "enter escolhe   ·   ↑↓ anda   ·   "
+                            "o instalador abre por cima desta tela")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # A casca
 # ═══════════════════════════════════════════════════════════════════════════
 STACK_FILE = os.path.expanduser("~/.local/share/stylus/stack.json")
@@ -1000,8 +1100,15 @@ class App:
                         DiaryScreen(self), SignalScreen(self), PhoneScreen(self),
                         ToolsScreen(self), GamesScreen(self), SettingsScreen(self)]
         self.cur = 1                      # abre na ESTANTE, que é o assunto
+        # No pendrive, INSTALAR vem primeiro e é onde a interface abre. A
+        # estante de um medium ao vivo está vazia — abrir nela é a pior
+        # primeira impressão possível de um sistema cujo assunto é a coleção,
+        # e instalar é o que a pessoa foi ali fazer.
+        if rodando_do_pendrive():
+            self.screens.insert(0, InstallScreen(self))
+            self.cur = 0
         self.rail = False                 # o trilho está com o foco?
-        self.rail_sel = 1
+        self.rail_sel = self.cur
         self.stack = self._stack_load()
         self._toast = ""
         self._toast_until = 0.0
