@@ -42,7 +42,38 @@ INTERVALO = 2.0
 TAG = "stylus-side"
 
 
+UI = "/usr/share/stylus/ui/app.py"
+
+
+def tela_cheia_no_ar():
+    """A interface de tela cheia está rodando?
+
+    Ela mostra o mesmo aviso ocupando a tela inteira — é a tese do sistema no
+    tamanho certo. Mandar TAMBÉM um balãozinho de canto seria dizer a mesma
+    coisa duas vezes, e a segunda por cima da primeira.
+
+    Lido do /proc e não com `pkill -f`, que casa com o próprio shell de quem
+    procura. Aqui só se lê, mas o hábito é o mesmo.
+    """
+    try:
+        pids = [n for n in os.listdir("/proc") if n.isdigit()]
+    except OSError:
+        return False
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                if UI.encode() in fh.read():
+                    return True
+        except OSError:                   # o processo morreu no meio; segue
+            continue
+    return False
+
+
 def avisar(titulo, corpo, urgencia="normal"):
+    # A pausa continua valendo com a tela cheia no ar: quem ligou o --pause
+    # quer o som parando, e isso a interface não faz.
+    if tela_cheia_no_ar():
+        return
     try:
         subprocess.run(
             ["notify-send", "--app-name=STYLUS", f"--urgency={urgencia}",

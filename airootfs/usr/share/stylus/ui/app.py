@@ -1119,6 +1119,13 @@ class App:
         self.stack = self._stack_load()
         self._toast = ""
         self._toast_until = 0.0
+        # O lado em que o disco está, para saber quando ele VIRA. Ver
+        # _watch_side: no modo música esta tela é a sessão inteira, e a tese
+        # do sistema acontecendo num balãozinho de canto seria pouco.
+        self._lado_disco = None
+        self._lado_i = None
+        self._lado_t = 0.0
+        self._flip = None
         self._lyr_cache = (None, None)
         self.pads = []
         self._pad_ax = 0.0
@@ -1356,6 +1363,86 @@ class App:
                              (bar.x, bar.y, int(bar.w * frac), bar.h),
                              border_radius=3)
 
+    # ── virar o lado ───────────────────────────────────────────────────────
+    FLIP_DUR = 7.0
+
+    def _watch_side(self):
+        """Quando o LADO vira, a tela inteira diz.
+
+        É a tese do projeto: um disco manda por vinte minutos e então PARA, e
+        essa parada é o que separa ouvir um disco de ouvir uma playlist. O
+        `stylus-side-watch` já avisava pelo dunst, o que serve para a área de
+        trabalho; aqui a tela É o toca-discos, e um balãozinho de canto seria
+        a coisa certa no tamanho errado.
+
+        Só para frente. Arrastar a barra para trás é procurar uma faixa, não
+        virar o disco — anunciar ali viraria ruído em cinco minutos.
+        """
+        # Duas vezes por segundo basta: o lado dura vinte minutos, e perguntar
+        # a posição sessenta vezes por segundo é conversa de socket à toa em
+        # toda tela, não só na AGORA.
+        agora = time.time()
+        if agora - self._lado_t < 0.5:
+            return
+        self._lado_t = agora
+        try:
+            _snap, al, _tr, side, t_abs, _frac = self.playing.where()
+        except Exception:                 # noqa: BLE001 — nunca derrubar o laço
+            return
+        if al is None or side is None or not al.sides:
+            self._lado_disco = self._lado_i = None
+            return
+        i, _s = al.side_for(t_abs)
+        chave = al.folder
+        if chave != self._lado_disco:     # disco novo: recomeça a contar
+            self._lado_disco, self._lado_i = chave, i
+            return
+        if self._lado_i is not None and i > self._lado_i:
+            anterior = al.sides[self._lado_i]
+            ultimo = i >= len(al.sides) - 1
+            self._flip = (time.time(),
+                          anterior["label"].replace("SIDE", "LADO"),
+                          side["label"].replace("SIDE", "LADO"),
+                          f"{al.artist} — {al.name}", ultimo)
+        self._lado_i = i
+
+    def _draw_flip(self, s):
+        if not self._flip:
+            return
+        t0, antes, agora, disco, ultimo = self._flip
+        dt = time.time() - t0
+        if dt > self.FLIP_DUR:
+            self._flip = None
+            return
+        # Entra depressa e sai devagar: aparecer devagar faria a pessoa perder
+        # o começo justamente do aviso que existe para ser notado.
+        alpha = min(1.0, dt / 0.3)
+        restante = self.FLIP_DUR - dt
+        if restante < 1.2:
+            alpha = min(alpha, restante / 1.2)
+
+        camada = pygame.Surface((self.W, self.H))
+        camada.fill(T.INK)
+        cx, cy = self.W // 2, self.H // 2
+
+        # Um disco, atrás do texto. Sete anéis e nada mais: é o mesmo desenho
+        # que a tela "nada tocando" usa, para as duas lerem como o mesmo
+        # objeto e não como duas ilustrações diferentes.
+        for k in range(9):
+            pygame.draw.circle(camada, T.lerp(T.INK_SOFT, T.LINE, 0.3 + k * 0.07),
+                               (cx, cy), 120 + k * 34, 1)
+
+        T.text(camada, antes, (cx, cy - 96), 26, T.TEXT_DIM, anchor="center")
+        T.text(camada, "ACABOU", (cx, cy - 44), 68, T.BLUE,
+               bold=True, anchor="center")
+        T.text(camada, ("vire o disco para o " if ultimo else "agora é o ") + agora,
+               (cx, cy + 34), 30, T.TEXT, anchor="center")
+        T.text(camada, disco, (cx, cy + 84), 20, T.TEXT_FAINT,
+               anchor="center", maxw=self.W - 200)
+
+        camada.set_alpha(int(238 * alpha))
+        s.blit(camada, (0, 0))
+
     def _draw_toast(self, s):
         if time.time() > self._toast_until:
             return
@@ -1368,6 +1455,12 @@ class App:
 
     # ── entrada ────────────────────────────────────────────────────────────
     def _key(self, ev):
+        # O aviso de virar o lado cobre a tela; a primeira tecla tira ele e
+        # não faz mais nada. Deixar a tecla ATRAVESSAR o aviso faria o botão
+        # que a pessoa apertou para dispensá-lo também mudar de tela.
+        if self._flip:
+            self._flip = None
+            return None
         if ev.key == pygame.K_ESCAPE:
             # VOLTAR, não SAIR. No modo música esta tela é a sessão inteira, e
             # o botão B (que chega aqui como ESC) tem que se comportar como o
@@ -1469,6 +1562,8 @@ class App:
                 T.text(self.surf, f"esta tela quebrou: {type(e).__name__}: {e}",
                        (body.x + 40, body.y + 60), 20, T.RED, maxw=body.w - 80)
             self._draw_rail(self.surf, rail_w)
+            self._watch_side()
+            self._draw_flip(self.surf)
             self._draw_toast(self.surf)
             pygame.display.flip()
             self.clock.tick(FPS)
