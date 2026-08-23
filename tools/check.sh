@@ -55,6 +55,56 @@ for f in airootfs/usr/local/bin/stylus-audio airootfs/usr/local/bin/stylus-phone
         && ok "${f#./}" || bad "${f#./} não compila"
 done
 
+sec "atributos do vinyl que as ferramentas usam"
+# `stylus record` chamava vinyl.LIBRARY_ROOT, que NUNCA existiu — o vinyl
+# expõe library_root(), uma função. Estourava com AttributeError na primeira
+# linha, em toda máquina, num dos comandos do README. A conferência de
+# sintaxe passa por cima disso: é erro de execução, não de compilação.
+#
+# Aqui se importa o vinyl de verdade e se pergunta se cada `vinyl.NOME` que
+# as ferramentas escrevem existe mesmo.
+if python3 -c 'import numpy' 2>/dev/null; then
+    faltando=$(PYTHONPATH=airootfs/usr/share/stylus/deck python3 - <<'PYEOF'
+import ast, os, sys
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+try:
+    import vinyl
+except Exception as e:
+    print(f"não deu para importar o vinyl: {e}")
+    raise SystemExit(0)
+
+# Pela ÁRVORE, não por expressão regular. A regex casava o nome do ARQUIVO
+# ("vinyl.py", citado em comentário) e casava dentro do próprio comentário que
+# explica por que vinyl.LIBRARY_ROOT não existe mais — acusando o conserto.
+# A árvore só enxerga código.
+ruins = []
+for base, _d, files in os.walk("airootfs"):
+    if "deck/venv" in base:
+        continue
+    for f in files:
+        if not f.endswith(".py"):
+            continue
+        p = os.path.join(base, f)
+        try:
+            arvore = ast.parse(open(p, encoding="utf-8").read())
+        except (OSError, SyntaxError):
+            continue
+        for no in ast.walk(arvore):
+            if (isinstance(no, ast.Attribute)
+                    and isinstance(no.value, ast.Name)
+                    and no.value.id == "vinyl"
+                    and not hasattr(vinyl, no.attr)):
+                ruins.append(f"{p}:{no.lineno}: vinyl.{no.attr}")
+for r in sorted(set(ruins)):
+    print(r)
+PYEOF
+)
+    if [[ -z $faltando ]]; then ok "todo vinyl.X que as ferramentas usam existe"
+    else bad "usam atributo que o vinyl não tem:"; echo "$faltando" | sed 's/^/      /'; fi
+else
+    printf '  %s—%s numpy não instalado aqui; o vinyl não pôde ser importado\n' "$y" "$z"
+fi
+
 sec "fish"
 if command -v fish >/dev/null; then
     while IFS= read -r -d '' f; do

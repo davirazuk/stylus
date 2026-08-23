@@ -89,6 +89,7 @@ airootfs/
     packages.install       o que uma máquina INSTALADA recebe (o instalador lê)
     packages.live-only     o que fica só na ISO, com o motivo escrito
     branding-sync.sh       copia o STYLUS para o sistema recém-instalado
+    ui/tools/test_ui.py    a tela cheia exercitada sem X (o check.sh roda)
     sync.sh                copia o airootfs por cima do sistema vivo
 ```
 
@@ -151,6 +152,25 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   `suggest` varriam uma pasta inexistente e diziam que estava tudo bem. A
   raiz vem do `tools/_raiz.py`, que pergunta ao `vinyl.library_root()`. O
   `check.sh` recusa qualquer casa que não seja a do usuário do medium.
+- **A estante varre TODAS as pastas configuradas, não só a primeira.** Era só
+  a primeira que existisse, e isso tornava impossível ter a coleção em dois
+  lugares: o `stylus webdav` montava o celular, escrevia a pasta na
+  configuração, e ela era ignorada — que é pior do que não funcionar, porque
+  a pessoa fez o que era para fazer e não aconteceu nada. Quem varre é
+  `vinyl.library_roots()`, que desduplica por caminho real (senão um link
+  para a mesma pasta mostra cada disco duas vezes). Os palpites (`~/Music`,
+  `/srv/music`…) só valem quando NADA foi configurado.
+- **Escrever a pasta do celular na estante não pode apagar a de casa.** A
+  partir do momento em que existe uma linha configurada, os palpites deixam
+  de valer — então escrever só o celular fazia a coleção local sumir. O
+  `stylus webdav` escreve a de casa primeiro quando o arquivo ainda não
+  existe.
+- **`grep -v` sai com 1 quando não sobra nada.** Um `grep -v X arq > tmp && mv`
+  não move nada quando X era a única linha — foi assim que desmontar o celular
+  deixava a estante apontando para uma pasta vazia.
+- **Empurrar ETIQUETA não passa pelo proxy de git da sessão do Claude** (ramo
+  passa). A Release sai por marcador `[release]` na mensagem do commit, e o
+  `gh release create` cria a etiqueta do lado do servidor.
 - **A ISO liga no MODO MÚSICA.** Então é lá que o instalador precisa estar:
   a interface mostra a seção INSTALAR quando existe `/run/archiso`, e só
   nesse caso. Antes não havia caminho nenhum do pendrive até o instalador.
