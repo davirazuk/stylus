@@ -28,7 +28,8 @@ cat <<EOF
   ${a}ouvir${o}
     ${b}stylus${o}                    o que está tocando, e onde no disco
     ${b}stylus deck${o} ${d}[DISCO]${o}      põe um disco e abre o deck: a cerimônia
-                              inteira, com o disco girando na tela
+                              inteira, com o disco girando na tela. Volta para
+                              onde a agulha parou — ${d}--recomeçar${o} põe do zero
     ${b}stylus play${o} ${d}DISCO${o}        toca o lado inteiro, na ordem, sem tela
     ${b}stylus record${o} ${d}[DISCO]${o}    sorteia um da estante e mostra os lados,
                               puxando para o que faz tempo que não toca

@@ -37,6 +37,16 @@ except Exception as e:                                    # noqa: BLE001
     sys.exit(f"stylus-side-watch: preciso do vinyl.py do deck: {e}")
 
 INTERVALO = 2.0
+# Onde a agulha parou. Uma linha só, reescrita de tempos em tempos: o
+# stylus-deck lê daqui para pôr o disco de volta onde estava em vez de no
+# começo — que é o que acontece com um toca-discos de verdade quando você
+# levanta a agulha e volta depois.
+#
+# Quem grava é ESTE serviço e não o deck: ele já está perguntando a posição a
+# cada dois segundos para saber o lado, e um segundo processo perguntando a
+# mesma coisa seria conversa de socket em dobro pelo resto da sessão.
+AGULHA = os.path.expanduser("~/.local/share/stylus/agulha.tsv")
+GRAVA_CADA = 10.0
 # Uma etiqueta de pilha do dunst: o aviso novo SUBSTITUI o anterior em vez de
 # empilhar. Um disco de seis lados não pode deixar seis avisos na tela.
 TAG = "stylus-side"
@@ -98,6 +108,20 @@ def pausar():
     return False
 
 
+def gravar_agulha(album, indice, pos):
+    """Anota onde a agulha está. Escreve por arquivo temporário e renomeia:
+    uma queda de energia no meio de um write deixaria a linha pela metade, e
+    uma linha pela metade faz o deck seguinte recomeçar do zero em silêncio."""
+    try:
+        os.makedirs(os.path.dirname(AGULHA), exist_ok=True)
+        tmp = AGULHA + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(f"{int(time.time())}\t{album.folder}\t{indice}\t{pos:.1f}\n")
+        os.replace(tmp, AGULHA)
+    except OSError:
+        pass
+
+
 class Olho:
     """Onde o disco está, e o que mudou desde a última olhada."""
 
@@ -107,6 +131,7 @@ class Olho:
         self.pasta = None
         self.lado = None
         self._ti = [None, 0]
+        self._gravei = 0.0
 
     def onde(self):
         """(álbum, índice do lado, lado, quanto falta) — ou Nones."""
@@ -128,6 +153,13 @@ class Olho:
             return None, None, None, 0.0
         idx = vinyl.track_index_for(al, snap, self._ti)
         pos, _d = self.sessao.position()
+        # Pausado não conta: parar para atender o telefone não é levantar a
+        # agulha, e regravar a mesma linha a cada dois segundos com o disco
+        # parado é escrita à toa.
+        agora = time.time()
+        if not snap.get("paused") and agora - self._gravei >= GRAVA_CADA:
+            gravar_agulha(al, idx, pos)
+            self._gravei = agora
         t_abs = al.album_time(idx, pos)
         i, lado = al.side_for(t_abs)
         restam = max(0.0, lado["end"] - t_abs) if lado else 0.0

@@ -8,6 +8,7 @@
 #      stylus deck --silent  DISCO            sem som E sem sinal (só o desenho)
 #      stylus deck --quiet   DISCO            sinal de verdade, silêncio na sala
 #      stylus deck --no-scope DISCO           só toca, sem tela  (= stylus play)
+#      stylus deck --recomeçar DISCO          do começo, ignorando onde parou
 #
 #  --silent e --quiet não são a mesma coisa e a diferença importa para
 #  conferir o desenho: --silent (--ao=null) não produz sinal nenhum, então o
@@ -29,14 +30,15 @@ export PYTHONPATH="$DECK${PYTHONPATH:+:$PYTHONPATH}"
 
 SOCK="$HOME/.local/share/stylus/deck.sock"
 NULL_SINK=stylus_quiet
-SILENT=0; QUIET=0; SCOPE=1; TARGET=""
+SILENT=0; QUIET=0; SCOPE=1; TARGET=""; RETOMAR=1
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --silent)   SILENT=1; shift ;;
         --quiet)    QUIET=1; shift ;;
         --no-scope) SCOPE=0; shift ;;
-        -h|--help)  sed -n '4,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        --recomeçar|--recomecar|--do-inicio|--restart) RETOMAR=0; shift ;;
+        -h|--help)  sed -n '4,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *)          TARGET=$1; shift ;;
     esac
 done
@@ -138,17 +140,55 @@ fi
 # "tocar" a imagem e fecha, além de reportar um índice de faixa que não existe
 # no álbum. A lista sai do vinyl.track_paths, a MESMA que o Album lê, então o
 # índice do mpv e o índice do disco são o mesmo número por construção.
+_tracks=()
 if [[ -d $TARGET ]]; then
     mapfile -t -d '' _tracks < <("$PY" -c '
 import os, sys, vinyl
 sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])))' "$TARGET" 2>/dev/null)
-    if (( ${#_tracks[@]} )); then
-        mpv_args+=(--loop-playlist=no "${_tracks[@]}")
-    else
-        mpv_args+=(--loop-playlist=no "$TARGET")   # álbum em Disc 01/Disc 02
+fi
+
+# ── pôr a agulha de volta onde ela estava ──────────────────────────────────
+#  Num toca-discos você levanta a agulha e o disco fica onde está; voltar
+#  depois e recomeçar da faixa 1 é coisa de tocador de arquivo. O
+#  stylus-side-watch anota a posição enquanto toca; aqui ela é lida de volta.
+#
+#  Não dá para deixar isso a cargo do `--resume-playback` do mpv: ele guarda a
+#  posição pelo hash do CAMINHO DO ARQUIVO que estava tocando, então relançar
+#  o disco inteiro faz ele procurar a posição salva da FAIXA 1 — que quase
+#  nunca é onde você parou. Quem sabe qual faixa é o índice da lista, e isso é
+#  nosso.
+if (( RETOMAR )) && (( ${#_tracks[@]} )); then
+    _volta=$("$PY" - "$TARGET" <<'PYEOF' 2>/dev/null
+import os, sys, vinyl
+alvo = os.path.realpath(sys.argv[1])
+arq = os.path.expanduser("~/.local/share/stylus/agulha.tsv")
+try:
+    _ts, pasta, idx, pos = open(arq, encoding="utf-8").read().strip().split("\t")
+    idx, pos = int(idx), float(pos)
+except Exception:
+    sys.exit(0)
+if os.path.realpath(pasta) != alvo or pos < 30:
+    sys.exit(0)
+al = vinyl.Album(alvo, envelope=False)
+if not al.tracks or not 0 <= idx < len(al.tracks):
+    sys.exit(0)
+# No fim do último lado o disco ACABOU: retomar aí seria pôr o disco para
+# ouvir os vinte segundos finais, que não é o que ninguém quer.
+dur = al.tracks[idx].get("duration") or 0.0
+if idx == len(al.tracks) - 1 and dur and pos > dur - 20:
+    sys.exit(0)
+print(f"{idx}\t{pos:.1f}\t{al.tracks[idx].get('title') or ''}")
+PYEOF
+)
+    if [[ -n $_volta ]]; then
+        IFS=$'\t' read -r _idx _pos _titulo <<<"$_volta"
+        mpv_args+=(--playlist-start="$_idx" --start="$_pos")
+        _seg=${_pos%.*}
+        printf 'stylus: retomando na faixa %d, %d:%02d%s\n' \
+            "$((_idx + 1))" "$(( _seg / 60 ))" "$(( _seg % 60 ))" \
+            "${_titulo:+  ($_titulo)}"
+        echo "        \`stylus deck --recomeçar\` põe do começo."
     fi
-else
-    mpv_args+=("$TARGET")
 fi
 
 # Coleção montada pela rede (o `stylus webdav` põe o celular na estante): sem
@@ -161,6 +201,17 @@ case "$_fs" in
         mpv_args+=(--cache=yes --demuxer-max-bytes=64MiB
                    --demuxer-readahead-secs=20) ;;
 esac
+
+# Os ARQUIVOS por último, depois de todas as opções. No mpv uma opção depois
+# do nome do arquivo não é erro — ela simplesmente não vale para a lista que
+# já foi montada, e `--playlist-start` ali é ignorado em silêncio.
+if (( ${#_tracks[@]} )); then
+    mpv_args+=(--loop-playlist=no "${_tracks[@]}")
+elif [[ -d $TARGET ]]; then
+    mpv_args+=(--loop-playlist=no "$TARGET")   # álbum em Disc 01/Disc 02
+else
+    mpv_args+=("$TARGET")
+fi
 
 mpv "${mpv_args[@]}" &
 MPV=$!

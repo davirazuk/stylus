@@ -92,6 +92,20 @@ quando o lado **vira**, e só para frente — arrastar a barra para trás é
 procurar uma faixa, não virar o disco. Quem quiser a coisa inteira liga
 `STYLUS_SIDE_PAUSE=1` e o som para no fim do lado, como pararia.
 
+E a agulha fica onde você a deixou. Levantar a agulha e voltar depois não
+recomeça o disco da faixa 1 — isso é coisa de tocador de arquivo. O mesmo
+serviço anota a posição enquanto toca, e `stylus deck` volta para lá:
+
+```
+stylus deck loveless              de onde você parou
+stylus deck --recomeçar loveless  do começo
+```
+
+Não dá para deixar isso a cargo do `--resume-playback` do mpv: ele guarda a
+posição pelo hash do **caminho do arquivo** que estava tocando, então relançar
+o disco inteiro faz ele procurar a posição salva da faixa 1 — que quase nunca
+é onde você parou. Quem sabe qual faixa é o índice da lista, e esse é nosso.
+
 ```
 stylus parede            o disco de agora vira o papel de parede
 stylus parede --sozinho  e continua virando, a cada disco novo

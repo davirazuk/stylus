@@ -417,6 +417,24 @@ done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
 if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
 else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
+sec "a agulha: quem escreve e quem lê combinam"
+# Dois arquivos diferentes, um formato só: o stylus-side-watch grava onde a
+# agulha parou e o stylus-deck lê para pôr o disco de volta ali. Se um mudar o
+# nome do arquivo ou o número de campos, nada dá erro — o deck simplesmente
+# recomeça do zero em silêncio, para sempre, e ninguém liga uma coisa à outra.
+escritor=airootfs/usr/local/bin/stylus-side-watch
+leitor=airootfs/usr/local/bin/stylus-deck
+probs=()
+grep -q 'agulha\.tsv' "$escritor" || probs+=("o side-watch não fala em agulha.tsv")
+grep -q 'agulha\.tsv' "$leitor"   || probs+=("o deck não fala em agulha.tsv")
+# 3 tabulações no write = 4 campos; o leitor desempacota 4 nomes.
+n_tab=$(grep -o '\\t' "$escritor" | wc -l)
+n_le=$(grep -oE 'read\(\)\.strip\(\)\.split' "$leitor" | wc -l)
+(( n_tab == 3 )) || probs+=("o side-watch grava $n_tab tabulações; o formato tem 3")
+(( n_le == 1 ))  || probs+=("o deck lê a agulha em $n_le lugares; devia ser 1")
+if (( ${#probs[@]} == 0 )); then ok "o formato da agulha bate dos dois lados"
+else bad "a agulha ficou desencontrada:"; printf '      %s\n' "${probs[@]}"; fi
+
 sec "o que a tela cheia promete"
 # A tela cheia lança comandos por lista de argumentos (as ACOES de cada
 # seção). Um nome errado ali não dá erro visível: o painel de saída mostra o
