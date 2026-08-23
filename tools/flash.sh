@@ -25,7 +25,11 @@ DEV=${2:-}
 [[ -f $ISO ]] || die "não existe: $ISO"
 
 # ── candidatos: só o que é removível ───────────────────────────────────────
-mapfile -t CAND < <(lsblk -dnpo NAME,SIZE,MODEL,RM,TRAN | awk '$4==1 || $5=="usb"')
+# NAME,RM,TRAN e NADA MAIS nesta consulta: o MODEL tem espaço no meio ("DT
+# microDuo 3.0"), então com ele na lista o $4 do awk deixa de ser o RM e o
+# filtro passa a não casar com nada — o roteiro dizia "nenhum removível
+# conectado" com o pendrive plugado. O modelo é buscado à parte, depois.
+mapfile -t CAND < <(lsblk -dnpo NAME,RM,TRAN | awk '$2==1 || $3=="usb" {print $1}')
 if [[ -z $DEV ]]; then
     if (( ${#CAND[@]} == 0 )); then
         printf '\n  %snenhum dispositivo removível conectado.%s\n' "$cy" "$c0"
@@ -33,7 +37,11 @@ if [[ -z $DEV ]]; then
         exit 1
     fi
     printf '\n  %sremovíveis conectados:%s\n\n' "$cb" "$c0"
-    for l in "${CAND[@]}"; do printf '    %s\n' "$l"; done
+    for c in "${CAND[@]}"; do
+        printf '    %-12s %-8s %s\n' "$c" \
+            "$(lsblk -dno SIZE "$c")" "$(lsblk -dno MODEL "$c")"
+        lsblk -no NAME,SIZE,FSTYPE,LABEL "$c" | tail -n +2 | sed 's/^/       /'
+    done
     printf '\n  %stools/flash.sh %s /dev/sdX%s\n\n' "$cd" "$ISO" "$c0"
     exit 0
 fi
