@@ -624,18 +624,44 @@ class DiaryScreen(Screen):
     name = "DIÁRIO"
     icon = "󰃭"
 
+    DIAS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+
     def __init__(self, app):
         super().__init__(app)
         self.rows = []
         self.by_day = {}
+        self.by_wd = [0] * 7
+        self.by_hour = [0] * 24
+        self.by_artist = {}
+        self.nunca = 0
+        self.total_estante = 0
+        # 0 = o que você pôs (a lista). 1 = o formato (quando, quem, o parado).
+        # Duas páginas e não duas seções: são a MESMA pergunta — "o que essa
+        # coleção virou" — e o trilho já tem nove itens.
+        self.page = 0
         self.scroll = 0
 
     def enter(self):
         rows = sorted(vinyl._play_rows(), key=lambda x: -x[0])
         self.by_day = {}
+        self.by_wd = [0] * 7
+        self.by_hour = [0] * 24
+        self.by_artist = {}
         for ts, fold in rows:
-            d = time.strftime("%Y-%m-%d", time.localtime(ts))
+            lt = time.localtime(ts)
+            d = time.strftime("%Y-%m-%d", lt)
             self.by_day[d] = self.by_day.get(d, 0) + 1
+            # tm_wday já é 0=segunda, que é como a semana é lida aqui.
+            self.by_wd[lt.tm_wday] += 1
+            self.by_hour[lt.tm_hour] += 1
+            art = vinyl.folder_names(fold)[0]
+            if art:
+                self.by_artist[art] = self.by_artist.get(art, 0) + 1
+        postos = {os.path.normpath(f) for _ts, f in rows}
+        itens = self.app.shelf.items or []
+        self.total_estante = len(itens)
+        self.nunca = sum(1 for i in itens
+                         if os.path.normpath(i["folder"]) not in postos)
         idx = {os.path.normpath(i["folder"]): i for i in self.app.shelf.items}
         seen, out = set(), []
         for ts, fold in rows:
@@ -654,7 +680,9 @@ class DiaryScreen(Screen):
         self.rows = out
 
     def key(self, ev):
-        if ev.key in (pygame.K_DOWN, pygame.K_j):
+        if ev.key == pygame.K_s:              # X no controle
+            self.page = 1 - self.page
+        elif ev.key in (pygame.K_DOWN, pygame.K_j):
             self.scroll = min(max(0, len(self.rows) - 8), self.scroll + 1)
         elif ev.key in (pygame.K_UP, pygame.K_k):
             self.scroll = max(0, self.scroll - 1)
@@ -665,6 +693,9 @@ class DiaryScreen(Screen):
         return True
 
     def draw(self, s, r):
+        if self.rows and self.page == 1:
+            self._formato(s, r)
+            return
         if not self.rows:
             T.text(s, "nada anotado ainda", (r.centerx, r.centery), 28,
                    T.TEXT_DIM, anchor="center")
@@ -697,7 +728,132 @@ class DiaryScreen(Screen):
                    T.PINK, anchor="topright")
             y += 84
         self._calendar(s, pygame.Rect(x, r.bottom - 132, r.w - 88, 84))
-        self.app.hint(s, r, "enter põe de novo   ·   ↑↓ anda")
+        self.app.hint(s, r, "enter põe de novo   ·   ↑↓ anda   ·   s o formato")
+
+    # ── a segunda página: o formato ────────────────────────────────────────
+    def _barras(self, s, rect, valores, rotulos, cor, gutter=62):
+        """Barras horizontais. Um valor zero desenha a barra VAZIA e não some:
+        um dia da semana em que você nunca ouve nada é um dado, e uma linha
+        ausente vira um buraco que se lê como erro de desenho.
+
+        `gutter` é a coluna do rótulo, e existe porque "seg" e "My Bloody
+        Valentine" não cabem na mesma: com um valor fixo, a barra do artista
+        era desenhada POR CIMA do nome dele.
+        """
+        maxi = max(valores) if valores and max(valores) else 1
+        alt = max(14, rect.h // max(1, len(valores)) - 6)
+        num_w = 44
+        y = rect.y
+        for rot, v in zip(rotulos, valores):
+            T.text(s, rot, (rect.x, y + alt // 2 - 9), 17, T.TEXT_FAINT,
+                   maxw=gutter - 10)
+            trilho = pygame.Rect(rect.x + gutter, y + 2,
+                                 rect.w - gutter - num_w, alt - 4)
+            pygame.draw.rect(s, T.INK_SOFT, trilho, border_radius=4)
+            w = int(trilho.w * v / maxi)
+            if w:
+                pygame.draw.rect(s, cor, (trilho.x, trilho.y, w, trilho.h),
+                                 border_radius=4)
+            T.text(s, str(v), (trilho.right + 12, y + alt // 2 - 9), 16,
+                   T.TEXT_DIM if v else T.TEXT_FAINT)
+            y += alt + 6
+
+    def _horas(self, s, rect):
+        """Vinte e quatro colunas. A do seu horário fica acesa."""
+        # O `or 1` protege a divisão e ESTRAGA a busca do pico: com tudo
+        # zerado, maxi vira 1 e `.index(1)` estoura com "1 is not in list".
+        # São duas perguntas diferentes e precisam de dois números.
+        bruto = max(self.by_hour)
+        maxi = bruto or 1
+        pico = self.by_hour.index(bruto) if bruto else -1
+        largura = rect.w / 24.0
+        for h, v in enumerate(self.by_hour):
+            alt = int((rect.h - 18) * v / maxi)
+            col = pygame.Rect(int(rect.x + h * largura) + 1, rect.bottom - 18 - alt,
+                              max(2, int(largura) - 3), max(1, alt))
+            pygame.draw.rect(s, T.BLUE if h == pico else T.lerp(T.INK_LIFT, T.BLUE, 0.5),
+                             col, border_radius=2)
+        for h in (0, 6, 12, 18):
+            T.text(s, f"{h}h", (int(rect.x + h * largura), rect.bottom - 16),
+                   14, T.TEXT_FAINT)
+        if pico >= 0:
+            T.text(s, f"por volta das {pico}h", (rect.right, rect.bottom - 16),
+                   15, T.TEXT_DIM, anchor="topright")
+
+    def _voltam(self, s, rect):
+        """Os discos que voltam, pelas capas. Uma coluna de números diz quanto;
+        uma fileira de capas diz QUAIS, que é a pergunta que se faz olhando."""
+        top = sorted((it for it in self.rows if it.get("plays")),
+                     key=lambda it: -it["plays"])[:8]
+        if not top:
+            return
+        T.text(s, "OS QUE VOLTAM", (rect.x, rect.y), 16, T.GREEN, bold=True)
+        # A capa cabe no que sobrou de ALTURA, não numa largura escolhida: com
+        # o lado vindo só da largura, numa tela baixa a fileira passava por
+        # cima da legenda, da linha de baixo e da dica, tudo junto.
+        lado = min(112, (rect.w - 7 * 18) // 8, rect.h - 70)
+        if lado < 40:
+            return
+        x = rect.x
+        for it in top:
+            cr = pygame.Rect(x, rect.y + 26, lado, lado)
+            cov = self.app.thumbs.get(it["cover"])
+            T.shadow_card(s, cr, radius=6)
+            if cov:
+                s.blit(pygame.transform.smoothscale(cov, cr.size), cr)
+            else:
+                T.panel(s, cr, T.INK_LIFT, radius=6)
+                T.text(s, it["name"][:12], cr.center, 13, T.TEXT_FAINT,
+                       anchor="center", maxw=lado - 12)
+            T.text(s, f"{it['plays']}x", (cr.centerx, cr.bottom + 8), 17,
+                   T.PINK, anchor="midtop")
+            T.text(s, it["name"], (cr.centerx, cr.bottom + 30), 13,
+                   T.TEXT_FAINT, anchor="midtop", maxw=lado)
+            x += lado + 18
+
+    def _formato(self, s, r):
+        x, y = r.x + 44, r.y + 30
+        T.text(s, "o formato", (x, y), 24, T.TEXT_DIM)
+        y += 44
+
+        meio = r.x + r.w // 2
+        col_w = r.w // 2 - 70
+
+        T.text(s, "EM QUE DIA", (x, y), 16, T.BLUE, bold=True)
+        self._barras(s, pygame.Rect(x, y + 26, col_w, 190),
+                     self.by_wd, self.DIAS, T.BLUE)
+
+        T.text(s, "QUEM VOCÊ MAIS PÕE", (meio + 20, y), 16, T.PINK, bold=True)
+        top = sorted(self.by_artist.items(), key=lambda kv: -kv[1])[:6]
+        if top:
+            # Gutter largo: nome de artista é comprido, e com a coluna estreita
+            # a barra era desenhada por cima do nome.
+            self._barras(s, pygame.Rect(meio + 20, y + 26, col_w, 190),
+                         [n for _a, n in top], [a for a, _n in top], T.PINK,
+                         gutter=150)
+
+        y += 236
+        # ── o orçamento vertical, de baixo para cima ───────────────────────
+        # A dica mora no rodapé (app.hint), e a linha da prateleira parada logo
+        # acima dela. O que sobra entre o fim das barras e o bloco de capas é
+        # do gráfico de horas. Contado assim, e não com números soltos, porque
+        # a primeira versão deu ao gráfico "tudo que sobra" e ele passou por
+        # cima das capas, da legenda e da dica ao mesmo tempo.
+        rodape = 68                       # dica + linha da prateleira
+        bloco_capas = 176
+        topo_capas = r.bottom - rodape - bloco_capas
+        T.text(s, "A QUE HORAS", (x, y), 16, T.LAV, bold=True)
+        self._horas(s, pygame.Rect(x, y + 24, r.w - 120,
+                                   max(110, topo_capas - 20 - (y + 24))))
+
+        self._voltam(s, pygame.Rect(x, topo_capas, r.w - 120, bloco_capas))
+
+        if self.total_estante:
+            T.text(s, f"{self.nunca} dos {self.total_estante} discos da estante "
+                      f"nunca foram postos  ·  o SORTEIO puxa para eles",
+                   (x, r.bottom - rodape + 4), 17,
+                   T.AMBER if self.nunca else T.GREEN)
+        self.app.hint(s, r, "s volta para a lista")
 
     def _calendar(self, s, rect):
         """Um ano em quadradinhos: uma coluna por semana, um por dia.

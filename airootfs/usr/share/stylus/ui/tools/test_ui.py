@@ -212,6 +212,49 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("controle", traceback.format_exc())
 
+    secao("o DIÁRIO com registro de verdade, nas duas páginas")
+    try:
+        diario = next(s for s in app.screens if s.name == "DIÁRIO")
+        # Sem registro a tela cai no "nada anotado" e a segunda página nunca é
+        # desenhada — que é justamente onde mora todo o desenho novo.
+        alvo = os.path.join(os.environ["HOME"], ".local", "share", "stylus")
+        os.makedirs(alvo, exist_ok=True)
+        agora = time.time()
+        with open(os.path.join(alvo, "plays.tsv"), "w", encoding="utf-8") as fh:
+            for i, it in enumerate(app.shelf.items or []):
+                for k in range(3):
+                    fh.write(f"{int(agora - (i * 5 + k) * 86400)}\t"
+                             f"{it['artist']}\t{it['name']}\t{it['folder']}\n")
+        diario.enter()
+        if not diario.rows:
+            bad("o diário não leu o registro que acabamos de escrever")
+        else:
+            ok(f"leu o registro ({len(diario.rows)} discos)")
+            diario.page = 0
+            diario.draw(app.surf, corpo)
+            ok("a lista desenha")
+            diario.key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s,
+                                          unicode="s", mod=0))
+            if diario.page != 1:
+                bad("o s não virou a página")
+            diario.draw(app.surf, corpo)
+            ok("o formato desenha")
+            # Sem nenhuma hora ou dia zerado o desenho nunca exercita o caminho
+            # do valor zero, que é o que costuma dividir por zero.
+            diario.by_hour = [0] * 24
+            diario.by_wd = [0] * 7
+            diario.by_artist = {}
+            diario.draw(app.surf, corpo)
+            ok("o formato desenha mesmo com tudo zerado")
+            diario.key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s,
+                                          unicode="s", mod=0))
+            if diario.page != 0:
+                bad("o s não voltou para a lista")
+            else:
+                ok("s vai e volta")
+    except Exception:                                       # noqa: BLE001
+        bad("diário", traceback.format_exc())
+
     secao("virar o lado aparece na tela, e só para frente")
     try:
         class _Disco:
