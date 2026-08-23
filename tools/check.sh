@@ -335,6 +335,57 @@ done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
 if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que o instalador chama existe"
 else bad "o instalador chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
+sec "os serviços que a instalação liga"
+# O script que roda no chroot usa `set -e`, e `systemctl enable` de unidade
+# inexistente SAI COM ERRO — depois do pacstrap, com o disco já formatado e
+# antes do grub-install. Ou seja: máquina que não liga.
+#
+# Foi o que quase saiu daqui: a impressão foi tirada da lista de pacotes e o
+# `systemctl enable cups.socket` ficou para trás. Esta conferência liga o nome
+# da unidade ao pacote que a traz.
+declare -A DONO=(
+    [NetworkManager.service]=networkmanager  [bluetooth.service]=bluez
+    [sddm.service]=sddm                      [ufw.service]=ufw
+    [paccache.timer]=pacman-contrib          [earlyoom.service]=earlyoom
+    [rtkit-daemon.service]=rtkit             [cups.socket]=cups
+    [power-profiles-daemon.service]=power-profiles-daemon
+    [nvidia-suspend.service]=nvidia-utils    [nvidia-hibernate.service]=nvidia-utils
+    [nvidia-resume.service]=nvidia-utils
+)
+faltando=()
+while read -r unidade; do
+    # As nossas vêm do airootfs, não de pacote.
+    if [[ $unidade == stylus-* ]]; then
+        [[ -e airootfs/etc/systemd/system/$unidade ]] || faltando+=("$unidade (nossa, e o arquivo não existe)")
+        continue
+    fi
+    # systemd e util-linux vêm com o `base`; não precisam de linha na lista.
+    case $unidade in systemd-*|fstrim.timer) continue ;; esac
+    pkg=${DONO[$unidade]:-}
+    if [[ -z $pkg ]]; then
+        faltando+=("$unidade (ninguém sabe que pacote traz — acrescente em DONO)")
+    elif ! nomes "$LISTA_INST" | grep -qx "$pkg"; then
+        faltando+=("$unidade <- $pkg, que não está em packages.install")
+    fi
+done < <(sed -n '/stylus-configure.sh/,/^CHROOT$/p' airootfs/usr/local/bin/stylus-install |
+         # Sem comentários: eles CITAM unidades para explicar por que uma
+         # saiu (o cups.socket é o exemplo), e citar não é ligar.
+         sed 's/#.*//' |
+         # Junta as linhas continuadas com "\\" ANTES de filtrar: o
+         # `systemctl enable` do NVIDIA quebra em duas, e o `|| true` que o
+         # torna inofensivo mora na segunda — filtrando linha a linha, a
+         # primeira parecia desprotegida e a conferência acusava o inocente.
+         sed -e :a -e '/\\$/{N;s/\\\n//;ba}' |
+         # E sem as linhas que já toleram falhar: uma unidade ligada com
+         # `|| true` ou `2>/dev/null` não derruba nada se faltar, que é
+         # exatamente o caso das do NVIDIA, ligadas só quando há placa.
+         grep -v '|| true' | grep -v '2>/dev/null' |
+         grep -oE 'systemctl enable [a-z0-9@.-]+( [a-z0-9@.-]+)*' |
+         sed 's/systemctl enable //' | tr ' ' '\n' |
+         grep -E '\.(service|socket|timer|target)$' | sort -u)
+if (( ${#faltando[@]} == 0 )); then ok "toda unidade que a instalação liga vem de um pacote instalado"
+else bad "a instalação liga o que pode não existir:"; printf '      %s\n' "${faltando[@]}"; fi
+
 sec "multilib no medium ao vivo"
 # lib32-gamemode está na lista de TODA máquina, e o /etc/pacman.conf do sistema
 # ao vivo não vem do perfil: vem do pacote pacman, onde o multilib está
@@ -388,7 +439,12 @@ elif (( ! FAST )); then
                        grep -vxE 'nvidia|libva' |
                        grep -vE 'nvidia-[0-9]+xx-dkms' | sort -u)
     mapfile -t HW < <(sed -n '/^HW_PKGS=(/,/^)/p' airootfs/usr/local/bin/stylus-install |
-                      sed 's/#.*//' | grep -oE '^\s+[a-z0-9][a-z0-9._+-]*' | tr -d ' ' | sort -u)
+                      sed 's/#.*//' |
+         # Junta as linhas continuadas com "\\" ANTES de filtrar: o
+         # `systemctl enable` do NVIDIA quebra em duas, e o `|| true` que o
+         # torna inofensivo mora na segunda — filtrando linha a linha, a
+         # primeira parecia desprotegida e a conferência acusava o inocente.
+         sed -e :a -e '/\\$/{N;s/\\\n//;ba}' | grep -oE '^\s+[a-z0-9][a-z0-9._+-]*' | tr -d ' ' | sort -u)
     mapfile -t EXTRA < <(printf '%s\n' "${DIN[@]}" "${HW[@]}" broadcom-wl-dkms dkms \
                          archlinux-keyring | sort -u | grep -v '^$')
     ruins=$(LC_ALL=C pacman -Si "${EXTRA[@]}" 2>&1 >/dev/null \

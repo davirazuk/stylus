@@ -1083,38 +1083,51 @@ install -d -m 750 /etc/sudoers.d
 echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/10-wheel
 chmod 440 /etc/sudoers.d/10-wheel
 
-systemctl enable NetworkManager.service
-systemctl enable bluetooth.service
-systemctl enable sddm.service
-systemctl enable systemd-timesyncd.service
-systemctl enable fstrim.timer
-# The socket, not the service. cups is socket-activated: with cups.socket the
-# daemon is started the first time something actually prints or opens a printer
-# dialog, and a machine that never sees a printer never starts it at all.
-# Enabling the service instead ran a daemon at every boot of every machine in
-# the lab for the benefit of the one with a printer attached.
-systemctl enable cups.socket
-systemctl enable ufw.service
-systemctl enable paccache.timer
-# Without this the bar's power profile module has nothing to talk to and stays
-# blank, since powerprofilesctl reaches the daemon over D-Bus.
-systemctl enable power-profiles-daemon.service
-systemctl enable earlyoom.service
-# Checks, before the login screen, that some graphics driver actually took the
-# card - and loads nouveau if none did. It is what stops a failed NVIDIA driver
-# from turning into a machine with no desktop to repair it from. Costs
-# milliseconds on every machine where nothing is wrong.
-systemctl enable stylus-gpu-fallback.service
-# The fontconfig cache, built before the greeter. Without it the first thing to
-# ask for a font pays for scanning every font file on the disk, and that first
-# thing is i3 - which blocks in Pango long enough to look like a machine that
-# did not boot.
-systemctl enable stylus-fontcache.service
-# rtkit is what lets PipeWire actually take the realtime priority it asks for.
-# Without it every buffer underrun is a click in the middle of a quiet passage,
-# which on a machine built around listening is the whole ballgame.
-systemctl enable rtkit-daemon.service
+# ── Os serviços ─────────────────────────────────────────────────────────────
+# Este arquivo roda com `set -e`, e um `systemctl enable` de unidade que não
+# existe SAI COM ERRO. Escritos soltos, como estavam, qualquer pacote que
+# saísse da lista derrubava a configuração inteira — depois do pacstrap, com
+# o disco já formatado e antes do grub-install, ou seja: máquina que não liga.
+#
+# Foi o que quase aconteceu ao tirar a impressão daqui: o `cups` saiu da lista
+# de pacotes e o `systemctl enable cups.socket` ficou. Por isso agora há duas
+# listas e uma função.
+essenciais() {          # sem estes não há máquina utilizável
+    systemctl enable "$@"
+}
+opcionais() {           # a falta de um não justifica perder a instalação
+    local u
+    for u in "$@"; do
+        systemctl enable "$u" 2>/dev/null ||
+            printf '  ! %s não pôde ser ligado (o pacote não está instalado?)\n' "$u"
+    done
+}
+
+essenciais NetworkManager.service sddm.service
 systemctl set-default graphical.target
+
+opcionais bluetooth.service systemd-timesyncd.service fstrim.timer \
+          ufw.service paccache.timer \
+          power-profiles-daemon.service earlyoom.service \
+          rtkit-daemon.service \
+          stylus-gpu-fallback.service stylus-fontcache.service
+#
+# O que cada um dos nossos faz, para quem for mexer nesta lista:
+#   stylus-gpu-fallback  confere, antes da tela de login, se algum driver
+#                        pegou a placa — e carrega o nouveau se nenhum pegou.
+#                        É o que impede um driver NVIDIA quebrado de virar uma
+#                        máquina sem área de trabalho para consertá-la.
+#   stylus-fontcache     o cache do fontconfig antes do greeter. Sem ele o
+#                        primeiro a pedir uma fonte paga a varredura inteira,
+#                        e o primeiro é o i3 — que trava no Pango tempo
+#                        suficiente para parecer que a máquina não ligou.
+#   rtkit-daemon         é o que deixa o PipeWire pegar a prioridade de tempo
+#                        real que ele pede. Sem isso cada falha de buffer vira
+#                        um clique no meio de uma parte silenciosa.
+#   power-profiles       sem ele o módulo da barra não tem com quem falar.
+#
+# Impressão não está aqui de propósito: este sistema não tem suíte de
+# escritório nem impressão, e o cups saiu junto.
 ufw default deny incoming  || true
 ufw default allow outgoing || true
 ufw --force enable         || true
