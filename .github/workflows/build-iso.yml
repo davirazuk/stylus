@@ -35,7 +35,9 @@ on:
       - "**.md"
 
 permissions:
-  contents: read
+  # write só para poder publicar a Release quando vier uma etiqueta. Nos
+  # outros gatilhos o passo nem roda.
+  contents: write
 
 jobs:
   iso:
@@ -89,6 +91,61 @@ jobs:
           echo "  $arquivo — $(du -h "$arquivo" | cut -f1)"
           sha256sum "$arquivo" | tee "$arquivo.sha256"
           echo "nome=$(basename "$arquivo")" >> "$GITHUB_OUTPUT"
+
+      # ── A Release, só quando vem uma etiqueta ───────────────────────────
+      # O artefato acima só baixa quem tem conta no GitHub e está logado. Uma
+      # Release baixa com link simples, de qualquer navegador — que é o que
+      # serve para mandar a ISO para alguém, ou para pegá-la no celular sem
+      # entrar em nada.
+      #
+      # Vai partida porque a GitHub recusa arquivo de mais de 2 GB numa
+      # Release e a ISO tem quase três. Partir é feio, mas é isso ou não ter
+      # link público nenhum — e juntar de novo é um `cat`.
+      - name: Publicar a Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          iso=$(find out -maxdepth 1 -name '*.iso' | head -1)
+          nome=$(basename "$iso")
+          mkdir -p rel
+          # 1900 MiB por pedaço: abaixo do limite de 2 GB com folga para o
+          # que a própria GitHub soma ao redor do arquivo.
+          split -b 1900M --numeric-suffixes=1 --suffix-length=2 \
+                --additional-suffix="" "$iso" "rel/$nome.part"
+          # O sha256 é do arquivo JUNTO, que é o que a pessoa vai gravar —
+          # conferir pedaço por pedaço não diz se a junção deu certo.
+          sha256sum "$iso" | sed "s|out/||" > "rel/$nome.sha256"
+          ls -lh rel | sed 's/^/  /'
+
+          tag="${GITHUB_REF_NAME}"
+          {
+            echo "ISO do STYLUS — \`$nome\`"
+            echo
+            echo '**Baixe TODOS os pedaços** e junte antes de gravar:'
+            echo
+            echo '```'
+            echo "cat $nome.part* > $nome"
+            echo "sha256sum -c $nome.sha256"
+            echo '```'
+            echo
+            echo 'Vai partida porque a GitHub não aceita arquivo de mais de'
+            echo '2 GB numa Release, e a ISO tem quase três.'
+            echo
+            echo '**No celular:** junte os pedaços com o Termux (o `cat` acima),'
+            echo 'depois grave no pendrive com o EtchDroid e um cabo OTG.'
+            echo
+            echo '**Num computador Linux:** `tools/flash.sh` grava, e recusa'
+            echo 'disco interno de propósito.'
+            echo
+            echo 'Ao ligar o pendrive o sistema abre no MODO MÚSICA, com'
+            echo '**INSTALAR** já selecionado.'
+          } > rel/NOTAS.md
+
+          gh release create "$tag" rel/* \
+            --title "STYLUS $tag" \
+            --notes-file rel/NOTAS.md
 
       - uses: actions/upload-artifact@v4
         with:
