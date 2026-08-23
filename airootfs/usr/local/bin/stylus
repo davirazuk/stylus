@@ -51,6 +51,7 @@ cat <<EOF
     ${b}stylus audio${o}              o caminho do sinal, medido, não prometido
     ${b}stylus app${o} ${d}NOME${o}          instala o que não vem em pacote
     ${b}stylus gpu${o}                driver de vídeo
+    ${b}stylus mode${o} ${d}[música|área]${o} troca entre a tela cheia e a área de trabalho
     ${b}stylus update${o}             atualiza o sistema
 
   ${d}sem argumento nenhum, responde a pergunta que se faz mais vezes.${o}
@@ -102,6 +103,7 @@ case "$cmd" in
             echo "sem remoto do rclone configurado; guardei em $dest"
         fi
         ;;
+    mode)        exec stylus-mode "$@" ;;
     phone)       exec stylus-phone "$@" ;;
     audio)       exec stylus-audio "$@" ;;
     app)         exec stylus-app "$@" ;;

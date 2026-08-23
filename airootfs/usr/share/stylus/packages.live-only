@@ -1,0 +1,73 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  packages.live-only — what is on the ISO ON PURPOSE and not on a disk
+# ═══════════════════════════════════════════════════════════════════════════
+#  This file is the declared difference between packages.x86_64 (the ISO) and
+#  packages.install (an installed machine). tools/check.sh requires every ISO
+#  package to be in one of the two: either the installed machine gets it, or
+#  the reason it does not is written down here.
+#
+#  Without that, the two lists drift apart in silence — which is exactly what
+#  happened: the ISO became STYLUS and the installer went on installing the
+#  distribution it was inherited from, with an office suite and no music.
+#
+#  Blank lines and lines starting with # are ignored.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── the installer itself ───────────────────────────────────────────────────
+arch-install-scripts
+archinstall
+
+# ── the initramfs and the boot menu OF THE MEDIUM ──────────────────────────
+# An installed system boots through GRUB and an ordinary initramfs.
+mkinitcpio-archiso
+mkinitcpio-nfs-utils
+syslinux
+edk2-shell
+refind
+memtest86+
+memtest86+-efi
+
+# ── reading the medium's own compressed filesystem ─────────────────────────
+squashfs-tools
+
+# ── virtual machine guest tools ────────────────────────────────────────────
+# They exist so the ISO can be TRIED in a VM before it is given a disk. On a
+# real machine they are four services looking for a hypervisor that is not
+# there.
+qemu-guest-agent
+open-vm-tools
+virtualbox-guest-utils-nox
+hyperv
+
+# ── networking before NetworkManager ───────────────────────────────────────
+# The medium comes up on dhcpcd/iwd so there is a network at the console
+# straight away. An installed system uses NetworkManager, and all three
+# fighting over one interface is a classic.
+dhcpcd
+iwd
+
+# ── prebuilt Broadcom wifi ─────────────────────────────────────────────────
+# broadcom-wl matches the `linux` kernel alone, and an install also lays down
+# linux-lts. The installer detects the card and uses broadcom-wl-dkms, which
+# is rebuilt for every kernel — the emergency one included.
+broadcom-wl
+b43-fwcutter
+
+# ── rescue ─────────────────────────────────────────────────────────────────
+# Rescue-medium tools: what they are for is a disk that is NOT mounted.
+ddrescue
+testdisk
+
+# ── one graphics driver per vendor ─────────────────────────────────────────
+# The ISO carries all of them because it has to come up on a stranger's
+# computer. By install time the card is known and the installer picks (see
+# MESA_SET and GPU_PKGS in stylus-install); keeping all three here would cost
+# disk and make pacman rebuild things nobody uses.
+vulkan-radeon
+lib32-vulkan-radeon
+vulkan-intel
+lib32-vulkan-intel
+vulkan-nouveau
+lib32-vulkan-nouveau
+intel-media-driver
+vpl-gpu-rt

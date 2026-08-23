@@ -1015,10 +1015,36 @@ class App:
     # ── controle ───────────────────────────────────────────────────────────
     def _init_pads(self):
         pygame.joystick.init()
+        self._sync_pads()
+
+    def _sync_pads(self, announce=False):
+        """(Re)lê a lista de controles conectados.
+
+        Feito também em pleno funcionamento, não só na abertura, porque num
+        sofá o controle quase sempre é ligado DEPOIS de a tela já estar de pé
+        — a pessoa senta, pega o controle e aperta o botão. Sem escutar o
+        evento de conexão, esse é o caminho em que "o controle não funciona"
+        acontece com o controle perfeitamente bom.
+        """
+        antes = len(self.pads)
+        for j in self.pads:
+            try:
+                j.quit()
+            except Exception:             # noqa: BLE001
+                pass
+        self.pads = []
         for i in range(pygame.joystick.get_count()):
-            j = pygame.joystick.Joystick(i)
-            j.init()
-            self.pads.append(j)
+            try:
+                j = pygame.joystick.Joystick(i)
+                j.init()
+                self.pads.append(j)
+            except Exception:             # noqa: BLE001
+                pass
+        if announce and len(self.pads) != antes:
+            if len(self.pads) > antes:
+                self.toast("controle conectado")
+            elif self.pads:
+                self.toast("um controle foi desconectado")
 
     def _pad_poll(self):
         """D-pad e analógico viram as mesmas setas que o teclado manda.
@@ -1229,10 +1255,20 @@ class App:
     # ── entrada ────────────────────────────────────────────────────────────
     def _key(self, ev):
         if ev.key == pygame.K_ESCAPE:
+            # VOLTAR, não SAIR. No modo música esta tela é a sessão inteira, e
+            # o botão B (que chega aqui como ESC) tem que se comportar como o
+            # "voltar" de um videogame: abre o menu lateral, e no menu fecha o
+            # menu. Sair para um vazio preto seria o oposto do que a pessoa
+            # espera do B — e a saída de verdade é o item "área de trabalho"
+            # no fim do trilho. Na janela de desenvolvimento, onde não há
+            # supervisor para reabrir, o ESC ainda encerra por conveniência.
             if self.rail:
                 self.rail = False
-            else:
+            elif os.environ.get("STYLUS_UI_WINDOWED"):
                 return "quit"
+            else:
+                self.rail = True
+                self.rail_sel = self.cur
             return None
         if ev.key == pygame.K_F5:
             self.shelf.rescan()
@@ -1286,7 +1322,19 @@ class App:
                 if ev.type == pygame.KEYDOWN:
                     if self._key(ev) == "quit":
                         return
+                elif ev.type in (pygame.JOYDEVICEADDED,
+                                 pygame.JOYDEVICEREMOVED):
+                    self._sync_pads(announce=True)
                 elif ev.type == pygame.JOYBUTTONDOWN:
+                    # Os ombros pulam faixa em QUALQUER tela, não só na AGORA:
+                    # do sofá, "próxima" é a coisa que se quer poder fazer sem
+                    # primeiro navegar até uma tela específica. Por isso vão
+                    # direto ao playerctl em vez de virar tecla, que só a tela
+                    # AGORA escuta.
+                    if ev.button == 4:            # LB
+                        spawn(["playerctl", "previous"]); continue
+                    if ev.button == 5:            # RB
+                        spawn(["playerctl", "next"]); continue
                     # A/B do padrão xbox. 0 confirma, 1 volta, 6/7 abrem o
                     # trilho — os mesmos lugares que todo mundo já conhece.
                     mapa = {0: pygame.K_RETURN, 1: pygame.K_ESCAPE,

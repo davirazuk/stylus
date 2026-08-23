@@ -89,10 +89,15 @@ sec "nada de IFOS sobrando"
 # README.md e CLAUDE.md citam o IFOS de propósito: um dá o crédito de onde
 # veio o maquinário de hardware, o outro explica a herança para quem for
 # mexer aqui. O resto do repositório não pode ter sobra de nome antigo.
-resto=$(grep -rIl --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
+# Sem \b. Com ele esta conferência passava com quatro sobras dentro do
+# stylus-controller, porque todas estavam coladas num %s de printf
+# ('%sIFOS — controles', '%sifos-update') — e a borda de palavra à esquerda
+# não casa entre `s` e `i`. Uma conferência que sempre passa é pior do que
+# nenhuma: ela diz que está limpo.
+resto=$(grep -rIli --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
         --exclude-dir=.pkgcache --exclude-dir=.claude --exclude=check.sh \
         --exclude=README.md --exclude=CLAUDE.md \
-        -e '\bifos\b' -e '\bIFOS\b' . 2>/dev/null || true)
+        -e 'ifos' . 2>/dev/null || true)
 if [[ -z $resto ]]; then ok "o repositório é só do STYLUS"
 else bad "sobrou nome antigo em:"; echo "$resto" | sed 's/^/      /'; fi
 
@@ -150,13 +155,96 @@ while IFS= read -r -d '' f; do
 done < <(find airootfs/usr/local/bin -type f -print0)
 (( n == 0 )) && ok "todo binário em /usr/local/bin é executável"
 
+sec "as duas listas de pacote"
+# A ISO e a máquina instalada saíram do mesmo repositório e tinham listas
+# diferentes: a ISO virou o STYLUS e o instalador continuou instalando a
+# distribuição de onde ele veio — com suíte de escritório e sem mpv, sem
+# python-pygame, sem nada de música. Ninguém percebeu porque nada conferia.
+#
+# A regra, agora: todo pacote da ISO está em packages.install OU está em
+# packages.live-only com o motivo escrito. Não há terceira opção.
+LISTA_ISO=packages.x86_64
+LISTA_INST=airootfs/usr/share/stylus/packages.install
+LISTA_LIVE=airootfs/usr/share/stylus/packages.live-only
+nomes() { grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$1" | tr -s '[:space:]' '\n' | grep -v '^$'; }
+
+if [[ -f $LISTA_INST && -f $LISTA_LIVE ]]; then
+    orfaos=$(comm -23 <(nomes "$LISTA_ISO" | sort -u) \
+                      <(cat <(nomes "$LISTA_INST") <(nomes "$LISTA_LIVE") | sort -u))
+    if [[ -z $orfaos ]]; then ok "toda a ISO ou é instalada, ou tem motivo escrito para não ser"
+    else bad "estão na ISO e em lista nenhuma (instale ou justifique em packages.live-only):"
+         echo "$orfaos" | sed 's/^/      /'; fi
+
+    velhos=$(comm -13 <(nomes "$LISTA_ISO" | sort -u) <(nomes "$LISTA_LIVE" | sort -u))
+    if [[ -z $velhos ]]; then ok "packages.live-only não tem sobra"
+    else bad "packages.live-only cita o que a ISO nem tem:"; echo "$velhos" | sed 's/^/      /'; fi
+
+    dois=$(comm -12 <(nomes "$LISTA_INST" | sort -u) <(nomes "$LISTA_LIVE" | sort -u))
+    if [[ -z $dois ]]; then ok "nenhum pacote está nas duas listas ao mesmo tempo"
+    else bad "está em packages.install E em packages.live-only:"; echo "$dois" | sed 's/^/      /'; fi
+
+    # O instalador LÊ este arquivo. Uma lista vazia ou truncada instalaria uma
+    # máquina sem área de trabalho e só diria isso na tela de login que nunca
+    # aparece — por isso o instalador também tem um piso, e ele é 100.
+    n_inst=$(nomes "$LISTA_INST" | wc -l)
+    (( n_inst >= 100 )) && ok "packages.install tem $n_inst nomes" \
+        || bad "packages.install tem só $n_inst nomes; o instalador recusa abaixo de 100"
+else
+    bad "faltam $LISTA_INST e/ou $LISTA_LIVE"
+fi
+
+sec "o que o instalador chama e precisa existir"
+# O stylus-install chamava /usr/share/stylus/branding-sync.sh, que NÃO EXISTIA
+# — e chamava com `|| warn`. A instalação terminava dizendo "concluída" e
+# entregava um Arch com i3 sem um comando `stylus` na máquina.
+faltando=()
+while read -r caminho; do
+    [[ -e airootfs$caminho ]] || faltando+=("$caminho")
+done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
+              airootfs/usr/local/bin/stylus-install | sort -u)
+if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que o instalador chama existe"
+else bad "o instalador chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "multilib no medium ao vivo"
+# lib32-gamemode está na lista de TODA máquina, e o /etc/pacman.conf do sistema
+# ao vivo não vem do perfil: vem do pacote pacman, onde o multilib está
+# comentado. O pacstrap morria em "target not found: lib32-gamemode" DEPOIS de
+# formatar o disco. É a razão de existir airootfs/etc/pacman.conf.
+precisa32=$(grep -cE '^lib32-' "$LISTA_INST" 2>/dev/null || echo 0)
+if (( precisa32 == 0 )); then
+    ok "nenhum pacote de 32 bits para instalar"
+elif [[ -f airootfs/etc/pacman.conf ]] && \
+     grep -qE '^\[multilib\]' airootfs/etc/pacman.conf; then
+    ok "o medium ao vivo tem multilib ligado (${precisa32} pacotes de 32 bits)"
+else
+    bad "packages.install pede ${precisa32} pacotes lib32-* e airootfs/etc/pacman.conf
+      não liga o multilib — o pacstrap vai morrer com o disco já formatado"
+fi
+
 if (( ! FAST )); then
     sec "nomes de pacote"
-    mapfile -t P < <(grep -vE '^\s*#|^\s*$' packages.x86_64)
-    ruins=$(LC_ALL=C pacman -Si "${P[@]}" 2>&1 >/dev/null \
+    for lista in "$LISTA_ISO" "$LISTA_INST"; do
+        [[ -f $lista ]] || continue
+        mapfile -t P < <(nomes "$lista")
+        ruins=$(LC_ALL=C pacman -Si "${P[@]}" 2>&1 >/dev/null \
+                | sed -n 's/^error: package .\(.*\). was not found$/\1/p' | sort -u)
+        if [[ -z $ruins ]]; then ok "os ${#P[@]} pacotes de ${lista##*/} existem nos repositórios"
+        else bad "${lista##*/} pede o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
+    done
+    # Os nomes que o instalador monta na hora (driver de vídeo, hardware
+    # detectado) não estão em lista nenhuma: estão escritos dentro do script,
+    # e é justamente onde ninguém olha.
+    mapfile -t DIN < <(grep -oE '(lib32-)?(nvidia|vulkan|mesa|libva|intel-media|vpl)[a-z0-9-]*' \
+                       airootfs/usr/local/bin/stylus-install |
+                       grep -vE 'nvidia-(driver|pkg|label|config|suspend|hibernate|resume)' | sort -u)
+    mapfile -t HW < <(sed -n '/^HW_PKGS=(/,/^)/p' airootfs/usr/local/bin/stylus-install |
+                      sed 's/#.*//' | grep -oE '^\s+[a-z0-9][a-z0-9._+-]*' | tr -d ' ' | sort -u)
+    mapfile -t EXTRA < <(printf '%s\n' "${DIN[@]}" "${HW[@]}" broadcom-wl-dkms dkms \
+                         archlinux-keyring | sort -u | grep -v '^$')
+    ruins=$(LC_ALL=C pacman -Si "${EXTRA[@]}" 2>&1 >/dev/null \
             | sed -n 's/^error: package .\(.*\). was not found$/\1/p' | sort -u)
-    if [[ -z $ruins ]]; then ok "os ${#P[@]} pacotes existem nos repositórios"
-    else bad "não existem:"; echo "$ruins" | sed 's/^/      /'; fi
+    if [[ -z $ruins ]]; then ok "os ${#EXTRA[@]} pacotes escolhidos na hora pelo instalador existem"
+    else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"

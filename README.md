@@ -110,7 +110,7 @@ quem não tem backup.
 ## Construir
 
 ```
-./tools/check.sh     # 123 verificações, segundos
+./tools/check.sh     # as verificações, em segundos
 ./build.sh           # a ISO, em ./out
 tools/flash.sh out/stylus-*.iso
 ```

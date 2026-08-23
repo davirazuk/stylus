@@ -483,6 +483,23 @@ def parse_lrc(path):
 
 
 def _probe_duration(path):
+    """A duração de uma faixa, do jeito mais barato que funcionar.
+
+    O mutagen primeiro, o ffprobe depois. Não é micro-otimização: o deck mede
+    TODA faixa do lado ao abrir, e um álbum de vinte faixas custava vinte
+    processos ffprobe antes de a agulha descer — meio segundo de nada numa
+    máquina rápida, um susto numa lenta. O mutagen lê o cabeçalho no mesmo
+    processo, é dependência declarada (python-mutagen), e ainda faz o deck
+    abrir sem o ffprobe instalado. O ffprobe fica como rede de segurança para
+    o formato exótico que o mutagen não conhece.
+    """
+    try:
+        import mutagen
+        f = mutagen.File(path)
+        if f is not None and f.info and f.info.length:
+            return float(f.info.length)
+    except Exception:
+        pass
     try:
         r = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -800,6 +817,29 @@ class Album:
             self._read_tags(self.tracks[0]["path"])
 
     def _read_tags(self, path):
+        # mutagen primeiro, mesma razão de _probe_duration: um processo a menos
+        # no caminho até a agulha descer, e o deck abre sem ffprobe.
+        try:
+            import mutagen
+            f = mutagen.File(path, easy=True)
+            t = getattr(f, "tags", None) or {}
+
+            def first(*chaves):
+                for c in chaves:
+                    v = t.get(c)
+                    if v:
+                        return v[0] if isinstance(v, list) else v
+                return ""
+            nome = first("album")
+            artista = first("albumartist", "album artist", "artist")
+            ano = first("date", "year", "originaldate")
+            if nome or artista or ano:
+                self.name = nome or self.name
+                self.artist = artista or self.artist
+                self.year = str(ano)[:4]
+                return
+        except Exception:
+            pass
         try:
             r = subprocess.run(
                 ["ffprobe", "-v", "error", "-show_entries",

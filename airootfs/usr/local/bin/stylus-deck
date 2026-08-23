@@ -71,16 +71,35 @@ fi
 TARGET="${TARGET/#\~/$HOME}"
 command -v mpv >/dev/null || { echo "stylus: o mpv não está instalado." >&2; exit 1; }
 
-# Socket velho de uma sessão morta faz o deck achar que há um mpv. E pôr um
-# disco é um ato EXCLUSIVO: dois tocadores ao mesmo tempo deixam a barra e o
-# deck mostrando um disco enquanto sai o som do outro.
+# Pôr um disco é um ato EXCLUSIVO: dois tocadores ao mesmo tempo deixam a barra
+# e o deck mostrando um disco enquanto sai o som do outro. É o defeito clássico
+# da tela cheia — a pessoa escolhe um disco atrás do outro na estante e cada
+# escolha larga mais um mpv tocando por cima.
+#
+# Pausar os OUTROS players (não-mpv) resolve a metade fácil. A metade que
+# faltava era o mpv anterior deste próprio lançador: `playerctl` pula todo mpv
+# de propósito (para não se pausar), e apagar o socket não mata processo
+# nenhum. Um pidfile fecha o buraco — matamos pelo PID exato que largamos da
+# última vez, sem `pkill -f` (que casaria com o shell desta ferramenta e
+# derrubaria a sessão).
 if command -v playerctl >/dev/null; then
     for _p in $(playerctl -l 2>/dev/null); do
         [[ $_p == mpv* ]] && continue
         playerctl -p "$_p" pause 2>/dev/null || true
     done
 fi
-rm -f "$SOCK"; mkdir -p "$(dirname "$SOCK")"
+mkdir -p "$(dirname "$SOCK")"
+PIDFILE="$HOME/.local/share/stylus/deck.mpv.pid"
+if [[ -f $PIDFILE ]]; then
+    _old=$(cat "$PIDFILE" 2>/dev/null || true)
+    # Confere que o PID é mesmo um mpv nosso antes de matar: um PID reciclado
+    # por outro programa entre uma sessão e outra não é para morrer.
+    if [[ $_old =~ ^[0-9]+$ ]] && [[ -r /proc/$_old/comm ]] &&        [[ $(cat "/proc/$_old/comm" 2>/dev/null) == mpv ]]; then
+        kill "$_old" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+fi
+rm -f "$SOCK"
 
 mpv_args=(--input-ipc-server="$SOCK" --no-video --term-status-msg= --really-quiet
           --audio-display=no --gapless-audio=yes
@@ -119,9 +138,14 @@ fi
 
 mpv "${mpv_args[@]}" &
 MPV=$!
+echo "$MPV" > "$PIDFILE"
 cleanup() {
     kill "$MPV" 2>/dev/null
     rm -f "$SOCK"
+    # Só apaga o pidfile se ainda for o nosso: um lançador seguinte já pode ter
+    # escrito o PID dele aqui, e apagar naquele caso deixaria o mpv novo órfão
+    # do controle de exclusividade.
+    [[ $(cat "$PIDFILE" 2>/dev/null) == "$MPV" ]] && rm -f "$PIDFILE"
     [[ -n ${NULL_MOD:-} ]] && pactl unload-module "$NULL_MOD" 2>/dev/null
 }
 trap cleanup EXIT

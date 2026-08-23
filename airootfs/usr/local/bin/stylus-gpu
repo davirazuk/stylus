@@ -1233,7 +1233,7 @@ case ${1:-} in
 
     --check)
         diagnose
-        printf '\n  %sIFOS — vídeo%s\n' "$c_b" "$c_reset"
+        printf '\n  %sSTYLUS — vídeo%s\n' "$c_b" "$c_reset"
         print_cards
         printf '  %sSituação%s\n\n' "$c_b" "$c_reset"
         print_findings
@@ -1241,7 +1241,7 @@ case ${1:-} in
             printf '  Está tudo certo.\n\n'
             exit 0
         fi
-        printf '  Para consertar:  %sifos-gpu --fix%s\n\n' "$c_b" "$c_reset"
+        printf '  Para consertar:  %sstylus-gpu --fix%s\n\n' "$c_b" "$c_reset"
         exit 1 ;;
 
     # --fix --yes is the same repair with nobody watching: every question
@@ -1251,7 +1251,7 @@ case ${1:-} in
     --fix)
         case ${2:-} in -y|--yes|--auto) AUTO=1 ;; esac
         diagnose
-        printf '\n  %sIFOS — vídeo%s\n' "$c_b" "$c_reset"
+        printf '\n  %sSTYLUS — vídeo%s\n' "$c_b" "$c_reset"
         print_cards
         printf '  %sSituação%s\n\n' "$c_b" "$c_reset"
         print_findings
@@ -1269,7 +1269,7 @@ case ${1:-} in
 esac
 
 # ── Report (no arguments) ────────────────────────────────────────────────────
-printf '\n  %sIFOS — vídeo%s\n' "$c_b" "$c_reset"
+printf '\n  %sSTYLUS — vídeo%s\n' "$c_b" "$c_reset"
 
 if [[ -z $(gpu_lines) ]]; then
     printf '\n  Nenhuma placa detectada (o lspci não encontrou nada).\n\n'
@@ -1284,7 +1284,7 @@ if healthy; then
 else
     printf '  %sSituação%s\n\n' "$c_b" "$c_reset"
     print_findings
-    printf '  Para consertar:  %sifos-gpu --fix%s\n\n' "$c_b" "$c_reset"
+    printf '  Para consertar:  %sstylus-gpu --fix%s\n\n' "$c_b" "$c_reset"
 fi
 
 if has_dgpu; then

@@ -19,9 +19,23 @@ import threading
 import time
 
 import numpy as np
-import pyaudio
 import pygame
 from OpenGL.GL import *
+
+# PortAudio, guarded like vinyl below and deferred on purpose. The deck cannot
+# draw the live groove without it — the whole point is the signal as it plays —
+# but two things must still hold when it is absent: a full-screen launch must
+# not die on a raw `ModuleNotFoundError` that nobody sees (the UI spawns the
+# deck with stderr to /dev/null, so the screen would just sit unchanged), and
+# the offline geometry tools, which import this module but never open audio,
+# must keep working. So the import only records its absence here; the friendly
+# message and the exit happen inside AudioCapture, the one place that needs it.
+# The package that provides it is python-pyaudio, now in packages.install, so
+# this should never fire on a real STYLUS.
+try:
+    import pyaudio
+except Exception:  # pragma: no cover - depends on the install
+    pyaudio = None
 
 # Ritual mode lives in its own module: it is a lot of non-GL machinery (what
 # is playing, the album behind it, the ceremony, the record's geometry) and
@@ -348,6 +362,14 @@ class AudioCapture:
     """
 
     def __init__(self, source_name):
+        if pyaudio is None:
+            import sys
+            sys.stderr.write(
+                "stylus: o deck precisa do PortAudio para ler o som que está "
+                "tocando, e ele não está instalado (falta python-pyaudio).\n"
+                "         Rode `stylus update` para trazer a versão que o "
+                "inclui.\n")
+            raise SystemExit(3)
         self.buf = np.zeros((TRACE_N, 2), dtype=np.float32)
         # Longer, lightly-filtered buffer feeding the default (non-beam)
         # lissajous_xy view (see XY_BUF_N) — long enough to hold a full

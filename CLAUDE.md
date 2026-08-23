@@ -36,7 +36,7 @@ pendrive, isso é o trabalho — mas confirme o dispositivo antes de gravar.
 ## 2. Como se testa aqui
 
 ```
-tools/check.sh          # 123 verificações. Rode ANTES de empurrar.
+tools/check.sh          # as verificações. Rode ANTES de empurrar.
 tools/check.sh --fast   # pula a conferência de pacotes (que usa rede)
 ```
 
@@ -58,12 +58,15 @@ airootfs/usr/share/stylus/deck/tools/test_ritual.py
 
 ```
 profiledef.sh              identidade da ISO, modos de arquivo
-packages.x86_64            239 pacotes, agrupados e justificados
+packages.x86_64            os pacotes da ISO, agrupados e justificados
+pacman.conf                pacman DA CONSTRUÇÃO (cache do hospedeiro)
 build.sh                   mkarchiso nativo, com podman de reserva
 tools/check.sh             as verificações
 tools/flash.sh             grava no pendrive, com trava contra disco interno
 
 airootfs/
+  etc/pacman.conf          pacman do MEDIUM AO VIVO — multilib LIGADO (senão o
+                              pacstrap do instalador morre em lib32-*)
   etc/pipewire/            ← a tese do sistema: não reamostrar
   etc/wireplumber/            (o ALSA precisa dos DOIS para trocar de taxa)
   etc/skel/                a área de trabalho (i3, polybar, rofi, fish)
@@ -72,8 +75,17 @@ airootfs/
     deck/                  o disco na tela (scope.py + vinyl.py)
     ui/                    a tela cheia (theme, model, app)
     tools/                 as ferramentas de coleção, em python
+    packages.install       o que uma máquina INSTALADA recebe (o instalador lê)
+    packages.live-only     o que fica só na ISO, com o motivo escrito
+    branding-sync.sh       copia o STYLUS para o sistema recém-instalado
     sync.sh                copia o airootfs por cima do sistema vivo
 ```
+
+As três listas de pacote andam juntas por regra, não por disciplina: todo
+pacote de `packages.x86_64` tem que estar em `packages.install` OU em
+`packages.live-only` com o motivo. O `check.sh` recusa se alguma sobrar de
+fora — foi assim que o instalador chegou a instalar outra distribuição
+(LibreOffice, sem nada de música) por baixo da ISO do STYLUS.
 
 ---
 
@@ -93,6 +105,20 @@ airootfs/
   segunda faz o grafo "permitir" 44,1k e nunca usar.
 - **PyOpenGL não existe nos repositórios do Arch.** O deck usa um venv
   construído dentro do chroot pelo `customize_airootfs.sh`.
+- **O deck TAMBÉM precisa de `python-pyaudio`** (PortAudio), e esse existe no
+  repositório — o `scope.py` faz `import pyaudio` no topo e abre o monitor de
+  áudio. Sem ele o deck não abre, e como a interface o lança com o stderr no
+  `/dev/null`, o sintoma é a tela não mudar e nada explicar. Está nas duas
+  listas de pacote; o import agora é guardado e dá recado em vez de traceback.
+- **O `/etc/pacman.conf` do medium ao vivo NÃO vem do perfil** — vem do pacote
+  pacman, com o multilib comentado. O instalador põe `lib32-gamemode` em toda
+  máquina, então o `pacstrap` morria em "target not found", depois de formatar
+  o disco. Por isso existe `airootfs/etc/pacman.conf` com multilib ligado, e o
+  instalador confere os nomes ANTES de tocar no disco.
+- **`stylus-mode` derruba a sessão para trocar de modo** e conta com o SDDM
+  reentrar sozinho. No medium ao vivo isso exige `Relogin=true` no
+  `sddm.conf.d/stylus.conf`; sem isso a troca cai no login pedindo senha, em
+  vez de "meio segundo de preto e você está do outro lado".
 - **Nunca copie `/etc/skel` por cima de `~/.config`.** Apaga tudo que a
   pessoa personalizou, em silêncio. `sync.sh` segue a regra do pacman:
   diferente é mantido, o novo vira `.novo`.

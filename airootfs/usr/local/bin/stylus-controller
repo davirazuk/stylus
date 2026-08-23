@@ -86,7 +86,7 @@ hidraw_ok() {
 }
 
 report() {
-    printf '\n  %sIFOS — controles%s\n\n' "$c_b" "$c_reset"
+    printf '\n  %sSTYLUS — controles%s\n\n' "$c_b" "$c_reset"
 
     local any=0 js name ids family
     while IFS=$'\t' read -r js name ids; do
@@ -108,7 +108,7 @@ report() {
     if (( ! any )); then
         printf '    Nenhum controle conectado.\n\n'
         printf '    Ligue por cabo USB, ou pareie por Bluetooth:\n'
-        printf '      %sifos-controller --pair%s\n\n' "$c_b" "$c_reset"
+        printf '      %sstylus-controller --pair%s\n\n' "$c_b" "$c_reset"
         return
     fi
 
@@ -121,11 +121,11 @@ report() {
            printf '      completo a ele: a vibração e o giroscópio não vão funcionar, e os\n'
            printf '      jogos podem mostrar os botões com os nomes errados.\n\n'
            printf '      Costuma ser um sistema que ainda não recebeu as regras novas.\n'
-           printf '      Rode %sifos-update%s e reinicie.\n\n' "$c_b" "$c_reset" ;;
+           printf '      Rode %sstylus-update%s e reinicie.\n\n' "$c_b" "$c_reset" ;;
         *) : ;;
     esac
 
-    printf '    Para testar os botões:  %sifos-controller --test%s\n\n' "$c_b" "$c_reset"
+    printf '    Para testar os botões:  %sstylus-controller --test%s\n\n' "$c_b" "$c_reset"
 }
 
 pair_help() {
