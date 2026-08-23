@@ -150,6 +150,38 @@ todo; nada disso merece root.
 
 ---
 
+## O caminho do sinal
+
+`stylus audio` mede, em vez de prometer. Ele responde três perguntas, nessa
+ordem, porque é essa a ordem em que elas importam: em que taxa o grafo está
+rodando agora, o arquivo que está tocando tem essa taxa, e — se não tem —
+**quem** está segurando o grafo na outra. A terceira é a única acionável: um
+grafo compartilhado toca numa taxa por vez, e enquanto aquela aba do navegador
+estiver aberta em 48 kHz não há configuração no mundo que salve o seu FLAC de
+44,1.
+
+Faltava a outra metade. Tudo isso mede do PipeWire **para a frente**, e o
+lugar mais fácil de estragar o som fica antes dele: o `~/.config/mpv/mpv.conf`.
+Uma linha `replaygain=track` herdada de outra máquina normaliza o volume faixa
+a faixa — que é precisamente o que uma playlist faz e um disco não — e o
+relatório continuaria dizendo "sem conversão". Audível e invisível ao mesmo
+tempo.
+
+Então: o `stylus deck` passa `--replaygain=no --af= --volume=100
+--audio-samplerate=0` na linha de comando, que **ganha** do arquivo de
+configuração, e o `stylus audio` agora pergunta ao mpv que está tocando o que
+ele está fazendo de verdade — e aponta as linhas do seu `mpv.conf` que mexem
+no caminho, explicando que ali não afetam mas afetam quando você abre o
+arquivo com `mpv` na mão.
+
+Um detalhe de quem tem a coleção montada pela rede (o `stylus webdav` põe o
+celular na estante): um FLAC de 24/96 lido por FUSE sem leitura adiantada
+engasga no meio da faixa, e o sintoma parece defeito de áudio. Quando o disco
+está num sistema de arquivos de rede, o tocador ganha vinte segundos de
+adiantamento. Local não precisa e não ganha nada.
+
+---
+
 ## Encher a estante
 
 ```

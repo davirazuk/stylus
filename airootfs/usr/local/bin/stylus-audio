@@ -37,6 +37,29 @@ OK = "\033[38;5;114m"; WARN = "\033[38;5;215m"; BAD = "\033[38;5;210m"; O = "\03
 
 AUDIO_EXT = (".flac", ".wav", ".mp3", ".ogg", ".opus", ".m4a", ".aac", ".wma", ".ape")
 
+# O deck fala com o mpv por socket; é de lá que sai o que o TOCADOR está
+# fazendo. Guardado porque este comando também tem que responder numa máquina
+# onde o deck nunca foi aberto.
+sys.path.insert(0, "/usr/share/stylus/deck")
+try:
+    import vinyl
+except Exception:                                         # noqa: BLE001
+    vinyl = None
+
+MPV_CONF = os.path.expanduser("~/.config/mpv/mpv.conf")
+# O que, posto no mpv.conf, desfaz a tese do sistema antes de o som chegar ao
+# PipeWire. A linha de comando do stylus-deck ganha destas — então elas só
+# mordem quem toca com `mpv` na mão. Vale avisar assim mesmo: é a explicação
+# de "no stylus soa diferente do que quando eu abro o arquivo direto".
+CONF_PERIGO = {
+    "replaygain": "normaliza o volume faixa a faixa — é o que uma playlist faz",
+    "af": "põe filtro no caminho do sinal",
+    "audio-samplerate": "reamostra no tocador",
+    "audio-format": "reconverte a profundidade de bits",
+    "volume": "ganho digital antes da saída",
+    "audio-channels": "remixa os canais",
+}
+
 
 def run(cmd, timeout=6):
     try:
@@ -234,8 +257,91 @@ def report(once=True):
     else:
         print(f"  {D}nada tocando de um arquivo local agora.{O}")
         print(f"  {D}ponha um disco — `stylus record --play` — e rode de novo.{O}")
+    player()
     print()
     return 0
+
+
+def mpv_props():
+    """O que o mpv que está tocando responde sobre si mesmo.
+
+    Perguntado a ELE, não deduzido da configuração: é a diferença entre
+    "deveria estar" e "está", que é a única diferença que este comando
+    existe para mostrar.
+    """
+    if vinyl is None:
+        return None
+    ipc = vinyl._MpvIPC()
+    if not ipc.connect():
+        return None
+    try:
+        return {k: ipc.get(k) for k in
+                ("replaygain", "af", "volume", "audio-samplerate",
+                 "gapless-audio", "current-ao", "cache")}
+    finally:
+        ipc.close()
+
+
+def conf_suspeito():
+    """Linhas do mpv.conf do usuário que mexem no caminho do sinal."""
+    achados = []
+    try:
+        with open(MPV_CONF, encoding="utf-8", errors="replace") as fh:
+            for n, linha in enumerate(fh, 1):
+                nu = linha.strip()
+                if not nu or nu.startswith("#") or nu.startswith("["):
+                    continue
+                chave = nu.split("=")[0].strip().lstrip("-")
+                if chave in CONF_PERIGO:
+                    achados.append((n, nu, CONF_PERIGO[chave]))
+    except OSError:
+        pass
+    return achados
+
+
+def player():
+    props = mpv_props()
+    suspeitos = conf_suspeito()
+    if props is None and not suspeitos:
+        return
+    print()
+    print(f"  {B}o tocador{O}")
+    if props is None:
+        bar("mpv", "não está tocando agora", D)
+    else:
+        rg = props.get("replaygain")
+        af = props.get("af") or []
+        vol = props.get("volume")
+        sr = props.get("audio-samplerate")
+        gap = props.get("gapless-audio")
+
+        # rg vem como "no" quando está desligado; qualquer outra coisa é ligado.
+        rg_ok = rg in (None, "no", False)
+        bar("nivelamento", "nenhum" if rg_ok else f"LIGADO ({rg})",
+            OK if rg_ok else BAD)
+        bar("filtros", "nenhum" if not af else
+            ", ".join(str(f.get("name", f)) for f in af) if isinstance(af, list)
+            else str(af), OK if not af else BAD)
+        vol_ok = vol is None or abs(float(vol) - 100.0) < 0.5
+        bar("volume do tocador",
+            "100 (sem ganho)" if vol_ok else f"{vol:g} — atenuação digital",
+            OK if vol_ok else WARN)
+        sr_ok = not sr
+        bar("reamostragem no mpv", "nenhuma" if sr_ok else f"forçada a {sr}",
+            OK if sr_ok else BAD)
+        bar("emenda entre faixas", "sim" if gap in (True, "yes") else str(gap),
+            OK if gap in (True, "yes") else WARN)
+
+    if suspeitos:
+        print()
+        print(f"  {WARN}▸ o seu ~/.config/mpv/mpv.conf mexe no caminho do "
+              f"sinal:{O}")
+        for n, linha, porque in suspeitos:
+            print(f"  {D}    linha {n}: {linha}{O}")
+            print(f"  {D}      {porque}{O}")
+        print(f"  {D}    o `stylus deck` passa essas opções na linha de "
+              f"comando, que ganha do arquivo — então ali não afeta.{O}")
+        print(f"  {D}    afeta quando você abre o arquivo com `mpv` na mão.{O}")
 
 
 def devices():

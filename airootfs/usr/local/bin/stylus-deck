@@ -106,7 +106,22 @@ mpv_args=(--input-ipc-server="$SOCK" --no-video --term-status-msg= --really-quie
           # O mpv reamostra por conta própria se deixarem. Aqui não: o
           # servidor de áudio já está configurado para seguir a taxa do
           # arquivo, e um resampler no tocador desfaz isso em silêncio.
-          --audio-samplerate=0 --audio-format=)
+          --audio-samplerate=0 --audio-format=
+          # ── e o que um ~/.config/mpv/mpv.conf pode desfazer ─────────────
+          # O mpv LÊ o config do usuário, e a linha de comando ganha dele. Um
+          # `replaygain=track` ou um `af=loudnorm` herdado de outra máquina
+          # desfaz a tese inteira do sistema ANTES de o som chegar ao
+          # PipeWire — e o `stylus audio`, que mede do PipeWire para a frente,
+          # continuaria dizendo "sem conversão". Por isso vão explícitos:
+          #
+          #   replaygain=no  um disco tem UM nível, do jeito que foi
+          #                  masterizado. Normalizar faixa a faixa é
+          #                  exatamente o que uma playlist faz e um disco não.
+          #   af=            nenhum filtro no caminho.
+          #   volume=100     qualquer outro valor é ganho digital. O volume
+          #                  desta máquina é o do PipeWire (as teclas chamam
+          #                  o pamixer), não o do tocador.
+          --replaygain=no --af= --volume=100)
 (( SILENT )) && mpv_args+=(--ao=null)
 if (( QUIET )); then
     if ! pactl list sinks short 2>/dev/null | grep -q "\b$NULL_SINK\b"; then
@@ -135,6 +150,17 @@ sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])))' "$TARGET" 2>/dev/nu
 else
     mpv_args+=("$TARGET")
 fi
+
+# Coleção montada pela rede (o `stylus webdav` põe o celular na estante): sem
+# leitura adiantada, um FLAC de 24/96 lido por FUSE engasga no meio da faixa —
+# e o sintoma parece defeito de áudio, não de rede. Local não precisa e não
+# ganha nada, então só quando é o caso.
+_fs=$(findmnt -no FSTYPE -T "$TARGET" 2>/dev/null || echo "")
+case "$_fs" in
+    fuse*|nfs*|cifs|smb*|sshfs|davfs*)
+        mpv_args+=(--cache=yes --demuxer-max-bytes=64MiB
+                   --demuxer-readahead-secs=20) ;;
+esac
 
 mpv "${mpv_args[@]}" &
 MPV=$!

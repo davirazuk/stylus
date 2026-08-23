@@ -417,6 +417,25 @@ done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
 if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
 else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
+sec "o tocador não pode desfazer a tese"
+# O mpv LÊ o ~/.config/mpv/mpv.conf, e uma linha herdada de outra máquina —
+# `replaygain=track`, `af=loudnorm`, `audio-samplerate=48000` — desfaz o
+# caminho bit-perfect ANTES de o som chegar ao PipeWire. O `stylus audio`
+# mede do PipeWire para a frente e continuaria dizendo "sem conversão": o
+# defeito seria audível e invisível ao mesmo tempo.
+#
+# A linha de comando ganha do arquivo de configuração, então a defesa é
+# passar cada uma explicitamente. Esta conferência existe para que ninguém
+# as remova por parecerem redundantes — elas são redundantes até o dia em que
+# alguém copia um mpv.conf.
+falta=()
+for opt in --replaygain=no --af= --volume=100 --audio-samplerate=0 \
+           --gapless-audio=yes --audio-display=no; do
+    grep -qF -- "$opt" airootfs/usr/local/bin/stylus-deck || falta+=("$opt")
+done
+if (( ${#falta[@]} == 0 )); then ok "o stylus-deck manda as seis opções que blindam o caminho do sinal"
+else bad "o stylus-deck deixou de blindar:"; printf '      %s\n' "${falta[@]}"; fi
+
 sec "as ferramentas que uma ferramenta chama"
 # Não é só o dispatcher que chama .py de tools/: o stylus-qobuz chama
 # `$TOOLS/run_queue_api.py`, e esse por sua vez chama `integrate_album.py` e
