@@ -45,6 +45,8 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus deck [DISCO]` | põe um disco e abre o deck: a cerimônia inteira |
 | `stylus record` | sorteia um da estante, puxando para os esquecidos |
 | `stylus shelf` | a estante em grade de capas |
+| `stylus lado` | em que lado do disco você está, e quanto falta |
+| `stylus parede` | o papel de parede vira o disco que está tocando |
 | `stylus ui` | a tela cheia (é o que o modo música abre) |
 
 ### A coleção
@@ -52,12 +54,14 @@ Não tem suíte de escritório. Nunca vai ter.
 |---|---|
 | `stylus library [PASTA]` | onde ela fica (descoberto sozinho na primeira vez) |
 | `stylus diary` | o que você pôs, quando, quantas vezes |
+| `stylus stats` | o formato da sua escuta: quem volta, em que dia, a que horas |
 | `stylus check` | o que está quebrado lá dentro |
 | `stylus gaps ARTISTA` | que discos desse artista faltam |
 | `stylus lyrics` | procura e grava `.lrc` sincronizado |
 | `stylus covers` | `cover.jpg` onde falta |
 | `stylus rip` | rasga o CD da gaveta, conferido no AccurateRip |
 | `stylus get URL` | baixa e arquiva na estrutura certa |
+| `stylus qobuz` | a interface do qobuz-dl, e a fila que arquiva disco por disco |
 
 ### As máquinas
 | | |
@@ -68,8 +72,51 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus app NOME` | Clone Hero, qobuz-dl, Proton-GE, o que não vem em pacote |
 | `stylus update` | traz o STYLUS novo do GitHub |
 | `stylus mode` | troca entre música e área de trabalho |
+| `stylus claude` | o Claude Code, com a fonte do sistema aberta do lado |
 | `stylus atalhos` | a lista de atalhos de teclado |
 | `stylus instalar` | instala no computador (a partir do pendrive) |
+
+---
+
+## Virar o lado, e a parede
+
+O README abre dizendo que a coisa toda é escolher um objeto, ele mandar por
+quarenta minutos e você ter que levantar e virar. A máquina sabia disso — a
+barra mostrava "vira em 12 min" — mas ninguém nunca era **avisado** na hora: o
+lado acabava, o próximo arquivo entrava, e a diferença entre ouvir um disco e
+ouvir uma playlist simplesmente não acontecia. Um contador que só conta não é
+um acontecimento.
+
+`stylus lado` diz onde você está agora; o serviço que roda na sessão avisa
+quando o lado **vira**, e só para frente — arrastar a barra para trás é
+procurar uma faixa, não virar o disco. Quem quiser a coisa inteira liga
+`STYLUS_SIDE_PAUSE=1` e o som para no fim do lado, como pararia.
+
+E a agulha fica onde você a deixou. Levantar a agulha e voltar depois não
+recomeça o disco da faixa 1 — isso é coisa de tocador de arquivo. O mesmo
+serviço anota a posição enquanto toca, e `stylus deck` volta para lá:
+
+```
+stylus deck loveless              de onde você parou
+stylus deck --recomeçar loveless  do começo
+```
+
+Não dá para deixar isso a cargo do `--resume-playback` do mpv: ele guarda a
+posição pelo hash do **caminho do arquivo** que estava tocando, então relançar
+o disco inteiro faz ele procurar a posição salva da faixa 1 — que quase nunca
+é onde você parou. Quem sabe qual faixa é o índice da lista, e esse é nosso.
+
+```
+stylus parede            o disco de agora vira o papel de parede
+stylus parede --sozinho  e continua virando, a cada disco novo
+stylus parede --restaurar
+```
+
+O desenho não é a capa: vem da **intensidade medida** do álbum, faixa por
+faixa. Dois discos diferentes dão duas paredes diferentes, e a sua não existe
+na máquina de mais ninguém. Medir custa — o primeiro disco leva de segundos a
+minutos — então o resultado fica em cache e o segundo login é instantâneo.
+Desligado até você pedir: papel de parede é seu.
 
 ---
 
@@ -114,6 +161,106 @@ Por baixo é o `rclone`, que já estava aqui — monta em espaço de usuário, s
 root, sem linha no `/etc/fstab`, e guarda a senha ofuscada em vez de em texto
 puro num arquivo de sistema. Um servidor num celular muda de IP e cai o tempo
 todo; nada disso merece root.
+
+---
+
+## O caminho do sinal
+
+`stylus audio` mede, em vez de prometer. Ele responde três perguntas, nessa
+ordem, porque é essa a ordem em que elas importam: em que taxa o grafo está
+rodando agora, o arquivo que está tocando tem essa taxa, e — se não tem —
+**quem** está segurando o grafo na outra. A terceira é a única acionável: um
+grafo compartilhado toca numa taxa por vez, e enquanto aquela aba do navegador
+estiver aberta em 48 kHz não há configuração no mundo que salve o seu FLAC de
+44,1.
+
+Faltava a outra metade. Tudo isso mede do PipeWire **para a frente**, e o
+lugar mais fácil de estragar o som fica antes dele: o `~/.config/mpv/mpv.conf`.
+Uma linha `replaygain=track` herdada de outra máquina normaliza o volume faixa
+a faixa — que é precisamente o que uma playlist faz e um disco não — e o
+relatório continuaria dizendo "sem conversão". Audível e invisível ao mesmo
+tempo.
+
+Então: o `stylus deck` passa `--replaygain=no --af= --volume=100
+--audio-samplerate=0` na linha de comando, que **ganha** do arquivo de
+configuração, e o `stylus audio` agora pergunta ao mpv que está tocando o que
+ele está fazendo de verdade — e aponta as linhas do seu `mpv.conf` que mexem
+no caminho, explicando que ali não afetam mas afetam quando você abre o
+arquivo com `mpv` na mão.
+
+Um detalhe de quem tem a coleção montada pela rede (o `stylus webdav` põe o
+celular na estante): um FLAC de 24/96 lido por FUSE sem leitura adiantada
+engasga no meio da faixa, e o sintoma parece defeito de áudio. Quando o disco
+está num sistema de arquivos de rede, o tocador ganha vinte segundos de
+adiantamento. Local não precisa e não ganha nada.
+
+---
+
+## Encher a estante
+
+```
+stylus qobuz              está instalada? no ar? em que porta?
+stylus qobuz instalar     instala a interface do qobuz-dl
+stylus qobuz abrir        põe no ar e abre no navegador
+stylus qobuz fila ARQ     baixa a fila inteira e arquiva disco por disco
+```
+
+O arquivo da fila é uma linha por disco:
+
+```
+https://open.qobuz.com/album/xxxxx|Talk Talk|Laughing Stock
+```
+
+Cada disco é terminado **por inteiro** — baixa, junta os discos duplos numa
+pasta só renumerando na sequência, move para `Artista/Álbum`, arruma as tags,
+embute a capa, busca a letra, atualiza a playlist mestre — antes de o próximo
+começar. Uma queda de energia no meio nunca deixa meio álbum enfiado na
+estante, e o que já estava lá é pulado em vez de baixado de novo.
+
+O que a fila pede ao backend vai **explícito**, opção por opção. Parece
+excesso de zelo e não é: um pedido pelado faz o backend tratar cada chave
+ausente como um `False` de verdade, e um `False` de verdade ganha do
+`config.ini` — a fila inteira baixaria sem capa embutida e sem `cover.jpg` em
+tamanho cheio, ao contrário do que a configuração manda, em silêncio.
+
+---
+
+## Consertar
+
+```
+stylus claude
+```
+
+Este sistema é mantido por uma pessoa e um Claude, e até agora o Claude
+trabalhava de longe: um contêiner sem placa de som, sem disco e sem tela, onde
+dava para ler o código e não dava para ver nada acontecer. Foi assim que o
+instalador chegou a formatar o disco para só então descobrir que faltava uma
+linha no `pacman.conf`.
+
+`stylus claude` acaba com isso. Ele instala o Claude Code, deixa a **fonte**
+do sistema em `~/stylus` — um clone de git seu, para editar — e escreve as
+instruções desta máquina em `~/.claude/CLAUDE.md`: onde acaba a fonte e começa
+o sistema, o que é seguro olhar, e o que não se faz.
+
+O ciclo é curto:
+
+```
+# edite em ~/stylus, e então
+~/stylus/tools/check.sh
+sudo STYLUS_SOURCE=~/stylus/airootfs /usr/share/stylus/sync.sh
+```
+
+Isso aplica **este clone** na máquina, sem passar pelo GitHub. Deu certo,
+commit e push; da próxima vez o `stylus update` traz para todo mundo.
+
+A regra que vale aqui, e está escrita nas instruções para não ser esquecida:
+**conserta-se a fonte, não a máquina.** Editar `/usr/local/bin` à mão funciona
+até o próximo `stylus update`, que copia a fonte por cima e apaga o conserto
+sem dizer nada — duas semanas depois o defeito volta e ninguém liga uma coisa
+à outra.
+
+Também vem com `/aplicar` (aplica e diz o que reiniciar) e `/diagnostico`
+(junta o estado real da máquina antes de qualquer palpite).
 
 ---
 

@@ -69,6 +69,39 @@ def font(size, bold=False):
     return f
 
 
+_tem = {}
+
+
+def has_glyph(ch, size=22):
+    """A fonte escolhida tem ESTE caractere?
+
+    Os ícones do trilho são pontos da área de uso privado do Nerd Font. Numa
+    máquina onde a fonte não entrou — ou entrou numa versão que moveu a faixa,
+    como o Nerd Fonts fez com os Material Design entre a v2 e a v3 — o pygame
+    não avisa nada: ele desenha o retângulo vazio da fonte, e a tela fica com
+    uma coluna de caixinhas onde deveria haver ícones.
+
+    `metrics()` devolve None na posição de um caractere sem glifo, e é a única
+    forma honesta de perguntar isso antes de desenhar.
+    """
+    if ch in _tem:
+        return _tem[ch]
+    try:
+        m = font(size).metrics(ch)
+        ok = bool(m) and m[0] is not None
+    except Exception:                     # noqa: BLE001 — fonte estranha não derruba a tela
+        ok = False
+    _tem[ch] = ok
+    return ok
+
+
+def icon(ch, alt=""):
+    """O ícone quando a fonte o tem; senão o que se pôs no lugar (em geral
+    nada). Uma coluna vazia lê como escolha; uma coluna de caixinhas lê como
+    sistema quebrado."""
+    return ch if has_glyph(ch) else alt
+
+
 # ── desenho ────────────────────────────────────────────────────────────────
 def text(surf, s, pos, size=20, colour=TEXT, bold=False, anchor="topleft",
          maxw=None):

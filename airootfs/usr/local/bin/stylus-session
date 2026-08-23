@@ -25,6 +25,36 @@ mode=$(cat "$MODE_FILE" 2>/dev/null || echo music)
 [[ ${1:-} ]] && mode=$1
 
 export STYLUS_MODE="$mode"
+
+# ── UTF-8, sempre ──────────────────────────────────────────────────────────
+#  Sem um locale UTF-8, o bash conta BYTES em ${#texto} e ${texto:0:N} em vez
+#  de caracteres — e a barra corta o nome do disco no meio de um "ç", pondo
+#  meio caractere na tela. É o defeito que aparece como "acento errado" e não
+#  como "faltou fonte", porque não faltou: faltou locale.
+#
+#  O mesmo vale para o python: com LANG=C ele abre arquivo em ASCII e uma
+#  pasta chamada "Músicas" vira UnicodeDecodeError.
+#
+#  A sessão gráfica costuma herdar isso do /etc/locale.conf pelo pam_systemd,
+#  mas "costuma" não é o suficiente para uma coisa que quebra o sistema
+#  inteiro em silêncio — e no medium ao vivo não há pam nenhum no caminho.
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *UTF-8|*utf-8|*UTF8|*utf8) : ;;
+    *)
+        # `unset LC_ALL` primeiro, e não é detalhe: LC_ALL ganha de LC_CTYPE e
+        # de LANG. Exportar LC_CTYPE com um LC_ALL=C herdado no ambiente não
+        # muda absolutamente nada, e a defesa passaria despercebida.
+        unset LC_ALL
+        # pt_BR se o locale-gen já o criou; C.UTF-8 sempre existe na glibc
+        # moderna e não precisa ser gerado.
+        if locale -a 2>/dev/null | grep -qix 'pt_BR.utf8'; then
+            export LANG=pt_BR.UTF-8
+        else
+            export LANG=C.UTF-8
+        fi
+        export LC_CTYPE="$LANG"
+        ;;
+esac
 # xdg-user-dirs cria ~/Música etc. na primeira vez; sem isto a primeira
 # execução acha que a coleção não existe.
 command -v xdg-user-dirs-update >/dev/null && xdg-user-dirs-update

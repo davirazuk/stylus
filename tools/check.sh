@@ -201,7 +201,9 @@ sec "coerência interna"
 faltando=()
 while read -r sub; do
     [[ -x airootfs/usr/local/bin/$sub ]] || faltando+=("$sub")
-done < <(grep -oE 'exec (stylus-[a-z]+)' airootfs/usr/local/bin/stylus | awk '{print $2}' | sort -u)
+# O hífen tem que estar na classe: com [a-z]+ o `stylus-side-watch` era cortado
+# no primeiro hífen e a conferência acusava um `stylus-side` que ninguém escreveu.
+done < <(grep -oE 'exec (stylus-[a-z-]+)' airootfs/usr/local/bin/stylus | awk '{print $2}' | sort -u)
 if (( ${#faltando[@]} == 0 )); then ok "todo stylus-* que o dispatcher chama existe"
 else bad "o dispatcher chama o que não existe: ${faltando[*]}"; fi
 
@@ -244,10 +246,13 @@ done < <(find . -path ./work -prune -o -path ./out -prune -o \
 (( outra )) || ok "toda a arte é do STYLUS"
 
 sec "modos de arquivo"
+# Fora o __pycache__: o `python -m py_compile` deixa .pyc ao lado do arquivo, e
+# um .pyc não é para ser executável. Reprovar por causa dele é reprovar por
+# causa de lixo de ferramenta, e é assim que se ensina a ignorar a conferência.
 n=0
 while IFS= read -r -d '' f; do
     [[ -x $f ]] || { bad "não executável: ${f#./}"; n=$((n+1)); }
-done < <(find airootfs/usr/local/bin -type f -print0)
+done < <(find airootfs/usr/local/bin -type f -not -path '*/__pycache__/*' -print0)
 (( n == 0 )) && ok "todo binário em /usr/local/bin é executável"
 
 sec "as duas listas de pacote"
@@ -390,17 +395,183 @@ done < <(sed 's/#.*//' airootfs/etc/skel/.config/i3/config |
 if (( ${#faltando[@]} == 0 )); then ok "todo arquivo que a área de trabalho abre existe"
 else bad "apontam para o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
-sec "o que o instalador chama e precisa existir"
+sec "o que os comandos chamam em /usr/share/stylus"
 # O stylus-install chamava /usr/share/stylus/branding-sync.sh, que NÃO EXISTIA
 # — e chamava com `|| warn`. A instalação terminava dizendo "concluída" e
-# entregava um Arch com i3 sem um comando `stylus` na máquina.
+# entregava um Arch com i3 sem um comando `stylus` na máquina. Agora vale para
+# TODO comando, não só para o instalador: era o instalador porque foi lá que
+# doeu, e não há motivo para o próximo não doer noutro lugar.
+#
+# Dois caminhos não existem no repositório de propósito:
+#   deck/venv/…   o venv é construído dentro do chroot (o PyOpenGL não está
+#                 nos repositórios do Arch), então aqui ele não pode existir.
+#   lock/stylus-  é prefixo de nome montado em tempo de execução, não arquivo.
 faltando=()
 while read -r caminho; do
+    case $caminho in
+        /usr/share/stylus/deck/venv/*|/usr/share/stylus/lock/stylus-) continue ;;
+    esac
     [[ -e airootfs$caminho ]] || faltando+=("$caminho")
 done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
-              airootfs/usr/local/bin/stylus-install | sort -u)
-if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que o instalador chama existe"
-else bad "o instalador chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+              airootfs/usr/local/bin/* | sort -u)
+if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
+else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "a agulha: quem escreve e quem lê combinam"
+# Dois arquivos diferentes, um formato só: o stylus-side-watch grava onde a
+# agulha parou e o stylus-deck lê para pôr o disco de volta ali. Se um mudar o
+# nome do arquivo ou o número de campos, nada dá erro — o deck simplesmente
+# recomeça do zero em silêncio, para sempre, e ninguém liga uma coisa à outra.
+escritor=airootfs/usr/local/bin/stylus-side-watch
+leitor=airootfs/usr/local/bin/stylus-deck
+probs=()
+grep -q 'agulha\.tsv' "$escritor" || probs+=("o side-watch não fala em agulha.tsv")
+grep -q 'agulha\.tsv' "$leitor"   || probs+=("o deck não fala em agulha.tsv")
+# 3 tabulações no write = 4 campos; o leitor desempacota 4 nomes.
+n_tab=$(grep -o '\\t' "$escritor" | wc -l)
+n_le=$(grep -oE 'read\(\)\.strip\(\)\.split' "$leitor" | wc -l)
+(( n_tab == 3 )) || probs+=("o side-watch grava $n_tab tabulações; o formato tem 3")
+(( n_le == 1 ))  || probs+=("o deck lê a agulha em $n_le lugares; devia ser 1")
+if (( ${#probs[@]} == 0 )); then ok "o formato da agulha bate dos dois lados"
+else bad "a agulha ficou desencontrada:"; printf '      %s\n' "${probs[@]}"; fi
+
+sec "o que a tela cheia promete"
+# A tela cheia lança comandos por lista de argumentos (as ACOES de cada
+# seção). Um nome errado ali não dá erro visível: o painel de saída mostra o
+# traceback do Popen e a pessoa conclui que a ferramenta está quebrada, não
+# que o nome está. Foi assim que a área de trabalho abria três comandos que
+# nunca existiram; a tela cheia merece a mesma conferência.
+faltando=()
+while read -r cmd; do
+    [[ -n $cmd ]] || continue
+    [[ -x airootfs/usr/local/bin/$cmd ]] && continue
+    command -v "$cmd" >/dev/null && continue
+    faltando+=("$cmd")
+done < <(python3 - <<'PYEOF'
+import ast, sys
+arq = "airootfs/usr/share/stylus/ui/app.py"
+arvore = ast.parse(open(arq, encoding="utf-8").read(), arq)
+vistos = set()
+for no in ast.walk(arvore):
+    # ["stylus-term", "Título", "stylus-qobuz", "abrir"] e ["stylus", "check"]:
+    # o programa é o primeiro item, e o stylus-term recebe o dele no terceiro.
+    if not isinstance(no, ast.List) or not no.elts:
+        continue
+    itens = [e.value for e in no.elts
+             if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    if len(itens) != len(no.elts) or not itens:
+        continue
+    if not itens[0].startswith("stylus"):
+        continue
+    vistos.add(itens[0])
+    if itens[0] == "stylus-term" and len(itens) > 2:
+        vistos.add(itens[2])
+for v in sorted(vistos):
+    print(v)
+PYEOF
+)
+if (( ${#faltando[@]} == 0 )); then ok "todo comando que a tela cheia lança existe"
+else bad "a tela cheia lança o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "o tocador não pode desfazer a tese"
+# O mpv LÊ o ~/.config/mpv/mpv.conf, e uma linha herdada de outra máquina —
+# `replaygain=track`, `af=loudnorm`, `audio-samplerate=48000` — desfaz o
+# caminho bit-perfect ANTES de o som chegar ao PipeWire. O `stylus audio`
+# mede do PipeWire para a frente e continuaria dizendo "sem conversão": o
+# defeito seria audível e invisível ao mesmo tempo.
+#
+# A linha de comando ganha do arquivo de configuração, então a defesa é
+# passar cada uma explicitamente. Esta conferência existe para que ninguém
+# as remova por parecerem redundantes — elas são redundantes até o dia em que
+# alguém copia um mpv.conf.
+falta=()
+for opt in --replaygain=no --af= --volume=100 --audio-samplerate=0 \
+           --gapless-audio=yes --audio-display=no; do
+    grep -qF -- "$opt" airootfs/usr/local/bin/stylus-deck || falta+=("$opt")
+done
+if (( ${#falta[@]} == 0 )); then ok "o stylus-deck manda as seis opções que blindam o caminho do sinal"
+else bad "o stylus-deck deixou de blindar:"; printf '      %s\n' "${falta[@]}"; fi
+
+sec "as ferramentas que uma ferramenta chama"
+# Não é só o dispatcher que chama .py de tools/: o stylus-qobuz chama
+# `$TOOLS/run_queue_api.py`, e esse por sua vez chama `integrate_album.py` e
+# `embed_metadata.py` pelo nome, com cwd na própria pasta. Um nome errado aí
+# não dá erro na hora — dá no meio da fila, depois de o disco já ter baixado,
+# que é o pior momento possível para descobrir.
+faltando=()
+while read -r py; do
+    [[ -f airootfs/usr/share/stylus/tools/$py ]] || faltando+=("$py")
+done < <({ grep -ohE '\$TOOLS/[a-z_]+\.py' airootfs/usr/local/bin/* \
+             | sed 's|\$TOOLS/||'
+           # Só o que é invocado como programa: [sys.executable, "x.py", ...].
+           grep -ohE '\[sys\.executable, "[a-z_]+\.py"' \
+                airootfs/usr/share/stylus/tools/*.py \
+             | sed 's|.*"\(.*\)"|\1|'
+           grep -ohE 'python3 [a-z_]+\.py' \
+                airootfs/usr/share/stylus/tools/*.sh 2>/dev/null \
+             | sed 's|python3 ||'; } | sort -u)
+if (( ${#faltando[@]} == 0 )); then ok "toda ferramenta que outra ferramenta chama existe"
+else bad "chamam .py que não existe em tools/:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "os lançadores do menu"
+# Um .desktop com Exec para um comando que não existe some do menu sem erro
+# nenhum — o rofi simplesmente não o lista, e não há onde ler o porquê.
+faltando=()
+for d in airootfs/usr/share/applications/*.desktop; do
+    [[ -e $d ]] || continue
+    linha=$(grep -m1 '^Exec=' "$d") || { faltando+=("$(basename "$d"): sem Exec="); continue; }
+    # O primeiro campo é o programa; o resto são argumentos e pode ser
+    # qualquer coisa (inclusive aspas, que é o caso do stylus-term).
+    prog=${linha#Exec=}; prog=${prog%% *}
+    [[ -x airootfs/usr/local/bin/$prog ]] || command -v "$prog" >/dev/null \
+        || faltando+=("$(basename "$d") -> $prog")
+done
+if (( ${#faltando[@]} == 0 )); then
+    ok "todo .desktop do menu abre um comando que existe"
+else bad "lançador apontando para o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "o branding-sync entrega o STYLUS inteiro"
+# Não confere por leitura: RODA o branding-sync para uma pasta temporária e
+# olha o que caiu lá. É a única conferência do repositório que executa a coisa
+# de verdade, e existe porque a lista de permissão dele é escrita à mão — ela
+# trazia só a unidade do celular, e a do lado do disco, acrescentada depois,
+# ficava para trás em silêncio: numa máquina instalada o aviso de virar o lado
+# simplesmente nunca chegava.
+#
+# Tudo que é `stylus*` em /usr/local/bin e toda unidade de usuário TÊM que
+# chegar. E o que é só do medium ao vivo NÃO pode chegar: o sudo sem senha e o
+# usuário `stylus` do pendrive dentro da máquina de alguém são um defeito de
+# segurança, não um esquecimento.
+tmp=$(mktemp -d)
+mkdir -p "$tmp/usr" "$tmp/etc"
+if STYLUS_SOURCE=airootfs bash airootfs/usr/share/stylus/branding-sync.sh "$tmp" >/dev/null 2>&1; then
+    faltando=(); vazou=()
+    while read -r f; do
+        [[ -e $tmp/${f#airootfs/} ]] || faltando+=("${f#airootfs/}")
+    done < <({ find airootfs/usr/local/bin -maxdepth 1 -name 'stylus*'
+               # Duas buscas e não uma: `find A -name X -o -path Y` só desce em
+               # A, então o -path das unidades nunca casava e a metade que esta
+               # conferência existe para pegar não era conferida.
+               find airootfs/usr/lib/systemd/user -maxdepth 1 -name 'stylus-*.service' 2>/dev/null; })
+    for f in usr/share/stylus/claude/CLAUDE.md usr/share/stylus/packages.install \
+             etc/skel/.config/i3/config etc/os-release etc/pipewire; do
+        [[ -e $tmp/$f ]] || faltando+=("$f")
+    done
+    for f in etc/sudoers.d/10-stylus-live etc/sysusers.d/stylus.conf \
+             etc/tmpfiles.d/stylus-home.conf etc/mkinitcpio.conf.d/archiso.conf \
+             usr/local/bin/choose-mirror usr/local/bin/livecd-sound; do
+        [[ -e $tmp/$f ]] && vazou+=("$f")
+    done
+    if (( ${#faltando[@]} == 0 && ${#vazou[@]} == 0 )); then
+        ok "$(find "$tmp/usr/local/bin" -name 'stylus*' | wc -l) comandos e $(find "$tmp/usr/lib/systemd/user" -name '*.service' 2>/dev/null | wc -l) unidades chegam, e nada do medium vaza"
+    else
+        (( ${#faltando[@]} )) && { bad "o branding-sync não leva:"; printf '      %s\n' "${faltando[@]}"; }
+        (( ${#vazou[@]} ))    && { bad "o branding-sync leva o que é só do medium:"; printf '      %s\n' "${vazou[@]}"; }
+    fi
+else
+    bad "o branding-sync falhou ao copiar para uma pasta de teste"
+fi
+rm -rf "$tmp"
 
 sec "os serviços que a instalação liga"
 # O script que roda no chroot usa `set -e`, e `systemctl enable` de unidade

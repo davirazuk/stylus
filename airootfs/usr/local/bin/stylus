@@ -28,16 +28,24 @@ cat <<EOF
   ${a}ouvir${o}
     ${b}stylus${o}                    o que está tocando, e onde no disco
     ${b}stylus deck${o} ${d}[DISCO]${o}      põe um disco e abre o deck: a cerimônia
-                              inteira, com o disco girando na tela
+                              inteira, com o disco girando na tela. Volta para
+                              onde a agulha parou — ${d}--recomeçar${o} põe do zero
     ${b}stylus play${o} ${d}DISCO${o}        toca o lado inteiro, na ordem, sem tela
     ${b}stylus record${o} ${d}[DISCO]${o}    sorteia um da estante e mostra os lados,
                               puxando para o que faz tempo que não toca
     ${b}stylus shelf${o}              a estante em grade de capas
+    ${b}stylus lado${o}               em que lado do disco você está, e quanto falta
+    ${b}stylus virar${o}              põe a agulha no começo do próximo lado
+                              ${d}(stylus voltar faz o contrário)${o}
+    ${b}stylus parede${o} ${d}[DISCO]${o}    põe o disco que está tocando de papel de
+                              parede — o desenho vem da intensidade dele
     ${b}stylus scope${o}              só o instrumento: o vetorscópio, sem disco
 
   ${a}a coleção${o}
     ${b}stylus library${o} ${d}[PASTA]${o}   mostra ou define onde ela fica
     ${b}stylus diary${o} ${d}[N]${o}         o que você pôs, quando, e quantas vezes
+    ${b}stylus stats${o} ${d}[--ano N]${o}   o formato da sua escuta: quem volta, em que
+                              dia, a que horas, o que nunca saiu da prateleira
     ${b}stylus check${o}              o que está quebrado aí dentro
     ${b}stylus gaps${o} ${d}ARTISTA${o}      que discos desse artista faltam
     ${b}stylus covers${o} ${d}[--apply]${o}  cover.jpg nas pastas que não têm
@@ -45,6 +53,8 @@ cat <<EOF
     ${b}stylus tags${o} ${d}[DISCO]${o}      arruma tags e capa embutida
     ${b}stylus rip${o}                rasga o CD que está na gaveta, para a estante
     ${b}stylus get${o} ${d}URL|FILA${o}      baixa e arquiva na estante
+    ${b}stylus qobuz${o} ${d}[...]${o}       a interface do qobuz-dl, e a fila que
+                              baixa e arquiva disco por disco
 
   ${a}as máquinas${o}
     ${b}stylus phone${o} ${d}[...]${o}       o celular: estado, sincronizar, playlists
@@ -52,7 +62,10 @@ cat <<EOF
     ${b}stylus audio${o}              o caminho do sinal, medido, não prometido
     ${b}stylus apps${o} ${d}[NOME]${o}       instala o que não vem em pacote
     ${b}stylus gpu${o}                driver de vídeo
+    ${b}stylus fontes${o}             por que apareceu caixinha no lugar do ícone
     ${b}stylus mode${o} ${d}[música|área]${o} troca entre a tela cheia e a área de trabalho
+    ${b}stylus claude${o} ${d}[...]${o}      o Claude Code aqui dentro, com a fonte do
+                              sistema do lado e a máquina para olhar
     ${b}stylus atalhos${o}            a lista de atalhos de teclado
     ${b}stylus instalar${o}           instala o STYLUS no computador (medium ao vivo)
     ${b}stylus update${o}             atualiza o sistema
@@ -77,6 +90,7 @@ case "$cmd" in
     shelf)       exec stylus-shelf "$@" ;;
     library)     exec "$PY" "$TOOLS/library.py" "$@" ;;
     diary)       exec "$PY" "$TOOLS/diary.py" "$@" ;;
+    stats|numeros|números) exec "$PY" "$TOOLS/stats.py" "$@" ;;
     check)       exec "$PY" "$TOOLS/check_library.py" "$@" ;;
     gaps)        exec "$PY" "$TOOLS/discover.py" "$@" ;;
     covers)      exec "$PY" "$TOOLS/extract_covers.py" "$@" ;;
@@ -84,6 +98,9 @@ case "$cmd" in
     tags)        exec "$PY" "$TOOLS/embed_metadata.py" "$@" ;;
     rip)         exec "$PY" "$TOOLS/rip.py" "$@" ;;
     get)         exec "$PY" "$TOOLS/get.py" "$@" ;;
+    # A interface web do qobuz-dl e a fila que ela alimenta. As duas filas já
+    # estavam aqui e não havia como chegar nelas nem como pôr a interface no ar.
+    qobuz)       exec stylus-qobuz "$@" ;;
     suggest)     exec "$PY" "$TOOLS/suggest_playlists.py" "$@" ;;
     reindex)
         # A interface guarda um índice da estante para abrir instantaneamente.
@@ -107,6 +124,14 @@ case "$cmd" in
         fi
         ;;
     mode)        exec stylus-mode "$@" ;;
+    # O papel de parede desenhado a partir do disco que está tocando.
+    wallpaper|parede|fundo) exec stylus-wallpaper "$@" ;;
+    # Em que lado do disco você está, agora.
+    side|lado)   exec stylus-side-watch --once "$@" ;;
+    # Dava para pular FAIXA desde sempre e não dava para pular LADO — a única
+    # coisa que este sistema pede que você faça com as mãos.
+    virar|flip)  exec stylus-side-watch --virar "$@" ;;
+    voltar)      exec stylus-side-watch --voltar "$@" ;;
     # Estes três existiam como uma FUNÇÃO do fish chamada `stylus`, que ficava
     # na frente deste arquivo no shell padrão do sistema e respondia "comando
     # desconhecido" para deck, library, phone, record, shelf — a CLI inteira
@@ -118,6 +143,9 @@ case "$cmd" in
         exec sudo stylus-install "$@" ;;
     atalhos|keys|teclas)
         exec less -R /usr/share/stylus/keybindings.txt ;;
+    # O Claude Code, nesta máquina. Editar a fonte e VER acontecer é a coisa
+    # que nenhuma sessão remota consegue fazer.
+    claude|ia)   exec stylus-claude "$@" ;;
     aur|yay)     exec install-yay "$@" ;;
     phone)       exec stylus-phone "$@" ;;
     webdav)      exec stylus-webdav "$@" ;;
@@ -128,6 +156,8 @@ case "$cmd" in
     # custa uma linha; quebrar o dedo de quem já digitava custa mais.
     app|apps|software|loja) exec stylus-app "$@" ;;
     gpu)         exec stylus-gpu "$@" ;;
+    # Caixinha vazia na tela não diz nada sobre a causa, e as causas são quatro.
+    fontes|fonts|glifos) exec stylus-fontes "$@" ;;
     update)      exec stylus-update "$@" ;;
     -h|--help|help) usage ;;
     *)

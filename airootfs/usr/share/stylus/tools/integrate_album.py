@@ -23,10 +23,15 @@ def integrate(folder_name, artist, album_clean):
     # nada, e mesmo assim apagava a origem no fim. É exatamente assim que
     # nasceram as pastas com capa, encarte e nenhuma música desta biblioteca.
     achados = []
-    for raiz, _dirs, arquivos in os.walk(src):
+    # `pasta`, não `raiz`: `raiz` é a FUNÇÃO importada lá em cima que diz onde
+    # fica a coleção, e usá-la como variável de laço a substitui por uma
+    # string dentro desta função inteira. Hoje não quebra nada porque ninguém
+    # a chama depois do laço; é a próxima linha acrescentada aqui que quebra,
+    # com um "str is not callable" que não parece ter nada a ver.
+    for pasta, _dirs, arquivos in os.walk(src):
         for f in arquivos:
             if f.lower().endswith(".flac"):
-                achados.append(os.path.join(raiz, f))
+                achados.append(os.path.join(pasta, f))
     achados.sort()
 
     def _disco_de(caminho):

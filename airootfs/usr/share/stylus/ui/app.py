@@ -136,6 +136,17 @@ class NowScreen(Screen):
         if ev.key == pygame.K_n:
             spawn(["playerctl", "next"])
             return True
+        # Virar o lado. v e b no teclado, Y no controle (que chega como "/"):
+        # os ombros já pulam FAIXA, e faltava a única coisa que este sistema
+        # pede que você faça com as mãos.
+        if ev.key in (pygame.K_v, pygame.K_SLASH):
+            self.app.toast("virando o disco…")
+            spawn(["stylus-side-watch", "--virar"])
+            return True
+        if ev.key == pygame.K_b:
+            self.app.toast("voltando um lado…")
+            spawn(["stylus-side-watch", "--voltar"])
+            return True
         if ev.key == pygame.K_p:
             spawn(["playerctl", "previous"])
             return True
@@ -193,7 +204,8 @@ class NowScreen(Screen):
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
                (x, r.bottom - 92), 18, T.TEXT_FAINT, maxw=w)
-        self.app.hint(s, r, "enter abrir o deck   espaço pausa   n/p faixa")
+        self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
+                            "n/p faixa   v/b lado")
 
     def _groove(self, s, rect, frac):
         """A barra de progresso desenhada como um sulco, não como um tubo.
@@ -624,18 +636,44 @@ class DiaryScreen(Screen):
     name = "DIÁRIO"
     icon = "󰃭"
 
+    DIAS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+
     def __init__(self, app):
         super().__init__(app)
         self.rows = []
         self.by_day = {}
+        self.by_wd = [0] * 7
+        self.by_hour = [0] * 24
+        self.by_artist = {}
+        self.nunca = 0
+        self.total_estante = 0
+        # 0 = o que você pôs (a lista). 1 = o formato (quando, quem, o parado).
+        # Duas páginas e não duas seções: são a MESMA pergunta — "o que essa
+        # coleção virou" — e o trilho já tem nove itens.
+        self.page = 0
         self.scroll = 0
 
     def enter(self):
         rows = sorted(vinyl._play_rows(), key=lambda x: -x[0])
         self.by_day = {}
+        self.by_wd = [0] * 7
+        self.by_hour = [0] * 24
+        self.by_artist = {}
         for ts, fold in rows:
-            d = time.strftime("%Y-%m-%d", time.localtime(ts))
+            lt = time.localtime(ts)
+            d = time.strftime("%Y-%m-%d", lt)
             self.by_day[d] = self.by_day.get(d, 0) + 1
+            # tm_wday já é 0=segunda, que é como a semana é lida aqui.
+            self.by_wd[lt.tm_wday] += 1
+            self.by_hour[lt.tm_hour] += 1
+            art = vinyl.folder_names(fold)[0]
+            if art:
+                self.by_artist[art] = self.by_artist.get(art, 0) + 1
+        postos = {os.path.normpath(f) for _ts, f in rows}
+        itens = self.app.shelf.items or []
+        self.total_estante = len(itens)
+        self.nunca = sum(1 for i in itens
+                         if os.path.normpath(i["folder"]) not in postos)
         idx = {os.path.normpath(i["folder"]): i for i in self.app.shelf.items}
         seen, out = set(), []
         for ts, fold in rows:
@@ -654,7 +692,9 @@ class DiaryScreen(Screen):
         self.rows = out
 
     def key(self, ev):
-        if ev.key in (pygame.K_DOWN, pygame.K_j):
+        if ev.key == pygame.K_s:              # X no controle
+            self.page = 1 - self.page
+        elif ev.key in (pygame.K_DOWN, pygame.K_j):
             self.scroll = min(max(0, len(self.rows) - 8), self.scroll + 1)
         elif ev.key in (pygame.K_UP, pygame.K_k):
             self.scroll = max(0, self.scroll - 1)
@@ -665,6 +705,9 @@ class DiaryScreen(Screen):
         return True
 
     def draw(self, s, r):
+        if self.rows and self.page == 1:
+            self._formato(s, r)
+            return
         if not self.rows:
             T.text(s, "nada anotado ainda", (r.centerx, r.centery), 28,
                    T.TEXT_DIM, anchor="center")
@@ -696,8 +739,135 @@ class DiaryScreen(Screen):
             T.text(s, f"{it['plays']}x", (row.right - 20, row.y + 20), 21,
                    T.PINK, anchor="topright")
             y += 84
-        self._calendar(s, pygame.Rect(x, r.bottom - 132, r.w - 88, 84))
-        self.app.hint(s, r, "enter põe de novo   ·   ↑↓ anda")
+        # 190 e não 132: com o valor antigo a legenda do calendário caía
+        # exatamente em cima da linha de dicas, e as duas viravam um borrão.
+        self._calendar(s, pygame.Rect(x, r.bottom - 190, r.w - 88, 104))
+        self.app.hint(s, r, "enter põe de novo   ·   ↑↓ anda   ·   s o formato")
+
+    # ── a segunda página: o formato ────────────────────────────────────────
+    def _barras(self, s, rect, valores, rotulos, cor, gutter=62):
+        """Barras horizontais. Um valor zero desenha a barra VAZIA e não some:
+        um dia da semana em que você nunca ouve nada é um dado, e uma linha
+        ausente vira um buraco que se lê como erro de desenho.
+
+        `gutter` é a coluna do rótulo, e existe porque "seg" e "My Bloody
+        Valentine" não cabem na mesma: com um valor fixo, a barra do artista
+        era desenhada POR CIMA do nome dele.
+        """
+        maxi = max(valores) if valores and max(valores) else 1
+        alt = max(14, rect.h // max(1, len(valores)) - 6)
+        num_w = 44
+        y = rect.y
+        for rot, v in zip(rotulos, valores):
+            T.text(s, rot, (rect.x, y + alt // 2 - 9), 17, T.TEXT_FAINT,
+                   maxw=gutter - 10)
+            trilho = pygame.Rect(rect.x + gutter, y + 2,
+                                 rect.w - gutter - num_w, alt - 4)
+            pygame.draw.rect(s, T.INK_SOFT, trilho, border_radius=4)
+            w = int(trilho.w * v / maxi)
+            if w:
+                pygame.draw.rect(s, cor, (trilho.x, trilho.y, w, trilho.h),
+                                 border_radius=4)
+            T.text(s, str(v), (trilho.right + 12, y + alt // 2 - 9), 16,
+                   T.TEXT_DIM if v else T.TEXT_FAINT)
+            y += alt + 6
+
+    def _horas(self, s, rect):
+        """Vinte e quatro colunas. A do seu horário fica acesa."""
+        # O `or 1` protege a divisão e ESTRAGA a busca do pico: com tudo
+        # zerado, maxi vira 1 e `.index(1)` estoura com "1 is not in list".
+        # São duas perguntas diferentes e precisam de dois números.
+        bruto = max(self.by_hour)
+        maxi = bruto or 1
+        pico = self.by_hour.index(bruto) if bruto else -1
+        largura = rect.w / 24.0
+        for h, v in enumerate(self.by_hour):
+            alt = int((rect.h - 18) * v / maxi)
+            col = pygame.Rect(int(rect.x + h * largura) + 1, rect.bottom - 18 - alt,
+                              max(2, int(largura) - 3), max(1, alt))
+            pygame.draw.rect(s, T.BLUE if h == pico else T.lerp(T.INK_LIFT, T.BLUE, 0.5),
+                             col, border_radius=2)
+        for h in (0, 6, 12, 18):
+            T.text(s, f"{h}h", (int(rect.x + h * largura), rect.bottom - 16),
+                   14, T.TEXT_FAINT)
+        if pico >= 0:
+            T.text(s, f"por volta das {pico}h", (rect.right, rect.bottom - 16),
+                   15, T.TEXT_DIM, anchor="topright")
+
+    def _voltam(self, s, rect):
+        """Os discos que voltam, pelas capas. Uma coluna de números diz quanto;
+        uma fileira de capas diz QUAIS, que é a pergunta que se faz olhando."""
+        top = sorted((it for it in self.rows if it.get("plays")),
+                     key=lambda it: -it["plays"])[:8]
+        if not top:
+            return
+        T.text(s, "OS QUE VOLTAM", (rect.x, rect.y), 16, T.GREEN, bold=True)
+        # A capa cabe no que sobrou de ALTURA, não numa largura escolhida: com
+        # o lado vindo só da largura, numa tela baixa a fileira passava por
+        # cima da legenda, da linha de baixo e da dica, tudo junto.
+        lado = min(112, (rect.w - 7 * 18) // 8, rect.h - 70)
+        if lado < 40:
+            return
+        x = rect.x
+        for it in top:
+            cr = pygame.Rect(x, rect.y + 26, lado, lado)
+            cov = self.app.thumbs.get(it["cover"])
+            T.shadow_card(s, cr, radius=6)
+            if cov:
+                s.blit(pygame.transform.smoothscale(cov, cr.size), cr)
+            else:
+                T.panel(s, cr, T.INK_LIFT, radius=6)
+                T.text(s, it["name"][:12], cr.center, 13, T.TEXT_FAINT,
+                       anchor="center", maxw=lado - 12)
+            T.text(s, f"{it['plays']}x", (cr.centerx, cr.bottom + 8), 17,
+                   T.PINK, anchor="midtop")
+            T.text(s, it["name"], (cr.centerx, cr.bottom + 30), 13,
+                   T.TEXT_FAINT, anchor="midtop", maxw=lado)
+            x += lado + 18
+
+    def _formato(self, s, r):
+        x, y = r.x + 44, r.y + 30
+        T.text(s, "o formato", (x, y), 24, T.TEXT_DIM)
+        y += 44
+
+        meio = r.x + r.w // 2
+        col_w = r.w // 2 - 70
+
+        T.text(s, "EM QUE DIA", (x, y), 16, T.BLUE, bold=True)
+        self._barras(s, pygame.Rect(x, y + 26, col_w, 190),
+                     self.by_wd, self.DIAS, T.BLUE)
+
+        T.text(s, "QUEM VOCÊ MAIS PÕE", (meio + 20, y), 16, T.PINK, bold=True)
+        top = sorted(self.by_artist.items(), key=lambda kv: -kv[1])[:6]
+        if top:
+            # Gutter largo: nome de artista é comprido, e com a coluna estreita
+            # a barra era desenhada por cima do nome.
+            self._barras(s, pygame.Rect(meio + 20, y + 26, col_w, 190),
+                         [n for _a, n in top], [a for a, _n in top], T.PINK,
+                         gutter=150)
+
+        y += 236
+        # ── o orçamento vertical, de baixo para cima ───────────────────────
+        # A dica mora no rodapé (app.hint), e a linha da prateleira parada logo
+        # acima dela. O que sobra entre o fim das barras e o bloco de capas é
+        # do gráfico de horas. Contado assim, e não com números soltos, porque
+        # a primeira versão deu ao gráfico "tudo que sobra" e ele passou por
+        # cima das capas, da legenda e da dica ao mesmo tempo.
+        rodape = 68                       # dica + linha da prateleira
+        bloco_capas = 176
+        topo_capas = r.bottom - rodape - bloco_capas
+        T.text(s, "A QUE HORAS", (x, y), 16, T.LAV, bold=True)
+        self._horas(s, pygame.Rect(x, y + 24, r.w - 120,
+                                   max(110, topo_capas - 20 - (y + 24))))
+
+        self._voltam(s, pygame.Rect(x, topo_capas, r.w - 120, bloco_capas))
+
+        if self.total_estante:
+            T.text(s, f"{self.nunca} dos {self.total_estante} discos da estante "
+                      f"nunca foram postos  ·  o SORTEIO puxa para eles",
+                   (x, r.bottom - rodape + 4), 17,
+                   T.AMBER if self.nunca else T.GREEN)
+        self.app.hint(s, r, "s volta para a lista")
 
     def _calendar(self, s, rect):
         """Um ano em quadradinhos: uma coluna por semana, um por dia.
@@ -709,8 +879,12 @@ class DiaryScreen(Screen):
         """
         hoje = time.localtime()
         dias = 364
-        cell = min(10, rect.w // 53 - 1)
         gap = 2
+        # O quadradinho vem da largura E da altura disponíveis. Só da largura,
+        # ele ficava preso em 10 px numa tela de 1600 e o ano inteiro ocupava
+        # metade do espaço que tinha, lendo como um enfeite pequeno em vez de
+        # como o gráfico que é.
+        cell = max(4, min(14, rect.w // 53 - gap, rect.h // 7 - gap))
         base = time.time() - dias * 86400
         maxi = max(self.by_day.values()) if self.by_day else 1
         for d in range(dias + 1):
@@ -728,8 +902,12 @@ class DiaryScreen(Screen):
             else:
                 c = T.INK_SOFT
             pygame.draw.rect(s, c, (x, y, cell, cell), border_radius=2)
+        # A legenda vai logo abaixo da ÚLTIMA linha desenhada, não abaixo do
+        # retângulo: o retângulo é o espaço oferecido, e o desenho quase nunca
+        # o preenche inteiro.
+        fim = rect.y + 7 * (cell + gap)
         T.text(s, f"um ano  ·  até {time.strftime('%d/%m', hoje)}",
-               (rect.x, rect.bottom + 6), 15, T.TEXT_FAINT)
+               (rect.x, fim + 8), 15, T.TEXT_FAINT)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -784,8 +962,12 @@ class PhoneScreen(Screen):
             box = pygame.Rect(x, y, 460, 46)
             if sel:
                 T.panel(s, box, T.INK_LIFT, radius=9)
+            # maxw: sem ele, "pôr a coleção do celular na estante (WebDAV)"
+            # era desenhado PARA FORA da caixa e entrava por baixo do painel
+            # de saída, cortado no meio de uma palavra e sem reticências —
+            # que se lê como texto corrompido, não como texto comprido.
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 12),
-                   21, T.TEXT if sel else T.TEXT_DIM)
+                   21, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 28)
             y += 52
         self.app.job_panel(s, pygame.Rect(x + 500, r.y + 120,
                                           r.right - x - 544, r.h - 220),
@@ -807,6 +989,13 @@ class ToolsScreen(Screen):
         ("procurar letras dos discos sem .lrc", ["stylus", "lyrics", "--all"]),
         ("arrumar tags e capa embutida", ["stylus", "tags"]),
         ("rasgar o CD da gaveta", ["stylus", "rip"]),
+        # As duas coisas novas que só existiam no terminal. Aqui é onde quem
+        # está no sofá vai procurá-las — e a tela cheia é o modo em que a
+        # máquina liga.
+        ("baixar do Qobuz e arquivar",
+         ["stylus-term", "Qobuz", "stylus-qobuz", "abrir"]),
+        ("o papel de parede vira o disco de agora",
+         ["stylus-wallpaper"]),
         ("refazer o índice da estante", ["stylus", "reindex"]),
         ("cópia de segurança para o Drive", ["stylus", "backup"]),
         ("atualizar o sistema", ["stylus-update", "--check"]),
@@ -841,7 +1030,7 @@ class ToolsScreen(Screen):
             if sel:
                 T.panel(s, box, T.INK_LIFT, radius=9)
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 11),
-                   20, T.TEXT if sel else T.TEXT_DIM)
+                   20, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 28)
             y += 50
         self.app.job_panel(s, pygame.Rect(x + 510, r.y + 120,
                                           r.right - x - 554, r.h - 220),
@@ -952,7 +1141,7 @@ class SettingsScreen(Screen):
                 T.panel(s, box, T.INK_LIFT, radius=9)
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 11),
                    20, T.TEXT if sel else (T.TEXT_DIM if cmd else T.TEXT_FAINT),
-                   maxw=530)
+                   maxw=box.w - 30)
             y += 50
         T.text(s, "STYLUS", (x, r.bottom - 150), 40, T.BLUE, bold=True)
         T.text(s, "a agulha é o único ponto em que um objeto vira som.",
@@ -1119,6 +1308,13 @@ class App:
         self.stack = self._stack_load()
         self._toast = ""
         self._toast_until = 0.0
+        # O lado em que o disco está, para saber quando ele VIRA. Ver
+        # _watch_side: no modo música esta tela é a sessão inteira, e a tese
+        # do sistema acontecendo num balãozinho de canto seria pouco.
+        self._lado_disco = None
+        self._lado_i = None
+        self._lado_t = 0.0
+        self._flip = None
         self._lyr_cache = (None, None)
         self.pads = []
         self._pad_ax = 0.0
@@ -1333,7 +1529,11 @@ class App:
             if atual:
                 pygame.draw.rect(s, T.BLUE, (10, y - 6, 3, 40), border_radius=2)
             cor = T.TEXT if (atual or foco) else T.TEXT_FAINT
-            T.text(s, sc.icon, (30, y + 2), 22, cor)
+            # T.icon e não sc.icon direto: sem a fonte do Nerd Font, cada
+            # item do trilho vira um retângulo vazio, e uma coluna de nove
+            # caixinhas parece o sistema quebrado. Sem ícone nenhum, o nome
+            # ao lado continua dizendo tudo.
+            T.text(s, T.icon(sc.icon), (30, y + 2), 22, cor)
             T.text(s, sc.name, (62, y + 6), 18, cor)
             if i < len(self.screens):
                 T.text(s, str(i + 1), (w - 18, y + 8), 15, T.TEXT_FAINT,
@@ -1356,6 +1556,86 @@ class App:
                              (bar.x, bar.y, int(bar.w * frac), bar.h),
                              border_radius=3)
 
+    # ── virar o lado ───────────────────────────────────────────────────────
+    FLIP_DUR = 7.0
+
+    def _watch_side(self):
+        """Quando o LADO vira, a tela inteira diz.
+
+        É a tese do projeto: um disco manda por vinte minutos e então PARA, e
+        essa parada é o que separa ouvir um disco de ouvir uma playlist. O
+        `stylus-side-watch` já avisava pelo dunst, o que serve para a área de
+        trabalho; aqui a tela É o toca-discos, e um balãozinho de canto seria
+        a coisa certa no tamanho errado.
+
+        Só para frente. Arrastar a barra para trás é procurar uma faixa, não
+        virar o disco — anunciar ali viraria ruído em cinco minutos.
+        """
+        # Duas vezes por segundo basta: o lado dura vinte minutos, e perguntar
+        # a posição sessenta vezes por segundo é conversa de socket à toa em
+        # toda tela, não só na AGORA.
+        agora = time.time()
+        if agora - self._lado_t < 0.5:
+            return
+        self._lado_t = agora
+        try:
+            _snap, al, _tr, side, t_abs, _frac = self.playing.where()
+        except Exception:                 # noqa: BLE001 — nunca derrubar o laço
+            return
+        if al is None or side is None or not al.sides:
+            self._lado_disco = self._lado_i = None
+            return
+        i, _s = al.side_for(t_abs)
+        chave = al.folder
+        if chave != self._lado_disco:     # disco novo: recomeça a contar
+            self._lado_disco, self._lado_i = chave, i
+            return
+        if self._lado_i is not None and i > self._lado_i:
+            anterior = al.sides[self._lado_i]
+            ultimo = i >= len(al.sides) - 1
+            self._flip = (time.time(),
+                          anterior["label"].replace("SIDE", "LADO"),
+                          side["label"].replace("SIDE", "LADO"),
+                          f"{al.artist} — {al.name}", ultimo)
+        self._lado_i = i
+
+    def _draw_flip(self, s):
+        if not self._flip:
+            return
+        t0, antes, agora, disco, ultimo = self._flip
+        dt = time.time() - t0
+        if dt > self.FLIP_DUR:
+            self._flip = None
+            return
+        # Entra depressa e sai devagar: aparecer devagar faria a pessoa perder
+        # o começo justamente do aviso que existe para ser notado.
+        alpha = min(1.0, dt / 0.3)
+        restante = self.FLIP_DUR - dt
+        if restante < 1.2:
+            alpha = min(alpha, restante / 1.2)
+
+        camada = pygame.Surface((self.W, self.H))
+        camada.fill(T.INK)
+        cx, cy = self.W // 2, self.H // 2
+
+        # Um disco, atrás do texto. Sete anéis e nada mais: é o mesmo desenho
+        # que a tela "nada tocando" usa, para as duas lerem como o mesmo
+        # objeto e não como duas ilustrações diferentes.
+        for k in range(9):
+            pygame.draw.circle(camada, T.lerp(T.INK_SOFT, T.LINE, 0.3 + k * 0.07),
+                               (cx, cy), 120 + k * 34, 1)
+
+        T.text(camada, antes, (cx, cy - 96), 26, T.TEXT_DIM, anchor="center")
+        T.text(camada, "ACABOU", (cx, cy - 44), 68, T.BLUE,
+               bold=True, anchor="center")
+        T.text(camada, ("vire o disco para o " if ultimo else "agora é o ") + agora,
+               (cx, cy + 34), 30, T.TEXT, anchor="center")
+        T.text(camada, disco, (cx, cy + 84), 20, T.TEXT_FAINT,
+               anchor="center", maxw=self.W - 200)
+
+        camada.set_alpha(int(238 * alpha))
+        s.blit(camada, (0, 0))
+
     def _draw_toast(self, s):
         if time.time() > self._toast_until:
             return
@@ -1368,6 +1648,12 @@ class App:
 
     # ── entrada ────────────────────────────────────────────────────────────
     def _key(self, ev):
+        # O aviso de virar o lado cobre a tela; a primeira tecla tira ele e
+        # não faz mais nada. Deixar a tecla ATRAVESSAR o aviso faria o botão
+        # que a pessoa apertou para dispensá-lo também mudar de tela.
+        if self._flip:
+            self._flip = None
+            return None
         if ev.key == pygame.K_ESCAPE:
             # VOLTAR, não SAIR. No modo música esta tela é a sessão inteira, e
             # o botão B (que chega aqui como ESC) tem que se comportar como o
@@ -1469,6 +1755,8 @@ class App:
                 T.text(self.surf, f"esta tela quebrou: {type(e).__name__}: {e}",
                        (body.x + 40, body.y + 60), 20, T.RED, maxw=body.w - 80)
             self._draw_rail(self.surf, rail_w)
+            self._watch_side()
+            self._draw_flip(self.surf)
             self._draw_toast(self.surf)
             pygame.display.flip()
             self.clock.tick(FPS)

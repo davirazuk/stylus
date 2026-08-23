@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Claude Code
+GenericName=Consertar o sistema
+Comment=Abre a fonte do STYLUS com o Claude Code, nesta máquina
+# Pelo stylus-term e não direto: o rofi não tem terminal, e um programa de
+# terminal aberto por ele simplesmente não aparece.
+Exec=stylus-term "Claude Code" stylus-claude
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;System;
+Keywords=claude;ia;consertar;fonte;stylus;

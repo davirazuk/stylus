@@ -212,6 +212,128 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("controle", traceback.format_exc())
 
+    secao("o DIÁRIO com registro de verdade, nas duas páginas")
+    try:
+        diario = next(s for s in app.screens if s.name == "DIÁRIO")
+        # Sem registro a tela cai no "nada anotado" e a segunda página nunca é
+        # desenhada — que é justamente onde mora todo o desenho novo.
+        alvo = os.path.join(os.environ["HOME"], ".local", "share", "stylus")
+        os.makedirs(alvo, exist_ok=True)
+        agora = time.time()
+        with open(os.path.join(alvo, "plays.tsv"), "w", encoding="utf-8") as fh:
+            for i, it in enumerate(app.shelf.items or []):
+                for k in range(3):
+                    fh.write(f"{int(agora - (i * 5 + k) * 86400)}\t"
+                             f"{it['artist']}\t{it['name']}\t{it['folder']}\n")
+        diario.enter()
+        if not diario.rows:
+            bad("o diário não leu o registro que acabamos de escrever")
+        else:
+            ok(f"leu o registro ({len(diario.rows)} discos)")
+            diario.page = 0
+            diario.draw(app.surf, corpo)
+            ok("a lista desenha")
+            diario.key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s,
+                                          unicode="s", mod=0))
+            if diario.page != 1:
+                bad("o s não virou a página")
+            diario.draw(app.surf, corpo)
+            ok("o formato desenha")
+            # Sem nenhuma hora ou dia zerado o desenho nunca exercita o caminho
+            # do valor zero, que é o que costuma dividir por zero.
+            diario.by_hour = [0] * 24
+            diario.by_wd = [0] * 7
+            diario.by_artist = {}
+            diario.draw(app.surf, corpo)
+            ok("o formato desenha mesmo com tudo zerado")
+            diario.key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s,
+                                          unicode="s", mod=0))
+            if diario.page != 0:
+                bad("o s não voltou para a lista")
+            else:
+                ok("s vai e volta")
+    except Exception:                                       # noqa: BLE001
+        bad("diário", traceback.format_exc())
+
+    secao("virar o lado aparece na tela, e só para frente")
+    try:
+        class _Disco:
+            folder = "/mentira/Artista/Disco"
+            artist = "Artista"
+            name = "Disco"
+            total = 2400.0
+            sides = [{"label": "SIDE A", "start": 0, "end": 1200},
+                     {"label": "SIDE B", "start": 1200, "end": 2400}]
+
+            def side_for(self, t):
+                i = 1 if t >= 1200 else 0
+                return i, self.sides[i]
+
+        disco = _Disco()
+        # Um segundo disco, para conferir que trocar de disco não conta como
+        # virar o lado: o lado A do próximo não é o lado B do anterior.
+        outro = _Disco()
+        outro.folder = "/mentira/Outro/Disco"
+
+        estado = {"al": disco, "t": 10.0}
+        app.playing.where = lambda: (
+            {}, estado["al"], None,
+            estado["al"].side_for(estado["t"])[1], estado["t"], 0.0)
+
+        def olhar():
+            app._lado_t = 0.0            # o vigia anda a cada meio segundo
+            app._watch_side()
+
+        app._flip = None
+        olhar()                                        # lado A, primeira vez
+        if app._flip:
+            bad("avisou sem o lado ter virado")
+        estado["t"] = 1500.0
+        olhar()                                        # A -> B
+        if not app._flip:
+            bad("o lado virou e a tela não disse nada")
+        else:
+            ok("A -> B avisa")
+            app._draw_flip(app.surf)
+            ok("o aviso desenha")
+            # a tecla dispensa o aviso e NÃO atravessa para a seção
+            r = app._key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT,
+                                            unicode="", mod=0))
+            if app._flip or r == "quit":
+                bad("a tecla não dispensou o aviso")
+            else:
+                ok("qualquer tecla dispensa")
+
+        estado["t"] = 10.0
+        olhar()                                        # voltou: procurando faixa
+        if app._flip:
+            bad("voltar no tempo foi tratado como virar o disco")
+        else:
+            ok("voltar no tempo não avisa")
+
+        olhar(); olhar()                               # mesmo lado, de novo
+        if app._flip:
+            bad("o mesmo lado avisou duas vezes")
+        else:
+            ok("o mesmo lado não repete")
+
+        estado["al"], estado["t"] = outro, 1500.0
+        olhar()
+        if app._flip:
+            bad("trocar de disco contou como virar o lado")
+        else:
+            ok("disco novo recomeça a contar")
+
+        # e o aviso some sozinho depois do tempo dele
+        app._flip = (time.time() - app.FLIP_DUR - 1, "LADO A", "LADO B", "x", False)
+        app._draw_flip(app.surf)
+        if app._flip:
+            bad("o aviso não sumiu sozinho")
+        else:
+            ok("some sozinho depois de alguns segundos")
+    except Exception:                                       # noqa: BLE001
+        bad("virar o lado", traceback.format_exc())
+
     secao("INSTALAR só existe no medium ao vivo")
     try:
         tinha = any(s.name == "INSTALAR" for s in app.screens)

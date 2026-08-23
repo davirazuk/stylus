@@ -36,6 +36,10 @@ exec --no-startup-id ~/.config/picom/launch.sh
 # Pointed one level too high, feh simply exits and the desktop comes up on the
 # X root's grey stipple, which reads as "the theme did not load".
 exec --no-startup-id feh --no-fehbg --bg-fill /usr/share/backgrounds/stylus/stylus.png
+# E, se a pessoa ligou com `stylus parede --sozinho`, o papel de parede passa a
+# ser o DISCO que está tocando, desenhado a partir da intensidade medida dele.
+# Sem isso ligado, esta linha sai imediatamente e não faz nada.
+exec --no-startup-id stylus-wallpaper --se-ligado
 exec --no-startup-id nm-applet
 exec --no-startup-id blueman-applet
 exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
@@ -59,6 +63,10 @@ exec --no-startup-id gammastep -l -20.44:-54.65 -t 6500:3600
 # suspend, so closing a laptop lid does the right thing.
 exec --no-startup-id xset s 600 && xset dpms 0 0 720
 exec --no-startup-id xss-lock --transfer-sleep-lock -- ~/.config/i3/scripts/lock.sh
+# Avisa quando o lado do disco acaba. É a tese do sistema — "no meio você tem
+# que levantar e virar" — e era a única parte dela que nada implementava: a
+# barra CONTAVA ("vira em 12 min") e ninguém nunca era avisado no momento.
+exec --no-startup-id stylus-side-watch
 exec --no-startup-id ~/.config/i3/scripts/battery-watch.sh
 exec --no-startup-id ~/.config/i3/scripts/disk-watch.sh
 # Checks once, shortly after login, whether the graphics driver is actually
@@ -119,6 +127,9 @@ bindsym $mod+Shift+a   exec $termrun "Programas" stylus-app
 # The installer. It was bound to `install-stylus`, which has never been the
 # name of anything: the command is stylus-install. Booting the USB stick and
 # pressing the documented key did nothing whatsoever.
+# O Claude Code, com a fonte do sistema aberta do lado. Numa distribuição
+# feita por uma pessoa só, este é o atalho para "consertar isso agora".
+bindsym $mod+c         exec $termrun "Claude Code" stylus-claude
 bindsym $mod+Shift+i   exec $termrun "Instalar o STYLUS" sudo stylus-install
 bindsym $mod+q         kill
 bindsym $mod+Shift+q   kill
@@ -149,6 +160,10 @@ bindsym XF86AudioMute         exec --no-startup-id $osd vol-mute
 bindsym XF86AudioMicMute      exec --no-startup-id $osd mic-mute
 bindsym XF86MonBrightnessUp   exec --no-startup-id $osd bright-up
 bindsym XF86MonBrightnessDown exec --no-startup-id $osd bright-down
+# Virar o lado. Os controles de mídia pulam FAIXA; isto põe a agulha no
+# começo do outro LADO, que é a única coisa que este sistema pede que
+# você faça com as mãos e a única que não dava para fazer.
+bindsym $mod+Shift+v exec --no-startup-id stylus-side-watch --virar
 bindsym XF86AudioPlay         exec --no-startup-id playerctl play-pause
 bindsym XF86AudioNext         exec --no-startup-id playerctl next
 bindsym XF86AudioPrev         exec --no-startup-id playerctl previous

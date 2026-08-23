@@ -1261,6 +1261,9 @@ ${c_grn}  O STYLUS está instalado.${c_reset}
     ${c_b}Mod+Shift+A${c_reset} para o catálogo de programas, e instale navegador,
     jogos, drivers e o que mais quiser.
 
+    Para mudar ou consertar o próprio sistema, ${c_b}stylus claude${c_reset} (ou
+    ${c_b}Mod+C${c_reset}) abre a fonte dele com o Claude Code, aqui na máquina.
+
 EOF
 
 read -rp "  Reiniciar no STYLUS agora? [s/N] " r

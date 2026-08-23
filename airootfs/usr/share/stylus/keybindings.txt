@@ -20,6 +20,7 @@
   Mod+E              arquivos
   Mod+Shift+A        catálogo de programas, jogos e drivers
   Mod+Shift+I        instalar o STYLUS no computador
+  Mod+C              Claude Code, na fonte do sistema
   Mod+Escape         processos (btop)
   Mod+F1             esta lista
 
@@ -37,6 +38,7 @@
   ── música ────────────────────────────────────────────────────────────
   Play / Pause       pausa e volta
   Próxima / Anterior pula faixa
+  Mod+Shift+V        VIRAR O LADO (põe a agulha no começo do outro lado)
   Mod+Shift+M        volume, por canal (pavucontrol)
 
   ── tela e som ────────────────────────────────────────────────────────
