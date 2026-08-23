@@ -47,10 +47,20 @@ de execução.
 
 Construir a ISO leva ~30 min. `check.sh` leva segundos e pega quase tudo.
 
-O deck tem o próprio teste, sem GL nem janela:
+O deck e a tela cheia têm testes próprios, sem GL e sem janela — os dois
+rodam com o vídeo "dummy" do SDL, então não precisam de X:
 ```
-airootfs/usr/share/stylus/deck/tools/test_ritual.py
+airootfs/usr/share/stylus/deck/tools/test_ritual.py   # a cerimônia, o disco
+airootfs/usr/share/stylus/ui/tools/test_ui.py         # todas as seções
 ```
+O `check.sh` já chama o da interface. O do deck quer um álbum de verdade:
+`test_ritual.py --album PASTA`.
+
+E há uma construção de verdade, na nuvem, para quando `check.sh` não basta:
+`.github/workflows/build-iso.yml`. Ela roda o `check.sh` dentro de um Arch
+com pacman e já pegou três nomes de pacote que o Arch mudou por baixo
+(`fdk-aac`→`libfdk-aac`, `nvidia-dkms`→`nvidia-open-dkms`) — coisa que
+nenhuma máquina sem pacman tem como notar.
 
 ---
 
