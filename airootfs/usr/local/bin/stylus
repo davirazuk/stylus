@@ -41,6 +41,8 @@ cat <<EOF
   ${a}a coleção${o}
     ${b}stylus library${o} ${d}[PASTA]${o}   mostra ou define onde ela fica
     ${b}stylus diary${o} ${d}[N]${o}         o que você pôs, quando, e quantas vezes
+    ${b}stylus stats${o} ${d}[--ano N]${o}   o formato da sua escuta: quem volta, em que
+                              dia, a que horas, o que nunca saiu da prateleira
     ${b}stylus check${o}              o que está quebrado aí dentro
     ${b}stylus gaps${o} ${d}ARTISTA${o}      que discos desse artista faltam
     ${b}stylus covers${o} ${d}[--apply]${o}  cover.jpg nas pastas que não têm
@@ -82,6 +84,7 @@ case "$cmd" in
     shelf)       exec stylus-shelf "$@" ;;
     library)     exec "$PY" "$TOOLS/library.py" "$@" ;;
     diary)       exec "$PY" "$TOOLS/diary.py" "$@" ;;
+    stats|numeros|números) exec "$PY" "$TOOLS/stats.py" "$@" ;;
     check)       exec "$PY" "$TOOLS/check_library.py" "$@" ;;
     gaps)        exec "$PY" "$TOOLS/discover.py" "$@" ;;
     covers)      exec "$PY" "$TOOLS/extract_covers.py" "$@" ;;

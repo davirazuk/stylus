@@ -54,6 +54,7 @@ Não tem suíte de escritório. Nunca vai ter.
 |---|---|
 | `stylus library [PASTA]` | onde ela fica (descoberto sozinho na primeira vez) |
 | `stylus diary` | o que você pôs, quando, quantas vezes |
+| `stylus stats` | o formato da sua escuta: quem volta, em que dia, a que horas |
 | `stylus check` | o que está quebrado lá dentro |
 | `stylus gaps ARTISTA` | que discos desse artista faltam |
 | `stylus lyrics` | procura e grava `.lrc` sincronizado |
