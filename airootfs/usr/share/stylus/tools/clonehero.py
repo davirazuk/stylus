@@ -22,9 +22,10 @@ import subprocess
 import sys
 import unicodedata
 
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
 CH_DIR = "/sdcard/Documents/Clone Hero/Songs"
-ROOTS = [os.path.expanduser("~/Músicas"),
-         os.path.expanduser("~/Músicas/Fortnite Balls")]
+ROOTS = [raiz()]
 
 c_b = "\033[1m"; c_dim = "\033[2m"; c_acc = "\033[38;5;117m"
 c_pink = "\033[38;5;218m"; c_off = "\033[0m"

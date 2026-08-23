@@ -1,9 +1,11 @@
 import os, re, sys, shutil, requests
 from mutagen.flac import FLAC
 
-QOBUZ_DIR = "/home/davirazuk/Qobuz Downloads"
-LIB_ROOT = "/home/davirazuk/Músicas/Fortnite Balls"
-PLAYLIST = "/home/davirazuk/Músicas/Fortnite Balls/Fortnite Balls.m3u"
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
+QOBUZ_DIR = os.environ.get("STYLUS_QOBUZ_DIR") or os.path.expanduser("~/Qobuz Downloads")
+LIB_ROOT = raiz()
+PLAYLIST = os.path.join(LIB_ROOT, "coleção.m3u")
 
 
 def integrate(folder_name, artist, album_clean):
@@ -169,7 +171,7 @@ def fetch_lyrics(flac_paths, artist, album_clean):
 def add_to_playlist(flac_paths):
     with open(PLAYLIST, "a", encoding="utf-8") as f:
         for p in flac_paths:
-            rel = os.path.relpath(p, "/home/davirazuk/Músicas")
+            rel = os.path.relpath(p, LIB_ROOT)
             f.write(rel + "\n")
 
 

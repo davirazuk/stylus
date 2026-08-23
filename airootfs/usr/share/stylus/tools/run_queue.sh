@@ -80,10 +80,11 @@ while IFS='|' read -r url artist album; do
   # Find the folder qobuz-dl just created for it. Match on the artist prefix
   # and take the newest, since its naming template includes year+quality which
   # we don't know ahead of time.
-  folder=$(ls -1dt "/home/davirazuk/Qobuz Downloads/"*/ 2>/dev/null | head -1)
+  # A casa de quem está rodando, não a de quem escreveu isto.
+  folder=$(ls -1dt "${STYLUS_QOBUZ_DIR:-$HOME/Qobuz Downloads}/"*/ 2>/dev/null | head -1)
   folder=$(basename "$folder")
   if [[ -n $folder ]]; then
-    assentar "/home/davirazuk/Qobuz Downloads/$folder" ||
+    assentar "${STYLUS_QOBUZ_DIR:-$HOME/Qobuz Downloads}/$folder" ||
       echo "    aviso: $folder não parou de mudar; integrando assim mesmo"
     echo "    integrating from: $folder"
     (cd "$TMP" && python3 integrate_album.py "$folder" "$artist" "$album" 2>&1 | tail -2)

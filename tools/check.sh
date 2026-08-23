@@ -257,6 +257,27 @@ if [[ -f $LISTA_INST ]]; then
     fi
 fi
 
+sec "nenhuma casa de ninguém escrita à mão"
+# Nove ferramentas traziam o caminho da coleção escrito com a casa de UMA
+# pessoa dentro (/home/davirazuk/Músicas, e até um subdiretório com o nome da
+# coleção dela). Em qualquer outro computador esse caminho não existe — no
+# medium ao vivo o usuário é `stylus` — e `stylus covers`, `gaps`, `tags`,
+# `check` e `suggest` varriam uma pasta inexistente sem dizer nada de errado.
+#
+# A raiz da coleção o sistema já sabe: tools/_raiz.py a pergunta ao vinyl.
+# Um /home/alguém/ escrito à mão é sempre defeito.
+# /home/stylus/ é o usuário que ESTE perfil cria, pelo nome, na hora de montar
+# a ISO — o customize_airootfs.sh tem que escrever nele. Qualquer outro nome é
+# a casa de uma pessoa que não vai existir no computador de quem usar isto.
+casas=$(grep -rIn --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
+        --exclude-dir=.pkgcache --exclude-dir=__pycache__ --exclude=check.sh \
+        --exclude=_raiz.py \
+        -oE '/home/[a-z_][a-z0-9_-]*/' . 2>/dev/null |
+        grep -v ':/home/stylus/$' || true)
+if [[ -z $casas ]]; then ok "nenhum caminho preso à casa de uma pessoa"
+else bad "caminho absoluto para a casa de alguém (use ~ ou tools/_raiz.py):"
+     echo "$casas" | sed 's/^/      /' | head -12; fi
+
 sec "arquivos que a área de trabalho aponta"
 # keybindings.txt (o Mod+F1) e o papel de parede eram caminhos que não existiam:
 # o feh apontava para backgrounds/stylus.png quando o arquivo é

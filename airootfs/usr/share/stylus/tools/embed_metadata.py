@@ -38,7 +38,9 @@ from mutagen.flac import FLAC, Picture
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, USLT, error as id3error
 
-ROOT = "/home/davirazuk/Músicas"
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
+ROOT = raiz()
 COVER_NAMES = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg")
 UA = {"User-Agent": "stylus-tool/1.0"}
 LRCLIB_DELAY = 0.25          # be polite to a free community API

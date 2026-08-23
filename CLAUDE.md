@@ -75,6 +75,7 @@ airootfs/
     deck/                  o disco na tela (scope.py + vinyl.py)
     ui/                    a tela cheia (theme, model, app)
     tools/                 as ferramentas de coleção, em python
+      _raiz.py             onde fica a coleção — UMA resposta para todas elas
     packages.install       o que uma máquina INSTALADA recebe (o instalador lê)
     packages.live-only     o que fica só na ISO, com o motivo escrito
     branding-sync.sh       copia o STYLUS para o sistema recém-instalado
@@ -133,6 +134,13 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   jamais existiu — e o `xfce4-terminal`, que não está em pacote nenhum. O
   `check.sh` agora confere posição de comando (`exec`, `bindsym … exec`,
   `alias`) e os caminhos que a sessão aponta.
+- **Nunca escreva `/home/<alguém>/` à mão.** Nove ferramentas de `tools/`
+  traziam `/home/davirazuk/Músicas` dentro (uma delas com o nome da coleção
+  de uma pessoa como raiz). Em qualquer outro computador — no medium ao vivo
+  o usuário é `stylus` — o `stylus covers`, `gaps`, `tags`, `check` e
+  `suggest` varriam uma pasta inexistente e diziam que estava tudo bem. A
+  raiz vem do `tools/_raiz.py`, que pergunta ao `vinyl.library_root()`. O
+  `check.sh` recusa qualquer casa que não seja a do usuário do medium.
 - **A ISO liga no MODO MÚSICA.** Então é lá que o instalador precisa estar:
   a interface mostra a seção INSTALAR quando existe `/run/archiso`, e só
   nesse caso. Antes não havia caminho nenhum do pendrive até o instalador.

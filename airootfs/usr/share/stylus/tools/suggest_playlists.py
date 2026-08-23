@@ -17,8 +17,12 @@ mechanical.
 """
 import os
 
-LIB = "/home/davirazuk/Músicas"
-ROOT = os.path.join(LIB, "Fortnite Balls")
+from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+
+LIB = raiz()
+# A coleção e o lugar das playlists são a mesma pasta: o subdiretório fixo
+# que havia aqui era o nome da coleção de uma pessoa só.
+ROOT = LIB
 MANIFEST = os.path.expanduser("~/.local/share/stylus-added.tsv")
 AUDIO_EXT = (".flac", ".mp3")
 
