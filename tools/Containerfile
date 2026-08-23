@@ -23,8 +23,18 @@ RUN pacman -Sy --noconfirm --needed archlinux-keyring && pacman -Su --noconfirm
 # multilib. O STYLUS põe lib32-gamemode, lib32-mesa e companhia em toda
 # máquina; sem ele ligado aqui, a conferência de nomes do check.sh diz que
 # metade dos pacotes de vídeo não existe — e estaria certa, nesta imagem.
-RUN sed -i '/^#\[multilib\]/,/^#Include = .*mirrorlist/ s/^#//' /etc/pacman.conf \
- && pacman -Sy --noconfirm
+#
+# Escrito no fim do arquivo em vez de descomentado por sed. O sed dependia de
+# o pacman.conf da imagem trazer o bloco comentado no formato exato esperado;
+# a imagem base não traz, e o resultado foi uma construção que seguiu em
+# frente sem multilib e reprovou treze pacotes de 32 bits como inexistentes.
+# Acrescentar a seção não depende do formato de nada.
+#
+# E confere: se depois disto o repositório não estiver na lista, a construção
+# da IMAGEM falha aqui, que é barato, em vez de falhar meia hora depois.
+RUN printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf \
+ && pacman -Sy --noconfirm \
+ && pacman-conf --repo-list | grep -qx multilib
 
 # archiso constrói; shellcheck, fish e i3 são o que o check.sh precisa para
 # rodar inteiro em vez de pular três seções em silêncio.

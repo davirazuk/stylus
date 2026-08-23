@@ -98,7 +98,7 @@ bluez-utils
 blueman
 libldac
 libfreeaptx
-fdk-aac
+libfdk-aac
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  MUSIC

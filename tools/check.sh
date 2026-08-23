@@ -354,9 +354,20 @@ elif (( ! FAST )); then
     # Os nomes que o instalador monta na hora (driver de vídeo, hardware
     # detectado) não estão em lista nenhuma: estão escritos dentro do script,
     # e é justamente onde ninguém olha.
-    mapfile -t DIN < <(grep -oE '(lib32-)?(nvidia|vulkan|mesa|libva|intel-media|vpl)[a-z0-9-]*' \
-                       airootfs/usr/local/bin/stylus-install |
-                       grep -vE 'nvidia-(driver|pkg|label|config|suspend|hibernate|resume)' | sort -u)
+    #
+    # Só o que o instalador INSTALARIA. Duas categorias precisam ficar de fora
+    # ou a conferência acusa o inocente:
+    #   - `nvidia` sozinho, que aqui é o nome de uma ESCOLHA (GPU_CHOICE), não
+    #     de um pacote;
+    #   - os ramos legacy da AUR (580xx/470xx/390xx), que o instalador cita
+    #     pelo nome de propósito e nunca instala — ele oferece o nouveau.
+    # Sem os comentários: eles CITAM nomes de pacote para explicar por que não
+    # se usa mais aquele nome, e citar não é instalar.
+    mapfile -t DIN < <(sed 's/#.*//' airootfs/usr/local/bin/stylus-install |
+                       grep -oE '(lib32-)?(nvidia|vulkan|mesa|libva|intel-media|vpl)[a-z0-9-]*' |
+                       grep -vE 'nvidia-(driver|pkg|label|config|suspend|hibernate|resume)' |
+                       grep -vxE 'nvidia|libva' |
+                       grep -vE 'nvidia-[0-9]+xx-dkms' | sort -u)
     mapfile -t HW < <(sed -n '/^HW_PKGS=(/,/^)/p' airootfs/usr/local/bin/stylus-install |
                       sed 's/#.*//' | grep -oE '^\s+[a-z0-9][a-z0-9._+-]*' | tr -d ' ' | sort -u)
     mapfile -t EXTRA < <(printf '%s\n' "${DIN[@]}" "${HW[@]}" broadcom-wl-dkms dkms \

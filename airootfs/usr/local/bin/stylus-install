@@ -548,12 +548,17 @@ if [[ $GPUS == *nvidia* ]]; then
     #
     # The machine already knows. lspci prints the chip codename and stylus-gpu
     # turns it into the driver name, so this asks nothing and says what it found.
-    NV_DRIVER=$(stylus-gpu --nvidia-driver 2>/dev/null || echo proprietary)
-    NV_PKG=$(stylus-gpu --nvidia-pkg 2>/dev/null || echo nvidia-dkms)
+    # Os padrões de reserva apontam para o driver ABERTO, não para o fechado.
+    # `nvidia-dkms` não existe mais nos repositórios — o Arch trocou os pacotes
+    # principais da NVIDIA pelos módulos abertos — então este `||` era um
+    # "target not found" esperando a primeira máquina em que o stylus-gpu não
+    # respondesse.
+    NV_DRIVER=$(stylus-gpu --nvidia-driver 2>/dev/null || echo open)
+    NV_PKG=$(stylus-gpu --nvidia-pkg 2>/dev/null || echo nvidia-open-dkms)
     NV_ARCH_LABEL=$(stylus-gpu --nvidia-label 2>/dev/null || echo "geração não reconhecida")
 
     case $NV_DRIVER in
-        legacy470|legacy390)
+        legacy580|legacy470|legacy390)
             # Old enough that nothing in the official repositories drives it.
             # Installing an NVIDIA driver here would blacklist nouveau and
             # leave the machine with no graphics driver whatsoever.
@@ -561,9 +566,13 @@ if [[ $GPUS == *nvidia* ]]; then
 
 $GPU_SEEN
 
-Esta placa NVIDIA é antiga demais para os drivers da NVIDIA que ainda existem
-nos repositórios. O driver livre (nouveau) é o que funciona nela, e é o que
-vai ser instalado.
+Esta placa NVIDIA não tem driver da NVIDIA nos repositórios oficiais: o que
+funcionaria nela ($NV_PKG) está na AUR, e compilar da AUR no meio de uma
+instalação falha no meio, não no começo.
+
+O driver livre (nouveau) é o que funciona nela agora, e é o que vai ser
+instalado. Depois, com o sistema de pé, \`stylus-gpu --fix\` diz o que dá para
+melhorar.
 
 Continuar?" || exit 1
             GPU_CHOICE=nouveau ;;

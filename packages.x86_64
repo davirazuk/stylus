@@ -97,7 +97,7 @@ libfreeaptx
 # AAC, which is what an iPhone and most cheap headphones speak. Without it the
 # link silently falls back to SBC, which is the whole reason Bluetooth audio
 # has a reputation for sounding muffled.
-fdk-aac
+libfdk-aac
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  MUSIC — players, the library, and getting records into it
