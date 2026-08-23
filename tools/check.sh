@@ -265,13 +265,15 @@ sec "nenhuma casa de ninguém escrita à mão"
 # `check` e `suggest` varriam uma pasta inexistente sem dizer nada de errado.
 #
 # A raiz da coleção o sistema já sabe: tools/_raiz.py a pergunta ao vinyl.
-# Um /home/alguém/ escrito à mão é sempre defeito.
+# Um /home/alguém/ escrito à mão é sempre defeito — fora do _raiz.py e dos
+# dois arquivos de documentação, que CITAM o caminho antigo para explicar por
+# que ele não pode voltar.
 # /home/stylus/ é o usuário que ESTE perfil cria, pelo nome, na hora de montar
 # a ISO — o customize_airootfs.sh tem que escrever nele. Qualquer outro nome é
 # a casa de uma pessoa que não vai existir no computador de quem usar isto.
 casas=$(grep -rIn --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
         --exclude-dir=.pkgcache --exclude-dir=__pycache__ --exclude=check.sh \
-        --exclude=_raiz.py \
+        --exclude=_raiz.py --exclude=CLAUDE.md --exclude=README.md \
         -oE '/home/[a-z_][a-z0-9_-]*/' . 2>/dev/null |
         grep -v ':/home/stylus/$' || true)
 if [[ -z $casas ]]; then ok "nenhum caminho preso à casa de uma pessoa"
