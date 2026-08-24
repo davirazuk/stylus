@@ -161,7 +161,7 @@ class NowScreen(Screen):
         # ── a capa, maior e centralizada. ─────
         size = min(r.h - 100, 600)
         cov = self.app.thumbs.get(al.cover) if al.cover else None
-        cr = pygame.Rect(r.x + 80, r.y + (r.h - size) // 2, size, size)
+        cr = pygame.Rect(r.x + 150, r.y + (r.h - size) // 2, size, size)
         T.shadow_card(s, cr, radius=12)
         if cov:
             s.blit(pygame.transform.smoothscale(cov, (size, size)), cr)
@@ -169,8 +169,8 @@ class NowScreen(Screen):
             T.panel(s, cr, T.INK_LIFT, radius=12)
             T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
 
-        x = cr.right + 60
-        w = r.right - x - 40
+        x = cr.right + 100
+        w = r.right - x - 100
         y_text = cr.y + 40
         T.text(s, al.artist.upper(), (x, y_text), 28, T.TEXT_DIM, maxw=w)
         T.text(s, al.name, (x, y_text + 40), 52, T.TEXT, bold=True, maxw=w)

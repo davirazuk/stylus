@@ -2376,7 +2376,7 @@ class RitualScene:
                               seed=album.seed, plays=album.plays,
                               crackle=self.deck.crackle)
         if wm is not None and len(wm[0]):
-            tris.append(build_ribbon_segments(wm[0], 0.8, W, H, wm[1]))
+            tris.append(build_ribbon_segments(wm[0], 1.2, W, H, wm[1]))
 
         env = album.envelope_snapshot()
         side_tracks = [album.tracks[i] for i in side.get("tracks", [])]
@@ -2403,14 +2403,14 @@ class RitualScene:
 
         rest = vinyl.arm_rest(cx, cy, radius, iso)
         if rest is not None and len(rest[0]):
-            tris.append(build_ribbon_segments(rest[0], 1.2, W, H, rest[1]))
+            tris.append(build_ribbon_segments(rest[0], 1.8, W, H, rest[1]))
 
         play_r = vinyl.R_PROG_OUT + (vinyl.R_PROG_IN - vinyl.R_PROG_OUT) * frac
         segs, cols, _stylus = vinyl.tonearm(
             cx, cy, radius, iso,
             self.deck.arm_target_radius(play_r), lift=self.deck.arm_lift())
         if len(segs):
-            tris.append(build_ribbon_segments(segs, 1.6, W, H, cols))
+            tris.append(build_ribbon_segments(segs, 2.2, W, H, cols))
         # Um lote só de GL_TRIANGLES, desenhado depois das tiras.
         arm = np.concatenate(tris, axis=0) if tris else None
         return strips, arm
