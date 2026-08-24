@@ -158,52 +158,53 @@ class NowScreen(Screen):
             self._nothing(s, r)
             return
 
-        # ── a capa, grande, à esquerda. É o objeto; ela manda na tela. ─────
-        size = min(r.h - 220, 460)
+        # ── a capa, maior e centralizada. ─────
+        size = min(r.h - 100, 600)
         cov = self.app.thumbs.get(al.cover) if al.cover else None
-        cr = pygame.Rect(r.x + 40, r.y + 40, size, size)
-        T.shadow_card(s, cr, radius=8)
+        cr = pygame.Rect(r.x + 80, r.y + (r.h - size) // 2, size, size)
+        T.shadow_card(s, cr, radius=12)
         if cov:
             s.blit(pygame.transform.smoothscale(cov, (size, size)), cr)
         else:
-            T.panel(s, cr, T.INK_LIFT, radius=8)
-            T.text(s, "sem capa", cr.center, 18, T.TEXT_FAINT, anchor="center")
+            T.panel(s, cr, T.INK_LIFT, radius=12)
+            T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
 
-        x = cr.right + 44
+        x = cr.right + 60
         w = r.right - x - 40
-        T.text(s, al.artist.upper(), (x, r.y + 46), 22, T.TEXT_DIM, maxw=w)
-        T.text(s, al.name, (x, r.y + 78), 40, T.TEXT, bold=True, maxw=w)
+        y_text = cr.y + 40
+        T.text(s, al.artist.upper(), (x, y_text), 28, T.TEXT_DIM, maxw=w)
+        T.text(s, al.name, (x, y_text + 40), 52, T.TEXT, bold=True, maxw=w)
         if al.year:
-            T.text(s, str(al.year), (x, r.y + 130), 20, T.TEXT_FAINT)
+            T.text(s, str(al.year), (x, y_text + 100), 24, T.TEXT_FAINT)
 
-        # ── onde no LADO. o número que um disco te dá e um tocador não. ────
-        y = r.y + 186
+        # ── onde no LADO. ────
+        y = y_text + 160
         if side:
             resta = max(0.0, side["end"] - t_abs)
             ultimo = side is al.sides[-1]
             rotulo = side["label"].replace("SIDE", "LADO")
-            T.text(s, rotulo, (x, y), 26, T.BLUE, bold=True)
+            T.text(s, rotulo, (x, y), 32, T.BLUE, bold=True)
             T.text(s, ("acaba em " if ultimo else "vira em ") + humano(resta),
-                   (x + 130, y + 4), 20, T.TEXT_DIM)
-            self._groove(s, pygame.Rect(x, y + 44, w, 10), frac)
-            y += 76
+                   (x + 160, y + 6), 24, T.TEXT_DIM)
+            self._groove(s, pygame.Rect(x, y + 54, w, 14), frac)
+            y += 90
 
         if track:
             n = (al.tracks.index(track) + 1) if track in al.tracks else 0
-            T.text(s, f"{n:02d}  {track.get('title') or ''}", (x, y), 26,
+            T.text(s, f"{n:02d}  {track.get('title') or ''}", (x, y), 32,
                    T.TEXT, maxw=w)
-            y += 40
+            y += 50
 
-        # ── a letra do momento. a metade encarte do ritual. ────────────────
+        # ── a letra do momento. ────────────────
         line = self.app.current_lyric(al, track)
         if line:
-            T.text(s, line, (x, y + 8), 24, T.LAV, maxw=w)
-        y += 56
-
+            T.text(s, line, (x, y + 10), 28, T.LAV, maxw=w)
+        
+        # Informativos no rodapé
         hist = f"{al.plays}ª vez" if al.plays else "primeira vez"
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
-               (x, r.bottom - 92), 18, T.TEXT_FAINT, maxw=w)
+               (x, r.bottom - 60), 20, T.TEXT_FAINT, maxw=w)
         self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
                             "n/p faixa   v/b lado")
 
