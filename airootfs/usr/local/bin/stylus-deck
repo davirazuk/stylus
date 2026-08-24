@@ -108,7 +108,7 @@ mpv_args=(--input-ipc-server="$SOCK" --no-video --term-status-msg= --really-quie
           # O mpv reamostra por conta própria se deixarem. Aqui não: o
           # servidor de áudio já está configurado para seguir a taxa do
           # arquivo, e um resampler no tocador desfaz isso em silêncio.
-          --audio-samplerate=0 --audio-format=
+          --audio-samplerate=0
           # ── e o que um ~/.config/mpv/mpv.conf pode desfazer ─────────────
           # O mpv LÊ o config do usuário, e a linha de comando ganha dele. Um
           # `replaygain=track` ou um `af=loudnorm` herdado de outra máquina
