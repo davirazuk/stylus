@@ -142,11 +142,13 @@ fi
 # índice do mpv e o índice do disco são o mesmo número por construção.
 _tracks=()
 if [[ -d $TARGET ]]; then
+    # Usar readarray -d $'\0' para ler a lista de arquivos com segurança,
+    # ignorando warnings de bash sobre byte nulo que o print python envia.
     _tracks_output=$("$PY" -c '
 import os, sys, vinyl
 sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])))' "$TARGET" 2>&1)
     if [[ $? -eq 0 ]]; then
-        mapfile -t -d '' _tracks <<<"$_tracks_output"
+        IFS=$'\n' read -r -d '' -a _tracks < <(printf '%s\0' "$_tracks_output") || true
     else
         # Erro ao rodar Python: mostrar ao usuário
         echo "stylus: erro ao ler o disco: $_tracks_output" >&2
