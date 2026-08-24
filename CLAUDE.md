@@ -206,3 +206,13 @@ impede o conserto de ser desfeito por engano seis meses depois.
 
 Texto que o usuário vê é em português. Comentário de código acompanha o
 arquivo em que está.
+
+## 6. Mudanças Recentes e Pendências
+
+- **Bit-perfect audio:** PipeWire was resampling everything to 48kHz because the audio device was being held open. Reduced `session.suspend-timeout-seconds` to 1 second in `airootfs/etc/wireplumber/wireplumber.conf.d/51-stylus-alsa.conf` to encourage bit-perfect playback.
+- **`stylus-deck` sync:** Repository version of `stylus-deck` was outdated and missing fixes, causing playback issues. Synced it with the working local installation.
+
+### Futuras Melhorias
+- **Launcher rework:** The now playing part in the launcher needs to be reworked to remove empty space.
+- **Ritual vinyl:** The vinyl effect needs to be reworked, as it was built on top of the oscilloscope code and looks bad.
+- **Missing commands:** Investigate and add any commands missing from the repository that are present in the local installation.
