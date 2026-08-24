@@ -142,17 +142,22 @@ fi
 # índice do mpv e o índice do disco são o mesmo número por construção.
 _tracks=()
 if [[ -d $TARGET ]]; then
-    _tracks_output=$("$PY" -c '
+_tracks=()
+if [[ -d $TARGET ]]; then
+    # Usar arquivo temporário para evitar problemas de shell com caminhos e bytes nulos
+    _tmp_tracks=$(mktemp)
+    "$PY" -c '
 import os, sys, vinyl
-# Garantir que a lista termine com \0 para que readarray -d \0 funcione bem
-sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])) + "\0")' "$TARGET" 2>&1)
+with open(sys.argv[2], "w") as f:
+    for t in vinyl.track_paths(sys.argv[1]):
+        f.write(t + "\n")' "$TARGET" "$_tmp_tracks" 2>&1
+    
     if [[ $? -eq 0 ]]; then
-        # Ler a saída delimitada por nulos em um array de forma robusta
-        IFS=$'\0' read -r -d '' -a _tracks <<< "$_tracks_output"
-        # Remover elementos vazios se houver (devido ao \0 final extra)
-        _tracks=("${_tracks[@]}")
+        mapfile -t _tracks < "$_tmp_tracks"
+        rm -f "$_tmp_tracks"
     else
-        echo "stylus: erro ao ler o disco: $_tracks_output" >&2
+        echo "stylus: erro ao ler o disco" >&2
+        rm -f "$_tmp_tracks"
         exit 1
     fi
 fi
