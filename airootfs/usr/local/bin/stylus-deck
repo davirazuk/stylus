@@ -144,11 +144,13 @@ _tracks=()
 if [[ -d $TARGET ]]; then
     _tracks_output=$("$PY" -c '
 import os, sys, vinyl
-# Garantir que saia com um null ao final também para o bash ler corretamente
+# Garantir que a lista termine com \0 para que readarray -d \0 funcione bem
 sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])) + "\0")' "$TARGET" 2>&1)
     if [[ $? -eq 0 ]]; then
-        # Ler a saída delimitada por nulos em um array
+        # Ler a saída delimitada por nulos em um array de forma robusta
         IFS=$'\0' read -r -d '' -a _tracks <<< "$_tracks_output"
+        # Remover elementos vazios se houver (devido ao \0 final extra)
+        _tracks=("${_tracks[@]}")
     else
         echo "stylus: erro ao ler o disco: $_tracks_output" >&2
         exit 1
