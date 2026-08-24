@@ -142,8 +142,6 @@ fi
 # índice do mpv e o índice do disco são o mesmo número por construção.
 _tracks=()
 if [[ -d $TARGET ]]; then
-_tracks=()
-if [[ -d $TARGET ]]; then
     # Usar arquivo temporário para evitar problemas de shell com caminhos e bytes nulos
     _tmp_tracks=$(mktemp)
     "$PY" -c '
