@@ -1993,7 +1993,7 @@ RITUAL_CX, RITUAL_CY, RITUAL_R = -0.10, -0.10, 0.76
 # passa pelo bloom — estourava num branco chapado numa faixa alta, e um branco
 # chapado é justamente a perda da informação: dá para ver que está alto, mas
 # não dá mais para ver a FORMA, que é a ideia inteira.
-RITUAL_GAIN = 1.5
+RITUAL_GAIN = 1.8
 
 
 class RecordLabel:
