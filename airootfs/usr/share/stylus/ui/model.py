@@ -204,7 +204,14 @@ class Playing:
             f = vinyl.resolve_album(snap.get("path"), snap.get("artist", ""),
                                     snap.get("album", ""))
             self.album = vinyl.Album(f, envelope=False) if f else None
-        except Exception:                 # noqa: BLE001
+        except (OSError, IOError, ValueError, KeyError):
+            # Erros esperados: arquivo movido, permissão negada, formato ruim
+            self.album = None
+        except Exception as e:
+            # Erro inesperado: ao menos log para debug (não trata silenciosamente)
+            import sys
+            print(f"stylus: erro ao carregar álbum: {type(e).__name__}: {e}",
+                  file=sys.stderr)
             self.album = None
         finally:
             self._resolving = False

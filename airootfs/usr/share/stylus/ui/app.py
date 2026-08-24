@@ -57,7 +57,7 @@ def spawn(cmd):
         subprocess.Popen(cmd, start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
-    except OSError:
+    except Exception:
         return False
 
 
@@ -1442,8 +1442,14 @@ class App:
 
     # ── ações ──────────────────────────────────────────────────────────────
     def put_on(self, folder):
+        if not os.path.isdir(folder):
+            self.toast(f"disco não existe: {os.path.basename(folder)}")
+            return False
         self.toast(f"pondo {os.path.basename(folder)}…")
-        spawn(["stylus-deck", "--no-scope", folder])
+        if not spawn(["stylus-deck", "--no-scope", folder]):
+            self.toast("não consegui pôr o disco (erro ao iniciar)")
+            return False
+        return True
 
     def open_deck(self):
         env = dict(os.environ, STYLUS_DECK_RITUAL="1")
@@ -1455,7 +1461,7 @@ class App:
                  "/usr/share/stylus/deck/scope.py"],
                 env=env, start_new_session=True,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except OSError:
+        except Exception:
             self.toast("não consegui abrir o deck")
 
     def current_lyric(self, al, track):

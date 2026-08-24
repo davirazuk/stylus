@@ -582,7 +582,34 @@ def track_paths(folder):
                         if n.lower().endswith(AUDIO_EXT)), key=_track_sort_key)
     except OSError:
         return []
-    return [os.path.join(folder, n) for n in names]
+    
+    if names:
+        return [os.path.join(folder, n) for n in names]
+    
+    # Sem áudio direto: procura em subdirs (Disc 01/Disc 02, por exemplo)
+    # Coleta TODOS os áudios de TODOS os subdirs, na ordem de nome de subdir
+    # e depois de arquivo. Assim Disc 1 vem antes de Disc 2, e as faixas estão
+    # em ordem dentro de cada disco. Isto faz a lista do mpv bater com a do
+    # Album._scan: ambos fazem a mesma varredura.
+    try:
+        subdirs = sorted(os.listdir(folder))
+    except OSError:
+        return []
+    
+    out = []
+    for d in subdirs:
+        subdir_path = os.path.join(folder, d)
+        if not os.path.isdir(subdir_path):
+            continue
+        try:
+            sub_names = sorted((n for n in os.listdir(subdir_path)
+                               if n.lower().endswith(AUDIO_EXT)), 
+                              key=_track_sort_key)
+            out.extend(os.path.join(subdir_path, n) for n in sub_names)
+        except OSError:
+            continue
+    
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -866,10 +893,37 @@ class Album:
                 key=_track_sort_key)
         except Exception:
             names = []
+        
         for n in names:
             p = os.path.join(self.folder, n)
             title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", os.path.splitext(n)[0]).strip()
             self.tracks.append({"path": p, "title": title, "duration": 0.0, "start": 0.0})
+        
+        # Sem áudio direto: procura em subdirs (Disc 01/Disc 02)
+        if not self.tracks:
+            try:
+                subdirs = sorted(os.listdir(self.folder))
+            except OSError:
+                subdirs = []
+            
+            for d in subdirs:
+                subdir_path = os.path.join(self.folder, d)
+                if not os.path.isdir(subdir_path):
+                    continue
+                try:
+                    sub_names = sorted(
+                        (n for n in os.listdir(subdir_path) 
+                         if n.lower().endswith(AUDIO_EXT)),
+                        key=_track_sort_key)
+                    for n in sub_names:
+                        p = os.path.join(subdir_path, n)
+                        title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", 
+                                     os.path.splitext(n)[0]).strip()
+                        self.tracks.append({"path": p, "title": title, 
+                                          "duration": 0.0, "start": 0.0})
+                except OSError:
+                    continue
+        
         for cand in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg", "cover.jpeg"):
             p = os.path.join(self.folder, cand)
             if os.path.isfile(p):

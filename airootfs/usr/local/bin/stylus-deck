@@ -142,9 +142,16 @@ fi
 # índice do mpv e o índice do disco são o mesmo número por construção.
 _tracks=()
 if [[ -d $TARGET ]]; then
-    mapfile -t -d '' _tracks < <("$PY" -c '
+    _tracks_output=$("$PY" -c '
 import os, sys, vinyl
-sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])))' "$TARGET" 2>/dev/null)
+sys.stdout.write("\0".join(vinyl.track_paths(sys.argv[1])))' "$TARGET" 2>&1)
+    if [[ $? -eq 0 ]]; then
+        mapfile -t -d '' _tracks <<<"$_tracks_output"
+    else
+        # Erro ao rodar Python: mostrar ao usuário
+        echo "stylus: erro ao ler o disco: $_tracks_output" >&2
+        exit 1
+    fi
 fi
 
 # ── pôr a agulha de volta onde ela estava ──────────────────────────────────

@@ -6,3 +6,4 @@ __pycache__/
 airootfs/usr/share/stylus/deck/venv/
 airootfs/usr/share/stylus/deck/*.bak
 .claude/
+.aider*
