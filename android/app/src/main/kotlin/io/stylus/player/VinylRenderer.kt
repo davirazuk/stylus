@@ -19,11 +19,12 @@ import kotlin.math.*
  */
 class VinylRenderer : GLSurfaceView.Renderer {
 
-    // ─── Palette ───────────────────────────────────────────────────────
+    // ─── Palette (matched to desktop vinyl.py) ──────────────────────────
     private val PLINTH       = floatArrayOf(0.115f, 0.072f, 0.045f)   // walnut
-    private val VINYL        = floatArrayOf(0.006f, 0.006f, 0.008f)   // piano black
-    private val VINYL_HI     = floatArrayOf(0.55f, 0.57f, 0.62f)      // cool highlight
-    private val GROOVE       = floatArrayOf(0.012f, 0.013f, 0.018f)   // unlit groove
+    private val VINYL_CORE   = floatArrayOf(0.013f, 0.013f, 0.014f)   // deep black
+    private val VINYL_RIM    = floatArrayOf(0.052f, 0.050f, 0.048f)   // warm rim
+    private val SHEEN        = floatArrayOf(0.105f, 0.108f, 0.100f)   // cool specular
+    private val GROOVE       = floatArrayOf(0.012f, 0.012f, 0.016f)   // unlit groove
     private val GROOVE_LIT   = floatArrayOf(0.035f, 0.038f, 0.050f)   // lit groove
     private val GAP          = floatArrayOf(0.07f, 0.068f, 0.065f)    // lead-out gap (dark)
     private val EDGE         = floatArrayOf(0.44f, 0.42f, 0.38f)      // outer/inner edges
@@ -99,7 +100,8 @@ class VinylRenderer : GLSurfaceView.Renderer {
         layout(location=0) in vec2 aPos;
         layout(location=1) in vec4 aCol;
         uniform mat4 uMvp;
-        out vec4 vCol; out vec2 vUv;
+        out vec4 vCol;
+        out vec2 vUv;
         void main(){ vCol=aCol; vUv=aPos*0.5+0.5; gl_Position=uMvp*vec4(aPos,0,1); }
     """.trimIndent()
 
@@ -231,8 +233,8 @@ class VinylRenderer : GLSurfaceView.Renderer {
             for (j in 0 until segs) {
                 val a0 = j.toFloat() / segs * 2f * PI.toFloat()
                 val a1 = (j + 1).toFloat() / segs * 2f * PI.toFloat()
-                tri(ring(r - w, a0), ring(r - w, a1), ring(r + w, a0), col)
-                tri(ring(r - w, a1), ring(r + w, a1), ring(r + w, a0), col)
+                tri(ring(r-w, a0), ring(r-w, a1), ring(r+w, a0), col)
+                tri(ring(r-w, a1), ring(r+w, a1), ring(r+w, a0), col)
             }
         }
     }
@@ -248,7 +250,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
             val p0 = ring(r, a); val p1 = ring(r, a1)
             val dx=p1[0]-p0[0]; val dy=p1[1]-p0[1]
             val l= sqrt(dx*dx+dy*dy).coerceAtLeast(1e-6f)
-            val nx=-dy/l*hw; val ny=dx/l*hw
+            val nx=-dy/l*0.0007f; val ny=dx/l*0.0007f
             val alpha = 0.07f + rnd.nextFloat()*0.10f
             val col = floatArrayOf(0.38f*alpha,0.38f*alpha,0.40f*alpha)
             quad(p0[0]+nx,p0[1]+ny, p0[0]-nx,p0[1]-ny, p1[0]-nx,p1[1]-ny, p1[0]+nx,p1[1]+ny, col)
@@ -268,20 +270,20 @@ class VinylRenderer : GLSurfaceView.Renderer {
         val segs = 128
         for ((r,hw) in edges) {
             for (j in 0 until segs) {
-                val a0 = j.toFloat() / segs * 2f * PI.toFloat()
-                val a1 = (j + 1).toFloat() / segs * 2f * PI.toFloat()
-                tri(ring(r - hw, a0), ring(r - hw, a1), ring(r + hw, a0), EDGE)
-                tri(ring(r - hw, a1), ring(r + hw, a1), ring(r + hw, a0), EDGE)
+                val a0=j.toFloat()/segs*2f*PI.toFloat()
+                val a1=(j+1).toFloat()/segs*2f*PI.toFloat()
+                tri(ring(r-hw,a0),ring(r-hw,a1),ring(r+hw,a0),EDGE)
+                tri(ring(r-hw,a1),ring(r+hw,a1),ring(r+hw,a0),EDGE)
             }
         }
     }
 
     private fun buildLabel() {
-        val segs = 48
-        for (j in 0 until segs) {
-            val a0 = j.toFloat() / segs * 2f * PI.toFloat()
-            val a1 = (j + 1).toFloat() / segs * 2f * PI.toFloat()
-            vert(0f, 0f, LABEL_BG); vert(ring(R_LABEL, a0), LABEL_BG); vert(ring(R_LABEL, a1), LABEL_BG)
+        val segs=36
+        for(j in 0 until segs){
+            val a0=j.toFloat()/segs*2f*PI.toFloat()
+            val a1=(j+1).toFloat()/segs*2f*PI.toFloat()
+            vert(0f,0f,LABEL_BG); vert(ring(R_LABEL,a0),LABEL_BG); vert(ring(R_LABEL,a1),LABEL_BG)
         }
     }
 
@@ -359,7 +361,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
         }
     }
     private fun lerp(a: FloatArray, b: FloatArray, t: Float) = floatArrayOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
-    private fun quadFill(h: Float) = floatArrayOf(-h, -h, h, -h, h, h, -h, -h, h, h, -h, h)
+    private fun quadFill(h: Float) = floatArrayOf(-h, -h, h, -h, h, h, -h, -h, h, h, -h, -h)
 
     // ─── Draw helpers ──────────────────────────────────────────────────
 
@@ -424,4 +426,33 @@ class VinylRenderer : GLSurfaceView.Renderer {
         return ids[0]
     }
 
+    companion object {
+        private val PLINTH       = floatArrayOf(0.115f, 0.072f, 0.045f)   // walnut
+        private val VINYL_CORE   = floatArrayOf(0.013f, 0.013f, 0.014f)   // piano black
+        private val VINYL_RIM    = floatArrayOf(0.052f, 0.050f, 0.048f)   // warm rim
+        private val VINYL_HI     = floatArrayOf(0.55f, 0.57f, 0.62f)      // cool highlight
+        private val GROOVE       = floatArrayOf(0.012f, 0.012f, 0.016f)   // unlit groove
+        private val GROOVE_LIT   = floatArrayOf(0.035f, 0.038f, 0.050f)   // lit groove
+        private val GAP          = floatArrayOf(0.07f, 0.068f, 0.065f)    // lead-out gap (dark)
+        private val EDGE         = floatArrayOf(0.44f, 0.42f, 0.38f)      // outer/inner edges
+        private val LABEL_BG     = floatArrayOf(0.62f, 0.14f, 0.10f)      // label paper
+        private val LABEL_RING   = floatArrayOf(0.52f, 0.44f, 0.38f)      // label edge
+        private val SPINDLE_C    = floatArrayOf(0.26f, 0.26f, 0.27f)
+        private val ARM_C        = floatArrayOf(0.62f, 0.62f, 0.64f)
+        private val ARM_D        = floatArrayOf(0.13f, 0.13f, 0.14f)
+        private val ARM_HI       = floatArrayOf(0.88f, 0.88f, 0.90f)
+        private val STYLUS_C     = floatArrayOf(0.96f, 0.70f, 0.26f)
+
+        private val R_OUTER      = 1.0f
+        private val R_LEADIN     = 0.962f
+        private val R_PROG_OUT   = 0.945f
+        private val R_PROG_IN    = 0.395f
+        private val R_RUNOUT     = 0.360f
+        private val R_LABEL      = 0.329f
+        private val R_SPINDLE    = 0.024f
+        private val N_RINGS      = 72
+        private val LIGHT        = Math.toRadians(-35.0).toFloat()
+
+        private val SZ = 700000
     }
+}
