@@ -107,6 +107,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
 
         si = 0; buildDisc(); flush()
         si = 0; buildGrooves(); flush()
+        si = 0; buildWear(); flush()
         si = 0; buildEdges(); flush()
         si = 0; buildLabel(); flush()
         si = 0; buildRing(R_LABEL * 1.005f, 0.006f, floatArrayOf(0.45f,0.40f,0.37f)); flush()
@@ -215,6 +216,37 @@ class VinylRenderer : GLSurfaceView.Renderer {
             val a0 = j.toFloat() / segs * 2f * PI.toFloat()
             val a1 = (j + 1).toFloat() / segs * 2f * PI.toFloat()
             vert(0f, 0f, LABEL_BG); vert(ring(R_LABEL, a0), LABEL_BG); vert(ring(R_LABEL, a1), LABEL_BG)
+        }
+    }
+
+    private fun buildWear() {
+        // faint dust/scratches that rotate with disc — makes it feel physical
+        val rnd = java.util.Random(42)
+        for (k in 0 until 9) {
+            val r = 0.38f + rnd.nextFloat() * 0.55f
+            val a = rnd.nextFloat() * 2f * PI.toFloat()
+            val len = 0.06f + rnd.nextFloat() * 0.14f
+            val a0 = a; val a1 = a + len / r
+            // thin scratch as quad
+            val hw = 0.0012f
+            val p0 = ring(r, a0); val p1 = ring(r, a1)
+            // perpendicular offset
+            val dx = p1[0]-p0[0]; val dy = p1[1]-p0[1]
+            val l = sqrt(dx*dx+dy*dy).coerceAtLeast(1e-6f)
+            val nx = -dy/l*hw; val ny = dx/l*hw
+            val alpha = 0.12f + rnd.nextFloat()*0.18f
+            val col = floatArrayOf(0.5f*alpha, 0.5f*alpha, 0.52f*alpha)
+            quad(p0[0]+nx, p0[1]+ny, p0[0]-nx, p0[1]-ny, p1[0]-nx, p1[1]-ny, p1[0]+nx, p1[1]+ny, col)
+        }
+        // dust specks
+        for (k in 0 until 28) {
+            val r = 0.35f + rnd.nextFloat()*0.60f
+            val a = rnd.nextFloat()*2f*PI.toFloat()
+            val p = ring(r, a)
+            val sz = 0.0025f
+            val col = floatArrayOf(0.35f,0.35f,0.36f)
+            // tiny quad
+            quad(p[0]-sz, p[1]-sz, p[0]+sz, p[1]-sz, p[0]+sz, p[1]+sz, p[0]-sz, p[1]+sz, col)
         }
     }
 
