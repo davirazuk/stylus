@@ -40,7 +40,7 @@ TRACE_N = 760
 LPF_CUTOFF_HZ = 900.0
 
 RITUAL_CX, RITUAL_CY, RITUAL_R = -0.10, -0.10, 0.76
-RITUAL_GAIN = 1.8
+RITUAL_GAIN = 1.18  # was 1.8 — bloomed everything to white with honest palette
 
 N_BANDS = 28
 SPEC_FFT_N = 2048
@@ -198,11 +198,12 @@ RIBBON_FS = """
 in vec4 vcol;
 in float vedge;
 out vec4 frag;
+// Vinyl groove is a matte incision, not an electron beam.
+// Flat profile with only 8%% core lift — reads as pencil, not phosphor.
 void main() {
     float d = abs(vedge);
-    float core = exp(-d * d * 4.5);
-    float shoulder = 1.0 - smoothstep(0.55, 1.0, d);
-    float a = max(core, shoulder * 0.62);
+    float a = 1.0 - smoothstep(0.45, 1.0, d);
+    a *= 0.92 + 0.08 * exp(-d * d * 8.0);
     frag = vec4(vcol.rgb * a, 1.0);
 }
 """

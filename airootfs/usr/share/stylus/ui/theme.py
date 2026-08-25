@@ -18,12 +18,12 @@ import pygame
 
 # ── cores ──────────────────────────────────────────────────────────────────
 INK        = (7, 8, 11)          # o fundo. quase preto, levemente azul
-INK_SOFT   = (14, 16, 22)        # painéis — um pouco mais claro para separar
-INK_LIFT   = (22, 25, 33)        # o que está sob o cursor
-LINE       = (34, 38, 50)        # divisórias — um fio mais presente
-TEXT       = (228, 233, 242)     # texto principal — branco mais limpo
-TEXT_DIM   = (130, 142, 162)     # secundário — mais legível que antes
-TEXT_FAINT = (72, 80, 96)        # terciário — sutil mas não invisível
+INK_SOFT   = (16, 18, 25)        # painéis — mais separação do fundo
+INK_LIFT   = (26, 30, 40)        # sob cursor — mais claro
+LINE       = (52, 58, 72)        # divisórias visíveis a 3m (antes 1.22:1)
+TEXT       = (232, 236, 245)     # principal — branco limpo
+TEXT_DIM   = (138, 149, 170)     # secundário — legível
+TEXT_FAINT = (118, 128, 148)     # terciário — WCAG 4.5:1, não invisível
 
 BLUE       = (91, 206, 250)      # o acento principal
 PINK       = (245, 169, 184)
@@ -135,8 +135,9 @@ def lerp(a, b, t):
 
 
 def shadow_card(surf, rect, radius=12):
-    """Sombra sob uma capa — ela precisa parecer POUSADA, não colada."""
-    for i, alpha in ((8, 18), (5, 28), (3, 40), (1, 50)):
+    """Sombra sob a capa — POUSADA, não colada. Blur escalado para não ser escada."""
+    # 4 camadas escalonadas com alpha mais forte — visível sobre INK mesmo
+    for i, alpha in ((10, 22), (6, 36), (3, 52), (1, 70)):
         s = pygame.Surface((rect.w + i * 2, rect.h + i * 2), pygame.SRCALPHA)
         pygame.draw.rect(s, (0, 0, 0, alpha), s.get_rect(),
                          border_radius=radius + i)

@@ -216,26 +216,26 @@ AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Palette
+# Palette — vinyl is plastic, not phosphor
 # ═══════════════════════════════════════════════════════════════════════════
-# Rich, vivid but physically correct for the additive phosphor buffer
-# (blend GL_ONE/GL_ONE). Anything above ~0.35 blooms on screen, so the
-# vinyl body stays in the hundredths to remain matte — otherwise the whole
-# disc glows like a lamp and stops being an object. Grooves are brighter
-# than before for punch and track-gap legibility, but kept below whiteout
-# so the disc still reads as vinyl, not neon.
-VINYL_CORE      = (0.012, 0.015, 0.022)   # deep black plastic — matte centre
-VINYL_RIM       = (0.034, 0.042, 0.060)   # edge catches a touch more light
-SHEEN           = (0.072, 0.088, 0.120)   # gloss lobes — more presence, still subtle
-GROOVE_UNPLAYED = (0.098, 0.118, 0.160)   # ahead of needle: cold slate, darker
-GROOVE_PLAYED   = (0.150, 0.380, 0.620)   # behind needle: vivid electric blue
-GROOVE_GAP      = (0.360, 0.400, 0.520)   # track gaps: bright silver-blue, countable
-STYLUS_HOT      = (0.740, 0.520, 0.140)   # live groove: hot amber, contrasts blue
-ARM_METAL       = (0.300, 0.340, 0.400)   # brushed gunmetal — not glowing
-ARM_HIGHLIGHT   = (0.560, 0.620, 0.720)   # highlight catches the sheen
-EDGE_RING       = (0.200, 0.235, 0.310)   # outer edge / label rim
-DUST            = (0.195, 0.220, 0.280)   # dust & fine scratches
-ALARM           = (0.780, 0.250, 0.250)   # side break — urgent but not blown
+# Honest materials: black plastic reflects white specular, grooves are
+# warm greys (dark ahead of needle, milky behind), gaps are near-white.
+# No blue neon — blue is the scope's language. Additive buffer:
+# anything >0.35 blooms, so body stays in hundredths to remain matte.
+# Contrast comes from luminance (shade), not hue. The amber live groove
+# is the only saturated accent — it contrasts grey, not competes.
+VINYL_CORE      = (0.013, 0.013, 0.014)   # black plastic — neutral, matte
+VINYL_RIM       = (0.052, 0.050, 0.048)   # warm edge, catches room light
+SHEEN           = (0.105, 0.108, 0.100)   # white specular lobes
+GROOVE_UNPLAYED = (0.095, 0.102, 0.110)   # ahead: dark graphite
+GROOVE_PLAYED   = (0.190, 0.198, 0.208)   # behind: milky warm grey — lit
+GROOVE_GAP      = (0.760, 0.750, 0.735)   # gap: near-white, countable de longe
+STYLUS_HOT      = (0.740, 0.520, 0.140)   # live: hot amber, only saturated accent
+ARM_METAL       = (0.285, 0.285, 0.290)   # brushed steel — warm neutral
+ARM_HIGHLIGHT   = (0.545, 0.545, 0.550)   # highlight — not blue
+EDGE_RING       = (0.185, 0.185, 0.188)   # edge / label rim — steel
+DUST            = (0.165, 0.165, 0.168)   # dust — neutral
+ALARM           = (0.740, 0.230, 0.225)   # side break — muted red, not bloom
 
 
 def _lerp(a, b, t):
@@ -563,53 +563,68 @@ def _track_sort_key(name):
     return (int(m.group(1)) if m else 10_000, os.path.basename(name).lower())
 
 
-def track_paths(folder):
-    """Os arquivos de áudio da pasta, na ordem do disco.
-
-    É a MESMA lista que Album._scan usa, exposta para o lançador poder
-    montar a lista do mpv com ela. Isso importa porque o índice de faixa que
-    o mpv devolve é usado como índice em Album.tracks: se as duas listas não
-    forem a mesma, o braço aponta para a faixa errada. Dando a PASTA ao mpv
-    era o que acontecia — ele enfileira tudo, cover.jpg incluído, e ao chegar
-    nela no fim do disco desiste e fecha, tendo antes reportado um índice que
-    não existe em Album.tracks.
-
-    Devolve [] se não houver áudio direto na pasta (álbum em Disc 01/Disc 02,
-    que Album._scan também não lê), e aí quem chama volta a dar a pasta.
-    """
-    try:
-        names = sorted((n for n in os.listdir(folder)
-                        if n.lower().endswith(AUDIO_EXT)), key=_track_sort_key)
-    except OSError:
-        return []
-    
-    if names:
-        return [os.path.join(folder, n) for n in names]
-    
-    # Sem áudio direto: procura em subdirs (Disc 01/Disc 02, por exemplo)
-    # Coleta TODOS os áudios de TODOS os subdirs, na ordem de nome de subdir
-    # e depois de arquivo. Assim Disc 1 vem antes de Disc 2, e as faixas estão
-    # em ordem dentro de cada disco. Isto faz a lista do mpv bater com a do
-    # Album._scan: ambos fazem a mesma varredura.
-    try:
-        subdirs = sorted(os.listdir(folder))
-    except OSError:
-        return []
-    
+def _collect_audio_recursive(folder, max_depth=4):
+    """Coleta todos os áudios sob folder até max_depth, ordenado por caminho."""
     out = []
-    for d in subdirs:
-        subdir_path = os.path.join(folder, d)
-        if not os.path.isdir(subdir_path):
+    stack = [(folder, 0)]
+    while stack:
+        cur, depth = stack.pop()
+        if depth > max_depth:
             continue
         try:
-            sub_names = sorted((n for n in os.listdir(subdir_path)
-                               if n.lower().endswith(AUDIO_EXT)), 
-                              key=_track_sort_key)
-            out.extend(os.path.join(subdir_path, n) for n in sub_names)
+            entries = sorted(os.listdir(cur))
         except OSError:
             continue
-    
-    return out
+        # primeiro coleta áudios diretos deste nível
+        for e in entries:
+            p = os.path.join(cur, e)
+            if os.path.isfile(p) and e.lower().endswith(AUDIO_EXT):
+                out.append(p)
+        if depth == max_depth:
+            continue
+        # depois empilha subpastas para varrer
+        for e in reversed(entries):  # reversed para manter ordem com stack LIFO
+            p = os.path.join(cur, e)
+            if os.path.isdir(p) and not _DATED_FOLDER.match(e) and not e.startswith("."):
+                # ignora pastas de arte/scans se tiverem muitas imagens mas sem áudio
+                # mas ainda varre — webdav pode ter estrutura imprevisível
+                stack.append((p, depth + 1))
+    # ordena por caminho relativo e depois por _track_sort_key para manter ordem de disco
+    out.sort(key=lambda x: (os.path.relpath(x, folder).lower(), _track_sort_key(os.path.basename(x))))
+    # dedup preservando ordem
+    seen = set()
+    uniq = []
+    for p in out:
+        n = os.path.normpath(p)
+        if n not in seen:
+            seen.add(n)
+            uniq.append(p)
+    return uniq
+
+def track_paths(folder):
+    """Os arquivos de áudio da pasta, na ordem do disco — recursivo com subpastas."""
+    try:
+        # tenta rápido direto antes de walk (caso comum 95%%)
+        names = sorted((n for n in os.listdir(folder)
+                        if n.lower().endswith(AUDIO_EXT)), key=_track_sort_key)
+        if names:
+            direct = [os.path.join(folder, n) for n in names]
+            # verifica se há também subpastas com áudio (Disc 01) — soma tudo
+            rec = _collect_audio_recursive(folder)
+            # se recursivo só trouxe os mesmos diretos, devolve direto (mais rápido)
+            if len(rec) == len(direct) and set(rec) == set(direct):
+                return direct
+            # se tem mistura (ex: álbum dividido), devolve recursivo ordenado
+            # que inclui diretos + subpastas na ordem correta (Disc01 antes de root? não)
+            # Para manter compatibilidade, se há diretos, devolve só diretos quando
+            # o álbum é simples; mas se houver subpastas com áudio adicional, devolve tudo
+            # Detecta: se rec tem mais que direct, usa rec
+            if len(rec) > len(direct):
+                return rec
+            return direct
+    except OSError:
+        pass
+    return _collect_audio_recursive(folder)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -774,25 +789,98 @@ def _shelf_one(root, artist=None, min_tracks=SHELF_MIN_TRACKS):
                                       for d in sorted(os.listdir(root))]
     except OSError:
         return []
+    def _has_audio(p):
+        # conta faixas direto e em subpastas imediatas (Disc 01/Disc 02, CD1/CD2)
+        # e também até 2 níveis para coleções planas ou webdav com hierarquia
+        try:
+            direct = sum(1 for f in os.listdir(p) if f.lower().endswith(AUDIO_EXT))
+            if direct >= min_tracks:
+                return True
+            # olha subpastas (Disc 01, etc) — recursivo leve, sem varrer coleção inteira
+            for sub in os.listdir(p):
+                sp = os.path.join(p, sub)
+                if not os.path.isdir(sp) or _DATED_FOLDER.match(sub):
+                    continue
+                try:
+                    # conta dentro da subpasta e também uma camada abaixo dela
+                    c = sum(1 for f in os.listdir(sp) if f.lower().endswith(AUDIO_EXT))
+                    if c >= min_tracks:
+                        return True
+                    for sub2 in os.listdir(sp):
+                        sp2 = os.path.join(sp, sub2)
+                        if not os.path.isdir(sp2):
+                            continue
+                        try:
+                            c2 = sum(1 for f in os.listdir(sp2) if f.lower().endswith(AUDIO_EXT))
+                            if c2 >= min_tracks:
+                                return True
+                        except OSError:
+                            continue
+                    # soma total de todas as subpastas imediatas (álbum dividido)
+                    # ex: Disc01 7 faixas + Disc02 6 faixas = 13
+                    if direct == 0:
+                        total_sub = 0
+                        for sub in os.listdir(p):
+                            sp = os.path.join(p, sub)
+                            if os.path.isdir(sp):
+                                try:
+                                    total_sub += sum(1 for f in os.listdir(sp) if f.lower().endswith(AUDIO_EXT))
+                                except OSError:
+                                    pass
+                        if total_sub >= min_tracks:
+                            return True
+                except OSError:
+                    continue
+        except OSError:
+            return False
+        return False
+
+    def _collect(p):
+        # p é candidato a disco — verifica recursivo
+        if _has_audio(p):
+            return [p]
+        # se não tem áudio direto, pode ser pasta de artista com álbuns dentro
+        try:
+            entries = sorted(os.listdir(p))
+        except OSError:
+            return []
+        found = []
+        for d in entries:
+            q = os.path.join(p, d)
+            if not os.path.isdir(q) or _DATED_FOLDER.match(d):
+                continue
+            if _has_audio(q):
+                found.append(q)
+            else:
+                # tenta um nível mais fundo: artista/álbum/subpasta com áudio
+                # cobre caso webdav com estrutura extra ou coleção bagunçada
+                try:
+                    for d2 in os.listdir(q):
+                        q2 = os.path.join(q, d2)
+                        if os.path.isdir(q2) and _has_audio(q2):
+                            found.append(q2)
+                except OSError:
+                    continue
+        return found
+
     out = []
     for t in tops:
         if not os.path.isdir(t):
             continue
-        try:
-            entries = sorted(os.listdir(t))
-        except OSError:
+        # tops pode ser o próprio disco (coleção plana root/disco)
+        if _has_audio(t):
+            out.append(t)
             continue
-        for d in entries:
-            p = os.path.join(t, d)
-            if not os.path.isdir(p) or _DATED_FOLDER.match(d):
-                continue
-            try:
-                n = sum(1 for f in os.listdir(p) if f.lower().endswith(AUDIO_EXT))
-            except OSError:
-                continue
-            if n >= min_tracks:
-                out.append(p)
-    return out
+        out.extend(_collect(t))
+    # dedup e estabilidade
+    seen = set()
+    uniq = []
+    for p in out:
+        n = os.path.normpath(p)
+        if n not in seen:
+            seen.add(n)
+            uniq.append(p)
+    return sorted(uniq)
 
 
 def last_played():
@@ -887,42 +975,11 @@ class Album:
 
     # -- structure ---------------------------------------------------------
     def _scan(self):
-        try:
-            names = sorted(
-                (n for n in os.listdir(self.folder) if n.lower().endswith(AUDIO_EXT)),
-                key=_track_sort_key)
-        except Exception:
-            names = []
-        
-        for n in names:
-            p = os.path.join(self.folder, n)
+        # usa o mesmo coletor que track_paths para garantir índice idêntico
+        for p in _collect_audio_recursive(self.folder):
+            n = os.path.basename(p)
             title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", os.path.splitext(n)[0]).strip()
             self.tracks.append({"path": p, "title": title, "duration": 0.0, "start": 0.0})
-        
-        # Sem áudio direto: procura em subdirs (Disc 01/Disc 02)
-        if not self.tracks:
-            try:
-                subdirs = sorted(os.listdir(self.folder))
-            except OSError:
-                subdirs = []
-            
-            for d in subdirs:
-                subdir_path = os.path.join(self.folder, d)
-                if not os.path.isdir(subdir_path):
-                    continue
-                try:
-                    sub_names = sorted(
-                        (n for n in os.listdir(subdir_path) 
-                         if n.lower().endswith(AUDIO_EXT)),
-                        key=_track_sort_key)
-                    for n in sub_names:
-                        p = os.path.join(subdir_path, n)
-                        title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", 
-                                     os.path.splitext(n)[0]).strip()
-                        self.tracks.append({"path": p, "title": title, 
-                                          "duration": 0.0, "start": 0.0})
-                except OSError:
-                    continue
         
         for cand in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg", "cover.jpeg"):
             p = os.path.join(self.folder, cand)
@@ -1207,27 +1264,32 @@ def sheen_gain(theta, light_angle, strength=1.0):
     return 1.0 + strength * np.exp(-(d2 ** 2) / 0.075)
 
 
-def disc_body(cx, cy, radius, iso, light_angle, n=256, rings=(0.0, 0.34, 0.62, 0.86, 1.0)):
-    """The black plastic. Concentric annuli as triangle strips.
+def disc_body(cx, cy, radius, iso, light_angle, n=320,
+              rings=(0.024, 0.20, 0.38, 0.53, 0.66, 0.78, 0.88, 0.96, 1.0)):
+    """The black plastic — now honest, not stepped.
 
-    Returned in the same 7-float vertex layout build_ribbon_strip emits
-    ([x, y, r, g, b, a, edge]) with edge pinned to 0, which RIBBON_FS reads
-    as "dead centre of the stroke" and therefore renders at full, flat
-    colour — so filled areas and strokes can share one shader and one buffer
-    without adding a second pipeline.
+    8 annuli with smooth pow distribution, warm neutral gradient, white
+    specular with soft pow falloff from centre (no hard cutoff at 0.25),
+    adaptive tessellation per ring, and spindle hole left empty so label
+    hole shows through. One material, one shader, no banding.
     """
-    theta = np.linspace(0.0, 2.0 * np.pi, n, endpoint=True)
-    gain = sheen_gain(theta, light_angle)
     out = []
     for r0, r1 in zip(rings[:-1], rings[1:]):
+        r_mid = (r0 + r1) * 0.5
+        this_n = int(np.clip(radius * r_mid * 1100, 96, 512))
+        theta = np.linspace(0.0, 2.0 * np.pi, this_n, endpoint=True)
+        gain = sheen_gain(theta, light_angle)
         p0 = _polar(cx, cy, r0 * radius, theta, iso)
         p1 = _polar(cx, cy, r1 * radius, theta, iso)
-        c0 = np.array(_lerp(VINYL_CORE, VINYL_RIM, r0), dtype=np.float32)
-        c1 = np.array(_lerp(VINYL_CORE, VINYL_RIM, r1), dtype=np.float32)
-        # sheen only really shows on the outer half, like it does on a record
-        s0 = np.array(SHEEN, dtype=np.float32) * max(0.0, r0 - 0.25) / 0.75
-        s1 = np.array(SHEEN, dtype=np.float32) * max(0.0, r1 - 0.25) / 0.75
-        v = np.empty((2 * n, 7), dtype=np.float32)
+        # smooth warm gradient — no stepped bands
+        t0 = r0 ** 0.9
+        t1 = r1 ** 0.9
+        c0 = np.array(_lerp(VINYL_CORE, VINYL_RIM, t0), dtype=np.float32)
+        c1 = np.array(_lerp(VINYL_CORE, VINYL_RIM, t1), dtype=np.float32)
+        # sheen falls as pow from centre — soft, no phantom ring at 0.25
+        s0 = np.array(SHEEN, dtype=np.float32) * (r0 ** 1.7)
+        s1 = np.array(SHEEN, dtype=np.float32) * (r1 ** 1.7)
+        v = np.empty((2 * this_n, 7), dtype=np.float32)
         v[0::2, 0:2] = p0
         v[1::2, 0:2] = p1
         v[0::2, 2:5] = c0[None, :] + s0[None, :] * (gain[:, None] - 1.0)
@@ -1264,11 +1326,17 @@ def groove_rings(cx, cy, radius, iso, side, envelope, tracks, light_angle,
     s_start, s_end = side["start"], side["end"]
     span = max(1e-6, (s_end - s_start) / max(1, n_rings - 1))
     boundaries = [t["start"] for t in tracks[1:]] if tracks else []
+    # gap é um ANEL, não uma zona de 7s — índice mais próximo do boundary
+    gap_idx = set()
+    for b in boundaries:
+        idx = int(round((b - s_start) / span))
+        if 0 <= idx < n_rings:
+            gap_idx.add(idx)
     for i in range(n_rings):
         f = i / max(1, n_rings - 1)
         r = R_PROG_OUT + (R_PROG_IN - R_PROG_OUT) * f
         t = _ring_time(i, n_rings, s_start, s_end)
-        is_gap = any(abs(b - t) <= span * 0.5 for b in boundaries)
+        is_gap = i in gap_idx
 
         loud = 0.55
         if envelope is not None and len(envelope):
@@ -1277,31 +1345,26 @@ def groove_rings(cx, cy, radius, iso, side, envelope, tracks, light_angle,
             if hi > lo:
                 seg = envelope[lo:hi]
                 loud = float(0.45 * seg.mean() + 0.55 * seg.max())
-        # sqrt keeps quiet-but-present music visible instead of crushing it
-        # to black, the same reason meters are not linear.
-        shade = 0.28 + 0.85 * math.sqrt(max(0.0, min(1.4, loud)))
+        # honest shade: preto mais fundo para silêncio, loud preserva pico
+        loud_c = max(0.0, min(1.4, loud))
+        shade = 0.10 + 0.90 * (loud_c ** 0.62)
 
         played = i < played_ring
         base = GROOVE_PLAYED if played else GROOVE_UNPLAYED
         if is_gap:
             base = GROOVE_GAP
-            # Mais brilho que qualquer outra faixa: a separação precisa ser
-            # vista de longe para que se possa contar as faixas de olho,
-            # especialmente a 33⅓ numa tela distante.
-            shade = 1.3
+            shade = 1.0  # único ponto que estoura — para contar faixas de olho
 
         n = int(np.clip(radius * r * 900, 96, 384))
         theta = np.linspace(0.0, 2.0 * np.pi, n, endpoint=True)
         pts = _polar(cx, cy, r * radius, theta, iso)
-        gain = sheen_gain(theta, light_angle, strength=0.55)
+        # sulco é fosco — só 15% do brilho do corpo, modulado por loud
+        # (parede do sulco pega mais luz quando alto)
+        gain = sheen_gain(theta, light_angle, strength=0.18) * (0.85 + 0.15 * min(1.0, loud))
         cols = np.empty((n, 4), dtype=np.float32)
         cols[:, 0:3] = np.array(base, dtype=np.float32)[None, :] * (shade * gain)[:, None]
         cols[:, 3] = 1.0
-        # Faixa de separação entre faixas: fina e clara, como a espiral
-        # muda-na-cauda de um disco real. No mundo real a agulha pula de
-        # um sulco para o outro aqui; na tela isto é o que permite CONTAR
-        # as faixas de olho.
-        w = 0.18 if is_gap else half_width * (0.75 + 0.45 * min(1.0, loud))
+        w = 0.18 if is_gap else half_width * (0.88 + 0.14 * min(1.0, loud))
         strips.append((pts, cols, w))
     return strips
 
@@ -1678,11 +1741,11 @@ def tonearm(cx, cy, radius, iso, stylus_radius, lift=0.0):
 # ═══════════════════════════════════════════════════════════════════════════
 SPINUP, CUE, DROP, PLAY, LIFT, BREAK, RETURN, STOP = range(8)
 
-SPINUP_T = 2.0    # platter reaching 33 1/3 — a real one takes about this
-CUE_T    = 1.7    # arm swinging out over the lead-in
-DROP_T   = 0.9    # stylus descending
-LIFT_T   = 1.1
-RETURN_T = 1.6
+SPINUP_T = 1.1    # belt up to speed — honest, not a loading screen
+CUE_T    = 1.05   # arm swing over lead-in
+DROP_T   = 0.55   # stylus down — quick, decisive
+LIFT_T   = 1.0
+RETURN_T = 1.4
 # Quanto o braço leva para ser LEVADO do ponto em que subiu até o berço.
 # Antes não existia: o quadro em que o LIFT vencia jogava a agulha do meio
 # do disco para fora da borda de uma vez. Era a única parte da cerimônia que
