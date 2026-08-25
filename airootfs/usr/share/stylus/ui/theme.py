@@ -18,12 +18,12 @@ import pygame
 
 # ── cores ──────────────────────────────────────────────────────────────────
 INK        = (7, 8, 11)          # o fundo. quase preto, levemente azul
-INK_SOFT   = (13, 15, 20)        # painéis
-INK_LIFT   = (20, 23, 30)        # o que está sob o cursor
-LINE       = (32, 36, 46)        # divisórias
-TEXT       = (226, 231, 240)
-TEXT_DIM   = (126, 137, 156)
-TEXT_FAINT = (74, 82, 96)
+INK_SOFT   = (14, 16, 22)        # painéis — um pouco mais claro para separar
+INK_LIFT   = (22, 25, 33)        # o que está sob o cursor
+LINE       = (34, 38, 50)        # divisórias — um fio mais presente
+TEXT       = (228, 233, 242)     # texto principal — branco mais limpo
+TEXT_DIM   = (130, 142, 162)     # secundário — mais legível que antes
+TEXT_FAINT = (72, 80, 96)        # terciário — sutil mas não invisível
 
 BLUE       = (91, 206, 250)      # o acento principal
 PINK       = (245, 169, 184)
@@ -135,13 +135,9 @@ def lerp(a, b, t):
 
 
 def shadow_card(surf, rect, radius=12):
-    """Uma sombra barata sob uma capa, para ela parecer estar POUSADA.
-
-    Sem isto a grade lê como um mosaico de imagens; com isto lê como objetos
-    numa prateleira, que é a diferença que interessa aqui.
-    """
-    for i, alpha in ((6, 26), (4, 34), (2, 44)):
+    """Sombra sob uma capa — ela precisa parecer POUSADA, não colada."""
+    for i, alpha in ((8, 18), (5, 28), (3, 40), (1, 50)):
         s = pygame.Surface((rect.w + i * 2, rect.h + i * 2), pygame.SRCALPHA)
         pygame.draw.rect(s, (0, 0, 0, alpha), s.get_rect(),
                          border_radius=radius + i)
-        surf.blit(s, (rect.x - i, rect.y - i + 2))
+        surf.blit(s, (rect.x - i, rect.y - i + 3))

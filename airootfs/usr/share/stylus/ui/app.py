@@ -179,24 +179,14 @@ class NowScreen(Screen):
             return
 
         # ── a capa vaza para a sala: fundo desfocado na cor do disco ──────
-        # O preto puro atrás do bloco era correto e frio. Um borrão escuro
-        # DA CAPA faz o que a luz de um abajur faz: a tela inteira passa a
-        # pertencer àquele disco sem competir com ele — o véu de tinta volta
-        # o contraste para o texto, que é quem precisa dele.
         fundo = self.app.backdrop(al, r.size)
         if fundo is not None:
             s.blit(fundo, r.topleft)
 
         # ── a capa e a coluna de texto formam UM bloco, centrado junto ─────
-        # Antes a capa parava num teto fixo de 600 e a coluna começava numa
-        # distância chutada (500) da borda: numa tela grande o espaço que
-        # sobrava ia todo para um lado e para o rodapé, e o conjunto lia como
-        # dois objetos que não se conhecem. Agora o tamanho da capa cresce com
-        # a tela, a coluna é larga até um teto próprio, e quem centra é o
-        # BLOCO — capa mais coluna — e não a capa sozinha.
         margem, gap, txt_teto = 64, 72, 620
         avail = max(320, r.w - margem * 2)
-        size = min(int(r.h * 0.66), int(avail * 0.46), 760)
+        size = min(int(r.h * 0.62), int(avail * 0.44), 720)
         size = max(280, size)
         txt_w = min(txt_teto, avail - size - gap)
         total = size + gap + txt_w
@@ -204,51 +194,50 @@ class NowScreen(Screen):
         cov = self.app.thumbs.get(al.cover) if al.cover else None
         cr = pygame.Rect(r.x + (r.w - total) // 2, r.y + (r.h - size) // 2,
                          size, size)
-        T.shadow_card(s, cr, radius=12)
+        T.shadow_card(s, cr, radius=14)
         if cov:
             s.blit(pygame.transform.smoothscale(cov, (size, size)), cr)
         else:
-            T.panel(s, cr, T.INK_LIFT, radius=12)
+            T.panel(s, cr, T.INK_LIFT, radius=14)
             T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
 
         x = cr.right + gap
         w = txt_w
         y_text = cr.y + 8
-        T.text(s, al.artist.upper(), (x, y_text), 28, T.TEXT_DIM, maxw=w)
-        T.text(s, al.name, (x, y_text + 40), 52, T.TEXT, bold=True, maxw=w)
+
+        # Artista mais sutil, álbum com mais peso — quem olha de longe
+        # quer saber QUAL disco é, não quem fez.
+        T.text(s, al.artist.upper(), (x, y_text), 22, T.TEXT_FAINT, maxw=w)
+        T.text(s, al.name, (x, y_text + 34), 56, T.TEXT, bold=True, maxw=w)
         if al.year:
-            T.text(s, str(al.year), (x, y_text + 100), 24, T.TEXT_FAINT)
+            T.text(s, str(al.year), (x, y_text + 102), 22, T.TEXT_DIM)
 
         # ── onde no LADO. ────
-        y = y_text + 160
+        y = y_text + 145
         if side:
             resta = max(0.0, side["end"] - t_abs)
             ultimo = side is al.sides[-1]
             rotulo = side["label"].replace("SIDE", "LADO")
-            T.text(s, rotulo, (x, y), 32, T.BLUE, bold=True)
+            T.text(s, rotulo, (x, y), 30, T.BLUE, bold=True)
             T.text(s, ("acaba em " if ultimo else "vira em ") + humano(resta),
-                   (x + 160, y + 6), 24, T.TEXT_DIM)
-            self._groove(s, pygame.Rect(x, y + 54, w, 14), frac)
-            y += 90
+                   (x + 150, y + 5), 22, T.TEXT_DIM)
+            self._groove(s, pygame.Rect(x, y + 48, w, 14), frac)
+            y += 84
 
         if track:
             n = (al.tracks.index(track) + 1) if track in al.tracks else 0
-            T.text(s, f"{n:02d}  {track.get('title') or ''}", (x, y), 32,
+            T.text(s, f"{n:02d}  {track.get('title') or ''}", (x, y), 30,
                    T.TEXT, maxw=w)
-            y += 50
+            y += 48
 
-        # Informativos no rodapé: logo ABAIXO do bloco, e não colados na borda
-        # da tela — era a faixa vazia entre o fim do texto e o pé da tela que
-        # fazia a seção parecer mal preenchida.
+        # Informativos no rodapé
         hist = f"{al.plays}ª vez" if al.plays else "primeira vez"
-        y_rodape = min(cr.bottom + 22, r.bottom - 60)
+        y_rodape = min(cr.bottom + 20, r.bottom - 60)
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
-               (x, y_rodape), 20, T.TEXT_FAINT, maxw=w)
+               (x, y_rodape), 19, T.TEXT_FAINT, maxw=w)
 
-        # ── a letra do momento, em JANELA e não em linha solta. ────────
-        # A linha de agora grande em lavanda; duas antes e três depois
-        # apagadas, para dar contexto de encarte sem virar página de texto.
+        # ── a letra do momento, em JANELA ────────
         est = self.app.lyric_state(al, track)
         livre = int(y_rodape - (y + 10))
         if est and livre > 70:
@@ -259,42 +248,47 @@ class NowScreen(Screen):
             for k in range(ini, min(len(lines), ini + vis)):
                 txt = (lines[k][1] or "").strip()
                 if k == cur_i and txt:
-                    T.text(s, txt, (x, yl), 27, T.LAV, bold=True, maxw=w)
-                    yl += 38
+                    T.text(s, txt, (x, yl), 26, T.LAV, bold=True, maxw=w)
+                    yl += 36
                 elif txt:
-                    T.text(s, txt, (x, yl), 20, T.TEXT_FAINT, maxw=w)
-                    yl += 28
+                    T.text(s, txt, (x, yl), 19, T.TEXT_FAINT, maxw=w)
+                    yl += 26
                 else:
-                    yl += 14      # linha em branco: respiro instrumental
+                    yl += 12
 
         self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
                             "n/p faixa   ←/→ busca   v/b lado   +/- volume")
 
     def _groove(self, s, rect, frac):
-        """A barra de progresso desenhada como um sulco, não como um tubo.
-
-        A diferença não é decorativa: um sulco tem começo na borda e fim no
-        centro, e é isso que a barra está representando.
-        """
-        pygame.draw.rect(s, T.LINE, rect, border_radius=5)
+        """Barra de progresso como sulco — começo na borda, fim no centro."""
+        pygame.draw.rect(s, T.LINE, rect, border_radius=6)
         f = pygame.Rect(rect.x, rect.y, int(rect.w * frac), rect.h)
-        pygame.draw.rect(s, T.BLUE, f, border_radius=5)
-        pygame.draw.circle(s, T.TEXT, (f.right, rect.centery), 7)
+        pygame.draw.rect(s, T.BLUE, f, border_radius=6)
+        # ponta luminosa na posição atual
+        if frac > 0.01:
+            glow = pygame.Surface((18, rect.h + 6), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*T.BLUE, 60), (9, rect.h // 2 + 3), 8)
+            s.blit(glow, (f.right - 9, rect.y - 3))
+            pygame.draw.circle(s, T.TEXT, (f.right, rect.centery), 6)
 
     def _nothing(self, s, r):
         cx, cy = r.centerx, r.centery
         t = time.time()
-        # um disco parado, girando devagar, só para a tela não estar morta
-        for i in range(7):
-            rr = 60 + i * 26
-            pygame.draw.circle(s, T.lerp(T.INK_SOFT, T.LINE, 0.4 + i * 0.08),
-                               (cx, cy - 40), rr, 1)
-        ang = (t * 0.35) % (2 * math.pi)
-        pygame.draw.line(s, T.LINE, (cx, cy - 40),
-                         (cx + math.cos(ang) * 180, cy - 40 + math.sin(ang) * 180), 1)
-        T.text(s, "nada tocando", (cx, cy + 190), 30, T.TEXT_DIM, anchor="center")
+        # disco parado, girando devagar
+        for i in range(8):
+            rr = 50 + i * 28
+            alpha = 0.25 + i * 0.08
+            cor = T.lerp(T.INK_SOFT, T.LINE, alpha)
+            pygame.draw.circle(s, cor, (cx, cy - 40), rr, 1)
+        ang = (t * 0.3) % (2 * math.pi)
+        # agulha estática apontando para o centro
+        pygame.draw.line(s, T.LINE, (cx + math.cos(ang) * 160,
+                         cy - 40 + math.sin(ang) * 160),
+                         (cx, cy - 40), 1)
+        T.text(s, "nada tocando", (cx, cy + 200), 32, T.TEXT_DIM,
+               anchor="center")
         T.text(s, "vá para a ESTANTE e escolha um disco",
-               (cx, cy + 228), 20, T.TEXT_FAINT, anchor="center")
+               (cx, cy + 240), 20, T.TEXT_FAINT, anchor="center")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -468,7 +462,7 @@ class ShelfScreen(Screen):
         self.target = max(0, min(self.target,
                                  max(0, (len(its) + self.COLS - 1)
                                      // self.COLS - rows_vis) * ch))
-        self.scroll += (self.target - self.scroll) * 0.22
+        self.scroll += (self.target - self.scroll) * 0.28
 
         clip = pygame.Rect(r.x, r.y + head, r.w, view_h)
         old = s.get_clip()
@@ -538,13 +532,10 @@ class ShelfScreen(Screen):
 
     def _card(self, s, rect, it, selected):
         if selected:
-            # O disco selecionado LEVANTA: um pouco maior e com a sombra mais
-            # funda, como quem o tira meio da prateleira. É o gesto inteiro
-            # custando dois retângulos — e é por isso que não há borda colorida
-            # aqui: borda marca seleção de LISTA; tamanho marca peso.
-            rect = rect.inflate(12, 12)
-            glow = rect.inflate(14, 14)
-            pygame.draw.rect(s, T.lerp(T.INK, T.BLUE, 0.35), glow,
+            # O disco selecionado LEVANTA: maior e com sombra mais funda.
+            rect = rect.inflate(10, 10)
+            glow = rect.inflate(12, 12)
+            pygame.draw.rect(s, T.lerp(T.INK, T.BLUE, 0.30), glow,
                              border_radius=10)
             T.shadow_card(s, rect, radius=8)
         else:
@@ -554,17 +545,16 @@ class ShelfScreen(Screen):
             s.blit(pygame.transform.smoothscale(cov, rect.size), rect)
         else:
             T.panel(s, rect, T.INK_LIFT, radius=6)
-            T.text(s, it["name"][:2].upper(), rect.center, 40, T.TEXT_FAINT,
-                   anchor="center")
-        # ── o desgaste, na própria capa ────────────────────────────────────
-        # Um disco muito posto tem que PARECER muito posto quando você passa
-        # o olho pela estante. É a mesma ideia das marcas no deck, trazida
-        # para onde a escolha realmente acontece.
+            # Iniciais do artista como placeholder — mais útil que "sem capa"
+            initials = "".join(w[0] for w in it["artist"].split()[:2]).upper()
+            T.text(s, initials or it["name"][:2].upper(), rect.center, 36,
+                   T.TEXT_FAINT, anchor="center")
+        # Marcas de desgaste — menores e mais sutis
         if it["plays"]:
             n = min(5, it["plays"])
             for k in range(n):
-                pygame.draw.circle(s, T.PINK,
-                                   (rect.right - 12 - k * 9, rect.bottom - 12), 3)
+                pygame.draw.circle(s, T.lerp(T.PINK, T.RED, 0.3),
+                                   (rect.right - 10 - k * 8, rect.bottom - 10), 2)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1468,6 +1458,10 @@ class App:
         self.stack = self._stack_load()
         self._toast = ""
         self._toast_until = 0.0
+        self._toast_t = 0.0       # momento em que o toast apareceu
+        # Transição entre seções: fade rápido ao trocar de tela.
+        self._trans_alpha = 0.0
+        self._trans_target = 0.0
         # O lado em que o disco está, para saber quando ele VIRA. Ver
         # _watch_side: no modo música esta tela é a sessão inteira, e a tese
         # do sistema acontecendo num balãozinho de canto seria pouco.
@@ -1625,16 +1619,23 @@ class App:
         return True
 
     def open_deck(self):
-        try:
-            subprocess.Popen(
-                ["/usr/share/stylus/deck/venv/bin/python3"
-                 if os.path.exists("/usr/share/stylus/deck/venv/bin/python3")
-                 else sys.executable,
-                 "/usr/share/stylus/deck/ritual.py"],
-                start_new_session=True,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            self.toast("não consegui abrir o deck")
+        """Abre o deck com o disco que está tocando.
+
+        Antes lançava ritual.py direto — sem mpv, sem socket IPC, sem som.
+        O ritual abria uma janela GL muda e morria. Agora passa pelo
+        stylus-deck, que cria o mpv com o socket, espera ele ficar pronto,
+        e só então abre a cerimônia. É o mesmo caminho que `stylus deck`
+        usa, e é o único que funciona.
+        """
+        snap = self.playing.session.snapshot()
+        path = snap.get("path") or ""
+        folder = os.path.dirname(path) if path else ""
+        if folder and os.path.isdir(folder):
+            self.toast("abrindo o deck…")
+            if not spawn(["stylus-deck", folder]):
+                self.toast("não consegui abrir o deck")
+        else:
+            self.toast("nada tocando para abrir o deck")
 
     def lyric_state(self, al, track):
         """(linhas do .lrc, índice da linha de agora) — ou None.
@@ -1700,6 +1701,7 @@ class App:
 
     def toast(self, msg, secs=3.0):
         self._toast, self._toast_until = msg, time.time() + secs
+        self._toast_t = time.time()
 
     @staticmethod
     def volume_pct():
@@ -1744,57 +1746,51 @@ class App:
     def _draw_rail(self, s, w):
         pygame.draw.rect(s, T.INK_SOFT, (0, 0, w, self.H))
         pygame.draw.line(s, T.LINE, (w, 0), (w, self.H))
-        T.text(s, "STYLUS", (22, 34), 24, T.BLUE, bold=True)
+        T.text(s, "STYLUS", (24, 34), 26, T.BLUE, bold=True)
         y = 110
         for i, sc in enumerate(self.screens + [_DESKTOP_ITEM]):
             atual = i == self.cur
             foco = self.rail and i == self.rail_sel
-            box = pygame.Rect(10, y - 8, w - 20, 44)
+            box = pygame.Rect(12, y - 8, w - 24, 44)
             if foco:
-                T.panel(s, box, T.INK_LIFT, radius=9)
+                T.panel(s, box, T.INK_LIFT, radius=10)
             if atual:
-                pygame.draw.rect(s, T.BLUE, (10, y - 6, 3, 40), border_radius=2)
-            cor = T.TEXT if (atual or foco) else T.TEXT_FAINT
-            # T.icon e não sc.icon direto: sem a fonte do Nerd Font, cada
-            # item do trilho vira um retângulo vazio, e uma coluna de nove
-            # caixinhas parece o sistema quebrado. Sem ícone nenhum, o nome
-            # ao lado continua dizendo tudo.
-            T.text(s, T.icon(sc.icon), (30, y + 2), 22, cor)
-            T.text(s, sc.name, (62, y + 6), 18, cor)
+                pygame.draw.rect(s, T.BLUE, (12, y - 5, 3, 38), border_radius=2)
+            cor = T.TEXT if (atual or foco) else T.TEXT_DIM
+            T.text(s, T.icon(sc.icon), (32, y + 2), 22, cor)
+            T.text(s, sc.name, (66, y + 6), 18, cor)
             if i < len(self.screens):
-                T.text(s, str(i + 1), (w - 18, y + 8), 15, T.TEXT_FAINT,
+                T.text(s, str(i + 1), (w - 20, y + 8), 15, T.TEXT_FAINT,
                        anchor="topright")
             y += 48
             if i == len(self.screens) - 1:
-                # A saída para a área de trabalho fica separada do resto por
-                # uma linha, como no Steam Deck: não é uma seção, é sair
-                # daqui.
-                pygame.draw.line(s, T.LINE, (18, y - 4), (w - 18, y - 4))
+                pygame.draw.line(s, T.LINE, (20, y - 4), (w - 20, y - 4))
                 y += 12
         snap, al, track, side, _t, frac = self.playing.where()
         if al is not None:
-            # A capa em miniatura ao lado do que toca: o trilho é um índice de
-            # seções, e o único bloco nele que fala de SOM deve parecer com o
-            # resto da estante — um objeto, e não três linhas de texto.
-            tx = 22
+            # Bloco TOCANDO com painel de fundo e progresso mais largo
+            ty = self.H - 120
+            panel = pygame.Rect(14, ty - 8, w - 28, 100)
+            T.panel(s, panel, T.INK_LIFT, radius=10, border=T.LINE)
+            tx = 24
             if al.cover:
                 mini = self._rail_thumb.get(al.cover)
                 if mini is None:
                     full = self.thumbs.get(al.cover)
                     if full is not None:
-                        mini = pygame.transform.smoothscale(full, (46, 46))
+                        mini = pygame.transform.smoothscale(full, (50, 50))
                         self._rail_thumb[al.cover] = mini
                 if mini is not None:
-                    cr = pygame.Rect(tx, self.H - 104, 46, 46)
+                    cr = pygame.Rect(tx, ty + 8, 50, 50)
                     T.shadow_card(s, cr, radius=4)
                     s.blit(mini, cr)
-                    tx = cr.right + 12
-            T.text(s, "TOCANDO", (tx, self.H - 118), 14, T.TEXT_FAINT)
-            T.text(s, al.name, (tx, self.H - 96), 17, T.TEXT,
-                   maxw=w - tx - 22)
-            T.text(s, al.artist, (tx, self.H - 72), 15, T.TEXT_DIM,
-                   maxw=w - tx - 22)
-            bar = pygame.Rect(22, self.H - 44, w - 44, 5)
+                    tx = cr.right + 14
+            T.text(s, "TOCANDO", (tx, ty - 2), 13, T.TEXT_FAINT)
+            T.text(s, al.name, (tx, ty + 18), 17, T.TEXT,
+                   maxw=w - tx - 24)
+            T.text(s, al.artist, (tx, ty + 42), 14, T.TEXT_DIM,
+                   maxw=w - tx - 24)
+            bar = pygame.Rect(24, ty + 68, w - 48, 4)
             pygame.draw.rect(s, T.LINE, bar, border_radius=3)
             pygame.draw.rect(s, T.BLUE,
                              (bar.x, bar.y, int(bar.w * frac), bar.h),
@@ -1881,14 +1877,30 @@ class App:
         s.blit(camada, (0, 0))
 
     def _draw_toast(self, s):
-        if time.time() > self._toast_until:
+        now = time.time()
+        if now > self._toast_until:
             return
         f = T.font(19)
         tw = f.size(self._toast)[0]
         box = pygame.Rect(self.W // 2 - tw // 2 - 22, self.H - 96,
                           tw + 44, 46)
-        T.panel(s, box, T.INK_LIFT, radius=23, border=T.LINE)
-        T.text(s, self._toast, box.center, 19, T.TEXT, anchor="center")
+        # slide-in: sobe 30px nos primeiros 0.2s
+        age = now - self._toast_t
+        if age < 0.2:
+            ease = 1.0 - (1.0 - age / 0.2) ** 3
+            box.y = int(box.y + 30 * (1.0 - ease))
+        # fade-out: desaparece no último 0.4s
+        restante = self._toast_until - now
+        alpha = 255 if restante > 0.4 else int(255 * restante / 0.4)
+        panel_s = pygame.Surface((box.w, box.h), pygame.SRCALPHA)
+        pygame.draw.rect(panel_s, (*T.INK_LIFT, alpha), panel_s.get_rect(),
+                         border_radius=23)
+        pygame.draw.rect(panel_s, (*T.LINE, alpha), panel_s.get_rect(),
+                         width=1, border_radius=23)
+        s.blit(panel_s, box.topleft)
+        txt_img = f.render(self._toast, True, T.TEXT)
+        txt_img.set_alpha(alpha)
+        s.blit(txt_img, txt_img.get_rect(centerx=box.centerx, centery=box.centery))
 
     # ── entrada ────────────────────────────────────────────────────────────
     def _key(self, ev):
@@ -1953,12 +1965,14 @@ class App:
         return None
 
     def _goto(self, i):
+        if i != self.cur:
+            self._trans_alpha = 1.0   # fade rápido ao trocar de seção
         self.cur = i
         self.rail_sel = i
         self.screens[i].enter()
 
     def run(self):
-        rail_w = 230
+        rail_w = 260
         while True:
             self._pad_poll()
             for ev in pygame.event.get():
@@ -2005,14 +2019,22 @@ class App:
             self._watch_side()
             self._draw_flip(self.surf)
             self._draw_toast(self.surf)
-            # Subida macia: meio segundo de fade na abertura, para a tela não
-            # PULAR na cara — o resto do sistema é cerimônia; a interface não
-            # ia começar com um corte seco.
-            nasc = (time.time() - self._born) / 0.45
+            # Fade de transição: rápido e sutil, só para o corte seco entre
+            # seções não parecer um engasgo.
+            if self._trans_alpha > 0.01:
+                fade = pygame.Surface((self.W, self.H))
+                fade.fill(T.INK)
+                fade.set_alpha(int(160 * self._trans_alpha))
+                self.surf.blit(fade, (0, 0))
+                self._trans_alpha *= 0.82
+            # Subida macia: fade de abertura
+            nasc = (time.time() - self._born) / 0.55
             if nasc < 1.0:
                 v = pygame.Surface((self.W, self.H))
                 v.fill(T.INK)
-                v.set_alpha(int(255 * (1.0 - nasc)))
+                # ease-out: começa rápido e desacelera
+                ease = 1.0 - (1.0 - min(1.0, nasc)) ** 2
+                v.set_alpha(int(255 * (1.0 - ease)))
                 self.surf.blit(v, (0, 0))
             pygame.display.flip()
             self.clock.tick(FPS)
