@@ -283,8 +283,8 @@ class VinylActivity : AppCompatActivity() {
             renderer.armLift = 0f
             playing = true
         } else {
-            // Manual needle: start at outer edge, arm lifted, disc spinning, wait for user to drop
-            deck.go(Phase.CUE, System.nanoTime() / 1e9f)
+            // Manual needle: disc spins at outer edge, arm lifted at rest, wait for user to drag needle
+            deck.go(Phase.BREAK, System.nanoTime() / 1e9f)
             deck.speed = VinylConst.REV_PER_SEC
             renderer.armLift = 1f
             renderer.playProgress = 0f
@@ -371,18 +371,18 @@ class VinylActivity : AppCompatActivity() {
                 else -> false
             }
         }
-        // tap outside disc to pause/play
+        // tap disc when playing to pause (lift), when at rest show hint — must drag needle to start
         root.setOnClickListener {
-            if (!isDragging) {
-                playing = !playing
-                if (!playing) {
-                    player?.pause()
-                    if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime()/1e9f)
-                } else {
-                    if (deck.phase == Phase.LIFT || deck.phase == Phase.BREAK) {
-                        deck.go(Phase.CUE, System.nanoTime()/1e9f)
-                    } else if (deck.phase == Phase.PLAY) player?.play()
-                }
+            if (isDragging) return@setOnClickListener
+            if (deck.phase == Phase.PLAY) {
+                playing = false
+                player?.pause()
+                deck.go(Phase.LIFT, System.nanoTime()/1e9f)
+            } else if (deck.phase == Phase.BREAK || deck.phase == Phase.LIFT) {
+                android.widget.Toast.makeText(this, "Arraste a agulha até o sulco para tocar", android.widget.Toast.LENGTH_SHORT).show()
+            } else if (!playing) {
+                playing = true
+                if (deck.phase == Phase.CUE) deck.go(Phase.DROP, System.nanoTime()/1e9f)
             }
         }
         root.setOnLongClickListener { finish(); true }

@@ -196,8 +196,12 @@ class TextOSD:
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR); glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
         glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,rw,rh,0,GL_RGBA,GL_UNSIGNED_BYTE,tex_data)
         m=40
-        x0=W-rw-m if "right" in self.anchor else m
-        y0=m if "top" in self.anchor else H-rh-m
+        if "center" in self.anchor:
+            x0=W-rw-m if "right" in self.anchor else (m if "left" in self.anchor else (W-rw)//2)
+            y0=(H-rh)//2
+        else:
+            x0=W-rw-m if "right" in self.anchor else m
+            y0=m if "top" in self.anchor else H-rh-m
         def px(x,y): return (x/W*2-1,1-y/H*2)
         p0=px(x0,y0); p1=px(x0+rw,y0); p2=px(x0+rw,y0+rh); p3=px(x0,y0+rh)
         arr=np.array([*p0,0,0,*p1,1,0,*p2,1,1,*p0,0,0,*p2,1,1,*p3,0,1],dtype=np.float32)
@@ -433,7 +437,7 @@ void main(){
     glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,28,ctypes.c_void_p(8)); glEnableVertexAttribArray(1)
     glVertexAttribPointer(2,1,GL_FLOAT,GL_FALSE,28,ctypes.c_void_p(24)); glEnableVertexAttribArray(2)
     glBindVertexArray(0)
-    osd=TextOSD(anchor="bottom-left"); mpris=TextOSD(anchor="bottom-right",hold=4,fade=1.2,sz=26); lyric=TextOSD(anchor="right",persist=True,sz=34)
+    osd=TextOSD(anchor="bottom-left"); mpris=TextOSD(anchor="bottom-right",hold=4,fade=1.2,sz=26); lyric=TextOSD(anchor="center-right",persist=True,sz=28)
     cap=AudioCapture(src); ritual=RitualScene(view=args.view)
     ISO=(min(1,H/W), min(1,W/H))
     t0=time.time(); clock=pygame.time.Clock(); running=True; prev=0
