@@ -218,24 +218,23 @@ AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
 # ═══════════════════════════════════════════════════════════════════════════
 # Palette
 # ═══════════════════════════════════════════════════════════════════════════
-# Cold, dark, a bit worn — the same blue-grey the desktop is themed in, so
-# the deck looks native rather than like a visiting app. These are ADDITIVE
-# values written into the phosphor buffer (blend is GL_ONE/GL_ONE), so they
-# read much brighter on screen than they look here, and anything above ~0.35
-# starts to bloom. That is why the vinyl body is in the hundredths: it has to
-# stay matte, or the whole disc glows like a lamp and stops being an object.
-VINYL_CORE      = (0.014, 0.017, 0.023)   # the black plastic itself
-VINYL_RIM       = (0.030, 0.036, 0.048)   # edge catches slightly more light
-SHEEN           = (0.055, 0.068, 0.090)   # the gloss lobes
-GROOVE_UNPLAYED = (0.085, 0.105, 0.135)   # ahead of the needle: cold slate
-GROOVE_PLAYED   = (0.115, 0.300, 0.420)   # behind it: lit in the accent blue
-GROOVE_GAP      = (0.230, 0.270, 0.330)   # the silent spiral between tracks
-STYLUS_HOT      = (0.360, 0.800, 1.000)   # live groove under the needle
-ARM_METAL       = (0.240, 0.270, 0.320)
-ARM_HIGHLIGHT   = (0.420, 0.470, 0.545)
-EDGE_RING       = (0.150, 0.175, 0.215)
-DUST            = (0.180, 0.200, 0.240)
-ALARM           = (0.560, 0.200, 0.200)   # side break only
+# Vibrant, high-contrast colors that pop against the dark background.
+# These are ADDITIVE values written into the phosphor buffer (blend is
+# GL_ONE/GL_ONE), so they read much brighter on screen than they look here,
+# and anything above ~0.35 starts to bloom. The vinyl body stays very dark
+# so it remains a matte object rather than glowing like a lamp.
+VINYL_CORE      = (0.010, 0.012, 0.016)   # deep black plastic
+VINYL_RIM       = (0.080, 0.096, 0.120)   # slightly lighter edge
+SHEEN           = (0.120, 0.145, 0.180)   # subtle gloss lobes
+GROOVE_UNPLAYED = (0.200, 0.220, 0.280)   # cold slate ahead of needle
+GROOVE_PLAYED   = (0.450, 0.650, 0.950)   # bright accent blue — the music
+GROOVE_GAP      = (0.650, 0.700, 0.800)   # silent track gaps — visible
+STYLUS_HOT      = (1.000, 0.650, 0.150)   # hot orange under the needle
+ARM_METAL       = (0.550, 0.600, 0.700)   # gunmetal grey
+ARM_HIGHLIGHT   = (0.850, 0.900, 0.980)   # bright silver highlight
+EDGE_RING       = (0.350, 0.400, 0.500)   # subtle edge ring
+DUST            = (0.250, 0.270, 0.350)   # fine dust particles
+ALARM           = (1.000, 0.300, 0.300)   # side break warning — urgent red
 
 
 def _lerp(a, b, t):
@@ -1330,7 +1329,7 @@ def boundary_ring(cx, cy, radius, iso, side, envelope, frac, light_angle,
 
 
 def live_groove(cx, cy, radius, iso, frac, mid, side_signal, rotation,
-                n_rings=N_RINGS, arc=2.6, half_width=1.05, depth=0.0032):
+                n_rings=N_RINGS, arc=2.6, half_width=1.05, depth=0.008):
     """The groove being read RIGHT NOW, modulated by the live waveform.
 
     This is where the oscilloscope actually lives in ritual mode, and it is
@@ -1360,14 +1359,17 @@ def live_groove(cx, cy, radius, iso, frac, mid, side_signal, rotation,
     s = np.asarray(side_signal, dtype=np.float32) if side_signal is not None else np.zeros(n, np.float32)
     peak = float(np.max(np.abs(m))) or 1e-6
     m = m / max(peak, 0.08)
-    rr = (r + m * depth / max(1e-6, radius) * radius) * radius
+    # radial excursion: wider stereo = bigger wander; loud passages push outward
+    rr = (r + np.clip(np.abs(m), 0, 1) * depth * 0.5 * (1.0 + 0.5 * np.clip(np.abs(s) / (np.max(np.abs(s)) + 1e-6), 0, 1))) * radius
     pts = _polar(cx, cy, rr, theta, iso)
-    fade = np.linspace(1.0, 0.06, n) ** 1.6
-    bright = fade * (0.55 + 0.75 * np.clip(np.abs(s) / (np.max(np.abs(s)) + 1e-6), 0, 1))
+    # trail fades fast: only ~half a revolution is visible
+    fade = np.linspace(1.0, 0.03, n) ** 1.8
+    # side channel makes it shimmer in stereo; mid makes it pulse with loudness
+    bright = fade * (0.4 + 0.9 * np.clip(np.abs(s) / (np.max(np.abs(s)) + 1e-6), 0, 1)) * np.clip(np.abs(m), 0, 1)[:, None]
     cols = np.empty((n, 4), dtype=np.float32)
-    cols[:, 0:3] = np.array(STYLUS_HOT, dtype=np.float32)[None, :] * bright[:, None]
+    cols[:, 0:3] = np.array(STYLUS_HOT, dtype=np.float32)[None, :] * bright
     cols[:, 3] = 1.0
-    widths = half_width * (0.35 + 0.65 * fade)
+    widths = half_width * (0.3 + 0.8 * fade)
     return pts, cols, widths
 
 
