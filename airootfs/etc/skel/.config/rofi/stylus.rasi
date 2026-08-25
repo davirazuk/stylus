@@ -84,7 +84,7 @@ element-icon {
 element-text {
     vertical-align:     0.5;
     /* A literal colour: rofi's grammar for `highlight` takes a colour, not a
-       property reference, so `bold @mauve` fails to parse. Same hex as @mauve;
+       property reference, so `bold @mauve` fails to parse. Same hex as @mauve. */
     highlight:          bold #5bcefa;
 }
 
