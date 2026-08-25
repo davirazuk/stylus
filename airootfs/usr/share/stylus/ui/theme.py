@@ -95,38 +95,43 @@ def has_glyph(ch, size=22):
     return ok
 
 
-def icon(ch, alt=""):
-    """O ícone quando a fonte o tem; senão o que se pôs no lugar (em geral
-    nada). Uma coluna vazia lê como escolha; uma coluna de caixinhas lê como
-    sistema quebrado."""
-    return ch if has_glyph(ch) else alt
+def icon(ch, alt="•"):
+    """O ícone quando a fonte o tem; senão um ponto. Coluna vazia = escolha;
+    coluna de caixinhas = sistema quebrado. Ponto nunca quebra."""
+    # tenta Nerd, depois fallback para ponto simples — nunca caixinha
+    if has_glyph(ch):
+        return ch
+    # fallback: tenta Material ponto, senão • genérico
+    return alt if alt and has_glyph(alt) else "•"
 
 
 # ── desenho ────────────────────────────────────────────────────────────────
 def text(surf, s, pos, size=20, colour=TEXT, bold=False, anchor="topleft",
          maxw=None):
-    """Escreve, cortando com reticências em vez de vazar do painel.
-
-    Cortar é responsabilidade de quem desenha, não de quem chama: metade dos
-    nomes de disco de uma coleção de verdade são longos demais para qualquer
-    largura que se escolha, e um nome vazando por cima do vizinho é o defeito
-    mais fácil de produzir numa grade.
-    """
+    """Escreve, cortando com reticências em vez de vazar do painel."""
     f = font(size, bold)
     if maxw and f.size(s)[0] > maxw:
-        while s and f.size(s + "…")[0] > maxw:
-            s = s[:-1]
-        s += "…"
+        # binário, não O(n²) — coleção de 400 discos com nome japonês longo não janka
+        lo, hi = 0, len(s)
+        while lo < hi:
+            mid = (lo + hi + 1)//2
+            if f.size(s[:mid] + "…")[0] <= maxw:
+                lo = mid
+            else:
+                hi = mid - 1
+        s = s[:lo] + "…"
     img = f.render(s, True, colour)
     r = img.get_rect(**{anchor: pos})
     surf.blit(img, r)
     return r
 
 
-def panel(surf, rect, colour=INK_SOFT, radius=14, border=None):
+def panel(surf, rect, colour=INK_SOFT, radius=14, border=None, border_width=None):
     pygame.draw.rect(surf, colour, rect, border_radius=radius)
     if border:
-        pygame.draw.rect(surf, border, rect, width=1, border_radius=radius)
+        # 1px em 4K é 0.2mm, some — escala com a largura da tela
+        bw = border_width if border_width is not None else max(1, round(surf.get_width() / 1600))
+        pygame.draw.rect(surf, border, rect, width=bw, border_radius=radius)
 
 
 def lerp(a, b, t):
