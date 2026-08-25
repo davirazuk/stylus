@@ -100,18 +100,20 @@ class VinylActivity : AppCompatActivity() {
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.MATCH_PARENT))
 
-        // Cover art centered over label (rotates with disc)
-        val coverSize = (resources.displayMetrics.widthPixels * 0.38f).toInt()
+        // Cover art centered over label (rotates with disc) — label radius 0.329 * disc radius
+        val discPx = minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * 0.78f
+        val coverSize = (discPx * 0.658f * 0.92f).toInt() // 0.658 = label diameter / disc diameter
         coverView = android.widget.ImageView(this).apply {
             layoutParams = android.widget.FrameLayout.LayoutParams(coverSize, coverSize, android.view.Gravity.CENTER)
-            alpha = 0.0f // invisible until loaded
-            // circular clip
+            alpha = 0.0f
             clipToOutline = true
             outlineProvider = object : android.view.ViewOutlineProvider() {
                 override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
                     outline.setOval(0, 0, view.width, view.height)
                 }
             }
+            // slight shadow
+            elevation = 4f
         }
         root.addView(coverView)
         // load cover art if available

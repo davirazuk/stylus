@@ -239,40 +239,32 @@ class VinylRenderer : GLSurfaceView.Renderer {
 
     private fun buildArm() {
         val lift = armLift
-        // stylus radius follows progress (outer -> inner)
         val playR = R_PROG_OUT + (R_PROG_IN - R_PROG_OUT) * playProgress
-        // when lifted, needle goes to rest near outer edge
         val r = if (lift > 0.5f) R_OUTER * 1.06f else playR
-        val ang = Math.toRadians(32.0).toFloat()
+        val ang = Math.toRadians(34.0).toFloat()
         val hx = r * cos(ang)
         val hy = r * sin(ang)
-        // lift adds vertical offset so needle lifts off disc
-        val liftOff = lift * 0.18f
+        val liftOff = lift * 0.16f
         val hyLift = hy + liftOff
-        // pivot at rear right, outside disc
-        val px = 1.02f; val py = 0.82f
-        val ex = (px + hx) * 0.5f + 0.02f
-        val ey = (py + hyLift) * 0.5f
+        // pivot — keep inside plinth, not off-screen, same as PC's rear-right
+        val px = 0.88f; val py = 0.72f
+        val ex = (px + hx) * 0.5f
+        val ey = (py + hyLift) * 0.5f + 0.04f
 
-        thickLine(px, py, ex, ey, 0.016f, ARM_C)
-        thickLine(ex, ey, hx, hyLift, 0.011f, ARM_C)
+        thickLine(px, py, ex, ey, 0.015f, ARM_C)
+        thickLine(ex, ey, hx, hyLift, 0.010f, ARM_C)
 
-        // headshell
-        val cw = 0.018f; val ch = 0.034f
-        quad(hx - cw, hyLift + 0.008f, hx + cw, hyLift + 0.008f, hx + cw, hyLift - ch, hx - cw, hyLift - ch, ARM_D)
-        // stylus
-        tri(floatArrayOf(hx, hyLift - ch), floatArrayOf(hx - 0.007f, hyLift - ch - 0.016f), floatArrayOf(hx + 0.007f, hyLift - ch - 0.016f), STYLUS_C)
-        // pivot
-        circle(px, py, 0.028f, 18, ARM_D)
-        circle(px, py, 0.014f, 14, ARM_C)
-        // counterweight
+        val cw = 0.017f; val ch = 0.032f
+        quad(hx - cw, hyLift + 0.006f, hx + cw, hyLift + 0.006f, hx + cw, hyLift - ch, hx - cw, hyLift - ch, ARM_D)
+        tri(floatArrayOf(hx, hyLift - ch), floatArrayOf(hx - 0.006f, hyLift - ch - 0.014f), floatArrayOf(hx + 0.006f, hyLift - ch - 0.014f), STYLUS_C)
+        circle(px, py, 0.026f, 18, ARM_D)
+        circle(px, py, 0.013f, 14, ARM_C)
         val cwx = px + (px - ex) * 0.18f; val cwy = py + (py - ey) * 0.18f
-        circle(cwx, cwy, 0.032f, 18, ARM_D)
-        circle(cwx, cwy, 0.020f, 14, ARM_C)
-        // rest
-        val rx = 0.98f; val ry = 0.62f
-        thickLine(rx - 0.025f, ry, rx + 0.025f, ry, 0.005f, ARM_D)
-        thickLine(rx + 0.025f, ry, rx + 0.025f, ry - 0.06f, 0.005f, ARM_D)
+        circle(cwx, cwy, 0.030f, 18, ARM_D)
+        circle(cwx, cwy, 0.018f, 14, ARM_C)
+        val rx = 0.84f; val ry = 0.56f
+        thickLine(rx - 0.02f, ry, rx + 0.02f, ry, 0.004f, ARM_D)
+        thickLine(rx + 0.02f, ry, rx + 0.02f, ry - 0.05f, 0.004f, ARM_D)
     }
 
     private fun ring(r: Float, a: Float) = floatArrayOf(cos(a) * r, sin(a) * r)
