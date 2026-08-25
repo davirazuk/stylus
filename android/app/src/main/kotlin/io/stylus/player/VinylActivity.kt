@@ -40,6 +40,7 @@ class VinylActivity : AppCompatActivity() {
     private var trackDuration = 0L
     private var startedAt = 0L
     private var albumIdField: Long = -1
+    private var manualNeedleProgress: Float? = null
 
     private val frameCallback = object : Runnable {
         override fun run() {
@@ -58,53 +59,57 @@ class VinylActivity : AppCompatActivity() {
 
             renderer.deckRotation = deck.rotation
             renderer.armLift = deck.armLift(now)
-            // cover rotates with disc (screen-space, opposite direction)
             coverView.rotation = Math.toDegrees((-deck.rotation).toDouble()).toFloat()
 
-            // Progress per SIDE (like PC: 22min per side, not per song)
-            if (albumIdField > 0) {
-                val tracks = Library.albumTracks(this@VinylActivity, albumIdField)
-                if (tracks.isNotEmpty()) {
-                    val posMs = when {
-                        playing && player != null && player!!.duration > 0 -> {
-                            val idx = player!!.currentTrackIndex.coerceIn(0, tracks.size-1)
-                            var before=0L; for(i in 0 until idx) before+=tracks[i].duration
-                            before + player!!.currentPosition
+            // Manual needle overrides computed progress for a short time after drag
+            manualNeedleProgress?.let {
+                renderer.playProgress = it
+                // clear after 2s once player catches up
+                if (playing && player != null && player!!.isPlaying) manualNeedleProgress = null
+            } ?: run {
+                // Progress per SIDE (like PC: 22min per side, not per song)
+                if (albumIdField > 0) {
+                    val tracks = Library.albumTracks(this@VinylActivity, albumIdField)
+                    if (tracks.isNotEmpty()) {
+                        val posMs = when {
+                            playing && player != null && player!!.duration > 0 -> {
+                                val idx = player!!.currentTrackIndex.coerceIn(0, tracks.size-1)
+                                var before=0L; for(i in 0 until idx) before+=tracks[i].duration
+                                before + player!!.currentPosition
+                            }
+                            playing && trackDuration > 0 -> {
+                                val elapsed = System.currentTimeMillis() - startedAt
+                                elapsed.coerceIn(0, trackDuration)
+                            }
+                            else -> 0L
                         }
-                        playing && trackDuration > 0 -> {
-                            val elapsed = System.currentTimeMillis() - startedAt
-                            elapsed.coerceIn(0, trackDuration)
+                        val sideMaxMs = 22*60*1000L
+                        val sides = mutableListOf<Pair<Long,Long>>()
+                        var curStart = 0L; var curDur = 0L
+                        for (t in tracks) {
+                            if (curDur + t.duration > sideMaxMs && curDur > 0) {
+                                sides.add(curStart to curStart + curDur)
+                                curStart += curDur; curDur = 0L
+                            }
+                            curDur += t.duration
                         }
-                        else -> 0L
-                    }
-                    // build sides like vinyl.py: pack tracks into ≤22min sides
-                    val sideMaxMs = 22*60*1000L
-                    val sides = mutableListOf<Pair<Long,Long>>()
-                    var curStart = 0L; var curDur = 0L
-                    for (t in tracks) {
-                        if (curDur + t.duration > sideMaxMs && curDur > 0) {
-                            sides.add(curStart to curStart + curDur)
-                            curStart += curDur; curDur = 0L
+                        if (curDur > 0) sides.add(curStart to curStart + curDur)
+                        if (sides.isEmpty()) {
+                            var tot=0L; for(tt in tracks) tot+=tt.duration
+                            sides.add(0L to maxOf(1L, tot))
                         }
-                        curDur += t.duration
+                        var sideStart = sides[0].first; var sideEnd = sides[0].second
+                        for ((s,e) in sides) {
+                            if (posMs in s until e) { sideStart = s; sideEnd = e; break }
+                            if (posMs >= e) { sideStart = s; sideEnd = e }
+                        }
+                        val span = maxOf(1L, sideEnd - sideStart)
+                        renderer.playProgress = ((posMs - sideStart).toFloat() / span).coerceIn(0f, 1f)
                     }
-                    if (curDur > 0) sides.add(curStart to curStart + curDur)
-                    if (sides.isEmpty()) {
-                        var tot=0L; for(tt in tracks) tot+=tt.duration
-                        sides.add(0L to maxOf(1L, tot))
-                    }
-                    // find current side
-                    var sideStart = sides[0].first; var sideEnd = sides[0].second
-                    for ((s,e) in sides) {
-                        if (posMs in s until e) { sideStart = s; sideEnd = e; break }
-                        if (posMs >= e) { sideStart = s; sideEnd = e }
-                    }
-                    val span = maxOf(1L, sideEnd - sideStart)
-                    renderer.playProgress = ((posMs - sideStart).toFloat() / span).coerceIn(0f, 1f)
+                } else if (playing && player != null) {
+                    val dur = player!!.duration
+                    if (dur > 0) renderer.playProgress = (player!!.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
                 }
-            } else if (playing && player != null) {
-                val dur = player!!.duration
-                if (dur > 0) renderer.playProgress = (player!!.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
             }
 
             glView.requestRender()
@@ -309,15 +314,14 @@ class VinylActivity : AppCompatActivity() {
             val r = sqrt(mx*mx + my*my)
             when (ev.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    // if touch near disc (0.35..1.0 radius), start dragging
                     if (r in 0.33f..1.08f) {
                         isDragging = true
                         deck.go(Phase.CUE, System.nanoTime()/1e9f)
                         playing = false
                         player?.pause()
-                        // map r to progress: outer 0.945 -> 0, inner 0.395 -> 1
                         val prog = ((0.945f - r) / (0.945f - 0.395f)).coerceIn(0f,1f)
                         renderer.playProgress = prog
+                        manualNeedleProgress = prog
                         // also seek player to that side position
                         if (albumIdField > 0) {
                             val tracks = Library.albumTracks(this, albumIdField)
@@ -344,6 +348,7 @@ class VinylActivity : AppCompatActivity() {
                     if (isDragging && r in 0.30f..1.10f) {
                         val prog = ((0.945f - r) / (0.945f - 0.395f)).coerceIn(0f,1f)
                         renderer.playProgress = prog
+                        manualNeedleProgress = prog
                         glView.requestRender()
                     }
                     true
