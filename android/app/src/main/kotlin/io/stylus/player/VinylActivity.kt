@@ -117,19 +117,47 @@ class VinylActivity : AppCompatActivity() {
                 }
             } catch (_: Exception) {}
         }
-        // hint
+        // hint + progress bar
+        val bottomCol = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(0,0,0,24)
+        }
         val hint = android.widget.TextView(this).apply {
             text = "toque para pausar • dois toques para voltar"
             setTextColor(0xFF8892B0.toInt())
             textSize = 10f
             gravity = android.view.Gravity.CENTER
             alpha = 0.7f
-            setPadding(0,0,0,32)
         }
-        root.addView(hint, android.widget.FrameLayout.LayoutParams(
+        bottomCol.addView(hint)
+        // track progress
+        val progress = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                dp(220), dp(3)
+            ).apply { topMargin = dp(8) }
+        }
+        bottomCol.addView(progress)
+        root.addView(bottomCol, android.widget.FrameLayout.LayoutParams(
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL))
+
+        // update progress periodically
+        val progressUpdater = object : Runnable {
+            override fun run() {
+                val p = player
+                if (p != null && p.duration > 0) {
+                    progress.progress = ((p.currentPosition.toFloat() / p.duration) * 100).toInt()
+                } else {
+                    progress.progress = (renderer.playProgress * 100).toInt()
+                }
+                root.postDelayed(this, 500)
+            }
+        }
+        root.post(progressUpdater)
         setContentView(root)
 
         val mode = intent.getStringExtra("mode") ?: "view"
@@ -178,6 +206,8 @@ class VinylActivity : AppCompatActivity() {
         })
         glView.setOnTouchListener { _, ev -> gesture.onTouchEvent(ev); true }
     }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     override fun onResume() {
         super.onResume()
