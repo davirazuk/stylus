@@ -4,11 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.opengl.GLSurfaceView
 import android.os.Bundle
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
+import kotlin.math.sqrt
+import kotlin.math.min
 
 /**
  * Tela do vinil — GLSurfaceView fullscreen com o turntable.
@@ -67,7 +68,7 @@ class VinylActivity : AppCompatActivity() {
                     val posMs = when {
                         playing && player != null && player!!.duration > 0 -> {
                             val idx = player!!.currentTrackIndex.coerceIn(0, tracks.size-1)
-                            val before = tracks.take(idx).sumOf { it.duration }
+                            var before=0L; for(i in 0 until idx) before+=tracks[i].duration
                             before + player!!.currentPosition
                         }
                         playing && trackDuration > 0 -> {
@@ -88,7 +89,10 @@ class VinylActivity : AppCompatActivity() {
                         curDur += t.duration
                     }
                     if (curDur > 0) sides.add(curStart to curStart + curDur)
-                    if (sides.isEmpty()) sides.add(0L to maxOf(1L, tracks.sumOf { it.duration }))
+                    if (sides.isEmpty()) {
+                        var tot=0L; for(tt in tracks) tot+=tt.duration
+                        sides.add(0L to maxOf(1L, tot))
+                    }
                     // find current side
                     var sideStart = sides[0].first; var sideEnd = sides[0].second
                     for ((s,e) in sides) {
@@ -251,7 +255,7 @@ class VinylActivity : AppCompatActivity() {
                     progress.progress = ((p.currentPosition.toFloat() / p.duration) * 100).toInt()
                     // lyrics
                     val idx = p.currentTrackIndex
-                    val tracks = if (albumIdField > 0) Library.albumTracks(this@VinylActivity, albumIdField) else emptyList()
+                    val tracks = if (albumIdField > 0) Library.albumTracks(this@VinylActivity, albumIdField) else emptyList<Library.Track>()
                     if (idx in tracks.indices) {
                         val lys = Library.lyricsFor(tracks[idx].uri, this@VinylActivity)
                         val line = if (lys != null) Library.lyricAt(lys, p.currentPosition) else null
@@ -267,8 +271,6 @@ class VinylActivity : AppCompatActivity() {
         setContentView(root)
 
         val mode = intent.getStringExtra("mode") ?: "view"
-        var manualProgress = 0f // where user placed needle (0 outer, 1 inner)
-        var isDragging = false
 
         if (mode == "view") {
             deck.go(Phase.PLAY, System.nanoTime() / 1e9f)
@@ -290,29 +292,94 @@ class VinylActivity : AppCompatActivity() {
                         prepareAlbum(tracks.map { it.uri })
                         onPlaybackEnd = { finish() }
                     }
-                    trackDuration = tracks.sumOf { it.duration }
+                    var tot2=0L; for(tt in tracks) tot2+=tt.duration; trackDuration = tot2
                 }
             }
         }
 
-        // Tap anywhere to pause/play — reliable, not gesture-detector fragile
+        // Manual needle: drag on disc to set progress, tap to play/pause
+        var isDragging = false
+        glView.setOnTouchListener { _, ev ->
+            val w = glView.width.toFloat(); val h = glView.height.toFloat()
+            val cx = w/2f; val cy = h/2f
+            val dx = ev.x - cx; val dy = ev.y - cy
+            val isoX = min(1f, h/w); val isoY = min(1f, w/h)
+            val mx = dx / (min(w,h)*0.39f) / isoX
+            val my = dy / (min(w,h)*0.39f) / isoY
+            val r = sqrt(mx*mx + my*my)
+            when (ev.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    // if touch near disc (0.35..1.0 radius), start dragging
+                    if (r in 0.33f..1.08f) {
+                        isDragging = true
+                        deck.go(Phase.CUE, System.nanoTime()/1e9f)
+                        playing = false
+                        player?.pause()
+                        // map r to progress: outer 0.945 -> 0, inner 0.395 -> 1
+                        val prog = ((0.945f - r) / (0.945f - 0.395f)).coerceIn(0f,1f)
+                        renderer.playProgress = prog
+                        // also seek player to that side position
+                        if (albumIdField > 0) {
+                            val tracks = Library.albumTracks(this, albumIdField)
+                            if (tracks.isNotEmpty()) {
+                                val sideMaxMs = 22*60*1000L
+                                val sides = mutableListOf<Pair<Long,Long>>()
+                                var cs=0L; var cd=0L
+                                for(t in tracks){ if(cd+t.duration>sideMaxMs && cd>0){ sides.add(cs to cs+cd); cs+=cd; cd=0L }; cd+=t.duration }
+                                if(cd>0) sides.add(cs to cs+cd)
+                                val sideStart=sides[0].first; val sideEnd=sides[0].second
+                                val targetMs = sideStart + (prog*(sideEnd-sideStart)).toLong()
+                                var acc=0L; var targetIdx=0; var targetPos=0L
+                                for((idx,t) in tracks.withIndex()){
+                                    if(targetMs in acc until acc+t.duration){ targetIdx=idx; targetPos=targetMs-acc; break }
+                                    acc+=t.duration
+                                }
+                                player?.exo?.seekTo(targetIdx, targetPos)
+                            }
+                        }
+                        true
+                    } else false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (isDragging && r in 0.30f..1.10f) {
+                        val prog = ((0.945f - r) / (0.945f - 0.395f)).coerceIn(0f,1f)
+                        renderer.playProgress = prog
+                        glView.requestRender()
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (isDragging) {
+                        isDragging = false
+                        // drop needle and play
+                        deck.go(Phase.DROP, System.nanoTime()/1e9f)
+                        // after DROP (0.55s) will go to PLAY and play via frameCallback
+                        // we set playing true after drop
+                        glView.postDelayed({
+                            playing = true
+                            player?.play()
+                            deck.go(Phase.PLAY, System.nanoTime()/1e9f)
+                        }, 600)
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+        // tap outside disc to pause/play
         root.setOnClickListener {
-            playing = !playing
-            if (!playing) {
-                player?.pause()
-                // lift arm immediately
-                if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime()/1e9f)
-            } else {
-                // if lifted, return to cue
-                if (deck.phase == Phase.LIFT || deck.phase == Phase.BREAK) {
-                    deck.go(Phase.CUE, System.nanoTime()/1e9f)
-                    // will auto go DROP->PLAY after CUE_T
-                } else if (deck.phase == Phase.PLAY) {
-                    player?.play()
+            if (!isDragging) {
+                playing = !playing
+                if (!playing) {
+                    player?.pause()
+                    if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime()/1e9f)
+                } else {
+                    if (deck.phase == Phase.LIFT || deck.phase == Phase.BREAK) {
+                        deck.go(Phase.CUE, System.nanoTime()/1e9f)
+                    } else if (deck.phase == Phase.PLAY) player?.play()
                 }
             }
         }
-        // double-tap to close
         root.setOnLongClickListener { finish(); true }
     }
 
