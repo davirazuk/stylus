@@ -18,16 +18,16 @@ import kotlin.math.*
  */
 class VinylRenderer : GLSurfaceView.Renderer {
 
-    // PC vinyl.py exact — piano-black, not wood
-    private val PLINTH_DARK = floatArrayOf(0.125f, 0.082f, 0.052f)
-    private val VINYL_CORE = floatArrayOf(0.013f, 0.013f, 0.014f)
-    private val VINYL_MID = floatArrayOf(0.032f, 0.032f, 0.034f)
-    private val VINYL_RIM = floatArrayOf(0.052f, 0.050f, 0.048f)
-    private val SHEEN = floatArrayOf(0.105f, 0.108f, 0.100f)
-    private val EDGE = floatArrayOf(0.38f, 0.36f, 0.34f)
-    private val G_OFF = floatArrayOf(0.095f, 0.102f, 0.110f)
-    private val G_ON = floatArrayOf(0.190f, 0.198f, 0.208f)
-    private val G_GAP = floatArrayOf(0.55f, 0.53f, 0.51f)
+    // Phone: deeper black than PC, grooves ultra-subtle (not wood)
+    private val PLINTH_DARK = floatArrayOf(0.11f, 0.065f, 0.040f)
+    private val VINYL_CORE = floatArrayOf(0.008f, 0.008f, 0.010f)
+    private val VINYL_MID = floatArrayOf(0.018f, 0.018f, 0.020f)
+    private val VINYL_RIM = floatArrayOf(0.042f, 0.040f, 0.038f)
+    private val SHEEN = floatArrayOf(0.20f, 0.205f, 0.190f)
+    private val EDGE = floatArrayOf(0.40f, 0.38f, 0.36f)
+    private val G_OFF = floatArrayOf(0.020f, 0.024f, 0.032f)
+    private val G_ON = floatArrayOf(0.055f, 0.060f, 0.070f)
+    private val G_GAP = floatArrayOf(0.14f, 0.13f, 0.12f)
     private val LABEL_BG = floatArrayOf(0.62f, 0.14f, 0.10f)
     private val SPINDLE_C = floatArrayOf(0.25f, 0.25f, 0.26f)
     private val ARM_C = floatArrayOf(0.58f, 0.58f, 0.60f)
@@ -281,12 +281,11 @@ class VinylRenderer : GLSurfaceView.Renderer {
         val liftOff=lift*0.13f; val hyLift=hy+liftOff
         val px=0.88f; val py=0.72f
         val ex=(px+hx)*0.5f; val ey=(py+hyLift)*0.5f+0.04f
-        // main shaft — thicker, more present
-        thickLine(px,py,ex,ey,0.016f,ARM_C)
-        thickLine(ex,ey,hx,hyLift,0.011f,ARM_C)
-        // brushed highlight on top edge
-        thickLine(px+0.003f,py+0.003f,ex+0.003f,ey+0.003f,0.0032f,ARM_HI)
-        thickLine(ex+0.003f,ey+0.003f,hx+0.003f,hyLift+0.003f,0.0022f,ARM_HI)
+        // shaft — piano arm, clearly visible
+        thickLine(px,py,ex,ey,0.020f,ARM_C)
+        thickLine(ex,ey,hx,hyLift,0.014f,ARM_C)
+        thickLine(px+0.003f,py+0.003f,ex+0.003f,ey+0.003f,0.004f,ARM_HI)
+        thickLine(ex+0.003f,ey+0.003f,hx+0.003f,hyLift+0.003f,0.003f,ARM_HI)
         // headshell — slightly larger, more solid
         val cw=0.018f; val ch=0.032f
         quad(hx-cw,hyLift+0.007f,hx+cw,hyLift+0.007f,hx+cw,hyLift-ch,hx-cw,hyLift-ch,ARM_D)
