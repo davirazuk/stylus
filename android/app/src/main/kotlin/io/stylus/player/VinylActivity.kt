@@ -278,10 +278,9 @@ class VinylActivity : AppCompatActivity() {
             renderer.armLift = 0f
             playing = true
         } else {
-            // Manual: disc spins, arm at rest, wait for tap to drop needle
-            deck.go(Phase.BREAK, System.nanoTime() / 1e9f)
-            deck.speed = VinylConst.REV_PER_SEC
-            renderer.armLift = 1f
+            // Like PC: ceremony auto — disc spins, arm at outer, then drop and play in order
+            deck.go(Phase.SPINUP, System.nanoTime() / 1e9f)
+            deck.speed = 0f
             renderer.playProgress = 0f
             playing = false
 
@@ -293,96 +292,26 @@ class VinylActivity : AppCompatActivity() {
                         onPlaybackEnd = { finish() }
                     }
                     var tot2=0L; for(tt in tracks) tot2+=tt.duration; trackDuration = tot2
+                    // start paused, deck will do SPINUP->CUE->DROP then play
+                    player?.pause()
                 }
             }
         }
 
-        // Manual needle: drag on disc to set progress — simple, no white-gap logic
-        var isDragging = false
-        glView.setOnTouchListener { _, ev ->
-            val w = glView.width.toFloat(); val h = glView.height.toFloat()
-            val cx = w/2f; val cy = h/2f
-            val dx = ev.x - cx; val dy = ev.y - cy
-            val isoX = min(1f, h/w); val isoY = min(1f, w/h)
-            val mx = dx / (min(w,h)*0.39f) / isoX
-            val my = dy / (min(w,h)*0.39f) / isoY
-            val r = sqrt(mx*mx + my*my)
-            // map radius to progress: outer 0.945 -> 0, inner 0.395 -> 1
-            when (ev.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    // if touch near disc (0.35..1.0 radius), start dragging
-                    if (r in 0.33f..1.08f) {
-                        isDragging = true
-                        deck.go(Phase.CUE, System.nanoTime()/1e9f)
-                        playing = false
-                        player?.pause()
-                        // map r to progress: outer 0.945 -> 0, inner 0.395 -> 1
-                        val prog = ((0.945f - r) / (0.945f - 0.395f)).coerceIn(0f,1f)
-                        renderer.playProgress = prog
-                        if (albumIdField > 0) {
-                            val tracks = Library.albumTracks(this, albumIdField)
-                            if (tracks.isNotEmpty()) {
-                                // side like PC: 22min per side
-                                val sideMaxMs = 22*60*1000L
-                                val sides = mutableListOf<Pair<Long,Long>>()
-                                var cs=0L; var cd=0L
-                                for(t in tracks){ if(cd+t.duration>sideMaxMs && cd>0){ sides.add(cs to cs+cd); cs+=cd; cd=0L }; cd+=t.duration }
-                                if(cd>0) sides.add(cs to cs+cd)
-                                val sideStart=sides[0].first; val sideEnd=sides[0].second
-                                val targetMs = sideStart + (prog*(sideEnd-sideStart)).toLong().coerceIn(0L, sideEnd-sideStart-100)
-                                var acc=0L; var targetIdx=0; var targetPos=0L
-                                for((idx,t) in tracks.withIndex()){
-                                    if(targetMs in acc until acc+t.duration){ targetIdx=idx; targetPos=targetMs-acc; break }
-                                    acc+=t.duration
-                                }
-                                // ensure target is in side 0, not beyond
-                                if(targetMs in sideStart until sideEnd){
-                                    player?.exo?.seekTo(targetIdx, targetPos)
-                                } else {
-                                    player?.exo?.seekTo(0, (prog*tracks[0].duration).toLong())
-                                }
-                            }
-                        }
-                        true
-                    } else false
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (isDragging && r in 0.30f..1.10f) {
-                        val prog = ((0.945f - r) / (0.945f - 0.395f)).coerceIn(0f,1f)
-                        renderer.playProgress = prog
-                        glView.requestRender()
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (isDragging) {
-                        isDragging = false
-                        // drop needle and play
-                        deck.go(Phase.DROP, System.nanoTime()/1e9f)
-                        // after DROP (0.55s) will go to PLAY and play via frameCallback
-                        // we set playing true after drop
-                        glView.postDelayed({
-                            playing = true
-                            player?.play()
-                            deck.go(Phase.PLAY, System.nanoTime()/1e9f)
-                        }, 600)
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-        // tap outside disc to pause/play
+        // Tap to pause / resume — like PC's space
         root.setOnClickListener {
-            if (!isDragging) {
-                playing = !playing
-                if (!playing) {
-                    player?.pause()
-                    if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime()/1e9f)
+            playing = !playing
+            if (!playing) {
+                player?.pause()
+                if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime()/1e9f)
+            } else {
+                if (deck.phase == Phase.LIFT || deck.phase == Phase.BREAK) {
+                    deck.go(Phase.CUE, System.nanoTime()/1e9f)
                 } else {
-                    if (deck.phase == Phase.LIFT || deck.phase == Phase.BREAK) {
-                        deck.go(Phase.CUE, System.nanoTime()/1e9f)
-                    } else if (deck.phase == Phase.PLAY) player?.play()
+                    player?.play()
+                    if (deck.phase == Phase.SPINUP || deck.phase == Phase.CUE) {
+                        deck.go(Phase.DROP, System.nanoTime()/1e9f)
+                    }
                 }
             }
         }

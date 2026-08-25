@@ -18,11 +18,11 @@ import kotlin.math.*
  */
 class VinylRenderer : GLSurfaceView.Renderer {
 
-    private val PLINTH_DARK = floatArrayOf(0.095f, 0.060f, 0.038f)
-    private val VINYL_CORE = floatArrayOf(0.008f, 0.008f, 0.010f)
-    private val VINYL_MID = floatArrayOf(0.025f, 0.025f, 0.028f)
-    private val VINYL_RIM = floatArrayOf(0.055f, 0.053f, 0.050f)
-    private val SHEEN = floatArrayOf(0.22f, 0.225f, 0.210f)
+    private val PLINTH_DARK = floatArrayOf(0.105f, 0.068f, 0.042f)
+    private val VINYL_CORE = floatArrayOf(0.005f, 0.005f, 0.012f)
+    private val VINYL_MID = floatArrayOf(0.015f, 0.015f, 0.022f)
+    private val VINYL_RIM = floatArrayOf(0.040f, 0.040f, 0.048f)
+    private val SHEEN = floatArrayOf(0.28f, 0.285f, 0.300f)
     private val EDGE = floatArrayOf(0.44f, 0.42f, 0.38f)
     private val G_OFF = floatArrayOf(0.025f, 0.028f, 0.035f)
     private val G_ON = floatArrayOf(0.065f, 0.070f, 0.080f)
