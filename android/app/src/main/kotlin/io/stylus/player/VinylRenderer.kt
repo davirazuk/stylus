@@ -18,15 +18,16 @@ import kotlin.math.*
  */
 class VinylRenderer : GLSurfaceView.Renderer {
 
-    private val PLINTH_DARK = floatArrayOf(0.105f, 0.068f, 0.042f)
-    private val VINYL_CORE = floatArrayOf(0.005f, 0.005f, 0.012f)
-    private val VINYL_MID = floatArrayOf(0.015f, 0.015f, 0.022f)
-    private val VINYL_RIM = floatArrayOf(0.040f, 0.040f, 0.048f)
-    private val SHEEN = floatArrayOf(0.28f, 0.285f, 0.300f)
-    private val EDGE = floatArrayOf(0.44f, 0.42f, 0.38f)
-    private val G_OFF = floatArrayOf(0.025f, 0.028f, 0.035f)
-    private val G_ON = floatArrayOf(0.065f, 0.070f, 0.080f)
-    private val G_GAP = floatArrayOf(0.10f, 0.095f, 0.090f)
+    // PC vinyl.py exact — piano-black, not wood
+    private val PLINTH_DARK = floatArrayOf(0.125f, 0.082f, 0.052f)
+    private val VINYL_CORE = floatArrayOf(0.013f, 0.013f, 0.014f)
+    private val VINYL_MID = floatArrayOf(0.032f, 0.032f, 0.034f)
+    private val VINYL_RIM = floatArrayOf(0.052f, 0.050f, 0.048f)
+    private val SHEEN = floatArrayOf(0.105f, 0.108f, 0.100f)
+    private val EDGE = floatArrayOf(0.38f, 0.36f, 0.34f)
+    private val G_OFF = floatArrayOf(0.095f, 0.102f, 0.110f)
+    private val G_ON = floatArrayOf(0.190f, 0.198f, 0.208f)
+    private val G_GAP = floatArrayOf(0.55f, 0.53f, 0.51f)
     private val LABEL_BG = floatArrayOf(0.62f, 0.14f, 0.10f)
     private val SPINDLE_C = floatArrayOf(0.25f, 0.25f, 0.26f)
     private val ARM_C = floatArrayOf(0.58f, 0.58f, 0.60f)
