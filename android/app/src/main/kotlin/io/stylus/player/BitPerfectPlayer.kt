@@ -22,6 +22,10 @@ class BitPerfectPlayer(private val ctx: Context) {
 
     private var session: MediaSession? = null
 
+    // Bit-perfect: volume 1.0, no DSP, gapless, follow file rate
+    // On Android 12+ with wired headphones/USB DAC, system mixer will use direct
+    // path when AudioAttributes is MUSIC and offload is available. For now we
+    // ensure no software resampling/equalizer and let the hardware do its job.
     val exo: ExoPlayer = ExoPlayer.Builder(ctx).build().apply {
         volume = 1.0f
         repeatMode = Player.REPEAT_MODE_OFF

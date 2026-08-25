@@ -166,7 +166,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadAlbums() {
-        albums = Library.albums(this)
+        // Try MediaStore first, then folder scan for subfolders like Disc01/Disc02
+        var list = Library.albums(this)
+        // also scan common music roots for folder-based albums (like PC's vinyl.shelf)
+        try {
+            val roots = listOf(
+                java.io.File("/sdcard/Music"), java.io.File("/sdcard/Músicas"),
+                java.io.File("/storage/emulated/0/Music"), java.io.File("/storage/emulated/0/Músicas"),
+                java.io.File(getExternalFilesDir(null)?.path ?: "")
+            ).filter { it.isDirectory }
+            val folderAlbums = Library.shelfByFolders(roots)
+            // Convert folder albums to Library.Album via MediaStore lookup or dummy
+            // For now, just show MediaStore; folder scan is for deep subfolders when MediaStore grouping fails
+            if (list.isEmpty() && folderAlbums.isNotEmpty()) {
+                // fallback: create virtual albums from folders
+                list = folderAlbums.mapIndexed { idx, f ->
+                    Library.Album(
+                        id = 900000L + idx,
+                        name = f.name,
+                        artist = f.parentFile?.name ?: "Desconhecido",
+                        trackCount = Library.tracksFromFolder(f).size,
+                        artUri = null
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+        albums = list
         bottomText.text = if (albums.isEmpty()) "Nenhum álbum" else "${albums.size} álbuns • toque para tocar"
         if (albums.isEmpty()) {
             emptyView.visibility = View.VISIBLE
