@@ -150,6 +150,26 @@ class NowScreen(Screen):
         if ev.key == pygame.K_p:
             spawn(["playerctl", "previous"])
             return True
+        # Busca e volume do sofá: no modo música esta tela é o controle
+        # remoto. ←/→ puxam a agulha dez segundos, +/- tocam o volume — as
+        # duas coisas que a pessoa quer sem levantar, e que antes só existiam
+        # na barra da área de trabalho.
+        if ev.key in (pygame.K_RIGHT, pygame.K_l):
+            self.app.toast("avança 10s…")
+            spawn(["playerctl", "position", "10+"])
+            return True
+        if ev.key in (pygame.K_LEFT, pygame.K_h):
+            self.app.toast("volta 10s…")
+            spawn(["playerctl", "position", "10-"])
+            return True
+        if ev.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
+            spawn(["pamixer", "-i", "5"])
+            self.app.toast(f"volume {self.app.volume_pct()}%")
+            return True
+        if ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+            spawn(["pamixer", "-d", "5"])
+            self.app.toast(f"volume {self.app.volume_pct()}%")
+            return True
         return False
 
     def draw(self, s, r):
@@ -208,11 +228,6 @@ class NowScreen(Screen):
                    T.TEXT, maxw=w)
             y += 50
 
-        # ── a letra do momento. ────────────────
-        line = self.app.current_lyric(al, track)
-        if line:
-            T.text(s, line, (x, y + 10), 28, T.LAV, maxw=w)
-        
         # Informativos no rodapé: logo ABAIXO do bloco, e não colados na borda
         # da tela — era a faixa vazia entre o fim do texto e o pé da tela que
         # fazia a seção parecer mal preenchida.
@@ -221,8 +236,30 @@ class NowScreen(Screen):
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
                (x, y_rodape), 20, T.TEXT_FAINT, maxw=w)
+
+        # ── a letra do momento, em JANELA e não em linha solta. ────────
+        # A linha de agora grande em lavanda; duas antes e três depois
+        # apagadas, para dar contexto de encarte sem virar página de texto.
+        est = self.app.lyric_state(al, track)
+        livre = int(y_rodape - (y + 10))
+        if est and livre > 70:
+            lines, cur_i = est
+            vis = max(3, min(6, livre // 34))
+            ini = max(0, min(cur_i - 2, len(lines) - vis))
+            yl = y + 8
+            for k in range(ini, min(len(lines), ini + vis)):
+                txt = (lines[k][1] or "").strip()
+                if k == cur_i and txt:
+                    T.text(s, txt, (x, yl), 27, T.LAV, bold=True, maxw=w)
+                    yl += 38
+                elif txt:
+                    T.text(s, txt, (x, yl), 20, T.TEXT_FAINT, maxw=w)
+                    yl += 28
+                else:
+                    yl += 14      # linha em branco: respiro instrumental
+
         self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
-                            "n/p faixa   v/b lado")
+                            "n/p faixa   ←/→ busca   v/b lado   +/- volume")
 
     def _groove(self, s, rect, frac):
         """A barra de progresso desenhada como um sulco, não como um tubo.
@@ -268,10 +305,18 @@ class ShelfScreen(Screen):
         self.query = ""
         self.searching = False
         self.order = "artista"
+        # O filtro por ARTISTA. A busca (/) acha "quem tem essa palavra no
+        # nome"; isto aqui responde à pergunta de sofá — "quero ouvir esse
+        # artista, qual disco dele agora?" — mostrando só a prateleira dele.
+        self.artist = None
+        self.picking = False
+        self.a_sel = 0
 
     # ── quais discos, nesta ordem ──────────────────────────────────────────
     def items(self):
         its = self.app.shelf.items
+        if self.artist:
+            its = [i for i in its if i["artist"] == self.artist]
         if self.query:
             q = self.query.lower()
             its = [i for i in its
@@ -282,9 +327,28 @@ class ShelfScreen(Screen):
             its = sorted(its, key=lambda i: -i["plays"])
         return its
 
+    def artistas(self):
+        return sorted(self.app.shelf.artists().keys(), key=str.lower)
+
     def key(self, ev):
         its = self.items()
         n = len(its)
+        if self.picking:
+            arts = self.artistas()
+            if ev.key == pygame.K_ESCAPE:
+                self.picking = False
+            elif ev.key in (pygame.K_DOWN, pygame.K_j):
+                self.a_sel = min(len(arts) - 1, self.a_sel + 1)
+            elif ev.key in (pygame.K_UP, pygame.K_k):
+                self.a_sel = max(0, self.a_sel - 1)
+            elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and arts:
+                # Escolher o MESMO artista de novo é o gesto de tirar o
+                # filtro — e custa a linha que o "a limpa" precisaria.
+                self.artist = (None if arts[self.a_sel] == self.artist
+                               else arts[self.a_sel])
+                self.sel, self.scroll, self.target = 0, 0.0, 0.0
+                self.picking = False
+            return True
         if self.searching:
             if ev.key == pygame.K_ESCAPE:
                 self.searching, self.query = False, ""
@@ -295,6 +359,19 @@ class ShelfScreen(Screen):
             elif ev.unicode and ev.unicode.isprintable():
                 self.query += ev.unicode
             self.sel = 0
+            return True
+        # 'a' DEPOIS do modo de busca: dentro da busca ele é letra — "beat"
+        # não pode abrir a lista de artistas no meio (foi exatamente o que
+        # aconteceu, e o teste de busca pegou).
+        if ev.key == pygame.K_a:
+            if self.artist:
+                self.artist = None          # já filtrado: 'a' limpa
+                self.sel = 0
+            else:
+                self.picking = True
+                arts = self.artistas()
+                self.a_sel = (arts.index(self.artist)
+                              if self.artist in arts else 0)
             return True
         if ev.key == pygame.K_SLASH:
             self.searching, self.query = True, ""
@@ -357,12 +434,17 @@ class ShelfScreen(Screen):
             return
 
         # ── cabeçalho: contagem, ordem, busca ──────────────────────────────
+        if self.picking:
+            self._picker(s, r)
+            return
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
                    (r.x + pad, r.y + 16), 24, T.BLUE)
         else:
-            T.text(s, f"{len(its)} discos", (r.x + pad, r.y + 18), 22,
-                   T.TEXT_DIM)
+            rotulo = f"{len(its)} discos"
+            if self.artist:
+                rotulo += f"  ·  {self.artist}   (a limpa o filtro)"
+            T.text(s, rotulo, (r.x + pad, r.y + 18), 22, T.TEXT_DIM)
         T.text(s, self.order, (r.right - pad, r.y + 20), 19, T.TEXT_FAINT,
                anchor="topright")
 
@@ -400,7 +482,50 @@ class ShelfScreen(Screen):
         self.app.hint(
             s, r,
             f"{sel['artist']} — {sel['name']}   ·   {ha_quanto(sel['last'])}"
-            f"   ·   enter põe   s empilha   r sorteia   o ordem   / procura")
+            f"   ·   enter põe   s empilha   a artista   o ordem   / procura")
+
+    def _picker(self, s, r):
+        """A lista de quem está na coleção, para filtrar a estante.
+
+        Sobre a grade escurecida e não numa seção própria: escolher artista
+        é um GESTO dentro da estante — entra, escolhe, e a prateleira já é
+        outra — não um lugar onde se fica.
+        """
+        arts = self.artistas()
+        velho = s.get_clip()
+        s.set_clip(r)
+        dim = pygame.Surface(r.size)
+        dim.fill(T.INK)
+        dim.set_alpha(215)
+        s.blit(dim, r.topleft)
+
+        lw = min(560, r.w - 120)
+        lh = min(len(arts) * 46 + 74, r.h - 120)
+        lx, ly = r.x + (r.w - lw) // 2, r.y + (r.h - lh) // 2
+        T.panel(s, pygame.Rect(lx, ly, lw, lh), T.INK_LIFT, radius=14,
+                border=T.LINE)
+        T.text(s, "quem?", (lx + 24, ly + 16), 22, T.TEXT, bold=True)
+        T.text(s, f"{len(arts)} artistas", (lx + lw - 24, ly + 22), 16,
+               T.TEXT_FAINT, anchor="topright")
+
+        vis = max(1, (lh - 74) // 46)
+        topo = max(0, min(self.a_sel - vis // 2, len(arts) - vis))
+        for k, nome in enumerate(arts[topo:topo + vis]):
+            i = topo + k
+            ry = ly + 52 + k * 46
+            atual = i == self.a_sel
+            if atual:
+                T.panel(s, pygame.Rect(lx + 12, ry - 4, lw - 24, 42),
+                        T.INK_SOFT, radius=8)
+            n_discos = len(self.app.shelf.artists().get(nome, ()))
+            T.text(s, ("▸ " if atual else "  ") + nome,
+                   (lx + 26, ry + 2), 20,
+                   T.TEXT if atual else T.TEXT_DIM, maxw=lw - 110)
+            T.text(s, str(n_discos), (lx + lw - 30, ry + 6), 16,
+                   T.TEXT_FAINT, anchor="topright")
+        s.set_clip(velho)
+        self.app.hint(s, r, "enter escolhe   ·   ↑↓ anda   ·   "
+                            "esc desiste   ·   o mesmo artista de novo limpa")
 
     def _card(self, s, rect, it, selected):
         if selected:
@@ -1345,6 +1470,12 @@ class App:
         # Miniaturas já no tamanho do bloco TOCANDO do trilho: escalar 320px
         # para 46 a cada quadro é trabalho de GPU queimado em nada.
         self._rail_thumb = {}
+        # Protetor de tela que é o PROPRIO deck: parado na AGORA sem tocar em
+        # nada, a tela chama o disco sozinha, uma vez por álbum (ver run()).
+        self.IDLE_DECK_SECS = 240
+        self._ultima_entrada = time.time()
+        self._deck_auto = None
+        self._born = time.time()
         self.pads = []
         self._pad_ax = 0.0
         self._pad_t = 0.0
@@ -1493,7 +1624,14 @@ class App:
         except Exception:
             self.toast("não consegui abrir o deck")
 
-    def current_lyric(self, al, track):
+    def lyric_state(self, al, track):
+        """(linhas do .lrc, índice da linha de agora) — ou None.
+
+        O par em vez de só o texto: a AGORA mostra uma JANELA de letra, e
+        quem desenha precisa saber onde está o agora dentro dela. As linhas
+        em branco continuam valendo (marcam trecho instrumental); aqui elas
+        viram respiro, e não linha destacada vazia.
+        """
         if al is None or track is None:
             return None
         try:
@@ -1516,10 +1654,21 @@ class App:
                 lo = mid + 1
             else:
                 hi = mid
-        return (lines[lo - 1][1] or "").strip() or None if lo else None
+        return lines, lo
 
     def toast(self, msg, secs=3.0):
         self._toast, self._toast_until = msg, time.time() + secs
+
+    @staticmethod
+    def volume_pct():
+        """O volume DEPOIS do pamixer ter mexido, lido de novo — mostrar o
+        número que ficou, não o que se pediu, é o que faz o balão valer."""
+        try:
+            r = subprocess.run(["pamixer", "--get-volume"],
+                               capture_output=True, text=True, timeout=2)
+            return int(r.stdout.strip() or 0)
+        except Exception:                 # noqa: BLE001
+            return "?"
 
     # ── desenho comum ──────────────────────────────────────────────────────
     def hint(self, s, r, txt):
@@ -1701,6 +1850,7 @@ class App:
 
     # ── entrada ────────────────────────────────────────────────────────────
     def _key(self, ev):
+        self._ultima_entrada = time.time()
         # O aviso de virar o lado cobre a tela; a primeira tecla tira ele e
         # não faz mais nada. Deixar a tecla ATRAVESSAR o aviso faria o botão
         # que a pessoa apertou para dispensá-lo também mudar de tela.
@@ -1779,6 +1929,7 @@ class App:
                                  pygame.JOYDEVICEREMOVED):
                     self._sync_pads(announce=True)
                 elif ev.type == pygame.JOYBUTTONDOWN:
+                    self._ultima_entrada = time.time()
                     # Os ombros pulam faixa em QUALQUER tela, não só na AGORA:
                     # do sofá, "próxima" é a coisa que se quer poder fazer sem
                     # primeiro navegar até uma tela específica. Por isso vão
@@ -1799,6 +1950,7 @@ class App:
                             mod=0))
             self.surf.fill(T.INK)
             body = pygame.Rect(rail_w, 0, self.W - rail_w, self.H)
+            self._idle_deck()
             try:
                 self.screens[self.cur].draw(self.surf, body)
             except Exception as e:        # noqa: BLE001
@@ -1811,8 +1963,41 @@ class App:
             self._watch_side()
             self._draw_flip(self.surf)
             self._draw_toast(self.surf)
+            # Subida macia: meio segundo de fade na abertura, para a tela não
+            # PULAR na cara — o resto do sistema é cerimônia; a interface não
+            # ia começar com um corte seco.
+            nasc = (time.time() - self._born) / 0.45
+            if nasc < 1.0:
+                v = pygame.Surface((self.W, self.H))
+                v.fill(T.INK)
+                v.set_alpha(int(255 * (1.0 - nasc)))
+                self.surf.blit(v, (0, 0))
             pygame.display.flip()
             self.clock.tick(FPS)
+
+    def _idle_deck(self):
+        """Parado na AGORA, a tela vira o deck sozinha. Uma vez por álbum.
+
+        O modo música costuma estar num televisor do outro lado do quarto: a
+        pessoa põe o disco, larga o controle, e a capa parada na AGORA é
+        menos da metade do que o deck desenha da mesma música. Qualquer
+        entrada adia; trocar de álbum rearma — e nada disso acontece na
+        janela de desenvolvimento, que não é uma sala de estar.
+        """
+        if os.environ.get("STYLUS_UI_WINDOWED"):
+            return
+        if not isinstance(self.screens[self.cur], NowScreen):
+            return
+        if time.time() - self._ultima_entrada < self.IDLE_DECK_SECS:
+            return
+        snap = self.playing.session.snapshot()
+        path = snap.get("path") or ""
+        if not path or snap.get("paused", True):
+            return
+        chave = os.path.dirname(path)
+        if chave and chave != self._deck_auto:
+            self._deck_auto = chave
+            self.open_deck()
 
 
 def main():
