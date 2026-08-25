@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Stylus" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#07080b</item>
+        <item name="colorOnPrimary">#e8ecf5</item>
+        <item name="android:windowBackground">#07080b</item>
+    </style>
+    <style name="Theme.Stylus.Fullscreen" parent="Theme.Stylus">
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
