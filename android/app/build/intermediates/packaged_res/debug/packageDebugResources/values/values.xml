@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">STYLUS</string>
+    <style name="Theme.Stylus" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#07080b</item>
+        <item name="colorOnPrimary">#e8ecf5</item>
+        <item name="android:windowBackground">#07080b</item>
+    </style>
+    <style name="Theme.Stylus.Fullscreen" parent="Theme.Stylus">
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
