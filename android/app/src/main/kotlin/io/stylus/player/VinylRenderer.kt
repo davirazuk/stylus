@@ -19,28 +19,32 @@ import kotlin.math.*
  */
 class VinylRenderer : GLSurfaceView.Renderer {
 
-    private val PLINTH = floatArrayOf(0.115f, 0.072f, 0.045f)
-    private val VINYL = floatArrayOf(0.008f, 0.008f, 0.010f)
-    private val VINYL_HI = floatArrayOf(0.55f, 0.57f, 0.62f)
-    private val GROOVE = floatArrayOf(0.018f, 0.020f, 0.028f)
-    private val GROOVE_LIT = floatArrayOf(0.045f, 0.048f, 0.058f)
-    private val GAP = floatArrayOf(0.09f, 0.085f, 0.080f)
-    private val EDGE = floatArrayOf(0.44f, 0.42f, 0.38f)
-    private val LABEL_BG = floatArrayOf(0.62f, 0.14f, 0.10f)
-    private val LABEL_RING = floatArrayOf(0.52f, 0.44f, 0.38f)
+// === Palette ===
+    private val PLINTH = floatArrayOf(0.115f, 0.072f, 0.045f)      // walnut
+    private val VINYL  = floatArrayOf(0.006f, 0.006f, 0.008f)      // piano black
+    private val VINYL_HI = floatArrayOf(0.55f, 0.57f, 0.62f)       // cool highlight
+    private val GROOVE = floatArrayOf(0.012f, 0.013f, 0.018f)      // unlit groove
+    private val GROOVE_LIT = floatArrayOf(0.035f, 0.038f, 0.050f)  // lit groove
+    private val GAP = floatArrayOf(0.07f, 0.068f, 0.065f)          // lead-out gap (dark)
+    private val EDGE = floatArrayOf(0.44f, 0.42f, 0.38f)           // edge rings
+    private val LABEL_BG = floatArrayOf(0.62f, 0.14f, 0.10f)       // label center
+    private val LABEL_RING = floatArrayOf(0.52f, 0.44f, 0.38f)     // label edge
     private val SPINDLE_C = floatArrayOf(0.26f, 0.26f, 0.27f)
     private val ARM_C = floatArrayOf(0.62f, 0.62f, 0.64f)
     private val ARM_D = floatArrayOf(0.13f, 0.13f, 0.14f)
     private val ARM_HI = floatArrayOf(0.88f, 0.88f, 0.90f)
     private val STYLUS_C = floatArrayOf(0.96f, 0.70f, 0.26f)
 
+    // === Geometry ===
     private val R_OUTER = 1.0f; private val R_LEADIN = 0.962f
     private val R_PROG_OUT = 0.945f; private val R_PROG_IN = 0.395f
     private val R_RUNOUT = 0.360f; private val R_LABEL = 0.329f
     private val R_SPINDLE = 0.024f; private val N_RINGS = 72
     private val LIGHT = Math.toRadians(-35.0).toFloat()
 
-    private var progBg = 0; private var progVinyl = 0; private var uMvpBg = -1; private var uMvpVinyl = -1
+    // === GL ===
+    private var progBg = 0; private var progVinyl = 0
+    private var uMvpBg = -1; private var uMvpVinyl = -1
     private var bgVbo = 0; private var bgN = 0
 
     private val mvp = FloatArray(16)
@@ -55,6 +59,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     private lateinit var sc: FloatArray
     private var si = 0
 
+    // === Shaders ===
     private val VS_VINYL = """
         #version 300 es
         layout(location=0) in vec2 aPos;
@@ -64,28 +69,27 @@ class VinylRenderer : GLSurfaceView.Renderer {
         out vec2 vPos;
         void main(){ vCol=aCol; vPos=aPos; gl_Position=uMvp*vec4(aPos,0,1); }
     """.trimIndent()
+
     private val FS_VINYL = """
         #version 300 es
         precision mediump float;
         in vec4 vCol; in vec2 vPos; out vec4 frag;
         void main(){
-            // vPos is model space (-1..1), vCol is base plastic color
-            // Add a single soft highlight that is fixed in screen space
-            // so it stays while the record spins underneath.
             float r = length(vPos);
             float theta = atan(vPos.y, vPos.x);
-            // two opposed lobes 180 apart
+            // single soft highlight fixed in screen space (two lobes 180° apart)
             float d = mod(theta - (-0.61) + 3.14159, 3.14159) - 1.5708;
             float sheen = exp(-d*d/0.065) * 0.52 * smoothstep(0.35, 0.55, r) * smoothstep(1.02, 0.98, r);
-            // radial dark -> slightly lighter rim (read as thickness)
-            float rim = pow(clamp((r-0.25)/0.75, 0.0, 1.0), 0.9) * 0.04;
-            vec3 col = vCol.rgb + vec3(rim) + sheen * vec3(0.55,0.57,0.62);
-            // very soft vignette on the vinyl itself so edge catches light
-            float edge = smoothstep(0.85, 1.0, r) * 0.06;
+            // subtle radial brightening toward rim
+            float rim = pow(clamp((r-0.25)/0.75, 0.0, 1.0), 0.9) * 0.035;
+            vec3 col = vCol.rgb + vec3(rim) + sheen * vec3(0.55, 0.57, 0.62);
+            // soft edge catch
+            float edge = smoothstep(0.85, 1.0, r) * 0.05;
             col += edge;
             frag = vec4(col, 1.0);
         }
     """.trimIndent()
+
     private val VS_BG = """
         #version 300 es
         layout(location=0) in vec2 aPos;
@@ -95,6 +99,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
         out vec2 vUv;
         void main(){ vCol=aCol; vUv=aPos*0.5+0.5; gl_Position=uMvp*vec4(aPos,0,1); }
     """.trimIndent()
+
     private val FS_BG = """
         #version 300 es
         precision mediump float;
@@ -103,7 +108,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
             vec2 p = vUv*2.0-1.0;
             float g1 = sin(p.x*18.0 + p.y*2.2)*0.5+0.5;
             float g2 = sin(p.x*44.0 - p.y*7.0)*0.5+0.5;
-            float grain = mix(g1,g2,0.35)*0.020;
+            float grain = mix(g1,g2,0.35)*0.022;
             vec3 wood = vec3(0.122,0.074,0.044) + vec3(grain);
             float vig = 1.0 - dot(p,p)*0.19;
             vig = pow(vig, 0.90);
@@ -117,10 +122,12 @@ class VinylRenderer : GLSurfaceView.Renderer {
         GL.glClearColor(0.06f, 0.038f, 0.028f, 1f)
         GL.glEnable(GL.GL_BLEND)
         GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
+
         progBg = compile(VS_BG, FS_BG)
         progVinyl = compile(VS_VINYL, FS_VINYL)
         uMvpBg = GL.glGetUniformLocation(progBg, "uMvp")
         uMvpVinyl = GL.glGetUniformLocation(progVinyl, "uMvp")
+
         sc = FloatArray(SZ)
         bgVbo = uploadBg()
         bgN = 6
@@ -174,13 +181,17 @@ class VinylRenderer : GLSurfaceView.Renderer {
         si = 0; buildArm(); flushVinyl()
     }
 
+    // === Geometry ===
+
     private fun buildDisc() {
+        // 8 annuli from spindle to rim
         val rings = floatArrayOf(R_SPINDLE, 0.15f, 0.28f, 0.42f, 0.57f, 0.72f, 0.86f, 0.95f, R_OUTER)
         val segs = 96
         for (i in 0 until rings.size - 1) {
             val r0 = rings[i]; val r1 = rings[i + 1]
             val t = ((r0 + r1) * 0.5f / R_OUTER).toDouble().pow(0.88).toFloat().coerceIn(0f,1f)
-            val base = lerp(floatArrayOf(0.007f,0.007f,0.009f), floatArrayOf(0.045f,0.043f,0.040f), t)
+            // radial gradient: core -> rim
+            val base = lerp(floatArrayOf(0.006f,0.006f,0.008f), floatArrayOf(0.045f,0.043f,0.040f), t)
             for (j in 0 until segs) {
                 val a0 = j.toFloat() / segs * 2f * PI.toFloat()
                 val a1 = (j + 1).toFloat() / segs * 2f * PI.toFloat()
@@ -197,12 +208,13 @@ class VinylRenderer : GLSurfaceView.Renderer {
             val a0 = j.toFloat() / segs * 2f * PI.toFloat()
             val a1 = (j + 1).toFloat() / segs * 2f * PI.toFloat()
             vert(0f, 0f, floatArrayOf(0f,0f,0f))
-            vert(ring(r, a0), floatArrayOf(0.028f,0.016f,0.010f))
-            vert(ring(r, a1), floatArrayOf(0.028f,0.016f,0.010f))
+            vert(ring(r, a0), floatArrayOf(0.025f,0.015f,0.008f))
+            vert(ring(r, a1), floatArrayOf(0.025f,0.015f,0.008f))
         }
     }
 
     private fun buildGrooves() {
+        // hairline grooves — visible ONLY when they catch the highlight
         val segs = 180; val hw = 0.0014f
         val upTo = (playProgress * N_RINGS).toInt().coerceIn(0, N_RINGS)
         for (i in 0 until N_RINGS) {
@@ -211,13 +223,14 @@ class VinylRenderer : GLSurfaceView.Renderer {
             val isGap = i % 4 == 3
             val loud = (0.32f + 0.42f * sin(i*0.41f + 1.2f) + 0.26f * sin(i*1.07f)).coerceIn(0f,1f)
             val shade = if (isGap) 1f else 0.10f + 0.90f * loud.pow(0.58f)
-            val base = when { isGap -> GAP; i < upTo -> GROOVE_LIT; else -> GROOVE }
-            val colScale = if (isGap) 0.60f else shade
-            val w = if (isGap) hw*0.70f else hw*(0.75f + 0.25f*shade)
+            // gaps are dark lead-out spiral, NOT white
+            val base = when { i % 4 == 3 -> GAP; i < upTo -> GROOVE_LIT; else -> GROOVE }
+            val colScale = if (i % 4 == 3) 0.55f else shade
+            val w = if (i % 4 == 3) hw*0.70f else hw*(0.75f + 0.25f*shade)
             val col = floatArrayOf(base[0]*colScale, base[1]*colScale, base[2]*colScale)
-            for (j in 0 until segs) {
-                val a0 = j.toFloat() / segs * 2f * PI.toFloat()
-                val a1 = (j + 1).toFloat() / segs * 2f * PI.toFloat()
+            for (j in 0 until 180) {
+                val a0 = j.toFloat() / 180f * 2f * PI.toFloat()
+                val a1 = (j + 1).toFloat() / 180f * 2f * PI.toFloat()
                 tri(ring(r-w, a0), ring(r-w, a1), ring(r+w, a0), col)
                 tri(ring(r-w, a1), ring(r+w, a1), ring(r+w, a0), col)
             }
@@ -235,7 +248,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
             val p0 = ring(r, a); val p1 = ring(r, a1)
             val dx=p1[0]-p0[0]; val dy=p1[1]-p0[1]
             val l= sqrt(dx*dx+dy*dy).coerceAtLeast(1e-6f)
-            val nx=-dy/l*hw; val ny=dx/l*hw
+            val nx=-dy/l*0.0007f; val ny=dx/l*0.0007f
             val alpha = 0.07f + rnd.nextFloat()*0.08f
             val col = floatArrayOf(0.38f*alpha,0.38f*alpha,0.40f*alpha)
             quad(p0[0]+nx,p0[1]+ny, p0[0]-nx,p0[1]-ny, p1[0]-nx,p1[1]-ny, p1[0]+nx,p1[1]+ny, col)
@@ -317,6 +330,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
         thickLine(rx+0.02f,ry,rx+0.02f,ry-0.05f,0.004f,ARM_D)
     }
 
+    // === Helpers ===
     private fun ring(r:Float,a:Float)=floatArrayOf(cos(a)*r, sin(a)*r)
     private fun vert(x:Float,y:Float,c:FloatArray){ sc[si++]=x; sc[si++]=y; sc[si++]=c[0]; sc[si++]=c[1]; sc[si++]=c[2]; sc[si++]=1f }
     private fun vert(p:FloatArray,c:FloatArray)=vert(p[0],p[1],c)
