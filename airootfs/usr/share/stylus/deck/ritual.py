@@ -303,11 +303,11 @@ def draw_quad(vao):
 # ── audio helpers ────────────────────────────────────────────────────────
 
 class OnePoleLPF:
-    def __init__(self, cutoff_hz, rate):
+    def __init__(self, cutoff_hz, rate, channels=2):
         rc = 1.0 / (2 * np.pi * cutoff_hz)
         dt = 1.0 / rate
         self.alpha = dt / (rc + dt)
-        self.y = np.zeros(2, dtype=np.float64)
+        self.y = np.zeros(channels, dtype=np.float64)
 
     def apply(self, block):
         out = np.empty_like(block, dtype=np.float64)
@@ -381,8 +381,8 @@ class AudioCapture:
         self._lock = threading.Lock()
         self._stop = False
         self._lpf = OnePoleLPF(LPF_CUTOFF_HZ, self.rate)
-        self._bass_lpf = OnePoleLPF(150.0, self.rate)
-        self._midhi_lpf = OnePoleLPF(2500.0, self.rate)
+        self._bass_lpf = OnePoleLPF(150.0, self.rate, channels=1)
+        self._midhi_lpf = OnePoleLPF(2500.0, self.rate, channels=1)
         self._onset_flash = BandFlash(scale=18.0)
         self._bass_flash = BandFlash(scale=16.0, decay=0.80)
         self._treble_flash = BandFlash(scale=26.0, decay=0.68)
@@ -562,7 +562,7 @@ class TextOSD:
         self.vbo = glGenBuffers(1)
         glBindVertexArray(self.vao)
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, 4 * 4 * 4, None, GL_DYNAMIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, 6 * 4 * 4, None, GL_DYNAMIC_DRAW)
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
@@ -661,7 +661,7 @@ class RecordLabel:
         self.vbo = glGenBuffers(1)
         glBindVertexArray(self.vao)
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, 4 * 4 * 4, None, GL_DYNAMIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, 6 * 4 * 4, None, GL_DYNAMIC_DRAW)
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
