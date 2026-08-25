@@ -178,6 +178,15 @@ class NowScreen(Screen):
             self._nothing(s, r)
             return
 
+        # ── a capa vaza para a sala: fundo desfocado na cor do disco ──────
+        # O preto puro atrás do bloco era correto e frio. Um borrão escuro
+        # DA CAPA faz o que a luz de um abajur faz: a tela inteira passa a
+        # pertencer àquele disco sem competir com ele — o véu de tinta volta
+        # o contraste para o texto, que é quem precisa dele.
+        fundo = self.app.backdrop(al, r.size)
+        if fundo is not None:
+            s.blit(fundo, r.topleft)
+
         # ── a capa e a coluna de texto formam UM bloco, centrado junto ─────
         # Antes a capa parava num teto fixo de 600 e a coluna começava numa
         # distância chutada (500) da borda: numa tela grande o espaço que
@@ -1470,6 +1479,10 @@ class App:
         # Miniaturas já no tamanho do bloco TOCANDO do trilho: escalar 320px
         # para 46 a cada quadro é trabalho de GPU queimado em nada.
         self._rail_thumb = {}
+        # O borrão de fundo da AGORA, um por capa e no tamanho da tela: gerar
+        # por quadro seria smoothscale duplo a 60fps para desenhar a mesma
+        # imagem. Guarda as últimas — voltar ao disco de ontem não regenera.
+        self._backdrops = {}
         # Protetor de tela que é o PROPRIO deck: parado na AGORA sem tocar em
         # nada, a tela chama o disco sozinha, uma vez por álbum (ver run()).
         self.IDLE_DECK_SECS = 240
@@ -1655,6 +1668,36 @@ class App:
             else:
                 hi = mid
         return lines, lo
+
+    def backdrop(self, al, size):
+        """O borrão da capa como fundo da AGORA, ou None sem capa.
+
+        Desfocar aqui é ENCOLHER até quase nada e voltar — o smoothscale do
+        pygame não tem gaussiana, e média de área em duas passadas é a mesma
+        coisa que um borrão pesado, sem dependência nova. O véu de INK por
+        cima é o que garante que letra legível venha antes de ambiente.
+        """
+        if not al.cover or not os.path.isfile(al.cover):
+            return None
+        hit = self._backdrops.get(al.cover)
+        if hit is not None and hit.get_size() == tuple(size):
+            return hit
+        try:
+            im = pygame.image.load(al.cover).convert()
+        except Exception:                     # noqa: BLE001 — capa ruim, tela limpa
+            return None
+        w, h = int(size[0]), int(size[1])
+        pequeno = (max(2, w // 16), max(2, h // 16))
+        blur = pygame.transform.smoothscale(
+            pygame.transform.smoothscale(im, pequeno), (w, h))
+        blur = pygame.transform.smoothscale(
+            pygame.transform.smoothscale(blur, pequeno), (w, h))
+        veil = pygame.Surface((w, h), pygame.SRCALPHA)
+        veil.fill((*T.INK, 205))
+        blur.blit(veil, (0, 0))
+        self._backdrops.clear()               # uma capa quente basta
+        self._backdrops[al.cover] = blur
+        return blur
 
     def toast(self, msg, secs=3.0):
         self._toast, self._toast_until = msg, time.time() + secs
