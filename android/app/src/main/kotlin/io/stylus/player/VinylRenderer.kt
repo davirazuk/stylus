@@ -24,9 +24,9 @@ class VinylRenderer : GLSurfaceView.Renderer {
     private val VINYL_RIM = floatArrayOf(0.068f, 0.066f, 0.062f)
     private val SHEEN = floatArrayOf(0.16f, 0.165f, 0.15f)
     private val EDGE = floatArrayOf(0.44f, 0.42f, 0.38f)
-    private val G_OFF = floatArrayOf(0.032f, 0.038f, 0.048f)
-    private val G_ON = floatArrayOf(0.09f, 0.095f, 0.105f)
-    private val G_GAP = floatArrayOf(0.24f, 0.22f, 0.20f)
+    private val G_OFF = floatArrayOf(0.028f, 0.032f, 0.040f)
+    private val G_ON = floatArrayOf(0.075f, 0.080f, 0.090f)
+    private val G_GAP = floatArrayOf(0.16f, 0.15f, 0.14f)
     private val LABEL_BG = floatArrayOf(0.62f, 0.14f, 0.10f)
     private val SPINDLE_C = floatArrayOf(0.25f, 0.25f, 0.26f)
     private val ARM_C = floatArrayOf(0.58f, 0.58f, 0.60f)
@@ -181,7 +181,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     private fun buildGrooves() {
-        val segs = 144; val hw = 0.0020f
+        val segs = 160; val hw = 0.0016f
         val upTo = (playProgress * N_RINGS).toInt().coerceIn(0, N_RINGS)
         for (i in 0 until N_RINGS) {
             val f = i.toFloat() / max(1, N_RINGS - 1)
