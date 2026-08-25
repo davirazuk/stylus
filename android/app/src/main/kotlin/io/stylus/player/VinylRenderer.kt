@@ -280,19 +280,26 @@ class VinylRenderer : GLSurfaceView.Renderer {
         val liftOff=lift*0.13f; val hyLift=hy+liftOff
         val px=0.88f; val py=0.72f
         val ex=(px+hx)*0.5f; val ey=(py+hyLift)*0.5f+0.04f
-        thickLine(px,py,ex,ey,0.014f,ARM_C)
-        thickLine(ex,ey,hx,hyLift,0.009f,ARM_C)
-        thickLine(px+0.003f,py+0.003f,ex+0.003f,ey+0.003f,0.0025f,ARM_HI)
-        val cw=0.016f; val ch=0.028f
-        quad(hx-cw,hyLift+0.006f,hx+cw,hyLift+0.006f,hx+cw,hyLift-ch,hx-cw,hyLift-ch,ARM_D)
-        quad(hx-cw,hyLift+0.006f,hx+cw,hyLift+0.006f,hx+cw-0.002f,hyLift+0.002f,hx-cw+0.002f,hyLift+0.002f,ARM_HI)
-        tri(floatArrayOf(hx,hyLift-ch), floatArrayOf(hx-0.006f,hyLift-ch-0.013f), floatArrayOf(hx+0.006f,hyLift-ch-0.013f), STYLUS_C)
-        circle(px,py,0.025f,18,ARM_D)
-        circle(px,py,0.012f,14,ARM_C)
-        circle(px,py,0.005f,10,ARM_HI)
+        // main shaft — thicker, more present
+        thickLine(px,py,ex,ey,0.016f,ARM_C)
+        thickLine(ex,ey,hx,hyLift,0.011f,ARM_C)
+        // brushed highlight on top edge
+        thickLine(px+0.003f,py+0.003f,ex+0.003f,ey+0.003f,0.0032f,ARM_HI)
+        thickLine(ex+0.003f,ey+0.003f,hx+0.003f,hyLift+0.003f,0.0022f,ARM_HI)
+        // headshell — slightly larger, more solid
+        val cw=0.018f; val ch=0.032f
+        quad(hx-cw,hyLift+0.007f,hx+cw,hyLift+0.007f,hx+cw,hyLift-ch,hx-cw,hyLift-ch,ARM_D)
+        quad(hx-cw,hyLift+0.007f,hx+cw,hyLift+0.007f,hx+cw-0.002f,hyLift+0.003f,hx-cw+0.002f,hyLift+0.003f,ARM_HI)
+        // stylus — larger, more visible amber
+        tri(floatArrayOf(hx,hyLift-ch), floatArrayOf(hx-0.007f,hyLift-ch-0.016f), floatArrayOf(hx+0.007f,hyLift-ch-0.016f), STYLUS_C)
+        // pivot — more 3D with highlight
+        circle(px,py,0.027f,18,ARM_D)
+        circle(px,py,0.014f,14,ARM_C)
+        circle(px,py,0.006f,10,ARM_HI)
         val cwx=px+(px-ex)*0.18f; val cwy=py+(py-ey)*0.18f
-        circle(cwx,cwy,0.028f,18,ARM_D)
-        circle(cwx,cwy,0.017f,14,ARM_C)
+        circle(cwx,cwy,0.030f,18,ARM_D)
+        circle(cwx,cwy,0.018f,14,ARM_C)
+        circle(cwx,cwy,0.008f,10,ARM_HI)
         val rx=0.84f; val ry=0.56f
         thickLine(rx-0.02f,ry,rx+0.02f,ry,0.004f,ARM_D)
         thickLine(rx+0.02f,ry,rx+0.02f,ry-0.05f,0.004f,ARM_D)
