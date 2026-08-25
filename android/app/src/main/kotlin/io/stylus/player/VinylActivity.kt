@@ -322,14 +322,25 @@ class VinylActivity : AppCompatActivity() {
                         if (albumIdField > 0) {
                             val tracks = Library.albumTracks(this, albumIdField)
                             if (tracks.isNotEmpty()) {
-                                var tot=0L; for(tt in tracks) tot+=tt.duration
-                                val targetMs = (prog * tot).toLong().coerceIn(0L, tot-100)
+                                // side like PC: 22min per side
+                                val sideMaxMs = 22*60*1000L
+                                val sides = mutableListOf<Pair<Long,Long>>()
+                                var cs=0L; var cd=0L
+                                for(t in tracks){ if(cd+t.duration>sideMaxMs && cd>0){ sides.add(cs to cs+cd); cs+=cd; cd=0L }; cd+=t.duration }
+                                if(cd>0) sides.add(cs to cs+cd)
+                                val sideStart=sides[0].first; val sideEnd=sides[0].second
+                                val targetMs = sideStart + (prog*(sideEnd-sideStart)).toLong().coerceIn(0L, sideEnd-sideStart-100)
                                 var acc=0L; var targetIdx=0; var targetPos=0L
                                 for((idx,t) in tracks.withIndex()){
                                     if(targetMs in acc until acc+t.duration){ targetIdx=idx; targetPos=targetMs-acc; break }
                                     acc+=t.duration
                                 }
-                                player?.exo?.seekTo(targetIdx, targetPos)
+                                // ensure target is in side 0, not beyond
+                                if(targetMs in sideStart until sideEnd){
+                                    player?.exo?.seekTo(targetIdx, targetPos)
+                                } else {
+                                    player?.exo?.seekTo(0, (prog*tracks[0].duration).toLong())
+                                }
                             }
                         }
                         true
