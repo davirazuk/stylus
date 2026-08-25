@@ -21,7 +21,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 
-MAX=38            # characters before the title is cut short
+# 38 -> 26. A barra tem largura fixa e o cluster direito tem orçamento (ver o
+# cabeçalho do config.ini): com 38, "artista — título" empurrava o relógio e o
+# botão de desligar para fora da tela nas faixas longas — era o vazamento que
+# aparecia e sumia conforme a música. Corta a string, não a barra.
+MAX=26            # characters before the title is cut short
 SEP=$'\x1f'
 
 # ${#text} e ${text:0:N} contam CARACTERES só quando o locale é UTF-8; com
