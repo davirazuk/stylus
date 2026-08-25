@@ -213,6 +213,7 @@ arquivo em que está.
 - **`stylus-deck` sync:** Repository version of `stylus-deck` was outdated and missing fixes, causing playback issues. Synced it with the working local installation.
 
 ### Futuras Melhorias
-- **Launcher rework:** The now playing part in the launcher needs to be reworked to remove empty space.
-- **Ritual vinyl:** The vinyl effect needs to be reworked, as it was built on top of the oscilloscope code and looks bad.
+- **Ritual vinyl:** o primeiro rework entrou — no composto CRT o disco agora é tratado como OBJETO (`u_disc`/`u_record` em scope.py): dentro da máscara elíptica do disco o bloom cai a ~28%, o bombear com o volume quase some, aberração cromática/scanline/grão cedem. O taper do live_groove também voltou (era achatado pela média). Falta VER na máquina e afinar ganho se preciso.
+- **Launcher AGORA:** layout refeito — capa e coluna de texto formam um bloco só, centrado juntos; capa cresce com a tela (66% altura, teto 760); rodapé de meta-informaçã encosta no pé da capa em vez de na borda da tela. Miniatura ao vivo no bloco TOCANDO do trilho; disco selecionado na estante LEVANTA (inflate+12).
 - **Missing commands:** Investigate and add any commands missing from the repository that are present in the local installation.
+- **check.sh reprova em `.aider.chat.history.md`:** arquivo de histórico de IA commitado por engano contém `/home/davirazuk/`. Limpar o arquivo (e `.aider.*`, se não quiser o histórico) ou ensinar o check a ignorá-lo.
