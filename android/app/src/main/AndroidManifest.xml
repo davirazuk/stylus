@@ -39,6 +39,6 @@
 
         <activity android:name=".VinylActivity"
             android:exported="true"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="portrait" />
     </application>
 </manifest>

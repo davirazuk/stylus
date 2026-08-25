@@ -126,9 +126,9 @@ class VinylActivity : AppCompatActivity() {
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.MATCH_PARENT))
 
-        // Cover art centered over label (rotates with disc) — label radius 0.329 * disc radius
+        // Cover art — label is 0.329 radius, disc is 1.0, so label is 32.9% of disc
         val discPx = minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * 0.78f
-        val coverSize = (discPx * 0.658f * 0.92f).toInt() // 0.658 = label diameter / disc diameter
+        val coverSize = (discPx * 0.329f).toInt()
         coverView = android.widget.ImageView(this).apply {
             layoutParams = android.widget.FrameLayout.LayoutParams(coverSize, coverSize, android.view.Gravity.CENTER)
             alpha = 0.0f
@@ -138,7 +138,7 @@ class VinylActivity : AppCompatActivity() {
                     outline.setOval(0, 0, view.width, view.height)
                 }
             }
-            elevation = 4f
+            elevation = 6f
         }
         root.addView(coverView)
         // load cover art if available
@@ -213,17 +213,19 @@ class VinylActivity : AppCompatActivity() {
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL))
 
-        // lyric view (right side)
+        // lyric view — centered, max width 80% so not cut off
         val lyricView = android.widget.TextView(this).apply {
             setTextColor(0xFFE8ECF5.toInt())
-            textSize = 15f
+            textSize = 14f
             gravity = android.view.Gravity.CENTER
-            setPadding(dp(24), dp(24), dp(24), dp(24))
-            setShadowLayer(6f, 0f, 2f, 0xAA000000.toInt())
+            setPadding(dp(32), dp(12), dp(32), dp(12))
+            setShadowLayer(8f, 0f, 2f, 0xCC000000.toInt())
             alpha = 0f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
         root.addView(lyricView, android.widget.FrameLayout.LayoutParams(
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            (resources.displayMetrics.widthPixels * 0.85f).toInt(),
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.CENTER
         ))
