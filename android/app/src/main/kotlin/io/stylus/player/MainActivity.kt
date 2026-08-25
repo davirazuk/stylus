@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var recycler: RecyclerView
     private lateinit var emptyView: TextView
+    private lateinit var bottomText: TextView
     private var albums = listOf<Library.Album>()
 
     companion object {
@@ -62,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         // Grid
         recycler = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@MainActivity, calcCols())
-            setPadding(dp(14), dp(88), dp(14), dp(14))
+            setPadding(dp(14), dp(88), dp(14), dp(72))
             clipToPadding = false
         }
         root.addView(recycler, FrameLayout.LayoutParams(
@@ -79,6 +80,39 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(emptyView, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        // Bottom now-playing bar
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF141824.toInt())
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            gravity = Gravity.CENTER_VERTICAL
+            elevation = dp(8).toFloat()
+        }
+        bottomText = TextView(this).apply {
+            text = "${albums.size} álbuns"
+            setTextColor(0xFF8A94B0.toInt())
+            textSize = 12f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        bottomBar.addView(bottomText)
+        val playBtn = TextView(this).apply {
+            text = "▶"
+            setTextColor(0xFFE8ECF5.toInt())
+            textSize = 18f
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+            setOnClickListener {
+                if (albums.isNotEmpty()) {
+                    val idx = (0 until albums.size).random()
+                    startActivity(VinylActivity.ceremonyIntent(this@MainActivity, albums[idx].id))
+                }
+            }
+        }
+        bottomBar.addView(playBtn)
+        root.addView(bottomBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM
         ))
 
         setContentView(root)
@@ -119,6 +153,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadAlbums() {
         albums = Library.albums(this)
+        bottomText.text = if (albums.isEmpty()) "Nenhum álbum" else "${albums.size} álbuns • toque para tocar"
         if (albums.isEmpty()) {
             emptyView.visibility = View.VISIBLE
         } else {
