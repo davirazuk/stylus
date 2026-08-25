@@ -91,7 +91,46 @@ class VinylActivity : AppCompatActivity() {
             setRenderer(renderer)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
-        setContentView(glView)
+        // Overlay: cover + track info on top of GL
+        val root = android.widget.FrameLayout(this)
+        root.addView(glView, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT))
+
+        val coverAlbumId = intent.getLongExtra("albumId", -1)
+        if (coverAlbumId > 0) {
+            try {
+                val album = Library.albums(this).find { it.id == coverAlbumId }
+                if (album != null) {
+                    val titleView = android.widget.TextView(this).apply {
+                        text = "${album.artist} — ${album.name}"
+                        setTextColor(0xFFE8ECF5.toInt())
+                        textSize = 13f
+                        setPadding(24, 24, 24, 8)
+                        gravity = android.view.Gravity.CENTER
+                        setShadowLayer(8f, 0f, 2f, 0xAA000000.toInt())
+                    }
+                    root.addView(titleView, android.widget.FrameLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                        android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL))
+                }
+            } catch (_: Exception) {}
+        }
+        // hint
+        val hint = android.widget.TextView(this).apply {
+            text = "toque para pausar • dois toques para voltar"
+            setTextColor(0xFF8892B0.toInt())
+            textSize = 10f
+            gravity = android.view.Gravity.CENTER
+            alpha = 0.7f
+            setPadding(0,0,0,32)
+        }
+        root.addView(hint, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL))
+        setContentView(root)
 
         val mode = intent.getStringExtra("mode") ?: "view"
 
