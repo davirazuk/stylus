@@ -158,11 +158,23 @@ class NowScreen(Screen):
             self._nothing(s, r)
             return
 
-        # ── a capa, maior e centralizada. ─────
-        size = min(r.h - 100, 600)
+        # ── a capa e a coluna de texto formam UM bloco, centrado junto ─────
+        # Antes a capa parava num teto fixo de 600 e a coluna começava numa
+        # distância chutada (500) da borda: numa tela grande o espaço que
+        # sobrava ia todo para um lado e para o rodapé, e o conjunto lia como
+        # dois objetos que não se conhecem. Agora o tamanho da capa cresce com
+        # a tela, a coluna é larga até um teto próprio, e quem centra é o
+        # BLOCO — capa mais coluna — e não a capa sozinha.
+        margem, gap, txt_teto = 64, 72, 620
+        avail = max(320, r.w - margem * 2)
+        size = min(int(r.h * 0.66), int(avail * 0.46), 760)
+        size = max(280, size)
+        txt_w = min(txt_teto, avail - size - gap)
+        total = size + gap + txt_w
+
         cov = self.app.thumbs.get(al.cover) if al.cover else None
-        # Center horizontally and vertically within the r rect
-        cr = pygame.Rect(r.x + (r.w - size - 500) // 2, r.y + (r.h - size) // 2, size, size)
+        cr = pygame.Rect(r.x + (r.w - total) // 2, r.y + (r.h - size) // 2,
+                         size, size)
         T.shadow_card(s, cr, radius=12)
         if cov:
             s.blit(pygame.transform.smoothscale(cov, (size, size)), cr)
@@ -170,9 +182,9 @@ class NowScreen(Screen):
             T.panel(s, cr, T.INK_LIFT, radius=12)
             T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
 
-        x = cr.right + 100
-        w = r.right - x - 100
-        y_text = cr.y + 40
+        x = cr.right + gap
+        w = txt_w
+        y_text = cr.y + 8
         T.text(s, al.artist.upper(), (x, y_text), 28, T.TEXT_DIM, maxw=w)
         T.text(s, al.name, (x, y_text + 40), 52, T.TEXT, bold=True, maxw=w)
         if al.year:
@@ -201,11 +213,14 @@ class NowScreen(Screen):
         if line:
             T.text(s, line, (x, y + 10), 28, T.LAV, maxw=w)
         
-        # Informativos no rodapé
+        # Informativos no rodapé: logo ABAIXO do bloco, e não colados na borda
+        # da tela — era a faixa vazia entre o fim do texto e o pé da tela que
+        # fazia a seção parecer mal preenchida.
         hist = f"{al.plays}ª vez" if al.plays else "primeira vez"
+        y_rodape = min(cr.bottom + 22, r.bottom - 60)
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
-               (x, r.bottom - 60), 20, T.TEXT_FAINT, maxw=w)
+               (x, y_rodape), 20, T.TEXT_FAINT, maxw=w)
         self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
                             "n/p faixa   v/b lado")
 
@@ -373,7 +388,9 @@ class ShelfScreen(Screen):
             if cy > clip.bottom or cy + ch < clip.top:
                 continue
             self._card(s, pygame.Rect(cx, cy, cw, cw), it, i == self.sel)
-            ty = cy + cw + 8
+            # 14 e não 8: o disco selecionado levanta 6px para cada lado, e
+            # com a legenda colada nela mesma ela encostava na capa levantada.
+            ty = cy + cw + 14
             T.text(s, it["name"], (cx, ty), 17,
                    T.TEXT if i == self.sel else T.TEXT_DIM, maxw=cw)
             T.text(s, it["artist"], (cx, ty + 22), 15, T.TEXT_FAINT, maxw=cw)
@@ -387,10 +404,17 @@ class ShelfScreen(Screen):
 
     def _card(self, s, rect, it, selected):
         if selected:
+            # O disco selecionado LEVANTA: um pouco maior e com a sombra mais
+            # funda, como quem o tira meio da prateleira. É o gesto inteiro
+            # custando dois retângulos — e é por isso que não há borda colorida
+            # aqui: borda marca seleção de LISTA; tamanho marca peso.
+            rect = rect.inflate(12, 12)
             glow = rect.inflate(14, 14)
             pygame.draw.rect(s, T.lerp(T.INK, T.BLUE, 0.35), glow,
                              border_radius=10)
-        T.shadow_card(s, rect, radius=6)
+            T.shadow_card(s, rect, radius=8)
+        else:
+            T.shadow_card(s, rect, radius=6)
         cov = self.app.thumbs.get(it["cover"])
         if cov:
             s.blit(pygame.transform.smoothscale(cov, rect.size), rect)
@@ -1318,6 +1342,9 @@ class App:
         self._lado_t = 0.0
         self._flip = None
         self._lyr_cache = (None, None)
+        # Miniaturas já no tamanho do bloco TOCANDO do trilho: escalar 320px
+        # para 46 a cada quadro é trabalho de GPU queimado em nada.
+        self._rail_thumb = {}
         self.pads = []
         self._pad_ax = 0.0
         self._pad_t = 0.0
@@ -1555,9 +1582,27 @@ class App:
                 y += 12
         snap, al, track, side, _t, frac = self.playing.where()
         if al is not None:
-            T.text(s, "TOCANDO", (22, self.H - 118), 14, T.TEXT_FAINT)
-            T.text(s, al.name, (22, self.H - 96), 17, T.TEXT, maxw=w - 44)
-            T.text(s, al.artist, (22, self.H - 72), 15, T.TEXT_DIM, maxw=w - 44)
+            # A capa em miniatura ao lado do que toca: o trilho é um índice de
+            # seções, e o único bloco nele que fala de SOM deve parecer com o
+            # resto da estante — um objeto, e não três linhas de texto.
+            tx = 22
+            if al.cover:
+                mini = self._rail_thumb.get(al.cover)
+                if mini is None:
+                    full = self.thumbs.get(al.cover)
+                    if full is not None:
+                        mini = pygame.transform.smoothscale(full, (46, 46))
+                        self._rail_thumb[al.cover] = mini
+                if mini is not None:
+                    cr = pygame.Rect(tx, self.H - 104, 46, 46)
+                    T.shadow_card(s, cr, radius=4)
+                    s.blit(mini, cr)
+                    tx = cr.right + 12
+            T.text(s, "TOCANDO", (tx, self.H - 118), 14, T.TEXT_FAINT)
+            T.text(s, al.name, (tx, self.H - 96), 17, T.TEXT,
+                   maxw=w - tx - 22)
+            T.text(s, al.artist, (tx, self.H - 72), 15, T.TEXT_DIM,
+                   maxw=w - tx - 22)
             bar = pygame.Rect(22, self.H - 44, w - 44, 5)
             pygame.draw.rect(s, T.LINE, bar, border_radius=3)
             pygame.draw.rect(s, T.BLUE,
