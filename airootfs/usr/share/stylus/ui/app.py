@@ -161,7 +161,8 @@ class NowScreen(Screen):
         # ── a capa, maior e centralizada. ─────
         size = min(r.h - 100, 600)
         cov = self.app.thumbs.get(al.cover) if al.cover else None
-        cr = pygame.Rect(r.x + 150, r.y + (r.h - size) // 2, size, size)
+        # Center horizontally and vertically within the r rect
+        cr = pygame.Rect(r.x + (r.w - size - 500) // 2, r.y + (r.h - size) // 2, size, size)
         T.shadow_card(s, cr, radius=12)
         if cov:
             s.blit(pygame.transform.smoothscale(cov, (size, size)), cr)
