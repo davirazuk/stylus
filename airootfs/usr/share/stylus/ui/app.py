@@ -1625,14 +1625,13 @@ class App:
         return True
 
     def open_deck(self):
-        env = dict(os.environ, STYLUS_DECK_RITUAL="1")
         try:
             subprocess.Popen(
                 ["/usr/share/stylus/deck/venv/bin/python3"
                  if os.path.exists("/usr/share/stylus/deck/venv/bin/python3")
                  else sys.executable,
-                 "/usr/share/stylus/deck/scope.py"],
-                env=env, start_new_session=True,
+                 "/usr/share/stylus/deck/ritual.py"],
+                start_new_session=True,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             self.toast("não consegui abrir o deck")

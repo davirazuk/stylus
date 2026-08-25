@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """GPU vectorscope/oscilloscope of system audio. CRT-phosphor look, live controls.
 
-No audio output leg anywhere: this only ever reads a PulseAudio/PipeWire
-*monitor* source for visualization. It never opens a playback stream, so it
-cannot play sound back out.
+The record player lives in its own app (ritual.py). This file is the
+oscilloscope and nothing else.
 """
 import argparse
 import collections
@@ -22,33 +21,12 @@ import numpy as np
 import pygame
 from OpenGL.GL import *
 
-# PortAudio, guarded like vinyl below and deferred on purpose. The deck cannot
-# draw the live groove without it — the whole point is the signal as it plays —
-# but two things must still hold when it is absent: a full-screen launch must
-# not die on a raw `ModuleNotFoundError` that nobody sees (the UI spawns the
-# deck with stderr to /dev/null, so the screen would just sit unchanged), and
-# the offline geometry tools, which import this module but never open audio,
-# must keep working. So the import only records its absence here; the friendly
-# message and the exit happen inside AudioCapture, the one place that needs it.
-# The package that provides it is python-pyaudio, now in packages.install, so
-# this should never fire on a real STYLUS.
 try:
     import pyaudio
-except Exception:  # pragma: no cover - depends on the install
+except Exception:
     pyaudio = None
 
-# Ritual mode lives in its own module: it is a lot of non-GL machinery (what
-# is playing, the album behind it, the ceremony, the record's geometry) and
-# none of it belongs in this file. Guarded because scope.py has to keep
-# working as a plain instrument if vinyl.py is missing or its deps are not
-# installed — the visualiser is the baseline, the record is the extra.
-try:
-    import vinyl
-    HAVE_VINYL = True
-except Exception as _e:  # pragma: no cover - depends on the install
-    vinyl = None
-    HAVE_VINYL = False
-    _VINYL_ERR = _e
+
 
 
 # Fallback rate only, used if pactl-based rate detection fails for any
@@ -175,9 +153,6 @@ DEFAULTS = {
     # main thing that makes this feel like a listening ritual rather than a
     # readout.
     "groove": True,
-    # Ritual mode is opt-in: it takes the screen over completely and needs a
-    # player and a local album folder to mean anything.
-    "ritual": False,
 }
 
 
@@ -189,18 +164,10 @@ def load_state():
         return {}
 
 
-# Nunca gravado no state.json. Ritual é uma sessão, não uma preferência: quem
-# roda `stylus scope` quer o instrumento, e quem quer o disco roda `stylus deck`
-# ou aperta 'e'. Gravar deixou o lançador comum abrindo no ritual, e sem
-# tocador nenhum o ritual não desenha NADA — nem grade, nem VU — então a tela
-# ficava vazia e parecia quebrado, que é a pior forma de errar isto.
-UNSAVED_KEYS = ("ritual",)
-
-
 def save_state(state):
     try:
         with open(STATE_PATH, "w") as f:
-            json.dump({k: state[k] for k in DEFAULTS if k not in UNSAVED_KEYS}, f)
+            json.dump({k: state[k] for k in DEFAULTS}, f, indent=2)
     except Exception:
         pass
 
@@ -756,36 +723,8 @@ uniform float u_beat;
 uniform float u_resolve;
 uniform float u_bloom;
 uniform float u_flat;
-// 1.0 = graticule on. Ritual mode turns it off: a record does not sit
-// behind a 10x8 oscilloscope grid, and the grid was the loudest thing on
-// screen the moment the disc stopped glowing.
-uniform float u_grid;
 uniform float u_flash;
 
-// O disco como OBJETO, não como fósforo — o rework do ritual.
-//
-// O desenho do vinil nasce no mesmo encanamento do osciloscópio: traço
-// aditivo, brilho de feixe, tubo curvo. Para um TRAÇO isso é o visual; para
-// um objeto pousado na frente dele é errado duas vezes — o bloom acende um
-// halo de néon em volta do plástico preto, e o "respirar com o volume"
-// bombeia o disco inteiro junto com a música, que é exatamente o que um
-// disco NÃO faz: só o sulco sob a agulha responde ao som.
-//
-// Em vez de um segundo caminho de render, o composto ganha uma máscara
-// elíptica do lugar onde o disco está (u_disc, em UV; raio x/y separados
-// porque o NDC é quadrado e a tela não) e dentro dela cada efeito de tubo
-// cede o quanto um objeto de verdade pediria: o bloom cai a uma fração, o
-// bombear do volume quase some, a aberração cromática vira nada (é vidro de
-// tubo, e o disco não está dentro do tubo), o scanline alisa e o grão cai
-// pela metade — o disco já tem POEIRA desenhada, a dele própria.
-uniform vec4 u_disc;      // cx, cy, r_x, r_y em UV; w = 0 desliga
-uniform float u_record;   // 1.0 só no modo ritual
-
-float disc_inside(vec2 p, vec4 disc) {
-    if (disc.w <= 0.0) return 0.0;
-    vec2 q = (p - disc.xy) / max(disc.zw, vec2(1e-5));
-    return 1.0 - smoothstep(0.965, 1.025, length(q));
-}
 
 vec2 curve(vec2 u) {
     u = u * 2.0 - 1.0;
@@ -809,11 +748,10 @@ void main() {
         return;
     }
     vec2 d = cuv - 0.5;
-    float ins = disc_inside(cuv, u_disc) * u_record;
 
     // Chromatic aberration: split channels slightly, growing toward the
     // edges, like dispersion through curved tube glass / a lens stack.
-    vec2 ca = d * 0.006 * (1.0 - u_flat) * mix(1.0, 0.12, ins);
+    vec2 ca = d * 0.006 * (1.0 - u_flat);
     vec3 b = vec3(
         texture(base, cuv + ca).r,
         texture(base, cuv).g,
@@ -824,79 +762,24 @@ void main() {
         texture(glow, cuv).g,
         texture(glow, cuv - ca * 1.6).b
     );
-    // Fora do disco o brilho respira com a música como sempre; dentro, ele
-    // mal se mexe — e o bloom cai a uma fração, que era ele o responsável
-    // tanto pelo halo de néon quanto pelo brancaço chapado nos trechos altos
-    // (o ganho do ritual tinha sido levantado para compensar, e os dois
-    // defeitos vinham da mesma conta).
-    float breathe = mix(0.9 + u_loud * 1.4, 1.02 + u_loud * 0.12, ins);
-    float bloomK = mix(u_bloom, u_bloom * 0.28, ins);
-    g *= breathe * bloomK; // glow breathes with overall loudness, scaled by user bloom setting
+    float breathe = 0.9 + u_loud * 1.4;
+    float bloomK = u_bloom;
+    g *= breathe * bloomK;
 
-    // Real oscilloscope graticules are 10 major divisions horizontally by
-    // 8 vertically (a de-facto standard, not square, so each division reads
-    // as the same physical size across scope models). The center
-    // vertical/horizontal line is brighter and thicker than the rest — also
-    // standard, it's what you actually align a trace to for amplitude/time
-    // readings — and carries five small tick marks per division near the
-    // center, the same fine stadia marks a real graticule uses for
-    // rise-time/overshoot measurements.
-    float gxCoord = cuv.x * 10.0;
-    float gyCoord = cuv.y * 8.0;
-    float gx = abs(fract(gxCoord - 0.5) - 0.5) < 0.0045 ? 1.0 : 0.0;
-    float gy = abs(fract(gyCoord - 0.5) - 0.5) < 0.0045 ? 1.0 : 0.0;
-    float centerX = abs(cuv.x - 0.5) < 0.0032 ? 1.0 : 0.0;
-    float centerY = abs(cuv.y - 0.5) < 0.0032 ? 1.0 : 0.0;
-    float tickX = 0.0;
-    if (abs(cuv.y - 0.5) < 0.010) {
-        tickX = abs(fract(gxCoord * 5.0 - 0.5) - 0.5) < 0.03 ? 1.0 : 0.0;
-    }
-    float tickY = 0.0;
-    if (abs(cuv.x - 0.5) < 0.010) {
-        tickY = abs(fract(gyCoord * 5.0 - 0.5) - 0.5) < 0.03 ? 1.0 : 0.0;
-    }
-    float gridMinor = clamp(gx + gy, 0.0, 1.0);
-    float gridCenter = clamp(centerX + centerY, 0.0, 1.0);
-    float gridTick = clamp(tickX + tickY, 0.0, 1.0) * (1.0 - gridCenter);
-    // Grid brightens on each detected beat, so the graticule itself pulses
-    // with the music's tempo rather than just being a static reference.
-    float beatPulse = 1.0 + u_beat * 2.2;
-    vec3 grid = vec3(0.10, 0.14, 0.10) * gridMinor * beatPulse
-              + vec3(0.17, 0.23, 0.17) * gridCenter * beatPulse
-              + vec3(0.075, 0.10, 0.075) * gridTick;
-
-    // Scanline é a tela de tubo, e o disco está NA FRENTE da tela: dentro
-    // dele o scanline alisa para não riscar a capa no rótulo nem os sulcos.
-    float scan = mix(0.96 + 0.04 * sin(cuv.y * 900.0), 1.0, ins * 0.85);
+    float scan = 0.96 + 0.04 * sin(cuv.y * 900.0);
 
     float vig = 1.0 - dot(d, d) * 1.15;
-    vig = clamp(vig, 0.0, 1.0);
-    // Same reasoning as u_flat above: the corner/edge dimming actively
-    // fights a display whose whole point is showing fresh data right at
-    // the edge.
-    vig = mix(vig, 1.0, u_flat);
 
-    // Real analog gear shows a visible noise floor most clearly when the
-    // signal is quiet — a busy, loud trace visually masks it, a near-silent
-    // one doesn't have anything to mask it with. A fixed grain amount
-    // regardless of what's playing misses that; scaling it down as u_loud
-    // rises (and up a little past the old constant when it's actually
-    // quiet) reads as a real noise floor instead of a static texture
-    // overlay.
-    float grain = (hash(floor(cuv * 480.0) + u_time * 61.0) - 0.5) * mix(0.07, 0.02, min(1.0, u_loud)) * mix(1.0, 0.55, ins);
+    float grain = (hash(floor(cuv * 480.0) + u_time * 61.0) - 0.5) * mix(0.07, 0.02, min(1.0, u_loud));
 
-    // Static diagonal glass glare, like a faceplate catching room light.
     float glare = 1.0 - abs(dot(cuv - vec2(0.18, 0.12), vec2(0.8, -0.6)));
-    glare = pow(clamp(glare, 0.0, 1.0), 24.0) * 0.10;
+    glare = pow(max(glare, 0.0), 6.0) * 0.04;
 
-    // Treble sparkle: sparse bright flecks that only appear on hi-hat/cymbal
-    // energy, twinkling — a different instrument reads as a different effect
-    // instead of everything just getting uniformly brighter.
     float sparkleCell = hash(floor(cuv * 260.0));
-    float twinkle = 0.5 + 0.5 * sin(u_time * 45.0 + sparkleCell * 80.0);
+    float twinkle = 0.5 + 0.5 * sin(u_time * 8.0 + sparkleCell * 6.28);
     float sparkle = step(0.9955, sparkleCell) * u_treble * twinkle;
 
-    vec3 col = (b + g + grid * u_grid * (1.0 - max(b.r + b.g + b.b, g.r + g.g + g.b))) * scan * vig;
+    vec3 col = (b + g) * scan * vig;
     col += vec3(0.01, 0.015, 0.01) * vig; // faint phosphor screen bias when idle
     col += grain * vig;
     col += glare * vig;
@@ -2017,456 +1900,6 @@ class TextOSD:
         glBindVertexArray(0)
 
 
-# Where the record sits on screen. The deck is bigger than the record - the
-# arm's pivot is 212mm from the spindle on a 152mm disc - so the record is
-# pulled back and set down-left, leaving the upper right for the arm.
-RITUAL_CX, RITUAL_CY, RITUAL_R = -0.10, -0.10, 0.76
-
-# How much brighter the record is drawn than vinyl.py's own palette says.
-# See the note in RitualScene.build.
-# Ajustado com ÁUDIO DE VERDADE (vinyl --quiet), não no silêncio. Em 2,6 a
-# parte já tocada do lado — que é desenhada mais clara de propósito, e ainda
-# passa pelo bloom — estourava num branco chapado numa faixa alta, e um branco
-# chapado é justamente a perda da informação: dá para ver que está alto, mas
-# não dá mais para ver a FORMA, que é a ideia inteira.
-RITUAL_GAIN = 1.8
-
-
-class RecordLabel:
-    """The paper label at the centre of the record — the real album art.
-
-    Drawn AFTER the CRT composite, on purpose. The label is the one part of a
-    record that is printed paper rather than glowing phosphor, and pushing it
-    through the beam pipeline (Gaussian stroke, additive accumulation, bloom)
-    turns a photograph into a smear. The preview reached the same conclusion
-    independently and pastes it last.
-
-    The artwork turns with the platter by rotating the quad's four CORNERS,
-    not by re-rendering a rotated image every frame — the texture is uploaded
-    once per album.
-    """
-
-    def __init__(self):
-        self.tex = glGenTextures(1)
-        self.vao = glGenVertexArrays(1)
-        self.vbo = glGenBuffers(1)
-        glBindVertexArray(self.vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, 4 * 4 * 4, None, GL_DYNAMIC_DRAW)
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
-        glEnableVertexAttribArray(1)
-        glBindVertexArray(0)
-        self.source = "\x00"
-        self.ok = False
-
-    def load(self, path):
-        if path == self.source:
-            return
-        self.source = path
-        self.ok = False
-        if not path or not os.path.isfile(path):
-            return
-        try:
-            from PIL import Image
-            n = 512
-            im = Image.open(path).convert("RGBA").resize((n, n), Image.LANCZOS)
-            a = np.asarray(im).astype(np.float32).copy()
-            # A label is a circle punched out of a square scan. Feathered over
-            # about 4 pixels so the rim is not a staircase; and a thin dark ring
-            # at the edge — the printed border every real paper label has — that
-            # separates cover art from black plastic without a hard pixel edge.
-            yy, xx = np.mgrid[0:n, 0:n]
-            rad = np.hypot(xx - (n - 1) / 2.0, yy - (n - 1) / 2.0) / ((n - 1) / 2.0)
-            a[..., 3] *= np.clip((1.0 - rad) * (n * 0.25), 0.0, 1.0)
-            # the spindle hole, which is genuinely a hole
-            hole = vinyl.R_SPINDLE / vinyl.R_LABEL
-            a[..., 3] *= np.clip((rad - hole) * (n * 0.25), 0.0, 1.0)
-            # a thin dark rim that makes the label read as printed paper rather
-            # than a photograph hovering over plastic: the band between 0.92 and
-            # 0.97 of the radius darkens hard, as if ink had been laid on a
-            # press.
-            rim = np.clip(((rad - 0.92) * 20.0) * (1.0 - (rad - 0.92) * 20.0),
-                          0.0, 1.0)
-            a[..., 0] -= rim * a[..., 0] * 0.75
-            a[..., 1] -= rim * a[..., 1] * 0.75
-            a[..., 2] -= rim * a[..., 2] * 0.75
-            data = a.clip(0, 255).astype(np.uint8).tobytes()
-            glBindTexture(GL_TEXTURE_2D, self.tex)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, n, n, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, data)
-            self.ok = True
-        except Exception as e:
-            print(f"record: capa não carregou: {type(e).__name__}: {e}")
-            self.ok = False
-
-    def draw(self, prog, rotation, iso, alpha=1.0):
-        if not self.ok:
-            return
-        r = vinyl.R_LABEL * RITUAL_R
-        c, sn = math.cos(-rotation), math.sin(-rotation)
-        verts = []
-        for u, v in ((-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)):
-            x = (u * c - v * sn) * r * iso[0] + RITUAL_CX
-            y = (u * sn + v * c) * r * iso[1] + RITUAL_CY
-            verts.append((x, y, (u + 1.0) * 0.5, 1.0 - (v + 1.0) * 0.5))
-        arr = np.array(verts, dtype=np.float32)
-        glUseProgram(prog)
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.tex)
-        glUniform1i(glGetUniformLocation(prog, "tex"), 0)
-        glUniform1f(glGetUniformLocation(prog, "alpha"), alpha)
-        glBindVertexArray(self.vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferSubData(GL_ARRAY_BUFFER, 0, arr.nbytes, arr)
-        glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
-        glBindVertexArray(0)
-
-
-class RitualScene:
-    """Per-frame glue for ritual mode: hold the session/album/deck, hand back
-    geometry in the SAME vertex layout the trace already uses.
-
-    Everything expensive already runs on vinyl.py's own threads — polling the
-    player, scanning tag durations, measuring the loudness envelope — so
-    nothing here blocks the render loop. The only job this class owns is
-    noticing the album changed and asking for the new one off-thread, because
-    resolve_album() walks a folder and shells out to ffprobe.
-
-    Nothing is drawn until the album resolves. That is deliberate: half a
-    record with no groove bands reads as a bug, and the wait is a couple of
-    seconds once per album.
-    """
-
-    def __init__(self):
-        self.session = vinyl.Session()
-        self.deck = vinyl.Deck()
-        self.album = None
-        self._key = None
-        self._resolving = False
-        self._side = None
-        self._was_paused = False
-        self._rearm = False        # disco novo resolveu: refazer a cerimônia
-        self._ended = False        # este disco já chegou ao fim
-        self._last_phase = None
-        self._banner = None        # (esquerda, direita) logo depois da descida
-        self._banner_until = 0.0
-        self._last_t_abs = 0.0     # última posição boa, para a rede do fim
-        self._ti_cache = [None, 0]  # (caminho, índice) — ver _track_index
-
-    def close(self):
-        try:
-            self.session.close()
-        except Exception:
-            pass
-
-    def _resolve(self, snap):
-        # resolve_album() devolve a PASTA, não o álbum - achar o disco e ler o
-        # disco são coisas separadas de propósito, porque ler é o caro (durações
-        # por ffprobe e a varredura de intensidade) e só vale a pena depois de
-        # saber que há mesmo uma pasta.
-        try:
-            folder = vinyl.resolve_album(
-                snap.get("path"), snap.get("artist", ""), snap.get("album", ""))
-            self.album = vinyl.Album(folder) if folder else None
-            if self.album is not None:
-                print(f"record: {self.album.artist} — {self.album.name} "
-                      f"({len(self.album.tracks)} faixas, "
-                      f"posto {self.album.plays}x)")
-                # A cerimônia recomeça QUANDO O DISCO APARECE, não quando o
-                # programa abre. Antes o Deck saía girando no instante em que
-                # a janela subia e a leitura do álbum levava uns segundos, de
-                # modo que a subida do prato, o cue e a descida da agulha
-                # aconteciam todos com a tela ainda vazia: o disco só
-                # aparecia depois, já tocando. Toda a cerimônia existia e
-                # ninguém nunca a viu. Vale para o segundo disco também —
-                # trocar de álbum agora recoloca a agulha em vez de continuar
-                # como se nada tivesse mudado.
-                self._rearm = True
-            else:
-                print(f"record: nenhuma pasta local para "
-                      f"{snap.get('artist','?')} — {snap.get('album','?')}")
-        except Exception as e:
-            self.album = None
-            print(f"record: falhou ao ler o álbum: {type(e).__name__}: {e}")
-        finally:
-            self._resolving = False
-
-    def update(self, dt):
-        snap = self.session.snapshot()
-        # A chave é a PASTA, não artista/álbum. O mpv entrega o caminho do
-        # arquivo e frequentemente nenhuma tag - com a chave em artista/álbum
-        # um disco tocado pelo mpv nunca resolvia, porque os dois vinham
-        # vazios e o portão `any(key)` nunca abria. A pasta também é a chave
-        # certa para o resto: ela muda quando o DISCO muda, não a cada faixa,
-        # então trocar de música no meio do lado não redispara a varredura.
-        _path = snap.get("path") or ""
-        _folder = os.path.dirname(_path) if _path else ""
-        key = (_folder, snap.get("artist"), snap.get("album"))
-        if key != self._key and not self._resolving and any(key):
-            self._key = key
-            self._resolving = True
-            threading.Thread(target=self._resolve, args=(snap,), daemon=True).start()
-        # ── Pôr o disco outra vez ───────────────────────────────────────
-        if self._rearm:
-            self._rearm = False
-            self._side = None
-            self._ended = False
-            self.deck.after_lift = vinyl.BREAK
-            self.deck.go(vinyl.SPINUP)
-        paused = bool(snap.get("paused", True))
-        # Repor o MESMO disco não muda a chave (é a mesma pasta), então nada
-        # redispara a leitura e o deck ficaria parado no STOP para sempre com
-        # a música tocando. Voltar a tocar longe do fim é, por definição,
-        # alguém tendo posto o disco de novo — ou buscado para trás.
-        if (self._ended and not paused and self.album is not None
-                and self.album.total):
-            _pos, _d = self.session.position()
-            if self.album.album_time(snap.get("track_index", 0) or 0,
-                                     _pos) < self.album.total - 5.0:
-                self._rearm = True
-        # ── A virada de lado ────────────────────────────────────────────
-        # O Deck já sabe fazer LIFT -> BREAK -> RETURN -> CUE, mas NADA
-        # chamava go(LIFT): a cerimônia rodava do começo ao fim de um lado só
-        # e depois seguia direto, que é justamente o momento que um disco NÃO
-        # deixa passar batido. Um LP obriga a levantar da cadeira, e essa
-        # obrigação é metade do ritual.
-        if self.album is not None and self.album.total:
-            pos, _dur = self.session.position()
-            _ti = self._track_index(snap)
-            # Índice além da última faixa quer dizer que o tocador passou do
-            # fim do disco (o mpv chega no cover.jpg quando lhe dão a pasta;
-            # o lançador não faz mais isso, mas outro tocador pode). Sem esta
-            # porta, album_time devolve só a posição, o instante lido vira ~0,
-            # o lado volta a ser o A e o ritual anuncia VIRE O DISCO no último
-            # segundo do lado B — o disco acabou, é outra coisa.
-            if _ti >= len(self.album.tracks):
-                if not self._ended and self.deck.phase == vinyl.PLAY:
-                    self._end_of_record()
-                return self._finish_update(dt, snap, paused)
-            t_abs = self.album.album_time(_ti, pos)
-            idx, _side = self.album.side_for(t_abs)
-            if _side is not None:
-                if self._side is None:
-                    self._side = idx
-                elif idx != self._side:
-                    self._side = idx
-                    if self.deck.phase == vinyl.PLAY:
-                        self.deck.after_lift = vinyl.BREAK
-                        self.deck.go(vinyl.LIFT)
-                        # Só pausa um tocador que nós mesmos abrimos. Parar o
-                        # Spotify de alguém porque um braço desenhado chegou
-                        # numa borda desenhada seria uma grosseria.
-                        self.session.pause(True)
-            # ── O FIM DO DISCO ──────────────────────────────────────────
-            # Faltava a última batida da cerimônia. A virada de LADO já
-            # levantava o braço; o DISCO acabar não fazia nada — a música
-            # parava e o desenho seguia com a agulha encostada num sulco que
-            # tinha acabado, como se o lado fosse infinito. Um disco de
-            # verdade termina: a agulha sai do último sulco, o braço volta ao
-            # berço, o prato desacelera até parar. É o silêncio depois disso
-            # que faz você levantar da cadeira, e ele estava faltando inteiro.
-            self._last_t_abs = t_abs
-            if (not self._ended and self.deck.phase == vinyl.PLAY
-                    and t_abs >= self.album.total - 0.4):
-                self._end_of_record()
-        # Rede: o mpv FECHA quando a lista acaba, e aí a posição congela onde
-        # a última leitura pegou — que pode ser meio segundo antes do fim,
-        # curto demais para a margem acima. Sumir o tocador estando a menos de
-        # 20s do fim do disco é a mesma coisa que o disco ter acabado.
-        if (not self._ended and self.album is not None and self.album.total
-                and self.deck.phase == vinyl.PLAY
-                and snap.get("source") == "none"
-                and self._last_t_abs >= self.album.total - 20.0):
-            self._end_of_record()
-        # Voltou a tocar depois da pausa da virada: baixa a agulha de novo.
-        if self._was_paused and not paused and self.deck.phase == vinyl.BREAK:
-            self.deck.go(vinyl.RETURN)
-        return self._finish_update(dt, snap, paused)
-
-    def _finish_update(self, dt, snap, paused):
-        """O rabo comum de update(), que a saída antecipada também precisa."""
-        self._was_paused = paused
-        phase = self.deck.update(dt, playing=not paused)
-        # A agulha acabou de encostar: é este o instante em que o disco foi
-        # POSTO, e é aqui que ele conta.
-        if phase == vinyl.PLAY and self._last_phase == vinyl.DROP:
-            self._register_play()
-        self._last_phase = phase
-        return snap
-
-    def _track_index(self, snap):
-        return vinyl.track_index_for(self.album, snap, self._ti_cache)
-
-    def _end_of_record(self):
-        self._ended = True
-        self.deck.after_lift = vinyl.STOP
-        self.deck.go(vinyl.LIFT)
-
-    def _register_play(self):
-        """Anota a colocação e prepara o que o canto vai dizer por 7s.
-
-        Anotar aqui, e não quando o álbum resolve, porque o que conta é a
-        agulha ter descido — resolver é só o programa ter descoberto qual é o
-        disco. O log_play deduplica contra a anotação da barra, que é a mesma
-        colocação vista de outro lugar.
-        """
-        al = self.album
-        if al is None:
-            return
-        try:
-            n = vinyl.log_play(al.folder, al.artist, al.name)
-        except Exception:
-            return
-        al.plays = n
-        if not al.first_played:
-            al.first_played = time.time()
-        self._banner = vinyl.play_banner(n, al.first_played,
-                                         f"{al.artist} — {al.name}")
-        self._banner_until = time.monotonic() + 7.0
-
-    def banner_text(self):
-        """O que o canto diz nos segundos seguintes à descida da agulha."""
-        if self._banner and time.monotonic() < self._banner_until:
-            return self._banner
-        return None
-
-    def caption_is_state(self):
-        """A legenda de agora vale enquanto durar, não por alguns segundos."""
-        return (self.deck.phase in (vinyl.BREAK, vinyl.STOP)
-                or self.banner_text() is not None)
-
-    def current_lyric(self, snap):
-        """A linha que está sendo cantada agora, ou None.
-
-        As linhas em branco do .lrc são guardadas de propósito pelo parse_lrc
-        (são os trechos instrumentais), e é justamente isso que faz a última
-        frase cantada sair da tela em vez de ficar pendurada por um outro de
-        dois minutos. Devolver None nelas é o comportamento certo, não um
-        caso esquecido.
-        """
-        if self.album is None:
-            return None
-        idx = self._track_index(snap)
-        try:
-            lines = self.album.lyrics_for(idx)
-        except Exception:
-            return None
-        if not lines:
-            return None
-        pos, _dur = self.session.position()
-        lo, hi = 0, len(lines)
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if lines[mid][0] <= pos:
-                lo = mid + 1
-            else:
-                hi = mid
-        if lo == 0:
-            return None
-        text = (lines[lo - 1][1] or "").strip()
-        return text or None
-
-    def build(self, snap, buf, W, H, iso):
-        """-> (list of TRIANGLE_STRIP vertex arrays, GL_TRIANGLES array or None)
-
-        Draw order is the physical one: plastic, then wear on the plastic,
-        then the cut grooves, then the groove under the needle right now,
-        then the edge, then the arm above everything.
-        """
-        album = self.album
-        if album is None or not album.total or snap is None:
-            return [], None
-
-        cx, cy, radius = RITUAL_CX, RITUAL_CY, RITUAL_R
-        light = math.radians(-38.0)
-        rot = self.deck.rotation
-
-        pos, _dur = self.session.position()
-        t_abs = album.album_time(self._track_index(snap), pos)
-        side_idx, side = album.side_for(t_abs)
-        if side is None:
-            return [], None
-        span = max(1e-6, side["end"] - side["start"])
-        frac = float(np.clip((t_abs - side["start"]) / span, 0.0, 1.0))
-
-        # vinyl.py's colours were tuned against the offline preview, which
-        # composites with alpha over a base colour and then blends a glow on
-        # top. GL here adds onto black with no glow for anything below the
-        # bloom threshold, so the same numbers land much darker — the groove
-        # bands, which are the whole "you can see the music" idea, almost
-        # vanished. One gain on the record's own geometry keeps the two
-        # renderers reading from the same palette instead of forking it.
-        def _gain(v, k=RITUAL_GAIN):
-            v = v.copy()
-            v[:, 2:5] *= k
-            return v
-
-        strips = [_gain(v) for v in vinyl.disc_body(cx, cy, radius, iso, light)]
-
-        # As marcas, o berço e o braço são segmentos SOLTOS, e
-        # build_ribbon_segments devolve vértices no formato de GL_TRIANGLES
-        # (seis por segmento, dois triângulos). As marcas iam junto com as
-        # tiras e eram desenhadas como GL_TRIANGLE_STRIP, que encadeia tudo:
-        # medido, 14,6x mais área do que a pedida — 0,024 NDC² de triângulo
-        # inventado ligando cada poeira à seguinte, uma teia fraca por cima
-        # do disco inteiro que passava por brilho do plástico. Aditivo, a
-        # ordem não importa, então juntar tudo num lote de triângulos só é
-        # ao mesmo tempo o conserto e uma chamada de desenho a menos.
-        tris = []
-        wm = vinyl.wear_marks(cx, cy, radius, iso, rot,
-                              seed=album.seed, plays=album.plays,
-                              crackle=self.deck.crackle)
-        if wm is not None and len(wm[0]):
-            tris.append(build_ribbon_segments(wm[0], 1.2, W, H, wm[1]))
-
-        env = album.envelope_snapshot()
-        side_tracks = [album.tracks[i] for i in side.get("tracks", [])]
-        played = int(frac * (vinyl.N_RINGS - 1))
-        for pts, cols, wd in vinyl.groove_rings(cx, cy, radius, iso, side, env,
-                                                side_tracks, light, played_ring=played):
-            strips.append(_gain(build_ribbon_strip(pts, wd, W, H, cols)))
-        br = vinyl.boundary_ring(cx, cy, radius, iso, side, env, frac, light)
-        if br:
-            strips.append(_gain(build_ribbon_strip(br[0], br[2], W, H, br[1])))
-
-        # The oscilloscope, in the record's own coordinates: mid moves the
-        # groove sideways, side makes the wall catch more light. Same
-        # measurement as every other mode, drawn as the thing being measured.
-        if buf is not None and len(buf):
-            mid = buf[:, 0] + buf[:, 1] if buf.ndim == 2 else buf
-            sid = buf[:, 0] - buf[:, 1] if buf.ndim == 2 else np.zeros_like(mid)
-            lg = vinyl.live_groove(cx, cy, radius, iso, frac, mid, sid, rot)
-            if lg:
-                # O taper (largo na agulha, fino no rastro) vem por vértice e
-                # build_ribbon_strip aceita array — achatar para a média era
-                # desenhar o rastro com a largura de todo mundo, ou seja, sem
-                # o rastro.
-                strips.append(build_ribbon_strip(lg[0], lg[2], W, H, lg[1]))
-
-        for pts, cols, wd in vinyl.edge_and_label_rings(cx, cy, radius, iso, light):
-            strips.append(_gain(build_ribbon_strip(pts, wd, W, H, cols)))
-
-        rest = vinyl.arm_rest(cx, cy, radius, iso)
-        if rest is not None and len(rest[0]):
-            tris.append(build_ribbon_segments(rest[0], 1.8, W, H, rest[1]))
-
-        play_r = vinyl.R_PROG_OUT + (vinyl.R_PROG_IN - vinyl.R_PROG_OUT) * frac
-        segs, cols, _stylus = vinyl.tonearm(
-            cx, cy, radius, iso,
-            self.deck.arm_target_radius(play_r), lift=self.deck.arm_lift())
-        if len(segs):
-            tris.append(build_ribbon_segments(segs, 2.2, W, H, cols))
-        # Um lote só de GL_TRIANGLES, desenhado depois das tiras.
-        arm = np.concatenate(tris, axis=0) if tris else None
-        return strips, arm
-
-
 def power_on_curve(elapsed, warmup=0.6):
     if elapsed >= warmup:
         return 1.0
@@ -2522,10 +1955,6 @@ def main():
         "xy_inv_y": loaded.get("xy_inv_y", DEFAULTS["xy_inv_y"]),
         "true_scope": loaded.get("true_scope", DEFAULTS["true_scope"]),
         "groove": loaded.get("groove", DEFAULTS["groove"]),
-        # O lançador `vinyl` abre já no ritual sem gravar isso no
-        # state.json - quem abriu o scope sozinho continua no scope.
-        "ritual": (os.environ.get("STYLUS_DECK_RITUAL") == "1"
-                   or loaded.get("ritual", DEFAULTS["ritual"])),
     }
 
     src = find_monitor_source()
@@ -2533,7 +1962,7 @@ def main():
     print(
         "keys: 1-8 mode (polar/lissajous/xy/mono/dual/wire3d/phase/waterfall)  "
         "g/a/n/w/b/c/y/o/d/u color  h/,/. custom hue  p prism  "
-        "m split  k kaleidoscope  v beam-realism  y true-scope  o groove-ring  e ritual (LP)  r rainbow trace  z freeze  s screenshot  "
+        "m split  k kaleidoscope  v beam-realism  y true-scope  o groove-ring  r rainbow trace  z freeze  s screenshot  "
         "i/j bloom  9/0 line width  "
         "x swap L/R  l invert X  t invert Y (channel-polarity fix for real oscilloscope-music)  "
         "+/- zoom  [ ] persistence  f fullscreen toggle  esc/q quit"
@@ -2556,8 +1985,6 @@ def main():
     ui_prog = compile_shader(UI_VS, UI_FS)
     ribbon_prog = compile_shader(RIBBON_VS, RIBBON_FS)
     text_prog = compile_shader(TEXT_VS, TEXT_FS)
-    label_prog = compile_shader(TEXT_VS, LABEL_FS)
-    record_label = RecordLabel() if HAVE_VINYL else None
 
     hist_fbo = [make_fbo(W, H) for _ in range(2)]
     bloom_w, bloom_h = W // 3, H // 3
@@ -2623,13 +2050,10 @@ def main():
     osd = TextOSD(anchor="bottom-left")
     mpris_osd = TextOSD(anchor="bottom-right", hold=4.0, fade=1.2, font_size=26)
     bpm_osd = TextOSD(anchor="top-right", persistent=True, font_size=24)
-    lyric_osd = TextOSD(anchor="right", persistent=True, font_size=34)
-    last_lyric = None
 
     cap = AudioCapture(src)
     print(f"capture rate: {cap.rate}Hz (matches PipeWire's graph clock — avoids resampling this stream)")
     now_playing = NowPlaying()
-    ritual = RitualScene() if (HAVE_VINYL and state["ritual"]) else None
     last_np_text = None
 
     def current_mode2():
@@ -2656,7 +2080,7 @@ def main():
             ])
             extra += f" · FIX-{flags}"
         osd.set_text(
-            f"{'RITUAL' if state['ritual'] else state['mode'].upper()} · {color_label} · "
+            f"{state['mode'].upper()} · {color_label} · "
             f"ZOOM {state['zoom']:.2f}x · PERSIST {state['decay']:.2f}{extra}",
             W, H,
         )
@@ -2761,10 +2185,6 @@ def main():
                     state["true_scope"] = not state["true_scope"]
                 elif ev.key == pygame.K_o:
                     state["groove"] = not state["groove"]
-                elif ev.key == pygame.K_e and HAVE_VINYL:
-                    state["ritual"] = not state["ritual"]
-                    if state["ritual"] and ritual is None:
-                        ritual = RitualScene()
                 elif ev.key == pygame.K_r:
                     state["rainbow"] = not state["rainbow"]
                 elif ev.key == pygame.K_g:
@@ -3055,9 +2475,6 @@ def main():
         # Ritual mode's clock. Advanced every frame even while the geometry
         # is not being drawn yet, so the platter is already at 33 1/3 and the
         # ceremony is in the right phase by the time the album resolves.
-        _ritual_snap = None
-        if state["ritual"] and ritual is not None:
-            _ritual_snap = ritual.update(frame_dt)
         hue_clock += (0.10 + min(1.5, cap.bass) * 0.22 + min(1.5, cap.onset) * 0.12) * frame_dt
 
         if state["prism"]:
@@ -3113,7 +2530,7 @@ def main():
             # did. The record supplies its own trail anyway: live_groove
             # already fades an arc behind the stylus.
             glUniform1f(glGetUniformLocation(decay_prog, "decay"),
-                        0.0 if state["ritual"] else state["decay"])
+                        state["decay"])
             glUniform1f(glGetUniformLocation(decay_prog, "shift"), 0.0)
         draw_quad(quad_vao)
 
@@ -3148,49 +2565,7 @@ def main():
             glBindVertexArray(ribbon_vao)
             glBindBuffer(GL_ARRAY_BUFFER, ribbon_vbo)
 
-            # Ritual mode goes FIRST and replaces the trace outright, because
-            # live_groove IS the waveform — drawn in the record's own
-            # coordinates instead of on a graticule. Leaving the ordinary
-            # trace underneath would draw the same signal twice in two
-            # different places.
-            #
-            # It has to sit here, as a sibling of draw_as_lines/use_beam,
-            # rather than inside one of them: those three are alternative
-            # trace STYLES, and a hook inside just one of them is silently
-            # dead for every other style. That was the first attempt, and it
-            # drew nothing at all in lissajous_xy.
-            _ritual_strips, _ritual_arm = [], None
-            if state["ritual"] and ritual is not None:
-                _ritual_strips, _ritual_arm = ritual.build(
-                    _ritual_snap, buf, W, H, ISO_ASPECT)
-
-            if _ritual_strips:
-                combined = np.concatenate(_ritual_strips, axis=0)
-                if len(combined):
-                    # The record is an order of magnitude more geometry than a
-                    # trace — 96 groove rings plus the plastic plus the edge —
-                    # so it does not fit in a buffer sized for MAX_STRIPS
-                    # traces, and glBufferSubData past the end is GL_INVALID_VALUE
-                    # (a hard crash, not a clipped draw). Grow once, with slack,
-                    # instead of every frame.
-                    if combined.nbytes > ribbon_capacity:
-                        ribbon_capacity = int(combined.nbytes * 1.5)
-                        glBufferData(GL_ARRAY_BUFFER, ribbon_capacity, None, GL_DYNAMIC_DRAW)
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, combined.nbytes, combined)
-                    off = 0
-                    for _st in _ritual_strips:
-                        if len(_st):
-                            glDrawArrays(GL_TRIANGLE_STRIP, off, len(_st))
-                        off += len(_st)
-                # The tonearm is disconnected segments, so GL_TRIANGLES and
-                # its own upload. Last, so it sits over the record.
-                if _ritual_arm is not None and len(_ritual_arm):
-                    if _ritual_arm.nbytes > ribbon_capacity:
-                        ribbon_capacity = int(_ritual_arm.nbytes * 1.5)
-                        glBufferData(GL_ARRAY_BUFFER, ribbon_capacity, None, GL_DYNAMIC_DRAW)
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, _ritual_arm.nbytes, _ritual_arm)
-                    glDrawArrays(GL_TRIANGLES, 0, len(_ritual_arm))
-            elif draw_as_lines:
+            if draw_as_lines:
                 k = len(pts) // 2
                 if state["rainbow"]:
                     seg_rgb = rainbow_colors(k, hue_offset=hue_clock * 1.2) * boost
@@ -3344,7 +2719,7 @@ def main():
                 # under it, and outside the freeze/beam logic entirely — it
                 # tracks the record, not the signal. Off in ritual mode: the
                 # tonearm already says where in the side we are, and better.
-                if state["groove"] and not state["ritual"]:
+                if state["groove"]:
                     _el, _tot = now_playing.progress()
                     _ring = groove_ring(_el, _tot, iso=ISO_ASPECT)
                     if _ring is not None:
@@ -3435,46 +2810,11 @@ def main():
         glUniform1f(glGetUniformLocation(comp_prog, "u_resolve"), min(1.0, resolve_smooth))
         glUniform1f(glGetUniformLocation(comp_prog, "u_bloom"), state["bloom"])
         glUniform1f(glGetUniformLocation(comp_prog, "u_flat"), 1.0 if is_waterfall else 0.0)
-        glUniform1f(glGetUniformLocation(comp_prog, "u_grid"), 0.0 if state["ritual"] else 1.0)
         glUniform1f(glGetUniformLocation(comp_prog, "u_flash"), shutdown_flash)
-        # A máscara do disco no composto (ver disc_inside no shader): o centro
-        # e os raios do RITUAL convertidos de NDC para UV. Fora do ritual a
-        # máscara fica em zero e o tratamento inteiro sai de cena.
-        glUniform1f(glGetUniformLocation(comp_prog, "u_record"),
-                    1.0 if state["ritual"] else 0.0)
-        if state["ritual"]:
-            # O raio em NDC já carrega o aspecto (vinyl._polar multiplica o
-            # eixo x por ISO_ASPECT[0]); UV é NDC*0.5+0.5 no centro e *0.5 no
-            # raio.
-            glUniform4f(glGetUniformLocation(comp_prog, "u_disc"),
-                        RITUAL_CX * 0.5 + 0.5, RITUAL_CY * 0.5 + 0.5,
-                        RITUAL_R * ISO_ASPECT[0] * 0.5, RITUAL_R * ISO_ASPECT[1] * 0.5)
-        else:
-            glUniform4f(glGetUniformLocation(comp_prog, "u_disc"), 0.0, 0.0, 0.0, 0.0)
         draw_quad(quad_vao)
 
-        if state["ritual"] and ritual is not None:
-            _ly = ritual.current_lyric(_ritual_snap or {})
-            if _ly is not None and len(_ly) > 46:
-                _ly = _ly[:45].rstrip() + "…"
-            if _ly != last_lyric:
-                lyric_osd.set_text(_ly, W, H)
-                last_lyric = _ly
-        elif last_lyric is not None:
-            lyric_osd.set_text(None, W, H)
-            last_lyric = None
-
-        # The label goes on after the composite: printed paper, not phosphor.
-        if (state["ritual"] and ritual is not None and record_label is not None
-                and ritual.album is not None):
-            glEnable(GL_BLEND)
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-            record_label.load(ritual.album.cover)
-            record_label.draw(label_prog, ritual.deck.rotation, ISO_ASPECT)
-
-        ui_verts = ([] if state["ritual"]
-                    else build_vu_geometry(W, H, cap.level_l, cap.level_r,
-                                           cap.peak_l, cap.peak_r))
+        ui_verts = build_vu_geometry(W, H, cap.level_l, cap.level_r,
+                                           cap.peak_l, cap.peak_r)
         ui_arr = np.array(ui_verts, dtype=np.float32)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -3494,27 +2834,6 @@ def main():
         # long OSD string (e.g. several FIX-flags active) even at 1400x900,
         # since neither text knew anything about the other's actual width.
         np_artist, np_title = now_playing.snapshot()
-        # In ritual mode the record on screen is the authority, not whatever
-        # MPRIS player answered first. These disagreed on the very first run:
-        # the disc was spinning In Rainbows while the corner insisted on a
-        # track from a different player that happened to also be open.
-        if state["ritual"] and ritual is not None and ritual.album is not None:
-            _al = ritual.album
-            _ti = ritual._track_index(_ritual_snap or {})
-            _side_i, _side = _al.side_for(
-                _al.album_time(_ti, ritual.session.position()[0]))
-            np_artist = _al.artist or np_artist
-            if 0 <= _ti < len(_al.tracks):
-                _t = _al.tracks[_ti]
-                np_title = _t.get("title") or _t.get("name") or np_title
-            if _side:
-                np_artist = f"{np_artist} · {_side['label']}"
-            if ritual.deck.phase == vinyl.BREAK:
-                np_artist, np_title = "VIRE O DISCO", _side["label"] if _side else ""
-            elif ritual.deck.phase == vinyl.STOP:
-                np_artist, np_title = "FIM", f"{_al.artist} — {_al.name}"
-            elif ritual.banner_text():
-                np_artist, np_title = ritual.banner_text()
         if np_artist and np_title:
             osd_reserved = osd.w if osd.alpha() > 0 else 0
             char_w = mpris_osd.font.size("M")[0] or 1
@@ -3524,7 +2843,6 @@ def main():
             np_text = None
         if np_text != last_np_text:
             mpris_osd.set_text(np_text, W, H)
-        if state["ritual"] and ritual is not None and ritual.caption_is_state():
             mpris_osd.hold_open()
             last_np_text = np_text
 
@@ -3540,7 +2858,6 @@ def main():
         osd.draw(text_prog, color)
         mpris_osd.draw(text_prog, color)
         bpm_osd.draw(text_prog, color)
-        lyric_osd.draw(text_prog, color)
         glDisable(GL_BLEND)
 
         if _shot_after and not _shot_done and elapsed >= _shot_after:
@@ -3580,8 +2897,6 @@ def main():
 
     save_state(state)
     now_playing.close()
-    if ritual is not None:
-        ritual.close()
     cap.close()
     pygame.quit()
 
