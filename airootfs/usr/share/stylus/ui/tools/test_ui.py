@@ -19,7 +19,9 @@ só apareceria com a pessoa sentada na frente.
     python3 ui/tools/test_ui.py --lib DIR  usa uma pasta de verdade
 """
 import argparse
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -77,6 +79,11 @@ def main():
     os.environ["STYLUS_UI_WINDOWED"] = "1"
 
     tmp = tempfile.mkdtemp(prefix="stylus-ui-test-")
+    # A pasta de mentira some sozinha: uma rodada antiga com --lib deixou
+    # para trás oito diretórios somando ~13 GB em /tmp — encheram a cota do
+    # tmpfs e a conferência do branding-sync começou a falhar por falta de
+    # espaço, um defeito que parecia do repositório e era do teste.
+    atexit.register(shutil.rmtree, tmp, ignore_errors=True)
     os.environ["HOME"] = os.path.join(tmp, "casa")
     os.makedirs(os.path.join(os.environ["HOME"], ".config", "stylus"),
                 exist_ok=True)
@@ -127,6 +134,16 @@ def main():
               pygame.K_HOME, pygame.K_END]
 
     secao("cada seção desenha e aguenta o teclado")
+    # Nada aqui pode lançar processo de verdade. A varredura aperta ENTER em
+    # TODAS as telas — e a de JOGOS, no ENTER, abre Steam em Big Picture:
+    # quatro rodadas deste teste chegaram a descompactar ~13 GB de Steam
+    # dentro da pasta de mentira até estourar a cota do /tmp. E as teclas
+    # novas da AGORA falam com playerctl/pamixer da sessão REAL. Gravar os
+    # comandos em vez de executá-los mantém a cobertura e torna o teste
+    # hermético.
+    spawn_reais = []
+    spawn_verdadeiro = A.spawn
+    A.spawn = lambda cmd, *a, **k: spawn_reais.append(cmd)
     for i, tela in enumerate(app.screens):
         try:
             app._goto(i)
@@ -140,6 +157,13 @@ def main():
             ok(tela.name)
         except Exception:                                   # noqa: BLE001
             bad(tela.name, traceback.format_exc())
+    if spawn_reais:
+        unicos = sorted({" ".join(c) if isinstance(c, list) else str(c)
+                         for c in spawn_reais})
+        ok(f"{len(spawn_reais)} comandos gravados em vez de executados "
+           f"({', '.join(unicos[:4])})")
+    else:
+        ok("nenhum comando disparado pela varredura")
 
     secao("o trilho e o aviso")
     try:
@@ -180,6 +204,46 @@ def main():
         tecla(pygame.K_ESCAPE)
     except Exception:                                       # noqa: BLE001
         bad("busca", traceback.format_exc())
+
+    secao("filtrar por artista")
+    try:
+        estante = next(s for s in app.screens if s.name == "ESTANTE")
+
+        def tk(k, u=""):
+            return estante.key(pygame.event.Event(pygame.KEYDOWN, key=k,
+                                                  unicode=u, mod=0))
+
+        if estante.searching or estante.picking:
+            tk(pygame.K_ESCAPE)             # herança dos testes de cima
+        total = len(estante.items())
+        if not estante.artistas():
+            ok("(coleção sem artistas: nada para filtrar)")
+        else:
+            tk(pygame.K_a)
+            if not estante.picking:
+                bad("'a' não abriu a lista de artistas")
+            else:
+                # Dentro da lista 'a' é tecla qualquer: não pode aplicar
+                # filtro, fechar nada, nem cair fora.
+                tk(pygame.K_a)
+                tk(pygame.K_DOWN)
+                tk(pygame.K_UP)
+                nome = estante.artistas()[estante.a_sel]
+                tk(pygame.K_RETURN)
+                if estante.picking or estante.artist != nome:
+                    bad("enter não aplicou o filtro")
+                elif total > 1 and len(estante.items()) >= total:
+                    bad("o filtro não encolheu a grade")
+                else:
+                    ok(f"filtrou por {nome} "
+                       f"({len(estante.items())} de {total})")
+                tk(pygame.K_a)
+                if estante.artist is not None:
+                    bad("'a' não limpou o filtro")
+                else:
+                    ok("'a' limpou o filtro")
+    except Exception:                                       # noqa: BLE001
+        bad("artista", traceback.format_exc())
 
     secao("o botão B volta em vez de sair")
     try:
