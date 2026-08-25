@@ -75,7 +75,41 @@ render() {
 
 # --follow keeps running across players starting and stopping, and prints a
 # blank line when the last one goes away, which clears the module.
+#
+# Faixa nova, capa nova: uma notificação com o cover.jpg do disco como ícone
+# é o mais perto de "arte do álbum na barra" que a polybar consegue — módulo
+# dela não desenha imagem nenhuma. Empilha por tag (x-dunst-stack-tag), então
+# pular dez faixas não deixa dez balões; deixa um. Só quando há capa e o
+# player está tocando, e dedup contra a última faixa vista porque o follow
+# repete a linha em qualquer mudança de metadata.
 playerctl --follow --format "{{status}}${SEP}{{artist}}${SEP}{{title}}" metadata 2>/dev/null |
 while IFS=$SEP read -r status artist title; do
+    # Faixa nova, capa nova: uma notificação com o cover.jpg do disco como
+    # ícone é o mais perto de "arte do álbum na barra" que a polybar consegue
+    # — módulo dela não desenha imagem nenhuma. Empilha por tag
+    # (x-dunst-stack-tag), então pular dez faixas não deixa dez balões; deixa
+    # um. Dedup contra a última faixa vista: o follow repete a linha em
+    # qualquer mudança de metadata, não só em troca de faixa.
+    if [[ ${status:-} == Playing && -n ${title//[[:space:]]/} \
+          && $title != "${last_notified:-}" ]] \
+        && command -v notify-send >/dev/null 2>&1; then
+        last_notified=$title
+        url=$(playerctl metadata --format '{{xesam:url}}' 2>/dev/null || true)
+        arq=$(python3 -c '
+import os, sys, urllib.parse
+u = sys.argv[1] if len(sys.argv) > 1 else ""
+if u.startswith("file://"):
+    d = os.path.dirname(urllib.parse.unquote(u[7:]))
+    for c in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg",
+              "cover.jpeg"):
+        f = os.path.join(d, c)
+        if os.path.isfile(f):
+            print(f)
+            break
+' "$url" 2>/dev/null || true)
+        [[ -n ${arq:-} ]] && notify-send \
+            -h string:x-dunst-stack-tag:stylus-media -t 4000 \
+            -i "$arq" "${artist:-STYLUS}" "$title" 2>/dev/null
+    fi
     render "${status:-}" "${artist:-}" "${title:-}"
 done
