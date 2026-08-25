@@ -38,6 +38,7 @@ class VinylActivity : AppCompatActivity() {
     private var lastTime = 0f
     private var trackDuration = 0L
     private var startedAt = 0L
+    private var albumIdField: Long = -1
 
     private val frameCallback = object : Runnable {
         override fun run() {
@@ -59,15 +60,39 @@ class VinylActivity : AppCompatActivity() {
             // cover rotates with disc (screen-space, opposite direction)
             coverView.rotation = Math.toDegrees((-deck.rotation).toDouble()).toFloat()
 
-            // Progress (if playing)
-            if (playing && player != null) {
-                val dur = player!!.duration
-                if (dur > 0) {
-                    renderer.playProgress = (player!!.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
+            // Progress per SIDE (like PC: 22min per side, not per song)
+            if (albumIdField > 0) {
+                val tracks = Library.albumTracks(this@VinylActivity, albumIdField)
+                if (tracks.isNotEmpty()) {
+                    val posMs = when {
+                        playing && player != null && player!!.duration > 0 -> {
+                            val idx = player!!.currentTrackIndex.coerceIn(0, tracks.size-1)
+                            val before = tracks.take(idx).sumOf { it.duration }
+                            before + player!!.currentPosition
+                        }
+                        playing && trackDuration > 0 -> {
+                            val elapsed = System.currentTimeMillis() - startedAt
+                            elapsed.coerceIn(0, trackDuration)
+                        }
+                        else -> 0L
+                    }
+                    val sideMaxMs = 22*60*1000L
+                    var acc = 0L; var sideStart = 0L; var sideEnd = 0L
+                    for (t in tracks) {
+                        if (acc + t.duration > sideMaxMs && acc > 0) {
+                            if (posMs in sideStart until acc) { sideEnd = acc; break }
+                            sideStart = acc
+                        }
+                        acc += t.duration
+                        if (posMs < acc) { sideEnd = acc; break }
+                    }
+                    if (sideEnd == 0L) sideEnd = acc
+                    val span = maxOf(1L, sideEnd - sideStart)
+                    renderer.playProgress = ((posMs - sideStart).toFloat() / span).coerceIn(0f, 1f)
                 }
-            } else if (playing && trackDuration > 0) {
-                val elapsed = System.currentTimeMillis() - startedAt
-                renderer.playProgress = (elapsed.toFloat() / trackDuration).coerceIn(0f, 1f)
+            } else if (playing && player != null) {
+                val dur = player!!.duration
+                if (dur > 0) renderer.playProgress = (player!!.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
             }
 
             glView.requestRender()
@@ -88,6 +113,7 @@ class VinylActivity : AppCompatActivity() {
 
         deck = Deck()
         renderer = VinylRenderer()
+        albumIdField = intent.getLongExtra("albumId", -1)
 
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(3)
@@ -112,45 +138,37 @@ class VinylActivity : AppCompatActivity() {
                     outline.setOval(0, 0, view.width, view.height)
                 }
             }
-            // slight shadow
             elevation = 4f
         }
         root.addView(coverView)
         // load cover art if available
-        if (intent.hasExtra("albumId")) {
-            val aid = intent.getLongExtra("albumId", -1)
-            if (aid > 0) {
-                try {
-                    val a = Library.albums(this).find { it.id == aid }
-                    if (a != null) {
-                        contentResolver.openInputStream(a.coverUri())?.use { stream ->
-                            val bmp = android.graphics.BitmapFactory.decodeStream(stream)
-                            if (bmp != null) {
-                                val circ = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
-                                val canvas = android.graphics.Canvas(circ)
-                                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                                val rect = android.graphics.Rect(0,0,bmp.width,bmp.height)
-                                // circular mask
-                                val path = android.graphics.Path().apply { addCircle(bmp.width/2f, bmp.height/2f, minOf(bmp.width,bmp.height)/2f, android.graphics.Path.Direction.CW) }
-                                canvas.clipPath(path)
-                                canvas.drawBitmap(bmp, rect, rect, paint)
-                                // hole for spindle
-                                val holePaint = android.graphics.Paint().apply { color = android.graphics.Color.TRANSPARENT; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
-                                canvas.drawCircle(bmp.width/2f, bmp.height/2f, bmp.width*0.038f, holePaint)
-                                coverView.setImageBitmap(circ)
-                                coverView.alpha = 1f
-                                // hide GL label so cover shows through
-                            }
+        if (albumIdField > 0) {
+            try {
+                val a = Library.albums(this).find { it.id == albumIdField }
+                if (a != null) {
+                    contentResolver.openInputStream(a.coverUri())?.use { stream ->
+                        val bmp = android.graphics.BitmapFactory.decodeStream(stream)
+                        if (bmp != null) {
+                            val circ = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
+                            val canvas = android.graphics.Canvas(circ)
+                            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                            val rect = android.graphics.Rect(0,0,bmp.width,bmp.height)
+                            val path = android.graphics.Path().apply { addCircle(bmp.width/2f, bmp.height/2f, minOf(bmp.width,bmp.height)/2f, android.graphics.Path.Direction.CW) }
+                            canvas.clipPath(path)
+                            canvas.drawBitmap(bmp, rect, rect, paint)
+                            val holePaint = android.graphics.Paint().apply { color = android.graphics.Color.TRANSPARENT; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
+                            canvas.drawCircle(bmp.width/2f, bmp.height/2f, bmp.width*0.038f, holePaint)
+                            coverView.setImageBitmap(circ)
+                            coverView.alpha = 1f
                         }
                     }
-                } catch (_: Exception) {}
-            }
+                }
+            } catch (_: Exception) {}
         }
 
-        val coverAlbumId = intent.getLongExtra("albumId", -1)
-        if (coverAlbumId > 0) {
+        if (albumIdField > 0) {
             try {
-                val album = Library.albums(this).find { it.id == coverAlbumId }
+                val album = Library.albums(this).find { it.id == albumIdField }
                 if (album != null) {
                     val titleView = android.widget.TextView(this).apply {
                         text = "${album.artist} — ${album.name}"
@@ -195,12 +213,35 @@ class VinylActivity : AppCompatActivity() {
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL))
 
+        // lyric view (right side)
+        val lyricView = android.widget.TextView(this).apply {
+            setTextColor(0xFFE8ECF5.toInt())
+            textSize = 15f
+            gravity = android.view.Gravity.CENTER
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setShadowLayer(6f, 0f, 2f, 0xAA000000.toInt())
+            alpha = 0f
+        }
+        root.addView(lyricView, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.CENTER
+        ))
+
         // update progress periodically
         val progressUpdater = object : Runnable {
             override fun run() {
                 val p = player
                 if (p != null && p.duration > 0) {
                     progress.progress = ((p.currentPosition.toFloat() / p.duration) * 100).toInt()
+                    // lyrics
+                    val idx = p.currentTrackIndex
+                    val tracks = if (albumIdField > 0) Library.albumTracks(this@VinylActivity, albumIdField) else emptyList()
+                    if (idx in tracks.indices) {
+                        val lys = Library.lyricsFor(tracks[idx].uri, this@VinylActivity)
+                        val line = if (lys != null) Library.lyricAt(lys, p.currentPosition) else null
+                        if (line != null) { lyricView.text = line; lyricView.alpha = 1f } else lyricView.alpha = 0f
+                    }
                 } else {
                     progress.progress = (renderer.playProgress * 100).toInt()
                 }
@@ -225,9 +266,8 @@ class VinylActivity : AppCompatActivity() {
             playing = false  // start paused, audio starts after DROP
 
             // Load album tracks
-            val albumId = intent.getLongExtra("albumId", -1)
-            if (albumId > 0) {
-                val tracks = Library.albumTracks(this, albumId)
+            if (albumIdField > 0) {
+                val tracks = Library.albumTracks(this, albumIdField)
                 if (tracks.isNotEmpty()) {
                     player = BitPerfectPlayer(this).apply {
                         prepareAlbum(tracks.map { it.uri })

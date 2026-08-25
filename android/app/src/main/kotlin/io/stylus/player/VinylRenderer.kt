@@ -59,13 +59,31 @@ class VinylRenderer : GLSurfaceView.Renderer {
         layout(location=1) in vec4 aCol;
         uniform mat4 uMvp;
         out vec4 vCol;
-        void main(){ vCol=aCol; gl_Position=uMvp*vec4(aPos,0,1); }
+        out vec2 vUv;
+        void main(){ vCol=aCol; vUv=aPos*0.5+0.5; gl_Position=uMvp*vec4(aPos,0,1); }
     """.trimIndent()
     private val FS = """
         #version 300 es
         precision mediump float;
         in vec4 vCol; out vec4 frag;
-        void main(){ frag=vCol; }
+        in vec2 vUv;
+        void main(){
+            // if vCol is plinth dark, add wood grain
+            if (vCol.r < 0.11 && vCol.g < 0.07) {
+                vec2 p = vUv*2.0-1.0;
+                float g1 = sin(p.x*18.0 + p.y*2.0)*0.5+0.5;
+                float g2 = sin(p.x*42.0 - p.y*7.0)*0.5+0.5;
+                float grain = mix(g1,g2,0.35)*0.018;
+                vec3 wood = vec3(0.11,0.065,0.038) + vec3(grain);
+                float vig = 1.0 - dot(p,p)*0.16;
+                vig = pow(vig, 0.92);
+                float hl = max(0.0, dot(normalize(vec2(-0.6,0.5)), p)) * 0.05;
+                hl *= (1.0 - length(p)*0.4);
+                frag = vec4(wood*vig + vec3(hl*0.9, hl*0.7, hl*0.5), 1.0);
+            } else {
+                frag=vCol;
+            }
+        }
     """.trimIndent()
 
     override fun onSurfaceCreated(gl10: GL10?, config: EGLConfig?) {
