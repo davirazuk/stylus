@@ -762,6 +762,31 @@ uniform float u_flat;
 uniform float u_grid;
 uniform float u_flash;
 
+// O disco como OBJETO, não como fósforo — o rework do ritual.
+//
+// O desenho do vinil nasce no mesmo encanamento do osciloscópio: traço
+// aditivo, brilho de feixe, tubo curvo. Para um TRAÇO isso é o visual; para
+// um objeto pousado na frente dele é errado duas vezes — o bloom acende um
+// halo de néon em volta do plástico preto, e o "respirar com o volume"
+// bombeia o disco inteiro junto com a música, que é exatamente o que um
+// disco NÃO faz: só o sulco sob a agulha responde ao som.
+//
+// Em vez de um segundo caminho de render, o composto ganha uma máscara
+// elíptica do lugar onde o disco está (u_disc, em UV; raio x/y separados
+// porque o NDC é quadrado e a tela não) e dentro dela cada efeito de tubo
+// cede o quanto um objeto de verdade pediria: o bloom cai a uma fração, o
+// bombear do volume quase some, a aberração cromática vira nada (é vidro de
+// tubo, e o disco não está dentro do tubo), o scanline alisa e o grão cai
+// pela metade — o disco já tem POEIRA desenhada, a dele própria.
+uniform vec4 u_disc;      // cx, cy, r_x, r_y em UV; w = 0 desliga
+uniform float u_record;   // 1.0 só no modo ritual
+
+float disc_inside(vec2 p, vec4 disc) {
+    if (disc.w <= 0.0) return 0.0;
+    vec2 q = (p - disc.xy) / max(disc.zw, vec2(1e-5));
+    return 1.0 - smoothstep(0.965, 1.025, length(q));
+}
+
 vec2 curve(vec2 u) {
     u = u * 2.0 - 1.0;
     vec2 offset = u.yx / 4.2;
@@ -784,10 +809,11 @@ void main() {
         return;
     }
     vec2 d = cuv - 0.5;
+    float ins = disc_inside(cuv, u_disc) * u_record;
 
     // Chromatic aberration: split channels slightly, growing toward the
     // edges, like dispersion through curved tube glass / a lens stack.
-    vec2 ca = d * 0.006 * (1.0 - u_flat);
+    vec2 ca = d * 0.006 * (1.0 - u_flat) * mix(1.0, 0.12, ins);
     vec3 b = vec3(
         texture(base, cuv + ca).r,
         texture(base, cuv).g,
@@ -797,7 +823,15 @@ void main() {
         texture(glow, cuv + ca * 1.6).r,
         texture(glow, cuv).g,
         texture(glow, cuv - ca * 1.6).b
-    ) * (0.9 + u_loud * 1.4) * u_bloom; // glow breathes with overall loudness, scaled by user bloom setting
+    );
+    // Fora do disco o brilho respira com a música como sempre; dentro, ele
+    // mal se mexe — e o bloom cai a uma fração, que era ele o responsável
+    // tanto pelo halo de néon quanto pelo brancaço chapado nos trechos altos
+    // (o ganho do ritual tinha sido levantado para compensar, e os dois
+    // defeitos vinham da mesma conta).
+    float breathe = mix(0.9 + u_loud * 1.4, 1.02 + u_loud * 0.12, ins);
+    float bloomK = mix(u_bloom, u_bloom * 0.28, ins);
+    g *= breathe * bloomK; // glow breathes with overall loudness, scaled by user bloom setting
 
     // Real oscilloscope graticules are 10 major divisions horizontally by
     // 8 vertically (a de-facto standard, not square, so each division reads
@@ -831,7 +865,9 @@ void main() {
               + vec3(0.17, 0.23, 0.17) * gridCenter * beatPulse
               + vec3(0.075, 0.10, 0.075) * gridTick;
 
-    float scan = 0.96 + 0.04 * sin(cuv.y * 900.0);
+    // Scanline é a tela de tubo, e o disco está NA FRENTE da tela: dentro
+    // dele o scanline alisa para não riscar a capa no rótulo nem os sulcos.
+    float scan = mix(0.96 + 0.04 * sin(cuv.y * 900.0), 1.0, ins * 0.85);
 
     float vig = 1.0 - dot(d, d) * 1.15;
     vig = clamp(vig, 0.0, 1.0);
@@ -847,7 +883,7 @@ void main() {
     // rises (and up a little past the old constant when it's actually
     // quiet) reads as a real noise floor instead of a static texture
     // overlay.
-    float grain = (hash(floor(cuv * 480.0) + u_time * 61.0) - 0.5) * mix(0.07, 0.02, min(1.0, u_loud));
+    float grain = (hash(floor(cuv * 480.0) + u_time * 61.0) - 0.5) * mix(0.07, 0.02, min(1.0, u_loud)) * mix(1.0, 0.55, ins);
 
     // Static diagonal glass glare, like a faceplate catching room light.
     float glare = 1.0 - abs(dot(cuv - vec2(0.18, 0.12), vec2(0.8, -0.6)));
@@ -2396,7 +2432,11 @@ class RitualScene:
             sid = buf[:, 0] - buf[:, 1] if buf.ndim == 2 else np.zeros_like(mid)
             lg = vinyl.live_groove(cx, cy, radius, iso, frac, mid, sid, rot)
             if lg:
-                strips.append(build_ribbon_strip(lg[0], float(np.mean(lg[2])), W, H, lg[1]))
+                # O taper (largo na agulha, fino no rastro) vem por vértice e
+                # build_ribbon_strip aceita array — achatar para a média era
+                # desenhar o rastro com a largura de todo mundo, ou seja, sem
+                # o rastro.
+                strips.append(build_ribbon_strip(lg[0], lg[2], W, H, lg[1]))
 
         for pts, cols, wd in vinyl.edge_and_label_rings(cx, cy, radius, iso, light):
             strips.append(_gain(build_ribbon_strip(pts, wd, W, H, cols)))
@@ -3386,6 +3426,20 @@ def main():
         glUniform1f(glGetUniformLocation(comp_prog, "u_flat"), 1.0 if is_waterfall else 0.0)
         glUniform1f(glGetUniformLocation(comp_prog, "u_grid"), 0.0 if state["ritual"] else 1.0)
         glUniform1f(glGetUniformLocation(comp_prog, "u_flash"), shutdown_flash)
+        # A máscara do disco no composto (ver disc_inside no shader): o centro
+        # e os raios do RITUAL convertidos de NDC para UV. Fora do ritual a
+        # máscara fica em zero e o tratamento inteiro sai de cena.
+        glUniform1f(glGetUniformLocation(comp_prog, "u_record"),
+                    1.0 if state["ritual"] else 0.0)
+        if state["ritual"]:
+            # O raio em NDC já carrega o aspecto (vinyl._polar multiplica o
+            # eixo x por ISO_ASPECT[0]); UV é NDC*0.5+0.5 no centro e *0.5 no
+            # raio.
+            glUniform4f(glGetUniformLocation(comp_prog, "u_disc"),
+                        RITUAL_CX * 0.5 + 0.5, RITUAL_CY * 0.5 + 0.5,
+                        RITUAL_R * ISO_ASPECT[0] * 0.5, RITUAL_R * ISO_ASPECT[1] * 0.5)
+        else:
+            glUniform4f(glGetUniformLocation(comp_prog, "u_disc"), 0.0, 0.0, 0.0, 0.0)
         draw_quad(quad_vao)
 
         if state["ritual"] and ritual is not None:
