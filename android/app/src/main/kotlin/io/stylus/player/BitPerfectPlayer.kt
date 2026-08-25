@@ -21,13 +21,8 @@ import androidx.media3.exoplayer.ExoPlayer
 class BitPerfectPlayer(private val ctx: Context) {
 
     private val exo: ExoPlayer = ExoPlayer.Builder(ctx).build().apply {
-        // Bit-perfect: don't normalize per-track (album has one level)
-        // Exo's LoudnessEnhancer disabled; volume 1.0 == --volume=100
         volume = 1.0f
         repeatMode = Player.REPEAT_MODE_OFF
-        // Gapless like --gapless-audio=yes
-        setSeekBackIncrementMs(10_000)
-        setSeekForwardIncrementMs(10_000)
     }
 
     // AAudio exclusive handle via Oboe C++ (cpp/oboe_player.cpp)
@@ -69,7 +64,7 @@ class BitPerfectPlayer(private val ctx: Context) {
     fun onNeedleDrop() { if (!exo.isPlaying) exo.play() }
     fun onNeedleLift() { if (exo.isPlaying) exo.pause() }
 
-    fun onUsb dacAttached(device: UsbDevice) {
+    fun onUsbDacAttached(device: UsbDevice) {
         // Claim USB audio interface, set altSetting for rate, stream PCM via
         // UsbRequest queue — true bypass, like UAPP's driver.
         val usb = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
