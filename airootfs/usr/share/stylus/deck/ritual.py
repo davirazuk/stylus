@@ -121,19 +121,19 @@ uniform vec4 u_disc;
 float disc_inside(vec2 p, vec4 disc) {
     if (disc.w <= 0.0) return 0.0;
     vec2 q = (p - disc.xy) / max(disc.zw, vec2(1e-5));
-    return 1.0 - smoothstep(0.968, 1.022, length(q));
+    // borda dura — 0.9%% anti-alias, não nuvem de 5%%
+    return 1.0 - smoothstep(0.992, 1.001, length(q));
 }
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
 
 void main() {
-    // VINYL NÃO É CRT — sem curva de tubo, sem scanline. O disco é um
-    // objeto físico sob luz de estúdio, não um fósforo. Textura limpa.
+    // VINYL NÃO É CRT — sem curva, sem scanline. Objeto físico sob softbox.
     vec2 cuv = uv;
     vec2 d = cuv - 0.5;
     float ins = disc_inside(cuv, u_disc);
 
-    // Aberração mínima, só fora do disco para dar um toque de lente.
+    // Aberração mínima, só fora do disco.
     vec2 ca = d * 0.0015 * (1.0 - ins);
     vec3 b = vec3(
         texture(base, cuv + ca).r,
@@ -145,41 +145,43 @@ void main() {
         texture(glow, cuv).g,
         texture(glow, cuv - ca * 1.2).b
     );
-    // Glow respira com a música, mas muito mais contido que no scope —
-    // no vinyl o brilho é do sulco, não do tubo inteiro.
-    float breathe = mix(1.0 + u_loud * 0.55, 1.015 + u_loud * 0.08, ins);
-    float bloomK = mix(u_bloom * 0.85, u_bloom * 0.32, ins);
+    // Dentro do disco o plástico não respira nem blooma — só o sulco vivo.
+    float breathe = mix(1.0 + u_loud * 0.55, 1.0, ins);
+    float bloomK = mix(u_bloom * 0.85, u_bloom * 0.18, ins);
     g *= breathe * bloomK;
 
-    // Vinheta suave de estúdio — não o vinco escuro de CRT.
+    // Vinheta: disco 95%% livre, fundo suave.
     float vig = 1.0 - dot(d, d) * 0.58;
     vig = clamp(vig, 0.0, 1.0);
-    // disco quase sem vinheta, fundo com vinheta leve
-    vig = mix(vig, 1.0, 0.35 + ins * 0.35);
+    vig = mix(vig, 1.0, 0.95 * ins + 0.35 * (1.0 - ins));
 
-    // Poeira fina de vinil — bem menos que o ruído de tubo do scope.
+    // Poeira: 0.004 dentro (quase nada), 0.025 fora — honesto.
     float grain = (hash(floor(cuv * 520.0) + u_time * 41.0) - 0.5)
-                  * mix(0.025, 0.009, min(1.0, u_loud)) * mix(1.0, 0.45, ins);
+                  * mix(0.025, 0.004, ins) * mix(1.0, 0.55, min(1.0, u_loud * 0.5));
 
-    // Reflexo de vidro/acrílico da tampa — sutil, elegante.
-    float glare = 1.0 - abs(dot(cuv - vec2(0.22, 0.14), vec2(0.75, -0.58)));
-    glare = pow(clamp(glare, 0.0, 1.0), 28.0) * 0.055;
+    // Softbox elíptico no acrílico — não diagonal pow 6 de CRT.
+    vec2 glareCoord = (cuv - vec2(0.35, 0.20)) / vec2(0.55, 0.38);
+    float glare = 1.0 - length(glareCoord);
+    glare = pow(clamp(glare, 0.0, 1.0), 12.0) * 0.07 * (1.0 - ins * 0.3);
 
-    // Brilho de prato-alto — só fora do disco, como luz batendo.
-    float sparkleCell = hash(floor(cuv * 280.0));
-    float twinkle = 0.5 + 0.5 * sin(u_time * 38.0 + sparkleCell * 70.0);
-    float sparkle = step(0.9965, sparkleCell) * u_treble * twinkle * (1.0 - ins * 0.7);
+    // Sparkle só fora do disco — vinil não cintila.
+    float sparkle = 0.0;
+    if (ins < 0.5) {
+        float sparkleCell = hash(floor(cuv * 280.0));
+        float twinkle = 0.5 + 0.5 * sin(u_time * 38.0 + sparkleCell * 70.0);
+        sparkle = step(0.9965, sparkleCell) * u_treble * twinkle;
+    }
 
     vec3 col = (b + g) * vig;
-    // base de luz ambiente quente, como uma sala, não fósforo verde
     col += vec3(0.008, 0.011, 0.014) * vig;
     col += grain * vig;
     col += glare * vig;
     col += vec3(0.90, 0.92, 1.0) * sparkle * vig;
     col *= u_power;
-    col *= 1.0 + u_bass * 0.18;
-    col *= 1.0 + u_beat * 0.10;
-    col *= 1.0 + u_resolve * 0.20;
+    // Graves/beat só fora do disco — plástico não incha com grave.
+    col *= mix(1.0 + u_bass * 0.18, 1.0, ins);
+    col *= mix(1.0 + u_beat * 0.10, 1.0, ins);
+    col *= mix(1.0 + u_resolve * 0.20, 1.0, ins);
     frag = vec4(max(col, 0.0), 1.0);
 }
 """
@@ -940,12 +942,9 @@ class RitualScene:
     def _finish_update(self, dt, snap, paused):
         self._was_paused = paused
         phase = self.deck.update(dt, playing=not paused)
-        # ── agulha controla o som (só em modo cerimônia, não em view) ──
-        # Num toca-discos de verdade a música só começa quando a agulha toca
-        # o sulco. Durante SPINUP/CUE/DROP o disco gira mas o som está mudo;
-        # só quando cai em PLAY é que despausamos. Em view, só observamos.
+        # agulha controla o som — honest, instantâneo
         if not self.view and snap.get("source") == "mpv":
-            needle_down = (phase == vinyl.PLAY and self.deck.cue_ramp < 0.08)
+            needle_down = (phase == vinyl.PLAY and self.deck.arm_lift() < 0.12)
             if needle_down and paused:
                 self.session.pause(False)
             elif not needle_down and not paused and phase in (

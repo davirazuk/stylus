@@ -191,12 +191,18 @@ class NowScreen(Screen):
         txt_w = min(txt_teto, avail - size - gap)
         total = size + gap + txt_w
 
-        cov = self.app.thumbs.get(al.cover) if al.cover else None
+        # AGORA usa 640px — 320 esticado ficava borrado (audit A-N1)
+        cov = self.app.thumbs_hi.get(al.cover) if al.cover else None
+        if cov is None and al.cover:
+            cov = self.app.thumbs.get(al.cover)
         cr = pygame.Rect(r.x + (r.w - total) // 2, r.y + (r.h - size) // 2,
                          size, size)
         T.shadow_card(s, cr, radius=14)
         if cov:
-            s.blit(pygame.transform.smoothscale(cov, (size, size)), cr)
+            # sem smoothscale se já do tamanho certo — mais nítido
+            if cov.get_width() != size or cov.get_height() != size:
+                cov = pygame.transform.smoothscale(cov, (size, size))
+            s.blit(cov, cr)
         else:
             T.panel(s, cr, T.INK_LIFT, radius=14)
             T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
@@ -462,7 +468,10 @@ class ShelfScreen(Screen):
         self.target = max(0, min(self.target,
                                  max(0, (len(its) + self.COLS - 1)
                                      // self.COLS - rows_vis) * ch))
-        self.scroll += (self.target - self.scroll) * 0.28
+        # independente de FPS — 60fps ou 30fps mesma velocidade
+        dt = self.app.clock.get_time() / 1000.0
+        alpha = 1.0 - pow(2.718281828, -dt * 12.0) if dt > 0 else 0.28
+        self.scroll += (self.target - self.scroll) * alpha
 
         clip = pygame.Rect(r.x, r.y + head, r.w, view_h)
         old = s.get_clip()
@@ -1439,6 +1448,7 @@ class App:
 
         self.shelf = Shelf()
         self.thumbs = Thumbs()
+        self.thumbs_hi = Thumbs(px=640)
         self.playing = Playing()
         self.shelf.load()
 

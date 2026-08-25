@@ -24,6 +24,7 @@ CACHE = os.path.expanduser("~/.cache/stylus")
 THUMBS = os.path.join(CACHE, "thumbs")
 INDEX = os.path.join(CACHE, "shelf.json")
 THUMB_PX = 320
+THUMB_HI = 640  # AGORA — capa grande precisa ser nítida, não 320 esticado
 
 
 def _key(path):
@@ -79,11 +80,19 @@ class Shelf:
             out = []
             for f in folders:
                 artist, name = vinyl.folder_names(f)
+                # conta recursivo até 3 níveis (Disc 01/Disc 02, webdav subpastas)
                 try:
+                    # usa o mesmo coletor do vinyl para não divergir
+                    n = len(vinyl._collect_audio_recursive(f))
                     entries = os.listdir(f)
                 except OSError:
                     continue
-                n = sum(1 for e in entries if e.lower().endswith(vinyl.AUDIO_EXT))
+                if n == 0:
+                    try:
+                        n = sum(1 for e in os.listdir(f) if e.lower().endswith(vinyl.AUDIO_EXT))
+                        entries = os.listdir(f)
+                    except OSError:
+                        n = 0
                 cover = None
                 for cand in ("cover.jpg", "cover.png", "folder.jpg",
                              "front.jpg", "cover.jpeg"):
