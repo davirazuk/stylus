@@ -267,20 +267,22 @@ class VinylActivity : AppCompatActivity() {
         setContentView(root)
 
         val mode = intent.getStringExtra("mode") ?: "view"
+        var manualProgress = 0f // where user placed needle (0 outer, 1 inner)
+        var isDragging = false
 
         if (mode == "view") {
-            // Already playing, just show the disc at speed
             deck.go(Phase.PLAY, System.nanoTime() / 1e9f)
             deck.speed = VinylConst.REV_PER_SEC
             renderer.armLift = 0f
-            // Get current player state from intent extras if available
             playing = true
         } else {
-            // Ceremony: SPINUP → CUE → DROP → play
-            deck.go(Phase.SPINUP, System.nanoTime() / 1e9f)
-            playing = false  // start paused, audio starts after DROP
+            // Manual needle: start at outer edge, arm lifted, disc spinning, wait for user to drop
+            deck.go(Phase.CUE, System.nanoTime() / 1e9f)
+            deck.speed = VinylConst.REV_PER_SEC
+            renderer.armLift = 1f
+            renderer.playProgress = 0f
+            playing = false
 
-            // Load album tracks
             if (albumIdField > 0) {
                 val tracks = Library.albumTracks(this, albumIdField)
                 if (tracks.isNotEmpty()) {
@@ -289,8 +291,6 @@ class VinylActivity : AppCompatActivity() {
                         onPlaybackEnd = { finish() }
                     }
                     trackDuration = tracks.sumOf { it.duration }
-                    // Delay play until deck reaches PLAY phase
-                    startedAt = System.currentTimeMillis() + 2700L  // SPINUP+CUE+DROP
                 }
             }
         }

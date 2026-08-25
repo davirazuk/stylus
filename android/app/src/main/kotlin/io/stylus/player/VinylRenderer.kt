@@ -17,15 +17,15 @@ import kotlin.math.*
  */
 class VinylRenderer : GLSurfaceView.Renderer {
 
-    // Palette — PC vinyl.py exact, slightly brighter for mobile visibility
+    // Softer — grooves are subtle graphite, gaps are warm light grey not white
     private val PLINTH_DARK = floatArrayOf(0.08f, 0.050f, 0.030f)
     private val VINYL_CORE = floatArrayOf(0.015f, 0.015f, 0.016f)
     private val VINYL_RIM = floatArrayOf(0.062f, 0.060f, 0.057f)
-    private val SHEEN = floatArrayOf(0.14f, 0.145f, 0.135f)
-    private val EDGE = floatArrayOf(0.42f, 0.40f, 0.38f)
-    private val G_OFF = floatArrayOf(0.085f, 0.090f, 0.100f)
-    private val G_ON = floatArrayOf(0.20f, 0.210f, 0.220f)
-    private val G_GAP = floatArrayOf(0.72f, 0.70f, 0.68f)
+    private val SHEEN = floatArrayOf(0.12f, 0.125f, 0.115f)
+    private val EDGE = floatArrayOf(0.36f, 0.34f, 0.32f)
+    private val G_OFF = floatArrayOf(0.055f, 0.060f, 0.070f)
+    private val G_ON = floatArrayOf(0.13f, 0.135f, 0.145f)
+    private val G_GAP = floatArrayOf(0.42f, 0.40f, 0.38f)
     private val LABEL_BG = floatArrayOf(0.58f, 0.12f, 0.09f)
     private val SPINDLE_C = floatArrayOf(0.23f, 0.23f, 0.24f)
     private val ARM_C = floatArrayOf(0.55f, 0.55f, 0.56f)
@@ -182,7 +182,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     private fun buildGrooves() {
-        val segs = 128; val hw = 0.0032f
+        val segs = 128; val hw = 0.0024f
         val upTo = (playProgress * N_RINGS).toInt().coerceIn(0, N_RINGS)
         for (i in 0 until N_RINGS) {
             val f = i.toFloat() / max(1, N_RINGS - 1)
