@@ -278,8 +278,8 @@ class VinylActivity : AppCompatActivity() {
             renderer.armLift = 0f
             playing = true
         } else {
-            // Manual needle: start at outer edge, arm lifted, disc spinning, wait for user to drop
-            deck.go(Phase.CUE, System.nanoTime() / 1e9f)
+            // Manual: disc spins, arm at rest, wait for tap to drop needle
+            deck.go(Phase.BREAK, System.nanoTime() / 1e9f)
             deck.speed = VinylConst.REV_PER_SEC
             renderer.armLift = 1f
             renderer.playProgress = 0f
