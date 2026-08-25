@@ -96,7 +96,7 @@ object Library {
         return out.sortedWith(compareBy({ it.uri.toString() }, { trackSortKey(it.title) }))
     }
 
-    /** Por áudio em pasta (fallback para WebDAV ou storage local via SAF) */
+    /** Por áudio em pasta — recursivo até 4 níveis, como vinyl._collect_audio_recursive */
     fun tracksFromFolder(folder: java.io.File): List<java.io.File> {
         if (!folder.isDirectory) return emptyList()
         return folder.walkTopDown()
@@ -105,5 +105,52 @@ object Library {
             .sortedWith(compareBy({ it.parent?.lowercase() ?: "" }, { trackSortKey(it.name) }))
             .distinctBy { it.canonicalPath }
             .toList()
+    }
+
+    /** Estante por pastas (como vinyl.shelf) — para quando a coleção está em disco/SAF */
+    fun shelfByFolders(roots: List<java.io.File>): List<java.io.File> {
+        val out = mutableListOf<java.io.File>()
+        for (root in roots) {
+            if (!root.isDirectory) continue
+            val tops = root.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name.lowercase() } ?: continue
+            for (t in tops) {
+                if (tracksFromFolder(t).size >= 1) { out.add(t); continue }
+                val kids = t.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name.lowercase() } ?: continue
+                for (k in kids) {
+                    if (tracksFromFolder(k).size >= 1) out.add(k)
+                    else k.listFiles()?.filter { it.isDirectory }?.forEach { k2 ->
+                        if (tracksFromFolder(k2).size >= 1) out.add(k2)
+                    }
+                }
+            }
+            if (tracksFromFolder(root).size >= 1) out.add(root)
+        }
+        return out.distinctBy { it.canonicalPath }.sortedBy { it.name.lowercase() }
+    }
+
+    /** WebDAV simples — lista pastas via PROPFIND, como rclone */
+    data class WebDavConfig(val url: String, val user: String?, val pass: String?)
+    fun webDavAlbums(cfg: WebDavConfig, onResult: (List<String>) -> Unit) {
+        // feito em coroutine/OkHttp — stub que chama onResult com pastas encontradas
+        // implementação completa usa OkHttp PROPFIND + XML parse
+        Thread {
+            try {
+                val client = okhttp3.OkHttpClient.Builder().build()
+                val req = okhttp3.Request.Builder().url(cfg.url).method("PROPFIND", null)
+                    .header("Depth", "1")
+                    .apply {
+                        if (!cfg.user.isNullOrEmpty()) {
+                            val cred = okhttp3.Credentials.basic(cfg.user, cfg.pass ?: "")
+                            header("Authorization", cred)
+                        }
+                    }.build()
+                val resp = client.newCall(req).execute()
+                val body = resp.body?.string() ?: ""
+                // parse hrefs
+                val hrefs = Regex("<D:href>(.*?)</D:href>").findAll(body)
+                    .map { it.groupValues[1] }.toList()
+                onResult(hrefs)
+            } catch (_: Exception) { onResult(emptyList()) }
+        }.start()
     }
 }

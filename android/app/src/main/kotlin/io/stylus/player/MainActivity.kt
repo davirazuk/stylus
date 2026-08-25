@@ -47,16 +47,30 @@ class MainActivity : AppCompatActivity() {
 
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF07080B.toInt()) }
 
-        // Header
+        // Header with settings
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(20), dp(48), dp(20), dp(4))
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val header = TextView(this).apply {
             text = "STYLUS"
             setTextColor(0xFF8892B0.toInt())
             textSize = 11f
             letterSpacing = 0.18f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(20), dp(52), dp(20), dp(4))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        root.addView(header, FrameLayout.LayoutParams(
+        headerRow.addView(header)
+        val webdavBtn = TextView(this).apply {
+            text = "⋮"
+            setTextColor(0xFF6B7898.toInt())
+            textSize = 20f
+            setPadding(dp(12), dp(4), dp(4), dp(4))
+            setOnClickListener { showWebdavDialog() }
+        }
+        headerRow.addView(webdavBtn)
+        root.addView(headerRow, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
@@ -162,6 +176,32 @@ class MainActivity : AppCompatActivity() {
                 startActivity(VinylActivity.ceremonyIntent(this, album.id))
             }
         }
+    }
+
+    private fun showWebdavDialog() {
+        val prefs = getSharedPreferences("stylus", MODE_PRIVATE)
+        val cur = prefs.getString("webdav_url", "") ?: ""
+        val input = android.widget.EditText(this).apply {
+            hint = "https://seu.webdav/exemplo/"
+            setText(cur)
+            setTextColor(0xFFE8ECF5.toInt())
+            setHintTextColor(0xFF6B7898.toInt())
+        }
+        val pad = dp(20)
+        val container = FrameLayout(this).apply {
+            setPadding(pad, pad, pad, pad)
+            addView(input)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("WebDAV")
+            .setMessage("URL da coleção remota (como no rclone.conf)")
+            .setView(container)
+            .setPositiveButton("Salvar") { _, _ ->
+                prefs.edit().putString("webdav_url", input.text.toString().trim()).apply()
+                android.widget.Toast.makeText(this, "WebDAV salvo", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     private class AlbumAdapter(
