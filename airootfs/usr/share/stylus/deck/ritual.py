@@ -46,10 +46,20 @@ in vec2 uv; out vec4 frag;
 uniform vec2 u_res;
 void main(){
     vec2 p = uv*2.0-1.0;
-    // warm wood plinth behind disc — distinct from scope's black
-    vec3 wood = vec3(0.09,0.06,0.042) + vec3(0.02)*sin(p.x*12.0)*sin(p.y*12.0);
-    float vig = 1.0 - dot(p,p)*0.22;
-    frag = vec4(wood*vig, 1.0);
+    // plinth: warm walnut, subtle grain + soft vignette
+    // two grain frequencies for depth, not just sin(12)
+    float g1 = sin(p.x*18.0 + p.y*2.0)*0.5+0.5;
+    float g2 = sin(p.x*42.0 - p.y*7.0)*0.5+0.5;
+    float grain = mix(g1, g2, 0.35) * 0.018;
+    // base walnut: slightly lighter than before so disc pops
+    vec3 wood = vec3(0.11,0.065,0.038) + vec3(grain);
+    // vignette soft, not crushing corners
+    float vig = 1.0 - dot(p,p)*0.16;
+    vig = pow(vig, 0.92);
+    // very subtle warm highlight top-left (room light)
+    float hl = max(0.0, dot(normalize(vec2(-0.6,0.5)), p)) * 0.06;
+    hl *= (1.0 - length(p)*0.4);
+    frag = vec4(wood*vig + vec3(hl*0.9, hl*0.7, hl*0.5), 1.0);
 }
 """
 TEXT_VS = """
@@ -403,11 +413,16 @@ layout(location=0) in vec2 pos; out vec2 uv; void main(){ uv=pos*0.5+0.5; gl_Pos
 """#version 330
 in vec2 uv; out vec4 frag;
 void main(){
-  // warm plinth, not phosphor
   vec2 p=uv*2.0-1.0;
-  vec3 wood=vec3(0.11,0.07,0.05) + vec3(0.015)*sin(p.x*18.0);
-  float vig=1.0 - dot(p,p)*0.18;
-  frag=vec4(wood*vig,1.0);
+  float g1 = sin(p.x*18.0 + p.y*2.0)*0.5+0.5;
+  float g2 = sin(p.x*42.0 - p.y*7.0)*0.5+0.5;
+  float grain = mix(g1, g2, 0.35) * 0.018;
+  vec3 wood = vec3(0.11,0.065,0.038) + vec3(grain);
+  float vig = 1.0 - dot(p,p)*0.16;
+  vig = pow(vig, 0.92);
+  float hl = max(0.0, dot(normalize(vec2(-0.6,0.5)), p)) * 0.06;
+  hl *= (1.0 - length(p)*0.4);
+  frag=vec4(wood*vig + vec3(hl*0.9, hl*0.7, hl*0.5), 1.0);
 }""")
     quad=make_quad(); label=RecordLabel()
     # forward buffer, no bloom FBO
