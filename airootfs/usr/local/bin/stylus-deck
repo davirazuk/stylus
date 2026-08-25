@@ -102,12 +102,10 @@ if command -v playerctl >/dev/null; then
 fi
 mkdir -p "$(dirname "$SOCK")"
 PIDFILE="$HOME/.local/share/stylus/deck.mpv.pid"
-PIDLOCK="$HOME/.local/share/stylus/deck.mpv.pid.lock"
-# evita duplo clique na estante criar 2 mpvs — flock exclusivo para troca de disco
-exec 9>"$PIDLOCK" 2>/dev/null || true
-flock -n 9 2>/dev/null || { echo "stylus: outro deck já está trocando de disco, aguarde" >&2; exit 1; }
 if [[ -f $PIDFILE ]]; then
     _old=$(cat "$PIDFILE" 2>/dev/null || true)
+    # Confere que o PID é mesmo um mpv nosso antes de matar: um PID reciclado
+    # por outro programa entre uma sessão e outra não é para morrer.
     if [[ $_old =~ ^[0-9]+$ ]] && [[ -r /proc/$_old/comm ]] &&        [[ $(cat "/proc/$_old/comm" 2>/dev/null) == mpv ]]; then
         kill "$_old" 2>/dev/null || true
     fi
@@ -251,30 +249,11 @@ setsid mpv "${mpv_args[@]}" </dev/null >/dev/null 2>&1 &
 MPV=$!
 echo "$MPV" > "$PIDFILE"
 cleanup() {
-    # sink quiet só pode ser desmontado quando mpv já morreu — senão mpv perde o device
-    if [[ -n ${NULL_MOD:-} ]]; then
-        if ! kill -0 "$MPV" 2>/dev/null; then
-            pactl unload-module "$NULL_MOD" 2>/dev/null || true
-        fi
-    fi
+    # fechar o deck não para a música — só limpa o sink quiet se criamos
+    [[ -n ${NULL_MOD:-} ]] && pactl unload-module "$NULL_MOD" 2>/dev/null || true
 }
 trap cleanup EXIT
-# espera o socket com timeout real — se mpv falhou (arquivo corrompido) não abre deck fantasma
-ok=0
-for _ in $(seq 1 50); do [[ -S $SOCK ]] && { ok=1; break; }; sleep 0.1; done
-if (( !ok )); then
-    if kill -0 "$MPV" 2>/dev/null; then
-        echo "stylus: mpv não criou o socket em 5s — veja ~/.local/share/stylus/webdav.log" >&2
-    else
-        echo "stylus: mpv falhou ao iniciar" >&2
-        cat "$HOME/.local/share/stylus/webdav.log" 2>/dev/null | tail -5 >&2 || true
-    fi
-    # não abre ritual fantasma sem som
-    trap - EXIT
-    cleanup
-    # mantém pidfile para que o próximo tente matar o mpv zumbi se houver
-    exit 1
-fi
+for _ in $(seq 1 50); do [[ -S $SOCK ]] && break; sleep 0.1; done
 
 if (( SCOPE )); then
     "$PY" "$DECK/ritual.py"

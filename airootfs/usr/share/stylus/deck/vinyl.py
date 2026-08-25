@@ -784,103 +784,78 @@ def _shelf_one(root, artist=None, min_tracks=SHELF_MIN_TRACKS):
     base = os.path.join(root, artist) if artist else root
     if not os.path.isdir(base):
         return []
-    try:
-        tops = [base] if artist else [os.path.join(root, d)
-                                      for d in sorted(os.listdir(root))]
-    except OSError:
-        return []
-    def _has_audio(p):
-        # conta faixas direto e em subpastas imediatas (Disc 01/Disc 02, CD1/CD2)
-        # e também até 2 níveis para coleções planas ou webdav com hierarquia
+    # helper: conta faixas de um disco (direto + Disc 01/Disc 02 como parte do mesmo)
+    disc_pat = re.compile(r'^(disc|cd|vinyl|side|part|disco)[\s._-]*\d+', re.I)
+    def _album_count(p):
         try:
             direct = sum(1 for f in os.listdir(p) if f.lower().endswith(AUDIO_EXT))
-            if direct >= min_tracks:
-                return True
-            # olha subpastas (Disc 01, etc) — recursivo leve, sem varrer coleção inteira
+            # subpastas tipo Disc 01 contam como mesmo álbum
+            sub_total = 0
+            has_disc_sub = False
             for sub in os.listdir(p):
                 sp = os.path.join(p, sub)
                 if not os.path.isdir(sp) or _DATED_FOLDER.match(sub):
                     continue
-                try:
-                    # conta dentro da subpasta e também uma camada abaixo dela
-                    c = sum(1 for f in os.listdir(sp) if f.lower().endswith(AUDIO_EXT))
-                    if c >= min_tracks:
-                        return True
-                    for sub2 in os.listdir(sp):
-                        sp2 = os.path.join(sp, sub2)
-                        if not os.path.isdir(sp2):
-                            continue
-                        try:
-                            c2 = sum(1 for f in os.listdir(sp2) if f.lower().endswith(AUDIO_EXT))
-                            if c2 >= min_tracks:
-                                return True
-                        except OSError:
-                            continue
-                    # soma total de todas as subpastas imediatas (álbum dividido)
-                    # ex: Disc01 7 faixas + Disc02 6 faixas = 13
-                    if direct == 0:
-                        total_sub = 0
-                        for sub in os.listdir(p):
-                            sp = os.path.join(p, sub)
-                            if os.path.isdir(sp):
-                                try:
-                                    total_sub += sum(1 for f in os.listdir(sp) if f.lower().endswith(AUDIO_EXT))
-                                except OSError:
-                                    pass
-                        if total_sub >= min_tracks:
-                            return True
-                except OSError:
-                    continue
+                if disc_pat.match(sub):
+                    has_disc_sub = True
+                    try:
+                        sub_total += sum(1 for f in os.listdir(sp) if f.lower().endswith(AUDIO_EXT))
+                    except OSError:
+                        pass
+            if has_disc_sub and direct == 0:
+                return sub_total
+            if has_disc_sub and direct > 0:
+                return direct + sub_total
+            return direct
         except OSError:
-            return False
-        return False
+            return 0
 
-    def _collect(p):
-        # p é candidato a disco — verifica recursivo
-        if _has_audio(p):
-            return [p]
-        # se não tem áudio direto, pode ser pasta de artista com álbuns dentro
+    def _is_album(p):
+        return _album_count(p) >= min_tracks
+
+    # varre até 4 níveis, pegando folhas que são álbuns e não descendo dentro delas
+    out = []
+    stack = [base]
+    # se artist foi passado, base já é artista — começa nele
+    # senão, base é root, tops são seus filhos (artist ou flat album)
+    # para walk uniforme, empilha os filhos de base quando artist is None
+    if artist is None:
         try:
-            entries = sorted(os.listdir(p))
+            tops = [os.path.join(root, d) for d in sorted(os.listdir(root))]
         except OSError:
             return []
-        found = []
-        for d in entries:
-            q = os.path.join(p, d)
-            if not os.path.isdir(q) or _DATED_FOLDER.match(d):
-                continue
-            if _has_audio(q):
-                found.append(q)
-            else:
-                # tenta um nível mais fundo: artista/álbum/subpasta com áudio
-                # cobre caso webdav com estrutura extra ou coleção bagunçada
-                try:
-                    for d2 in os.listdir(q):
-                        q2 = os.path.join(q, d2)
-                        if os.path.isdir(q2) and _has_audio(q2):
-                            found.append(q2)
-                except OSError:
-                    continue
-        return found
+        stack = tops
 
-    out = []
-    for t in tops:
-        if not os.path.isdir(t):
+    visited = set()
+    while stack:
+        cur = stack.pop()
+        if not os.path.isdir(cur) or cur in visited:
             continue
-        # tops pode ser o próprio disco (coleção plana root/disco)
-        if _has_audio(t):
-            out.append(t)
+        visited.add(cur)
+        if _is_album(cur):
+            out.append(cur)
+            continue  # não desce dentro de álbum (Disc 01 já contado)
+        # não é álbum: desce
+        try:
+            for e in sorted(os.listdir(cur), reverse=True):
+                p = os.path.join(cur, e)
+                if os.path.isdir(p) and not _DATED_FOLDER.match(e) and not e.startswith("."):
+                    # limita profundidade para não varrer coleção inteira desnecessário
+                    # mas webdav pode ter Genre/Artist/Album (3 níveis) + Disc
+                    rel = os.path.relpath(p, base)
+                    if rel.count(os.sep) < 4:
+                        stack.append(p)
+        except OSError:
             continue
-        out.extend(_collect(t))
-    # dedup e estabilidade
+    # dedup e estabilidade por nome
     seen = set()
     uniq = []
-    for p in out:
+    for p in sorted(set(out), key=lambda x: x.lower()):
         n = os.path.normpath(p)
         if n not in seen:
             seen.add(n)
             uniq.append(p)
-    return sorted(uniq)
+    return sorted(uniq, key=lambda x: x.lower())
 
 
 def last_played():

@@ -173,7 +173,9 @@ void main() {
     }
 
     vec3 col = (b + g) * vig;
-    col += vec3(0.008, 0.011, 0.014) * vig;
+    // plinth — warm dark wood, not scope's phosphor green
+    vec3 plinth = vec3(0.06, 0.04, 0.028) * (0.9 + 0.10 * sin(cuv.x * 40.0) * sin(cuv.y * 40.0));
+    col += mix(plinth, vec3(0.008, 0.011, 0.014), ins) * vig;
     col += grain * vig;
     col += glare * vig;
     col += vec3(0.90, 0.92, 1.0) * sparkle * vig;
