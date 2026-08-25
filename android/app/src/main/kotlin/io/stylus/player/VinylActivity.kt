@@ -30,6 +30,7 @@ class VinylActivity : AppCompatActivity() {
 
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: VinylRenderer
+    private lateinit var coverView: android.widget.ImageView
     private lateinit var deck: Deck
     private var player: BitPerfectPlayer? = null
 
@@ -55,6 +56,8 @@ class VinylActivity : AppCompatActivity() {
 
             renderer.deckRotation = deck.rotation
             renderer.armLift = deck.armLift(now)
+            // cover rotates with disc (screen-space, opposite direction)
+            coverView.rotation = Math.toDegrees((-deck.rotation).toDouble()).toFloat()
 
             // Progress (if playing)
             if (playing && player != null) {
@@ -96,6 +99,51 @@ class VinylActivity : AppCompatActivity() {
         root.addView(glView, android.widget.FrameLayout.LayoutParams(
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.MATCH_PARENT))
+
+        // Cover art centered over label (rotates with disc)
+        val coverSize = (resources.displayMetrics.widthPixels * 0.38f).toInt()
+        coverView = android.widget.ImageView(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(coverSize, coverSize, android.view.Gravity.CENTER)
+            alpha = 0.0f // invisible until loaded
+            // circular clip
+            clipToOutline = true
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                    outline.setOval(0, 0, view.width, view.height)
+                }
+            }
+        }
+        root.addView(coverView)
+        // load cover art if available
+        if (intent.hasExtra("albumId")) {
+            val aid = intent.getLongExtra("albumId", -1)
+            if (aid > 0) {
+                try {
+                    val a = Library.albums(this).find { it.id == aid }
+                    if (a != null) {
+                        contentResolver.openInputStream(a.coverUri())?.use { stream ->
+                            val bmp = android.graphics.BitmapFactory.decodeStream(stream)
+                            if (bmp != null) {
+                                val circ = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(circ)
+                                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                                val rect = android.graphics.Rect(0,0,bmp.width,bmp.height)
+                                // circular mask
+                                val path = android.graphics.Path().apply { addCircle(bmp.width/2f, bmp.height/2f, minOf(bmp.width,bmp.height)/2f, android.graphics.Path.Direction.CW) }
+                                canvas.clipPath(path)
+                                canvas.drawBitmap(bmp, rect, rect, paint)
+                                // hole for spindle
+                                val holePaint = android.graphics.Paint().apply { color = android.graphics.Color.TRANSPARENT; xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
+                                canvas.drawCircle(bmp.width/2f, bmp.height/2f, bmp.width*0.038f, holePaint)
+                                coverView.setImageBitmap(circ)
+                                coverView.alpha = 1f
+                                // hide GL label so cover shows through
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
 
         val coverAlbumId = intent.getLongExtra("albumId", -1)
         if (coverAlbumId > 0) {
