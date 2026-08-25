@@ -278,9 +278,10 @@ class VinylActivity : AppCompatActivity() {
             renderer.armLift = 0f
             playing = true
         } else {
-            // Like PC: ceremony auto — disc spins, arm at outer, then drop and play in order
-            deck.go(Phase.SPINUP, System.nanoTime() / 1e9f)
-            deck.speed = 0f
+            // Manual like real record: disc spins at outer, arm lifted at rest, tap to drop
+            deck.go(Phase.BREAK, System.nanoTime() / 1e9f)
+            deck.speed = VinylConst.REV_PER_SEC
+            renderer.armLift = 1f
             renderer.playProgress = 0f
             playing = false
 
