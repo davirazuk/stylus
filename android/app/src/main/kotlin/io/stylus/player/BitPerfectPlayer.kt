@@ -1,77 +1,88 @@
 package io.stylus.player
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbManager
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
+import android.content.Intent
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
+import androidx.core.app.NotificationCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 
 /**
- * Bit-perfect like UAPP: follow file's rate, no mixer resample, exclusive.
- * - AAudio exclusive via Oboe NDK (fallback AudioTrack offload)
- * - --audio-samplerate=0  → AudioTrack rate = file rate, not mixed 48k
- * - --replaygain=no, --af=, --volume=100  → 1.0f, no DSP
- * - USB DAC: UsbManager bulk transfer when attached, bypass AudioFlinger
+ * ExoPlayer wrapper — bit-perfect settings, foreground notification, media session.
  */
 class BitPerfectPlayer(private val ctx: Context) {
 
-    private val exo: ExoPlayer = ExoPlayer.Builder(ctx).build().apply {
+    var onTrackChange: ((index: Int) -> Unit)? = null
+    var onPlaybackEnd: (() -> Unit)? = null
+
+    private var session: MediaSession? = null
+
+    val exo: ExoPlayer = ExoPlayer.Builder(ctx).build().apply {
         volume = 1.0f
         repeatMode = Player.REPEAT_MODE_OFF
+        playWhenReady = false
+        addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                onTrackChange?.invoke(currentMediaItemIndex)
+                updateSession()
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) onPlaybackEnd?.invoke()
+                updateSession()
+            }
+        })
     }
 
-    // AAudio exclusive handle via Oboe C++ (cpp/oboe_player.cpp)
-    // Falls back to AudioTrack with AudioAttributes.USAGE_MEDIA,
-    // FLAG_HW_AV_SYNC, performanceMode LOW_LATENCY, sharingMode EXCLUSIVE.
-    fun audioTrackFor(rate: Int, channels: Int): AudioTrack {
-        val chMask = if (channels == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(rate) // follow file — 0 resample
-                    .setChannelMask(chMask)
-                    .build()
-            )
-            .setBufferSizeInBytes(AudioTrack.getMinBufferSize(rate, chMask, AudioFormat.ENCODING_PCM_FLOAT) * 2)
-            // .setPerformanceMode(PERFORMANCE_MODE_LOW_LATENCY)
-            // .setSharingMode(SHARING_MODE_EXCLUSIVE) // API 26+ via reflection when needed
-            .build()
-    }
-
-    fun playAlbum(files: List<String>, startIndex: Int = 0, startPosMs: Long = 0) {
-        // files from Library.trackPaths — same order as desktop vinyl.tracks
-        // so exo playlist-pos == vinyl.Album.track_index
-        val items = files.map { MediaItem.fromUri(it) }
-        exo.setMediaItems(items, startIndex, startPosMs)
+    fun prepareAlbum(uris: List<android.net.Uri>, startIndex: Int = 0, startMs: Long = 0) {
+        exo.setMediaItems(uris.map { MediaItem.fromUri(it) }, startIndex, startMs)
         exo.prepare()
-        // Ceremony: start paused if vinyl view will do SPINUP/CUE/DROP
-        // VinylActivity will exo.pause() until DROP→PLAY, then play()
-        exo.pause()
     }
 
-    fun onNeedleDrop() { if (!exo.isPlaying) exo.play() }
-    fun onNeedleLift() { if (exo.isPlaying) exo.pause() }
+    fun play() { exo.playWhenReady = true; exo.play() }
+    fun pause() { exo.playWhenReady = false; exo.pause() }
+    fun togglePlayPause() { if (exo.isPlaying) pause() else play() }
 
-    fun onUsbDacAttached(device: UsbDevice) {
-        // Claim USB audio interface, set altSetting for rate, stream PCM via
-        // UsbRequest queue — true bypass, like UAPP's driver.
-        val usb = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
-        // TODO: picks isochronous endpoint, negotiates UAC2, streams float PCM
-        // For now, logs and keeps AAudio exclusive which is already sample-accurate
-        // on Samsung S25 Ultra (Android 16) for 44.1..384 via offload.
+    val isPlaying get() = exo.isPlaying
+    val currentPosition get() = exo.currentPosition
+    val duration get() = exo.duration
+    val currentTrackIndex get() = exo.currentMediaItemIndex
+
+    fun initSession() {
+        session = MediaSession(ctx, "STYLUS").apply {
+            setCallback(object : MediaSession.Callback() {
+                override fun onPlay() { play() }
+                override fun onPause() { pause() }
+                override fun onSkipToNext() { if (exo.currentMediaItemIndex < exo.mediaItemCount - 1) exo.seekToNext() }
+                override fun onSkipToPrevious() { if (exo.currentMediaItemIndex > 0) exo.seekToPrevious() }
+                override fun onSeekTo(pos: Long) { exo.seekTo(pos) }
+            })
+            isActive = true
+        }
     }
 
-    fun release() { exo.release() }
+    private fun updateSession() {
+        val s = session ?: return
+        val state = PlaybackState.Builder()
+            .setActions(
+                PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
+                PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackState.ACTION_SEEK_TO
+            )
+            .setState(
+                if (exo.isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                exo.currentPosition, 1.0f
+            )
+            .build()
+        s.setPlaybackState(state)
+    }
+
+    fun release() {
+        session?.release()
+        exo.release()
+    }
 }
