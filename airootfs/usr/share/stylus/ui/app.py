@@ -1608,12 +1608,23 @@ class App:
         self.toast(f"{len(escolhidos)} discos para hoje à noite")
 
     # ── ações ──────────────────────────────────────────────────────────────
+    def _deck_bin(self):
+        # caminho absoluto é mais confiável que depender do PATH da sessão
+        # gráfica (que às vezes não tem /usr/local/bin). Tenta o instalado,
+        # depois o da fonte, depois o PATH.
+        for cand in ("/usr/local/bin/stylus-deck",
+                     "/usr/share/stylus/stylus-deck",
+                     "stylus-deck"):
+            if cand == "stylus-deck" or os.path.exists(cand):
+                return cand
+        return "stylus-deck"
+
     def put_on(self, folder):
         if not os.path.isdir(folder):
             self.toast(f"disco não existe: {os.path.basename(folder)}")
             return False
         self.toast(f"pondo {os.path.basename(folder)}…")
-        if not spawn(["stylus-deck", "--no-scope", folder]):
+        if not spawn([self._deck_bin(), "--no-scope", folder]):
             self.toast("não consegui pôr o disco (erro ao iniciar)")
             return False
         return True
@@ -1632,10 +1643,14 @@ class App:
         folder = os.path.dirname(path) if path else ""
         if folder and os.path.isdir(folder):
             self.toast("abrindo o deck…")
-            if not spawn(["stylus-deck", folder]):
+            if not spawn([self._deck_bin(), folder]):
                 self.toast("não consegui abrir o deck")
         else:
-            self.toast("nada tocando para abrir o deck")
+            # nada tocando: sorteia um da estante em vez de só reclamar —
+            # no sofá, "abrir o deck" tem que sempre fazer alguma coisa.
+            self.toast("nada tocando — sorteando um disco…")
+            if not spawn([self._deck_bin()]):
+                self.toast("não consegui abrir o deck")
 
     def lyric_state(self, al, track):
         """(linhas do .lrc, índice da linha de agora) — ou None.

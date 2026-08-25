@@ -218,23 +218,24 @@ AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
 # ═══════════════════════════════════════════════════════════════════════════
 # Palette
 # ═══════════════════════════════════════════════════════════════════════════
-# Vibrant, high-contrast colors that pop against the dark background.
-# These are ADDITIVE values written into the phosphor buffer (blend is
-# GL_ONE/GL_ONE), so they read much brighter on screen than they look here,
-# and anything above ~0.35 starts to bloom. The vinyl body stays very dark
-# so it remains a matte object rather than glowing like a lamp.
-VINYL_CORE      = (0.010, 0.012, 0.016)   # deep black plastic
-VINYL_RIM       = (0.080, 0.096, 0.120)   # slightly lighter edge
-SHEEN           = (0.120, 0.145, 0.180)   # subtle gloss lobes
-GROOVE_UNPLAYED = (0.200, 0.220, 0.280)   # cold slate ahead of needle
-GROOVE_PLAYED   = (0.450, 0.650, 0.950)   # bright accent blue — the music
-GROOVE_GAP      = (0.650, 0.700, 0.800)   # silent track gaps — visible
-STYLUS_HOT      = (1.000, 0.650, 0.150)   # hot orange under the needle
-ARM_METAL       = (0.550, 0.600, 0.700)   # gunmetal grey
-ARM_HIGHLIGHT   = (0.850, 0.900, 0.980)   # bright silver highlight
-EDGE_RING       = (0.350, 0.400, 0.500)   # subtle edge ring
-DUST            = (0.250, 0.270, 0.350)   # fine dust particles
-ALARM           = (1.000, 0.300, 0.300)   # side break warning — urgent red
+# Rich, vivid but physically correct for the additive phosphor buffer
+# (blend GL_ONE/GL_ONE). Anything above ~0.35 blooms on screen, so the
+# vinyl body stays in the hundredths to remain matte — otherwise the whole
+# disc glows like a lamp and stops being an object. Grooves are brighter
+# than before for punch and track-gap legibility, but kept below whiteout
+# so the disc still reads as vinyl, not neon.
+VINYL_CORE      = (0.012, 0.015, 0.022)   # deep black plastic — matte centre
+VINYL_RIM       = (0.034, 0.042, 0.060)   # edge catches a touch more light
+SHEEN           = (0.072, 0.088, 0.120)   # gloss lobes — more presence, still subtle
+GROOVE_UNPLAYED = (0.098, 0.118, 0.160)   # ahead of needle: cold slate, darker
+GROOVE_PLAYED   = (0.150, 0.380, 0.620)   # behind needle: vivid electric blue
+GROOVE_GAP      = (0.360, 0.400, 0.520)   # track gaps: bright silver-blue, countable
+STYLUS_HOT      = (0.740, 0.520, 0.140)   # live groove: hot amber, contrasts blue
+ARM_METAL       = (0.300, 0.340, 0.400)   # brushed gunmetal — not glowing
+ARM_HIGHLIGHT   = (0.560, 0.620, 0.720)   # highlight catches the sheen
+EDGE_RING       = (0.200, 0.235, 0.310)   # outer edge / label rim
+DUST            = (0.195, 0.220, 0.280)   # dust & fine scratches
+ALARM           = (0.780, 0.250, 0.250)   # side break — urgent but not blown
 
 
 def _lerp(a, b, t):
@@ -1329,7 +1330,7 @@ def boundary_ring(cx, cy, radius, iso, side, envelope, frac, light_angle,
 
 
 def live_groove(cx, cy, radius, iso, frac, mid, side_signal, rotation,
-                n_rings=N_RINGS, arc=2.6, half_width=1.05, depth=0.008):
+                n_rings=N_RINGS, arc=2.6, half_width=1.05, depth=0.0048):
     """The groove being read RIGHT NOW, modulated by the live waveform.
 
     This is where the oscilloscope actually lives in ritual mode, and it is
@@ -1359,17 +1360,20 @@ def live_groove(cx, cy, radius, iso, frac, mid, side_signal, rotation,
     s = np.asarray(side_signal, dtype=np.float32) if side_signal is not None else np.zeros(n, np.float32)
     peak = float(np.max(np.abs(m))) or 1e-6
     m = m / max(peak, 0.08)
-    # radial excursion: wider stereo = bigger wander; loud passages push outward
-    rr = (r + np.clip(np.abs(m), 0, 1) * depth * 0.5 * (1.0 + 0.5 * np.clip(np.abs(s) / (np.max(np.abs(s)) + 1e-6), 0, 1))) * radius
+    s_peak = float(np.max(np.abs(s))) or 1e-6
+    s_norm = np.clip(np.abs(s) / max(s_peak, 0.08), 0.0, 1.0)
+    m_abs = np.clip(np.abs(m), 0.0, 1.0)
+    # groove wanders with the MUSIC (signed), stereo widens the excursion
+    # depth 0.0048 is ~50% more visible than original 0.0032 but not cartoonish
+    rr = (r + m * depth * (1.0 + 0.28 * s_norm)) * radius
     pts = _polar(cx, cy, rr, theta, iso)
-    # trail fades fast: only ~half a revolution is visible
-    fade = np.linspace(1.0, 0.03, n) ** 1.8
-    # side channel makes it shimmer in stereo; mid makes it pulse with loudness
-    bright = fade * (0.4 + 0.9 * np.clip(np.abs(s) / (np.max(np.abs(s)) + 1e-6), 0, 1)) * np.clip(np.abs(m), 0, 1)[:, None]
+    fade = np.linspace(1.0, 0.04, n) ** 1.65
+    # brightness: trail fades, stereo shimmers, loudness gives a subtle pulse
+    bright = fade * (0.48 + 0.72 * s_norm) * (0.82 + 0.18 * m_abs)
     cols = np.empty((n, 4), dtype=np.float32)
-    cols[:, 0:3] = np.array(STYLUS_HOT, dtype=np.float32)[None, :] * bright
+    cols[:, 0:3] = np.array(STYLUS_HOT, dtype=np.float32)[None, :] * bright[:, None]
     cols[:, 3] = 1.0
-    widths = half_width * (0.3 + 0.8 * fade)
+    widths = half_width * (0.32 + 0.68 * fade)
     return pts, cols, widths
 
 
