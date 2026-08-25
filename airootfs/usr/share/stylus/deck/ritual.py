@@ -115,79 +115,71 @@ uniform float u_beat;
 uniform float u_resolve;
 uniform float u_bloom;
 
-// Máscara do disco — o objeto inteiro, não o fósforo.
-// cx, cy, r_x, r_y em UV.
+// Máscara do disco — separa o objeto do fundo.
 uniform vec4 u_disc;
 
 float disc_inside(vec2 p, vec4 disc) {
     if (disc.w <= 0.0) return 0.0;
     vec2 q = (p - disc.xy) / max(disc.zw, vec2(1e-5));
-    return 1.0 - smoothstep(0.965, 1.025, length(q));
-}
-
-vec2 curve(vec2 u) {
-    u = u * 2.0 - 1.0;
-    vec2 offset = u.yx / 4.2;
-    u += u * offset * offset;
-    return u * 0.5 + 0.5;
+    return 1.0 - smoothstep(0.968, 1.022, length(q));
 }
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
 
 void main() {
-    vec2 cuv = curve(uv);
-    if (cuv.x < 0.0 || cuv.x > 1.0 || cuv.y < 0.0 || cuv.y > 1.0) {
-        frag = vec4(0.0, 0.0, 0.0, 1.0);
-        return;
-    }
+    // VINYL NÃO É CRT — sem curva de tubo, sem scanline. O disco é um
+    // objeto físico sob luz de estúdio, não um fósforo. Textura limpa.
+    vec2 cuv = uv;
     vec2 d = cuv - 0.5;
     float ins = disc_inside(cuv, u_disc);
 
-    // Aberração cromática: reduzida perto do disco.
-    vec2 ca = d * 0.006 * mix(1.0, 0.12, ins);
+    // Aberração mínima, só fora do disco para dar um toque de lente.
+    vec2 ca = d * 0.0015 * (1.0 - ins);
     vec3 b = vec3(
         texture(base, cuv + ca).r,
         texture(base, cuv).g,
         texture(base, cuv - ca).b
     );
     vec3 g = vec3(
-        texture(glow, cuv + ca * 1.6).r,
+        texture(glow, cuv + ca * 1.2).r,
         texture(glow, cuv).g,
-        texture(glow, cuv - ca * 1.6).b
+        texture(glow, cuv - ca * 1.2).b
     );
-    // Glow respira com a música fora do disco; dentro, quase nada.
-    float breathe = mix(0.9 + u_loud * 1.4, 1.02 + u_loud * 0.12, ins);
-    float bloomK = mix(u_bloom, u_bloom * 0.28, ins);
+    // Glow respira com a música, mas muito mais contido que no scope —
+    // no vinyl o brilho é do sulco, não do tubo inteiro.
+    float breathe = mix(1.0 + u_loud * 0.55, 1.015 + u_loud * 0.08, ins);
+    float bloomK = mix(u_bloom * 0.85, u_bloom * 0.32, ins);
     g *= breathe * bloomK;
 
-    // Scanline suavizada dentro do disco.
-    float scan = mix(0.96 + 0.04 * sin(cuv.y * 900.0), 1.0, ins * 0.85);
-
-    float vig = 1.0 - dot(d, d) * 1.15;
+    // Vinheta suave de estúdio — não o vinco escuro de CRT.
+    float vig = 1.0 - dot(d, d) * 0.58;
     vig = clamp(vig, 0.0, 1.0);
+    // disco quase sem vinheta, fundo com vinheta leve
+    vig = mix(vig, 1.0, 0.35 + ins * 0.35);
 
-    // Ruído de tubo — metade dentro do disco (ele tem poeira desenhada).
-    float grain = (hash(floor(cuv * 480.0) + u_time * 61.0) - 0.5)
-                  * mix(0.07, 0.02, min(1.0, u_loud)) * mix(1.0, 0.55, ins);
+    // Poeira fina de vinil — bem menos que o ruído de tubo do scope.
+    float grain = (hash(floor(cuv * 520.0) + u_time * 41.0) - 0.5)
+                  * mix(0.025, 0.009, min(1.0, u_loud)) * mix(1.0, 0.45, ins);
 
-    // Vidro refletindo luz.
-    float glare = 1.0 - abs(dot(cuv - vec2(0.18, 0.12), vec2(0.8, -0.6)));
-    glare = pow(clamp(glare, 0.0, 1.0), 24.0) * 0.10;
+    // Reflexo de vidro/acrílico da tampa — sutil, elegante.
+    float glare = 1.0 - abs(dot(cuv - vec2(0.22, 0.14), vec2(0.75, -0.58)));
+    glare = pow(clamp(glare, 0.0, 1.0), 28.0) * 0.055;
 
-    // Brilho de prato-alto.
-    float sparkleCell = hash(floor(cuv * 260.0));
-    float twinkle = 0.5 + 0.5 * sin(u_time * 45.0 + sparkleCell * 80.0);
-    float sparkle = step(0.9955, sparkleCell) * u_treble * twinkle;
+    // Brilho de prato-alto — só fora do disco, como luz batendo.
+    float sparkleCell = hash(floor(cuv * 280.0));
+    float twinkle = 0.5 + 0.5 * sin(u_time * 38.0 + sparkleCell * 70.0);
+    float sparkle = step(0.9965, sparkleCell) * u_treble * twinkle * (1.0 - ins * 0.7);
 
-    vec3 col = (b + g) * scan * vig;
-    col += vec3(0.01, 0.015, 0.01) * vig;
+    vec3 col = (b + g) * vig;
+    // base de luz ambiente quente, como uma sala, não fósforo verde
+    col += vec3(0.008, 0.011, 0.014) * vig;
     col += grain * vig;
     col += glare * vig;
-    col += vec3(0.85, 0.95, 1.0) * sparkle * vig;
+    col += vec3(0.90, 0.92, 1.0) * sparkle * vig;
     col *= u_power;
-    col *= 1.0 + u_bass * 0.30;
-    col *= 1.0 + u_beat * 0.18;
-    col *= 1.0 + u_resolve * 0.35;
+    col *= 1.0 + u_bass * 0.18;
+    col *= 1.0 + u_beat * 0.10;
+    col *= 1.0 + u_resolve * 0.20;
     frag = vec4(max(col, 0.0), 1.0);
 }
 """
@@ -838,9 +830,14 @@ def save_state(state):
 # ── ritual scene (ceremony, album, deck) ────────────────────────────────
 
 class RitualScene:
-    def __init__(self):
+    def __init__(self, view=False):
+        self.view = view
         self.session = vinyl.Session()
         self.deck = vinyl.Deck()
+        # view mode: já está tocando, sem cerimônia — agulha direto no sulco
+        if self.view:
+            self.deck.phase = vinyl.PLAY
+            self.deck.speed = vinyl.REV_PER_SEC
         self.album = None
         self._key = None
         self._resolving = False
@@ -892,8 +889,15 @@ class RitualScene:
             self._rearm = False
             self._side = None
             self._ended = False
-            self.deck.after_lift = vinyl.BREAK
-            self.deck.go(vinyl.SPINUP)
+            if self.view:
+                # view não interrompe a música — agulha já no sulco
+                self.deck.phase = vinyl.PLAY
+                self.deck.speed = vinyl.REV_PER_SEC
+                self.deck.t0 = time.monotonic()
+                self.deck.crackle = 0.0
+            else:
+                self.deck.after_lift = vinyl.BREAK
+                self.deck.go(vinyl.SPINUP)
         paused = bool(snap.get("paused", True))
         if (self._ended and not paused and self.album is not None
                 and self.album.total):
@@ -935,6 +939,18 @@ class RitualScene:
     def _finish_update(self, dt, snap, paused):
         self._was_paused = paused
         phase = self.deck.update(dt, playing=not paused)
+        # ── agulha controla o som (só em modo cerimônia, não em view) ──
+        # Num toca-discos de verdade a música só começa quando a agulha toca
+        # o sulco. Durante SPINUP/CUE/DROP o disco gira mas o som está mudo;
+        # só quando cai em PLAY é que despausamos. Em view, só observamos.
+        if not self.view and snap.get("source") == "mpv":
+            needle_down = (phase == vinyl.PLAY and self.deck.cue_ramp < 0.08)
+            if needle_down and paused:
+                self.session.pause(False)
+            elif not needle_down and not paused and phase in (
+                    vinyl.SPINUP, vinyl.CUE, vinyl.DROP, vinyl.LIFT,
+                    vinyl.BREAK, vinyl.STOP, vinyl.RETURN):
+                self.session.pause(True)
         if phase == vinyl.PLAY and self._last_phase == vinyl.DROP:
             self._register_play()
         self._last_phase = phase
@@ -1072,6 +1088,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--res", default=None, help="WxH")
     ap.add_argument("--windowed", action="store_true")
+    ap.add_argument("--view", action="store_true",
+                    help="só observa — não controla o mpv, sem cerimônia")
     args = ap.parse_args()
 
     pygame.display.init()
@@ -1140,8 +1158,10 @@ def main():
     cap = AudioCapture(src)
     print(f"capture rate: {cap.rate}Hz")
     now_playing = NowPlaying()
-    ritual = RitualScene()
+    ritual = RitualScene(view=args.view)
     last_np_text = None
+    if args.view:
+        print("ritual: modo view — só observando, sem controlar a agulha")
 
     ISO_ASPECT = (min(1.0, H / W), min(1.0, W / H))
 

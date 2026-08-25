@@ -1630,24 +1630,25 @@ class App:
         return True
 
     def open_deck(self):
-        """Abre o deck com o disco que está tocando.
+        """Abre o deck sem reiniciar o disco.
 
-        Antes lançava ritual.py direto — sem mpv, sem socket IPC, sem som.
-        O ritual abria uma janela GL muda e morria. Agora passa pelo
-        stylus-deck, que cria o mpv com o socket, espera ele ficar pronto,
-        e só então abre a cerimônia. É o mesmo caminho que `stylus deck`
-        usa, e é o único que funciona.
+        Antes reiniciava o mpv inteiro (matava o tocador e criava outro)
+        só para mostrar o visual — o disco recomeçava e fechar o deck
+        parava a música. Agora é só view: o ritual observa o que já está
+        tocando via socket/MPRIS, não toca no mpv. Fechar não para, abrir
+        não reinicia. Se nada estiver tocando, sorteia um disco novo com
+        cerimônia completa (agulha sobe, gira, desce e só então começa).
         """
         snap = self.playing.session.snapshot()
-        path = snap.get("path") or ""
-        folder = os.path.dirname(path) if path else ""
-        if folder and os.path.isdir(folder):
+        has_music = bool(snap.get("path")) or snap.get("source") != "none"
+        if has_music:
             self.toast("abrindo o deck…")
-            if not spawn([self._deck_bin(), folder]):
+            if not spawn([self._deck_bin(), "--view"]):
                 self.toast("não consegui abrir o deck")
         else:
-            # nada tocando: sorteia um da estante em vez de só reclamar —
-            # no sofá, "abrir o deck" tem que sempre fazer alguma coisa.
+            # nada tocando: põe um disco novo com cerimônia (agulha levanta,
+            # disco gira, agulha desce e música começa) em vez de só mostrar
+            # tela vazia — no sofá, Enter tem que sempre fazer alguma coisa.
             self.toast("nada tocando — sorteando um disco…")
             if not spawn([self._deck_bin()]):
                 self.toast("não consegui abrir o deck")

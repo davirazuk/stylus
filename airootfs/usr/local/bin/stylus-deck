@@ -30,18 +30,28 @@ export PYTHONPATH="$DECK${PYTHONPATH:+:$PYTHONPATH}"
 
 SOCK="$HOME/.local/share/stylus/deck.sock"
 NULL_SINK=stylus_quiet
-SILENT=0; QUIET=0; SCOPE=1; TARGET=""; RETOMAR=1
+SILENT=0; QUIET=0; SCOPE=1; VIEW=0; TARGET=""; RETOMAR=1
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --silent)   SILENT=1; shift ;;
         --quiet)    QUIET=1; shift ;;
         --no-scope) SCOPE=0; shift ;;
+        --view|--observar|--monitor) VIEW=1; SCOPE=1; shift ;;
         --recomeçar|--recomecar|--do-inicio|--restart) RETOMAR=0; shift ;;
         -h|--help)  sed -n '4,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *)          TARGET=$1; shift ;;
     esac
 done
+
+# ── modo view: só observa o que já toca, sem pôr disco novo ───────────────
+# É o que a AGORA usa para "abrir o deck" sem reiniciar o disco — só mostra
+# o ritual sincronizado com o mpv/MPRIS que já está tocando. Não toca no mpv,
+# não mata nada, não precisa de TARGET. Se nada estiver tocando, o ritual
+# vai mostrar "nada tocando" e esperar.
+if (( VIEW )); then
+    exec "$PY" "$DECK/ritual.py" --view
+fi
 
 # ── achar o disco ──────────────────────────────────────────────────────────
 # Um caminho é um caminho. Qualquer outra coisa é um NOME, e procurar o nome
@@ -226,16 +236,20 @@ else
     mpv_args+=("$TARGET")
 fi
 
-mpv "${mpv_args[@]}" &
+# Cerimônia: começa pausado, a agulha é quem dá o play quando toca o sulco.
+# Em --no-scope (só tocar) não: ali é put_on e queremos som imediato.
+if (( SCOPE )); then
+    mpv_args+=(--pause)
+fi
+
+# mpv desacoplado: fechar o deck (ou o ritual) NÃO para a música.
+# setsid para não receber SIGHUP quando o lançador sair; pidfile fica para
+# o próximo `stylus deck` saber quem matar antes de pôr outro disco.
+setsid mpv "${mpv_args[@]}" </dev/null >/dev/null 2>&1 &
 MPV=$!
 echo "$MPV" > "$PIDFILE"
 cleanup() {
-    kill "$MPV" 2>/dev/null
-    rm -f "$SOCK"
-    # Só apaga o pidfile se ainda for o nosso: um lançador seguinte já pode ter
-    # escrito o PID dele aqui, e apagar naquele caso deixaria o mpv novo órfão
-    # do controle de exclusividade.
-    [[ $(cat "$PIDFILE" 2>/dev/null) == "$MPV" ]] && rm -f "$PIDFILE"
+    # fechar o deck não para a música — só limpa o sink quiet se criamos
     [[ -n ${NULL_MOD:-} ]] && pactl unload-module "$NULL_MOD" 2>/dev/null
 }
 trap cleanup EXIT
@@ -243,6 +257,12 @@ for _ in $(seq 1 50); do [[ -S $SOCK ]] && break; sleep 0.1; done
 
 if (( SCOPE )); then
     "$PY" "$DECK/ritual.py"
+    # ritual saiu, música segue — desarma o trap de sink temporário e sai
+    trap - EXIT
+    cleanup
 else
-    wait "$MPV"
+    # --no-scope: só pôs o disco pra tocar, sem tela
+    # desacopla e sai imediatamente — não espera o álbum acabar
+    trap - EXIT
+    cleanup
 fi
