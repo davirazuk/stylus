@@ -128,11 +128,45 @@ object Library {
         return out.distinctBy { it.canonicalPath }.sortedBy { it.name.lowercase() }
     }
 
+    /** Letras — .lrc ao lado da faixa, como vinyl.Album.lyrics_for */
+    fun lyricsFor(trackUri: android.net.Uri, ctx: android.content.Context): List<Pair<Long,String>>? {
+        return try {
+            val cr = ctx.contentResolver
+            val proj = arrayOf(android.provider.MediaStore.Audio.Media.DATA)
+            cr.query(trackUri, proj, null, null, null)?.use { cur ->
+                if (!cur.moveToFirst()) return null
+                val path = cur.getString(0) ?: return null
+                val lrc = java.io.File(path).let { f ->
+                    java.io.File(f.parent, f.nameWithoutExtension + ".lrc")
+                }
+                if (!lrc.isFile) return null
+                val out = mutableListOf<Pair<Long,String>>()
+                lrc.forEachLine { line ->
+                    val m = Regex("""\[(\d+):(\d+)[.:](\d+)\](.*)""").find(line) ?: return@forEachLine
+                    val min = m.groupValues[1].toLong()
+                    val sec = m.groupValues[2].toLong()
+                    val cs = m.groupValues[3].padEnd(3,'0').take(3).toLong()
+                    val ms = min*60*1000 + sec*1000 + cs
+                    out.add(ms to m.groupValues[4].trim())
+                }
+                out.sortBy { it.first }
+                if (out.isEmpty()) null else out
+            }
+        } catch (_: Exception) { null }
+    }
+
+    fun lyricAt(lyrics: List<Pair<Long,String>>, posMs: Long): String? {
+        var lo = 0; var hi = lyrics.size
+        while (lo < hi) {
+            val mid = (lo+hi)/2
+            if (lyrics[mid].first <= posMs) lo = mid+1 else hi = mid
+        }
+        return if (lo==0) null else lyrics[lo-1].second.takeIf { it.isNotBlank() }
+    }
+
     /** WebDAV simples — lista pastas via PROPFIND, como rclone */
     data class WebDavConfig(val url: String, val user: String?, val pass: String?)
     fun webDavAlbums(cfg: WebDavConfig, onResult: (List<String>) -> Unit) {
-        // feito em coroutine/OkHttp — stub que chama onResult com pastas encontradas
-        // implementação completa usa OkHttp PROPFIND + XML parse
         Thread {
             try {
                 val client = okhttp3.OkHttpClient.Builder().build()
@@ -146,7 +180,6 @@ object Library {
                     }.build()
                 val resp = client.newCall(req).execute()
                 val body = resp.body?.string() ?: ""
-                // parse hrefs
                 val hrefs = Regex("<D:href>(.*?)</D:href>").findAll(body)
                     .map { it.groupValues[1] }.toList()
                 onResult(hrefs)

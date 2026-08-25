@@ -16,21 +16,21 @@ import kotlin.math.*
  */
 class VinylRenderer : GLSurfaceView.Renderer {
 
-    // Warm, visible on phone (slightly brighter than vinyl.py for mobile)
-    private val PLINTH_DARK = floatArrayOf(0.09f, 0.055f, 0.032f)
+    // Premium — deeper, less washed, more like PC's honest material
+    private val PLINTH_DARK = floatArrayOf(0.08f, 0.050f, 0.030f)
     private val PLINTH_LIGHT = floatArrayOf(0.14f, 0.085f, 0.055f)
-    private val VINYL_CORE = floatArrayOf(0.022f, 0.022f, 0.024f)
-    private val VINYL_RIM = floatArrayOf(0.075f, 0.072f, 0.068f)
-    private val SHEEN = floatArrayOf(0.10f, 0.103f, 0.098f)
-    private val EDGE = floatArrayOf(0.42f, 0.40f, 0.38f)
-    private val G_OFF = floatArrayOf(0.12f, 0.125f, 0.135f)
-    private val G_ON = floatArrayOf(0.24f, 0.245f, 0.255f)
-    private val G_GAP = floatArrayOf(0.78f, 0.76f, 0.74f)
-    private val LABEL_BG = floatArrayOf(0.62f, 0.14f, 0.10f)
-    private val SPINDLE_C = floatArrayOf(0.24f, 0.24f, 0.25f)
-    private val ARM_C = floatArrayOf(0.45f, 0.45f, 0.46f)
-    private val ARM_D = floatArrayOf(0.20f, 0.20f, 0.21f)
-    private val STYLUS_C = floatArrayOf(0.92f, 0.64f, 0.22f)
+    private val VINYL_CORE = floatArrayOf(0.015f, 0.015f, 0.016f)
+    private val VINYL_RIM = floatArrayOf(0.060f, 0.058f, 0.055f)
+    private val SHEEN = floatArrayOf(0.13f, 0.135f, 0.125f)
+    private val EDGE = floatArrayOf(0.38f, 0.36f, 0.34f)
+    private val G_OFF = floatArrayOf(0.08f, 0.085f, 0.095f)
+    private val G_ON = floatArrayOf(0.18f, 0.185f, 0.195f)
+    private val G_GAP = floatArrayOf(0.70f, 0.68f, 0.66f)
+    private val LABEL_BG = floatArrayOf(0.58f, 0.12f, 0.09f)
+    private val SPINDLE_C = floatArrayOf(0.22f, 0.22f, 0.23f)
+    private val ARM_C = floatArrayOf(0.52f, 0.52f, 0.54f)
+    private val ARM_D = floatArrayOf(0.16f, 0.16f, 0.17f)
+    private val STYLUS_C = floatArrayOf(0.92f, 0.62f, 0.20f)
 
     private val R_OUTER = 1.0f; private val R_LEADIN = 0.962f
     private val R_PROG_OUT = 0.945f; private val R_PROG_IN = 0.395f
@@ -188,7 +188,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     private fun buildGrooves() {
-        val segs = 96; val hw = 0.0065f
+        val segs = 128; val hw = 0.0038f
         val upTo = (playProgress * N_RINGS).toInt().coerceIn(0, N_RINGS)
         for (i in 0 until N_RINGS) {
             val f = i.toFloat() / max(1, N_RINGS - 1)

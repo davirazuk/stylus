@@ -76,17 +76,25 @@ class VinylActivity : AppCompatActivity() {
                         }
                         else -> 0L
                     }
+                    // build sides like vinyl.py: pack tracks into ≤22min sides
                     val sideMaxMs = 22*60*1000L
-                    var acc = 0L; var sideStart = 0L; var sideEnd = 0L
+                    val sides = mutableListOf<Pair<Long,Long>>()
+                    var curStart = 0L; var curDur = 0L
                     for (t in tracks) {
-                        if (acc + t.duration > sideMaxMs && acc > 0) {
-                            if (posMs in sideStart until acc) { sideEnd = acc; break }
-                            sideStart = acc
+                        if (curDur + t.duration > sideMaxMs && curDur > 0) {
+                            sides.add(curStart to curStart + curDur)
+                            curStart += curDur; curDur = 0L
                         }
-                        acc += t.duration
-                        if (posMs < acc) { sideEnd = acc; break }
+                        curDur += t.duration
                     }
-                    if (sideEnd == 0L) sideEnd = acc
+                    if (curDur > 0) sides.add(curStart to curStart + curDur)
+                    if (sides.isEmpty()) sides.add(0L to maxOf(1L, tracks.sumOf { it.duration }))
+                    // find current side
+                    var sideStart = sides[0].first; var sideEnd = sides[0].second
+                    for ((s,e) in sides) {
+                        if (posMs in s until e) { sideStart = s; sideEnd = e; break }
+                        if (posMs >= e) { sideStart = s; sideEnd = e }
+                    }
                     val span = maxOf(1L, sideEnd - sideStart)
                     renderer.playProgress = ((posMs - sideStart).toFloat() / span).coerceIn(0f, 1f)
                 }
@@ -213,22 +221,27 @@ class VinylActivity : AppCompatActivity() {
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL))
 
-        // lyric view — centered, max width 80% so not cut off
+        // lyric view — bottom, above hint, with dark pill background
         val lyricView = android.widget.TextView(this).apply {
-            setTextColor(0xFFE8ECF5.toInt())
-            textSize = 14f
+            setTextColor(0xFFF0F4FF.toInt())
+            textSize = 13f
             gravity = android.view.Gravity.CENTER
-            setPadding(dp(32), dp(12), dp(32), dp(12))
-            setShadowLayer(8f, 0f, 2f, 0xCC000000.toInt())
+            setPadding(dp(16), dp(10), dp(16), dp(10))
             alpha = 0f
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xAA0A0C14.toInt())
+                cornerRadius = dp(20).toFloat()
+            }
         }
-        root.addView(lyricView, android.widget.FrameLayout.LayoutParams(
-            (resources.displayMetrics.widthPixels * 0.85f).toInt(),
+        // place lyrics just above bottom hint/progress
+        val lyricParams = android.widget.FrameLayout.LayoutParams(
+            (resources.displayMetrics.widthPixels * 0.82f).toInt(),
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-            android.view.Gravity.CENTER
-        ))
+            android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+        ).apply { bottomMargin = dp(72) }
+        root.addView(lyricView, lyricParams)
 
         // update progress periodically
         val progressUpdater = object : Runnable {
@@ -282,21 +295,25 @@ class VinylActivity : AppCompatActivity() {
             }
         }
 
-        // Tap to toggle play/pause
-        val gesture = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                playing = !playing
-                if (!playing) player?.pause() else {
-                    if (deck.phase == Phase.PLAY) player?.play()
+        // Tap anywhere to pause/play — reliable, not gesture-detector fragile
+        root.setOnClickListener {
+            playing = !playing
+            if (!playing) {
+                player?.pause()
+                // lift arm immediately
+                if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime()/1e9f)
+            } else {
+                // if lifted, return to cue
+                if (deck.phase == Phase.LIFT || deck.phase == Phase.BREAK) {
+                    deck.go(Phase.CUE, System.nanoTime()/1e9f)
+                    // will auto go DROP->PLAY after CUE_T
+                } else if (deck.phase == Phase.PLAY) {
+                    player?.play()
                 }
-                return true
             }
-            override fun onDoubleTap(e: MotionEvent): Boolean {
-                finish()
-                return true
-            }
-        })
-        glView.setOnTouchListener { _, ev -> gesture.onTouchEvent(ev); true }
+        }
+        // double-tap to close
+        root.setOnLongClickListener { finish(); true }
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
