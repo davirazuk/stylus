@@ -1285,7 +1285,10 @@ def groove_rings(cx, cy, radius, iso, side, envelope, tracks, light_angle,
         base = GROOVE_PLAYED if played else GROOVE_UNPLAYED
         if is_gap:
             base = GROOVE_GAP
-            shade = max(shade, 0.9)
+            # Mais brilho que qualquer outra faixa: a separação precisa ser
+            # vista de longe para que se possa contar as faixas de olho,
+            # especialmente a 33⅓ numa tela distante.
+            shade = 1.3
 
         n = int(np.clip(radius * r * 900, 96, 384))
         theta = np.linspace(0.0, 2.0 * np.pi, n, endpoint=True)
@@ -1294,7 +1297,11 @@ def groove_rings(cx, cy, radius, iso, side, envelope, tracks, light_angle,
         cols = np.empty((n, 4), dtype=np.float32)
         cols[:, 0:3] = np.array(base, dtype=np.float32)[None, :] * (shade * gain)[:, None]
         cols[:, 3] = 1.0
-        w = half_width * (0.75 + 0.45 * min(1.0, loud))
+        # Faixa de separação entre faixas: fina e clara, como a espiral
+        # muda-na-cauda de um disco real. No mundo real a agulha pula de
+        # um sulco para o outro aqui; na tela isto é o que permite CONTAR
+        # as faixas de olho.
+        w = 0.18 if is_gap else half_width * (0.75 + 0.45 * min(1.0, loud))
         strips.append((pts, cols, w))
     return strips
 

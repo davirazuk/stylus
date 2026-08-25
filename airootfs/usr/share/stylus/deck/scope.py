@@ -2074,13 +2074,24 @@ class RecordLabel:
             im = Image.open(path).convert("RGBA").resize((n, n), Image.LANCZOS)
             a = np.asarray(im).astype(np.float32).copy()
             # A label is a circle punched out of a square scan. Feathered over
-            # about a pixel so the rim is not a staircase.
+            # about 4 pixels so the rim is not a staircase; and a thin dark ring
+            # at the edge — the printed border every real paper label has — that
+            # separates cover art from black plastic without a hard pixel edge.
             yy, xx = np.mgrid[0:n, 0:n]
             rad = np.hypot(xx - (n - 1) / 2.0, yy - (n - 1) / 2.0) / ((n - 1) / 2.0)
-            a[..., 3] *= np.clip((1.0 - rad) * (n * 0.5), 0.0, 1.0)
-            # and the spindle hole, which is genuinely a hole
+            a[..., 3] *= np.clip((1.0 - rad) * (n * 0.25), 0.0, 1.0)
+            # the spindle hole, which is genuinely a hole
             hole = vinyl.R_SPINDLE / vinyl.R_LABEL
-            a[..., 3] *= np.clip((rad - hole) * (n * 0.5), 0.0, 1.0)
+            a[..., 3] *= np.clip((rad - hole) * (n * 0.25), 0.0, 1.0)
+            # a thin dark rim that makes the label read as printed paper rather
+            # than a photograph hovering over plastic: the band between 0.92 and
+            # 0.97 of the radius darkens hard, as if ink had been laid on a
+            # press.
+            rim = np.clip(((rad - 0.92) * 20.0) * (1.0 - (rad - 0.92) * 20.0),
+                          0.0, 1.0)
+            a[..., 0] -= rim * a[..., 0] * 0.75
+            a[..., 1] -= rim * a[..., 1] * 0.75
+            a[..., 2] -= rim * a[..., 2] * 0.75
             data = a.clip(0, 255).astype(np.uint8).tobytes()
             glBindTexture(GL_TEXTURE_2D, self.tex)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
