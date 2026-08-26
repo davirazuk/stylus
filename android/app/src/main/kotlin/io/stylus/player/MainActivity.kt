@@ -649,6 +649,12 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(0xFF08090C.toInt())
                 adjustViewBounds = true
                 id = View.generateViewId()
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(v: View, outline: android.graphics.Outline) {
+                        outline.setRoundRect(0, 0, v.width, v.height, dp2(ctx, 6).toFloat())
+                    }
+                }
             }
             card.addView(cover)
 
