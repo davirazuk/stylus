@@ -31,9 +31,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recycler: RecyclerView
     private lateinit var emptyView: TextView
     private lateinit var statsBar: LinearLayout
+    private lateinit var recentScroll: android.widget.HorizontalScrollView
+    private lateinit var recentRow: LinearLayout
+    private lateinit var recentHeader: TextView
     private lateinit var searchInput: EditText
     private lateinit var sortBtn: TextView
     private lateinit var dacIndicator: TextView
+    private lateinit var nowPlayingBar: LinearLayout
+    private lateinit var nowPlayingText: TextView
     private lateinit var prefs: SharedPreferences
     private var allAlbums = listOf<Library.Album>()
     private var filteredAlbums = listOf<Library.Album>()
@@ -156,10 +161,35 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(118) })
 
+        // Recently played horizontal section
+        recentHeader = TextView(this).apply {
+            text = "RECENTE"
+            setTextColor(0xFF3A4560.toInt())
+            textSize = 9f
+            letterSpacing = 0.08f
+            setPadding(dp(20), dp(8), dp(20), dp(2))
+        }
+        root.addView(recentHeader, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(138) })
+
+        recentScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            setPadding(dp(16), dp(0), dp(16), dp(0))
+        }
+        recentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        recentScroll.addView(recentRow)
+        root.addView(recentScroll, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(155) })
+
         // Grid
         recycler = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@MainActivity, calcCols())
-            setPadding(dp(10), dp(150), dp(10), dp(60))
+            setPadding(dp(10), dp(280), dp(10), dp(60))
             clipToPadding = false
             overScrollMode = RecyclerView.OVER_SCROLL_NEVER
         }
@@ -229,6 +259,39 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM
         ))
+
+        // Now Playing bar — shows when returning from player
+        nowPlayingBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF111620.toInt())
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            elevation = dp(4).toFloat()
+        }
+        nowPlayingText = TextView(this).apply {
+            setTextColor(0xFF8892B0.toInt())
+            textSize = 10f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        nowPlayingBar.addView(nowPlayingText)
+        val npGoBtn = TextView(this).apply {
+            text = "\u25B6"
+            setTextColor(0xFFE8ECF5.toInt())
+            textSize = 14f
+            setPadding(dp(8), dp(2), dp(2), dp(2))
+            setOnClickListener {
+                val np = VinylActivity
+                if (np.nowPlayingActive && np.nowPlayingAlbumId > 0) {
+                    startActivity(VinylActivity.ceremonyIntent(this@MainActivity, np.nowPlayingAlbumId))
+                }
+            }
+        }
+        nowPlayingBar.addView(npGoBtn)
+        root.addView(nowPlayingBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM
+        ).apply { bottomMargin = dp(36) })
 
         setContentView(root)
         if (hasPermission()) loadAlbums() else requestPermission()
@@ -305,21 +368,88 @@ class MainActivity : AppCompatActivity() {
         val tv = statsBar.tag as? TextView
         tv?.text = statsText
 
+        // Recently played section
+        val recentAlbums = allAlbums
+            .filter { prefs.getLong("played_${it.id}", 0L) > 0 }
+            .sortedByDescending { prefs.getLong("played_${it.id}", 0L) }
+            .take(8)
+
+        recentRow.removeAllViews()
+        if (recentAlbums.isNotEmpty()) {
+            recentScroll.visibility = View.VISIBLE
+            recentHeader.visibility = View.VISIBLE
+            for (album in recentAlbums) {
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(3), dp(3), dp(3), dp(3))
+                    isClickable = true
+                    layoutParams = LinearLayout.LayoutParams(dp(110), ViewGroup.LayoutParams.WRAP_CONTENT)
+                }
+                val img = ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(104), dp(104))
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    setBackgroundColor(0xFF08090C.toInt())
+                }
+                card.addView(img)
+                val name = TextView(this).apply {
+                    text = album.name
+                    setTextColor(0xFF8892B0.toInt())
+                    textSize = 8f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(2), dp(2), dp(2), 0)
+                }
+                card.addView(name)
+                card.setOnClickListener {
+                    prefs.edit().putLong("played_${album.id}", System.currentTimeMillis()).apply()
+                    startActivity(VinylActivity.ceremonyIntent(this, album.id))
+                }
+                recentRow.addView(card)
+
+                // Load cover async
+                Thread {
+                    try {
+                        contentResolver.openInputStream(album.coverUri())?.use { stream ->
+                            val bmp = BitmapFactory.decodeStream(stream)
+                            if (bmp != null) img.post { img.setImageBitmap(bmp) }
+                        }
+                    } catch (_: Exception) {}
+                }.start()
+            }
+        } else {
+            recentScroll.visibility = View.GONE
+            recentHeader.visibility = View.GONE
+        }
+
         if (filteredAlbums.isEmpty()) {
             emptyView.text = if (query.isNotEmpty()) "Nada para \"$query\"" else "Nenhuma musica encontrada"
             emptyView.visibility = View.VISIBLE
         } else {
             emptyView.visibility = View.GONE
-            recycler.adapter = AlbumAdapter(filteredAlbums, contentResolver, prefs) { album ->
-                prefs.edit().putLong("played_${album.id}", System.currentTimeMillis()).apply()
-                startActivity(VinylActivity.ceremonyIntent(this, album.id))
-            }
+            recycler.adapter = AlbumAdapter(filteredAlbums, contentResolver, prefs,
+                onClick = { album ->
+                    prefs.edit().putLong("played_${album.id}", System.currentTimeMillis()).apply()
+                    startActivity(VinylActivity.ceremonyIntent(this, album.id))
+                },
+                onLongClick = { album -> showTrackList(album) }
+            )
         }
     }
 
     override fun onResume() {
         super.onResume()
         checkDacStatus()
+        updateNowPlayingBar()
+    }
+
+    private fun updateNowPlayingBar() {
+        val np = VinylActivity
+        if (np.nowPlayingActive && np.nowPlayingAlbumId > 0) {
+            nowPlayingBar.visibility = View.VISIBLE
+            nowPlayingText.text = "${np.nowPlayingArtist} \u2022 ${np.nowPlayingTitle}"
+        } else {
+            nowPlayingBar.visibility = View.GONE
+        }
     }
 
     private fun checkDacStatus() {
@@ -417,6 +547,34 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showTrackList(album: Library.Album) {
+        Thread {
+            val tracks = Library.albumTracks(this, album.id)
+            runOnUiThread {
+                if (tracks.isEmpty()) {
+                    android.widget.Toast.makeText(this, "Nenhuma faixa", android.widget.Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                val items = tracks.mapIndexed { i, t ->
+                    val min = t.duration / 60000
+                    val sec = (t.duration / 1000) % 60
+                    "${i + 1}. ${t.title} (${min}:${String.format("%02d", sec)})"
+                }.toTypedArray()
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("${album.artist} — ${album.name}")
+                    .setItems(items) { _, which ->
+                        prefs.edit().putLong("played_${album.id}", System.currentTimeMillis()).apply()
+                        val intent = VinylActivity.ceremonyIntent(this, album.id)
+                        intent.putExtra("trackIndex", which)
+                        startActivity(intent)
+                    }
+                    .setPositiveButton("Tocar", null)
+                    .setNegativeButton("Fechar", null)
+                    .show()
+            }
+        }.start()
+    }
+
     private fun List<Library.Album>.recentlyPlayed(prefs: SharedPreferences): List<Library.Album> {
         return sortedByDescending { prefs.getLong("played_${it.id}", 0L) }
     }
@@ -428,7 +586,8 @@ class MainActivity : AppCompatActivity() {
         private val items: List<Library.Album>,
         private val resolver: ContentResolver,
         private val prefs: SharedPreferences,
-        private val onClick: (Library.Album) -> Unit
+        private val onClick: (Library.Album) -> Unit,
+        private val onLongClick: (Library.Album) -> Unit
     ) : RecyclerView.Adapter<VH>() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val ctx = parent.context
@@ -486,13 +645,24 @@ class MainActivity : AppCompatActivity() {
             }
             card.addView(artist)
 
-            return VH(card, cover, title, artist)
+            // Track count + duration row
+            val meta = TextView(ctx).apply {
+                setTextColor(0xFF2E3650.toInt())
+                textSize = 8f
+                maxLines = 1
+                setPadding(dp2(ctx, 6), 0, dp2(ctx, 6), dp2(ctx, 3))
+                id = View.generateViewId()
+            }
+            card.addView(meta)
+
+            return VH(card, cover, title, artist, meta)
         }
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val album = items[position]
             holder.title.text = album.name
             holder.artist.text = album.artist
+            holder.meta.text = album.durationString()
             holder.cover.setImageBitmap(null)
             holder.cover.setBackgroundColor(0xFF08090C.toInt())
 
@@ -523,8 +693,9 @@ class MainActivity : AppCompatActivity() {
                 holder.artist.setTextColor(0xFF4A5570.toInt())
             }
 
-            // Fix click — use explicit click on the card itself
+            // Fix click and long-click
             holder.card.setOnClickListener { onClick(album) }
+            holder.card.setOnLongClickListener { onLongClick(album); true }
         }
 
         override fun getItemCount() = items.size
@@ -536,6 +707,7 @@ class MainActivity : AppCompatActivity() {
         val card: LinearLayout,
         val cover: ImageView,
         val title: TextView,
-        val artist: TextView
+        val artist: TextView,
+        val meta: TextView
     ) : RecyclerView.ViewHolder(card)
 }

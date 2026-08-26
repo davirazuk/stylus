@@ -32,6 +32,17 @@ class VinylActivity : AppCompatActivity() {
                 putExtra("mode", "ceremony")
                 putExtra("albumId", albumId)
             }
+
+        // Static state for Now Playing bar in MainActivity
+        var nowPlayingTitle = ""; private set
+        var nowPlayingArtist = ""; private set
+        var nowPlayingAlbumId = -1L; private set
+        var nowPlayingActive = false; private set
+
+        fun updateNowPlaying(title: String, artist: String, albumId: Long) {
+            nowPlayingTitle = title; nowPlayingArtist = artist; nowPlayingAlbumId = albumId; nowPlayingActive = true
+        }
+        fun clearNowPlaying() { nowPlayingActive = false }
     }
 
     private lateinit var glView: GLSurfaceView
@@ -433,13 +444,15 @@ class VinylActivity : AppCompatActivity() {
             if (albumIdField > 0) {
                 val tracks = Library.albumTracks(this, albumIdField)
                 if (tracks.isNotEmpty()) {
+                    val startIdx = intent.getIntExtra("trackIndex", 0).coerceIn(0, tracks.size - 1)
                     player = BitPerfectPlayer(this).apply {
-                        prepareAlbum(tracks.map { it.uri })
+                        prepareAlbum(tracks.map { it.uri }, startIndex = startIdx)
                         onPlaybackEnd = { finish() }
                         onTrackChange = { idx ->
                             if (idx in tracks.indices) {
                                 val t = tracks[idx]
                                 setTrackInfo(t.title, t.artist, t.album, t.duration)
+                                updateNowPlaying(t.title, t.artist, albumIdField)
                             }
                         }
                     }
@@ -717,6 +730,7 @@ class VinylActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        clearNowPlaying()
         try { mediaReceiver?.let { unregisterReceiver(it) } } catch (_: Exception) {}
         player?.release()
     }
