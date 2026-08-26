@@ -65,6 +65,8 @@ class VinylActivity : AppCompatActivity() {
     private var cachedAlbumId: Long = -1
     private var lastCoverW = 0; private var lastCoverH = 0
     private var lastLyricIdx = -1
+    private var volumeOverlay: TextView? = null
+    private var volumeHandler: android.os.Handler? = null
 
     // UI refs
     private var titleView: TextView? = null
@@ -528,6 +530,25 @@ class VinylActivity : AppCompatActivity() {
             bottomMargin = dp(100)
         })
 
+        // Volume overlay — appears when adjusting volume
+        volumeHandler = android.os.Handler(mainLooper)
+        volumeOverlay = TextView(this).apply {
+            textSize = 16f
+            setTextColor(0xFFE0E4F0.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xCC0A0C14.toInt())
+                cornerRadius = dp(12).toFloat()
+            }
+            alpha = 0f
+        }
+        root.addView(volumeOverlay, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.CENTER or android.view.Gravity.TOP).apply {
+            topMargin = dp(80)
+        })
+
         // Progress updater
         val progressUpdater = object : Runnable {
             override fun run() {
@@ -704,8 +725,14 @@ class VinylActivity : AppCompatActivity() {
                         val maxVol = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
                         val curVol = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
                         val delta = if (dy < 0) 1 else -1
-                        am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC,
-                            (curVol + delta).coerceIn(0, maxVol), 0)
+                        val newVol = (curVol + delta).coerceIn(0, maxVol)
+                        am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, newVol, 0)
+                        // Show volume indicator
+                        val pct = ((newVol.toFloat() / maxVol) * 100).toInt()
+                        volumeOverlay?.text = "\uD83D\uDD0A  $pct%"
+                        volumeOverlay?.alpha = 0.9f
+                        volumeHandler?.removeCallbacksAndMessages(null)
+                        volumeHandler?.postDelayed({ volumeOverlay?.alpha = 0f }, 1200)
                         return true
                     }
                     // Left half = seek
