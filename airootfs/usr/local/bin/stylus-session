@@ -30,46 +30,16 @@ if [[ ! -s $HOME/.config/stylus/library ]]; then
     /usr/share/stylus/first-run.sh || true
 fi
 
-# ── Deploy autostart do KDE se não existe ───────────────────────────────
-# skel só copia para usuários NOVOS. Usuários que já existiam não recebem.
-# Fazer aqui garante que o autostart existe SEMPRE que o KDE for iniciado.
-KDE_AUTOSTART="$HOME/.config/autostart/stylus-kde.desktop"
-if [[ "$mode" == "desktop" || "$mode" == "kde" ]]; then
-    if [[ ! -f "$KDE_AUTOSTART" ]] && command -v startplasma-x11 &>/dev/null; then
-        mkdir -p "$HOME/.config/autostart"
-        cat > "$KDE_AUTOSTART" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Stylus KDE
-Exec=/usr/local/bin/stylus-kde-shortcuts
-Hidden=false
-NoDisplay=true
-X-KDE-autostart-after-desktop=true
-OnlyShowIn=KDE;
-EOF
-    fi
-fi
-
 case "$mode" in
-    desktop)
+    desktop|kde)
+        # KDE funciona SOZINHO. startplasma-x11 é o script oficial do KDE
+        # que SDDM chama. Não precisa de dbus-launch, não precisa de nada.
+        # Só garantir que ele existe e executar.
         if command -v startplasma-x11 >/dev/null 2>&1; then
-            # Plasma precisa de D-Bus session bus. startplasma-x11 normalmente
-            # é chamado pelo SDDM que já configurou tudo, mas quando passa
-            # pelo stylus-session o D-Bus pode não estar pronto.
-            if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-                eval "$(dbus-launch --sh-syntax)" 2>/dev/null
-                export DBUS_SESSION_BUS_ADDRESS
-            fi
             exec startplasma-x11
         fi
+        # Fallback: i3 se KDE não está instalado
         exec i3
-        ;;
-    kde)
-        if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-            eval "$(dbus-launch --sh-syntax)" 2>/dev/null
-            export DBUS_SESSION_BUS_ADDRESS
-        fi
-        exec startplasma-x11
         ;;
     *)
         exec i3 -c /usr/share/stylus/i3-music.config
