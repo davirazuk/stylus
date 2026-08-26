@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  stylus-switch-kde — instala KDE Plasma e configura tudo
+#  stylus-switch-kde — substitui i3 por KDE Plasma completo
 # ═══════════════════════════════════════════════════════════════════════════
-#    sudo stylus-switch-kde && sudo reboot
+#  sudo stylus-switch-kde && sudo reboot
 #
-#  Para voltar ao i3:
-#    sudo stylus-switch-i3 && sudo reboot
+#  Remove i3 e instala KDE. O SDDM passa a usar plasma.desktop direto,
+#  sem wrapper — é o próprio KDE que decide o que fazer, como em qualquer
+#  distro KDE. O stylus-mode continua funcionando para alternar.
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -21,23 +22,30 @@ REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo stylus)}"
 USER_HOME=$(eval echo "~$REAL_USER")
 ok "Usuário: $REAL_USER ($USER_HOME)"
 
-# ── 1. Pacotes ─────────────────────────────────────────────────────────
-info "Instalando KDE..."
+# ── 1. Remover i3 e dependências ────────────────────────────────────────
+I3_PKGS=(i3-wm i3lock xss-lock polybar rofi picom dunst feh arandr autorandr)
+
+info "Removendo i3 e dependências..."
+pacman -Rns --noconfirm "${I3_PKGS[@]}" 2>/dev/null && ok "i3 removido" || warn "i3 não estava instalado"
+
+# ── 2. Instalar KDE Plasma completo ─────────────────────────────────────
+info "Instalando KDE Plasma..."
 pacman -S --needed --noconfirm \
     plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil khotkeys \
-    kde-gtk-config kvantum sddm konsole dolphin gwenview kate \
-    xdg-desktop-portal-kde qt5ct qt6ct \
-    adw-gtk-theme papirus-icon-theme \
-    ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji noto-fonts-cjk \
-    2>/dev/null && ok "Pacotes OK" || warn "algum pacote falhou"
+    kde-gtk-config kvantum konsole dolphin gwenview kate \
+    xdg-desktop-portal-kde \
+    2>/dev/null && ok "KDE Plasma instalado" || warn "algum pacote falhou"
 
-# ── 2. Modo ────────────────────────────────────────────────────────────
+# ── 3. Modo ────────────────────────────────────────────────────────────
 mkdir -p "$USER_HOME/.config/stylus"
 echo "desktop" > "$USER_HOME/.config/stylus/mode"
 chown "$REAL_USER":"$REAL_USER" "$USER_HOME/.config/stylus/mode"
 ok "Modo: desktop"
 
-# ── 3. SDDM ────────────────────────────────────────────────────────────
+# ── 4. SDDM: plasma.desktop direto ─────────────────────────────────────
+# startplasma-x11 SÓ funciona quando o SDDM lança como sessão KDE.
+# O SDDM configura XDG_CURRENT_DESKTOP=KDE, D-Bus, e tudo que o KDE
+# precisa. O stylus-session com exec startplasma-x11 não faz isso.
 mkdir -p /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/stylus.conf <<SDDM
 [General]
@@ -49,16 +57,40 @@ Current=stylus
 
 [Autologin]
 User=$REAL_USER
-Session=stylus.desktop
+Session=plasma.desktop
 Relogin=true
 SDDM
-ok "SDDM configurado"
+ok "SDDM → plasma.desktop"
 
-# ── 4. KDE Config ──────────────────────────────────────────────────────
+# ── 5. Garantir que xsessions/stylus.desktop existe para stylus-mode ────
+# O stylus-mode toggle precisa de um stylus.desktop para voltar ao i3.
+mkdir -p /usr/share/xsessions
+cat > /usr/share/xsessions/stylus.desktop <<'EOF'
+[Desktop Entry]
+Name=STYLUS
+Comment=Modo música — i3 com atalhos para estante e deck
+Exec=/usr/local/bin/stylus-session
+TryExec=/usr/local/bin/stylus-session
+Type=Application
+DesktopNames=STYLUS
+EOF
+
+# ── 6. Sudoers: permitir stylus-mode trocar sessão sem senha ───────────
+# O stylus-mode roda como USUÁRIO mas precisa trocar o Session= no SDDM.
+# Em vez de polkit ou setuid (shell scripts não aceitam setuid no Arch),
+# damos permissão para um comando específico.
+SUDOERS_STYLUS="/etc/sudoers.d/stylus-mode"
+cat > "$SUDOERS_STYLUS" <<SUDOERS
+# stylus-mode pode trocar a sessão do SDDM sem senha.
+$REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session plasma.desktop, /usr/local/bin/stylus-set-session stylus.desktop
+SUDOERS
+chmod 0440 "$SUDOERS_STYLUS"
+ok "sudoers: stylus-mode pode trocar sessão"
+
+# ── 7. KDE Config ──────────────────────────────────────────────────────
 C="$USER_HOME/.config"
 mkdir -p "$C"
 
-# KWin
 cat > "$C/kwinrc" <<'EOF'
 [Compositing]
 OpenGLIsUnsafe=false
@@ -76,13 +108,11 @@ BorderlessMouseQuickTileEnabled=true
 LayoutName=Compact
 EOF
 
-# Plasma Dark
 cat > "$C/plasmarc" <<'EOF'
 [Theme]
 name=Breeze Dark
 EOF
 
-# GTK Dark
 mkdir -p "$C/gtk-3.0" "$C/gtk-4.0"
 cat > "$C/gtk-3.0/settings.ini" <<'EOF'
 [Settings]
@@ -93,7 +123,6 @@ gtk-font-name=Noto Sans 11
 EOF
 cp "$C/gtk-3.0/settings.ini" "$C/gtk-4.0/settings.ini"
 
-# Qt Fusion Dark
 for ver in qt5ct qt6ct; do
     mkdir -p "$C/$ver"
     cat > "$C/$ver/$ver.conf" <<EOF
@@ -109,7 +138,6 @@ general=@Variant(\0\0\0@\0\0\0\x12Noto Sans\0\0\0\n\0\0\0\0\x28\x7f\0\0\x14)
 EOF
 done
 
-# Konsole Stylus
 mkdir -p "$C/konsole"
 cat > "$C/konsole/Stylus.profile" <<'EOF'
 [General]
@@ -168,17 +196,8 @@ Opacity=0.95
 Blur=true
 EOF
 
-# ── 5. KDE Shortcuts ──────────────────────────────────────────────────
-# kglobalaccel5 é o daemon que faz o Meta key funcionar. Se o
-# kglobalshortcutsrc estiver corrompido, deletar para o KDE recriar.
-KGSC="$C/kglobalshortcutsrc"
-if [[ -f "$KGSC" ]] && ! grep -q "plasma-show-desktop\|_k_friendly_name" "$KGSC" 2>/dev/null; then
-    rm -f "$KGSC"
-    ok "kglobalshortcutsrc corrompido — removido (KDE recria no boot)"
-fi
-
+# ── 8. Autostart: tema e wallpaper ─────────────────────────────────────
 mkdir -p "$C/autostart"
-
 cat > "$C/autostart/stylus-kde.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -190,9 +209,14 @@ X-KDE-autostart-after-desktop=true
 OnlyShowIn=KDE;
 EOF
 
-ok "KDE configs escritas"
+# ── 9. kglobalshortcutsrc corrompido ───────────────────────────────────
+KGSC="$C/kglobalshortcutsrc"
+if [[ -f "$KGSC" ]] && ! grep -q "plasma-show-desktop\|_k_friendly_name" "$KGSC" 2>/dev/null; then
+    rm -f "$KGSC"
+    ok "kglobalshortcutsrc corrompido removido"
+fi
 
-# ── 6. Dono ────────────────────────────────────────────────────────────
+# ── 10. Dono ───────────────────────────────────────────────────────────
 chown -R "$REAL_USER":"$REAL_USER" "$C"
 
 echo ""
@@ -200,10 +224,7 @@ printf "${GREEN}═══ PRONTO ═══${NC}\n"
 echo ""
 echo "  sudo reboot"
 echo ""
-echo "  Depois do reboot:"
-echo "    • Modo música: stylus-mode music"
-echo "    • Modo desktop: stylus-mode desktop"
-echo "    • Deck: stylus-deck"
-echo "    • Estante: stylus-shelf"
-echo "    • Volta pro i3: sudo stylus-switch-i3 && sudo reboot"
+echo "  KDE Plasma é a sessão padrão agora."
+echo "  Para alternar para i3: stylus-mode toggle"
+echo "  Para remover KDE: sudo stylus-switch-i3 && sudo reboot"
 echo ""

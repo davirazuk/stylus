@@ -24,6 +24,17 @@ esac
 [[ $novo == "$cur" ]] && { echo "já está no modo $novo"; exit 0; }
 echo "$novo" > "$F"
 
+# ── Trocar a sessão do SDDM ───────────────────────────────────────────
+# O SDDM precisa saber qual sessão lançar: plasma.desktop para desktop,
+# stylus.desktop (i3) para música.
+if [[ $novo == "desktop" || $novo == "kde" ]]; then
+    sudo /usr/local/bin/stylus-set-session plasma.desktop 2>/dev/null \
+        || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-kde" >&2
+else
+    sudo /usr/local/bin/stylus-set-session stylus.desktop 2>/dev/null \
+        || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-i3" >&2
+fi
+
 # Avisar ANTES de derrubar a sessão: sem isto a tela some sem explicação e
 # parece que alguma coisa quebrou.
 command -v notify-send >/dev/null && \

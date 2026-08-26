@@ -5,8 +5,7 @@
 #  Restaura o i3 como WM padrão. O plasma-desktop NÃO é removido — quem
 #  quer o KDE de volta roda stylus-switch-kde de novo.
 #
-#  sudo stylus-switch-i3
-#  sudo reboot
+#  sudo stylus-switch-i3 && sudo reboot
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -49,15 +48,22 @@ if [[ -f "$SDDM_CONF" ]]; then
         echo "Session=stylus.desktop" >> "$SDDM_CONF"
     fi
 fi
-
 ok "SDDM configurado para i3"
+
+# ── Sudoers: permitir stylus-mode trocar sessão sem senha ───────────────
+SUDOERS_STYLUS="/etc/sudoers.d/stylus-mode"
+cat > "$SUDOERS_STYLUS" <<SUDOERS
+# stylus-mode pode trocar a sessão do SDDM sem senha.
+$REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session plasma.desktop, /usr/local/bin/stylus-set-session stylus.desktop
+SUDOERS
+chmod 0440 "$SUDOERS_STYLUS"
+ok "sudoers: stylus-mode pode trocar sessão"
 
 # ── Modo padrão ──────────────────────────────────────────────────────────
 MODE_FILE="$USER_HOME/.config/stylus/mode"
 mkdir -p "$(dirname "$MODE_FILE")"
 echo "music" > "$MODE_FILE"
 chown -R "$REAL_USER":"$REAL_USER" "$(dirname "$MODE_FILE")"
-
 ok "Modo padrão: music"
 
 echo ""

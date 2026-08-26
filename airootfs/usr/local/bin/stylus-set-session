@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-set-session — troca a sessão do SDDM (roda como root)
+# ═══════════════════════════════════════════════════════════════════════════
+#  Chamado por stylus-mode via sudo. Valida a entrada para não aceitar
+#  qualquer coisa que não seja um nome de sessão conocido.
+#
+#  stylus-set-session plasma.desktop
+#  stylus-set-session stylus.desktop
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "precisa ser root" >&2; exit 1; }
+
+SESSION="${1:?uso: stylus-set-session <plasma.desktop|stylus.desktop>}"
+SDDM_CONF="/etc/sddm.conf.d/stylus.conf"
+
+case "$SESSION" in
+    plasma.desktop|stylus.desktop) ;;
+    *) echo "sessão desconhecida: $SESSION" >&2; exit 1 ;;
+esac
+
+[[ -f "$SDDM_CONF" ]] || { echo "$SDDM_CONF não existe" >&2; exit 1; }
+
+sed -i "s/^Session=.*/Session=$SESSION/" "$SDDM_CONF"
+echo "Sessão → $SESSION"
