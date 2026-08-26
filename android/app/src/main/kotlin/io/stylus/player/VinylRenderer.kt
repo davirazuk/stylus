@@ -241,6 +241,16 @@ class VinylRenderer : GLSurfaceView.Renderer {
         discGlow()
         flush(true)
 
+        // Void rays — light emanating from disc edge into the void
+        vi = 0
+        voidRays()
+        flush(true)
+
+        // Nebula patches — faint colored haze in the void
+        vi = 0
+        nebulaPatches()
+        flush(true)
+
         Matrix.rotateM(model, 0, Math.toDegrees(deckRotation.toDouble()).toFloat(), 0f, 0f, 1f)
         vi = 0
         discBody()
