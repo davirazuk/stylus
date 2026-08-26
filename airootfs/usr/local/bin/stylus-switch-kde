@@ -36,6 +36,13 @@ pacman -S --needed --noconfirm \
     xdg-desktop-portal-kde \
     2>/dev/null && ok "KDE Plasma instalado" || warn "algum pacote falhou"
 
+# Verificar se startplasma-x11 existe
+if ! command -v startplasma-x11 >/dev/null 2>&1; then
+    fail "startplasma-x11 não encontrado — KDE não instalou direito"
+    fail "Rode: sudo pacman -S plasma-desktop && sudo stylus-switch-kde"
+    exit 1
+fi
+
 # ── 3. Modo ────────────────────────────────────────────────────────────
 mkdir -p "$USER_HOME/.config/stylus"
 echo "desktop" > "$USER_HOME/.config/stylus/mode"
@@ -47,6 +54,24 @@ ok "Modo: desktop"
 # O SDDM configura XDG_CURRENT_DESKTOP=KDE, D-Bus, e tudo que o KDE
 # precisa. O stylus-session com exec startplasma-x11 não faz isso.
 mkdir -p /etc/sddm.conf.d
+
+# ── 4a. Garantir que plasma.desktop existe ──────────────────────────────
+# O plasma.desktop normalmente vem do pacote plasma-desktop, mas se o
+# install falhou ou o arquivo sumiu, criamos o nosso. Assim o SDDM
+# sempre tem uma sessão KDE válida para lançar.
+mkdir -p /usr/share/xsessions
+if [[ ! -f /usr/share/xsessions/plasma.desktop ]]; then
+    cat > /usr/share/xsessions/plasma.desktop <<'PLASMA'
+[Desktop Entry]
+Name=Plasma
+Comment=KDE Plasma Desktop
+Exec=/usr/bin/startplasma-x11
+Type=Application
+DesktopNames=KDE
+PLASMA
+    ok "plasma.desktop criado"
+fi
+
 cat > /etc/sddm.conf.d/stylus.conf <<SDDM
 [General]
 DisplayServer=x11
