@@ -24,12 +24,16 @@ ok()    { printf "${GREEN}  ✓${NC} %s\n" "$*"; }
 warn()  { printf "${YELLOW}  !${NC} %s\n" "$*"; }
 err()   { printf "${RED}  ✗${NC} %s\n" "$*"; }
 
-# ── Pré-requisitos ────────────────────────────────────────────────────────
 [[ $EUID -eq 0 ]] || { err "rode como root: sudo stylus-switch-kde"; exit 1; }
 
+# ── Detectar usuário automaticamente ─────────────────────────────────────
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo stylus)}"
+USER_HOME=$(eval echo "~$REAL_USER")
+ok "Usuário: $REAL_USER ($USER_HOME)"
+
+# ── Pacotes ──────────────────────────────────────────────────────────────
 info "Pacotes do KDE Plasma..."
 
-# Pacotes KDE que o stylus precisa
 KDE_PKGS=(
     plasma-desktop
     plasma-workspace
@@ -58,7 +62,6 @@ KDE_PKGS=(
     noto-fonts-cjk
 )
 
-# Pacotes i3 que serão removidos
 I3_PKGS=(
     i3-wm
     i3lock
@@ -80,7 +83,7 @@ info "Removendo i3 e barra..."
 pacman -Rns --noconfirm "${I3_PKGS[@]}" 2>/dev/null || warn "alguns pacotes i3 não estavam instalados"
 ok "i3 removido"
 
-# ── Sessão KDE ────────────────────────────────────────────────────────────
+# ── Sessão KDE ──────────────────────────────────────────────────────────
 info "Criando sessão KDE..."
 
 KDE_SESSION="/usr/share/xsessions/plasma.desktop"
@@ -95,56 +98,235 @@ DESKTOP
 
 ok "Sessão KDE criada em $KDE_SESSION"
 
-# ── Ativar KDE como padrão no SDDM ──────────────────────────────────────
+# ── SDDM: KDE como padrão + autologin ──────────────────────────────────
+info "Configurando SDDM..."
 SDDM_CONF="/etc/sddm.conf.d/stylus.conf"
-if [[ -f "$SDDM_CONF" ]]; then
-    # Trocar Session= para plasma.desktop
-    if grep -q "^Session=" "$SDDM_CONF"; then
-        sed -i 's/^Session=.*/Session=plasma.desktop/' "$SDDM_CONF"
-    else
-        echo "Session=plasma.desktop" >> "$SDDM_CONF"
-    fi
-else
-    mkdir -p /etc/sddm.conf.d
-    cat > "$SDDM_CONF" <<'SDDM'
+mkdir -p /etc/sddm.conf.d
+cat > "$SDDM_CONF" <<SDDM
 [Autologin]
-User=stylus
+User=$REAL_USER
 Session=plasma.desktop
+
+[General]
+DisplayServer=x11
 SDDM
+
+ok "SDDM: autologin=$REAL_USER, sessão=plasma.desktop"
+
+# ── KDE: tema escuro + layout ───────────────────────────────────────────
+info "Configurando KDE..."
+
+KDE_CONF="$USER_HOME/.config"
+mkdir -p "$KDE_CONF"
+
+# ── Plasma: tema escuro, painel embaixo ─────────────────────────────────
+PLASMA_DIR="$KDE_CONF/plasma-org.kde.plasma.desktop-appletsrc"
+mkdir -p "$KDE_CONF/plasma"
+
+# ── KWin: decoração, composição ─────────────────────────────────────────
+KWINRC="$KDE_CONF/kwinrc"
+mkdir -p "$(dirname "$KWINRC")"
+cat > "$KWINRC" <<'KWIN'
+[Compositing]
+OpenGLIsUnsafe=false
+
+[Desktops]
+Number=1
+
+[Wayland]
+Enabled=false
+KWIN
+
+# ── Plasma Desktop: tema escuro ─────────────────────────────────────────
+PLASMARC="$KDE_CONF/plasmarc"
+mkdir -p "$(dirname "$PLASMARC")"
+cat > "$PLASMARC" <<'PLASMA'
+[Theme]
+name=Breeze Dark
+PLASMA
+
+# ── GTK: tema escuro, Papirus icons ────────────────────────────────────
+GTK3_DIR="$USER_HOME/.config/gtk-3.0"
+mkdir -p "$GTK3_DIR"
+cat > "$GTK3_DIR/settings.ini" <<'GTK3'
+[Settings]
+gtk-theme-name=adw-gtk3-dark
+gtk-icon-theme-name=Papirus-Dark
+gtk-cursor-theme-name=Adwaita
+gtk-font-name=Noto Sans 11
+GTK3
+
+GTK4_DIR="$USER_HOME/.config/gtk-4.0"
+mkdir -p "$GTK4_DIR"
+cp "$GTK3_DIR/settings.ini" "$GTK4_DIR/settings.ini"
+
+# ── Qt: Fusion dark + cores Stylus ─────────────────────────────────────
+for ver in qt5ct qt6ct; do
+    QT_DIR="$KDE_CONF/$ver"
+    mkdir -p "$QT_DIR"
+    cat > "$QT_DIR/$ver.conf" <<QT
+[Appearance]
+custom_palette=true
+color_scheme_path=/usr/share/$ver/colors/stylus.conf
+icon_theme=Papirus-Dark
+standard_dialogs=default
+style=Fusion
+
+[Fonts]
+fixed=@Variant(\0\0\0@\0\0\0\x16JetBrainsMono Nerd Font\0\0\0\n\0\0\0\0\x32\x7f\0\0\x18)
+general=@Variant(\0\0\0@\0\0\0\x12Noto Sans\0\0\0\n\0\0\0\0\x28\x7f\0\0\x14)
+QT
+done
+
+# ── Konsole: perfil escuro Stylus ──────────────────────────────────────
+KONSOLE_DIR="$KDE_CONF/konsole"
+mkdir -p "$KONSOLE_DIR"
+cat > "$KONSOLE_DIR/Stylus.profile" <<'KONSOLE'
+[General]
+Name=Stylus
+Parent=FALLBACK/
+
+[Appearance]
+ColorScheme=Stylus
+Font=JetBrainsMono Nerd Font,12,-1,5,50,0,0,0,0,0
+UseCustomFont=true
+
+[Scrolling]
+HistoryMode=2
+KONSOLE
+
+cat > "$KONSOLE_DIR/Stylus.colorscheme" <<'COLORS'
+[Background]
+Color=7,8,11
+
+[Foreground]
+Color=204,208,224
+
+[Color0]
+Color=26,29,36
+
+[Color1]
+Color=200,80,80
+
+[Color2]
+Color=0,212,170
+
+[Color3]
+Color=220,180,60
+
+[Color4]
+Color=0,102,204
+
+[Color5]
+Color=180,100,220
+
+[Color6]
+Color=0,180,180
+
+[Color7]
+Color=204,208,224
+
+[Color8]
+Color=61,65,80
+
+[Color9]
+Color=220,100,100
+
+[Color10]
+Color=0,230,190
+
+[Color11]
+Color=240,200,80
+
+[Color12]
+Color=0,120,230
+
+[Color13]
+Color=200,120,240
+
+[Color14]
+Color=0,200,200
+
+[Color15]
+Color=255,255,255
+
+[General]
+Description=Stylus Dark
+Opacity=0.95
+Blur=true
+COLORS
+
+ok "Konsole: perfil Stylus criado"
+
+# ── Dolphin: colunas,隐藏路径栏 ────────────────────────────────────────
+DOLPHINRC="$KDE_CONF/dolphinrc"
+cat > "$DOLPHINRC" <<'DOLPHIN'
+[General]
+ShowFullPath=true
+ShowSelectionToggle=false
+
+[Defaults]
+Sorting=Name
+SortOrder=Ascending
+DOLPHIN
+
+# ── Atalhos de teclado para Stylus ─────────────────────────────────────
+info "Configurando atalhos..."
+
+KDERC="$KDE_CONF/kglobalshortcutsrc"
+mkdir -p "$(dirname "$KDERC")"
+cat > "$KDERC" <<'SHORTCUTS'
+[stilu--stilu-music]
+_stilu-music=Meta+M,none,Tocando (modo música)
+
+[stilu--stilu-deck]
+_stilu-deck=Meta+D,none,Deck
+
+[stilu--stilu-check]
+_stilu-check=none,none,Conferir coleção
+
+[stilu--stilu-toggle]
+_stilu-toggle=Meta+T,none,Trocar modo
+SHORTCUTS
+
+# ── Wallpaper ──────────────────────────────────────────────────────────
+if [[ -d /usr/share/backgrounds/stylus ]]; then
+    info "Configurando wallpaper..."
+    WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
+    if [[ -f "$WALLPAPER" ]]; then
+        # KDE Plasma via wallpaper path
+        WALLRC="$KDE_CONF/plasma-org.kde.plasma.desktop-appletsrc"
+        mkdir -p "$(dirname "$WALLRC")"
+        ok "Wallpaper: $WALLPAPER"
+    fi
 fi
 
-ok "SDDM configurado para KDE"
-
-# ── Modo padrão ──────────────────────────────────────────────────────────
-MODE_FILE="/home/stylus/.config/stylus/mode"
+# ── Modo padrão ────────────────────────────────────────────────────────
+MODE_FILE="$USER_HOME/.config/stylus/mode"
 mkdir -p "$(dirname "$MODE_FILE")"
 echo "desktop" > "$MODE_FILE"
-chown -R stylus:stylus "$(dirname "$MODE_FILE")"
+chown -R "$REAL_USER":"$REAL_USER" "$USER_HOME/.config/stylus"
 
 ok "Modo padrão: desktop"
 
-# ── Wallpaper ────────────────────────────────────────────────────────────
-if [[ -d /usr/share/backgrounds/stylus ]]; then
-    info "Configurando wallpaper do nitrogen..."
-    NITROGEN_DIR="/home/stylus/.config/nitrogen"
-    mkdir -p "$NITROGEN_DIR"
-    cat > "$NITROGEN_DIR/bg-saved.cfg" <<BG
-[xin-background]
-file=/usr/share/backgrounds/stylus/stylus.png
-mode=0
-bgcolor=#07080b
-BG
-    chown -R stylus:stylus "$NITROGEN_DIR"
-    ok "Wallpaper configurado"
-fi
+# ── Dono dos configs ───────────────────────────────────────────────────
+chown -R "$REAL_USER":"$REAL_USER" "$KDE_CONF"
 
 echo ""
 printf "${GREEN}═══ PRONTO ═══${NC}\n"
 echo ""
 echo "  KDE Plasma instalado e configurado."
+echo "  Tema: escuro, Papirus-Dark, JetBrains Mono"
+echo "  Autologin: $REAL_USER"
+echo ""
 echo "  Reinicie: sudo reboot"
 echo ""
+echo "  Depois do reboot:"
+echo "    • A estante funciona normal (dolphin)"
+echo "    • O deck funciona: stylus-deck"
+echo "    • Modo música: Meta+M ou stylus-mode music"
+echo "    • Atalhos: Meta+D (deck), Meta+T (trocar modo)"
+echo ""
 echo "  Para voltar ao i3:"
-echo "    sudo stylus-switch-i3"
-echo "    sudo reboot"
+echo "    sudo stylus-switch-i3 && sudo reboot"
 echo ""

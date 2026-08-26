@@ -18,6 +18,10 @@ err()   { printf "${RED}  ✗${NC} %s\n" "$*"; }
 
 [[ $EUID -eq 0 ]] || { err "rode como root: sudo stylus-switch-i3"; exit 1; }
 
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo stylus)}"
+USER_HOME=$(eval echo "~$REAL_USER")
+ok "Usuário: $REAL_USER ($USER_HOME)"
+
 # ── Reinstalar i3 e dependências ──────────────────────────────────────────
 I3_PKGS=(
     i3-wm
@@ -49,10 +53,10 @@ fi
 ok "SDDM configurado para i3"
 
 # ── Modo padrão ──────────────────────────────────────────────────────────
-MODE_FILE="/home/stylus/.config/stylus/mode"
+MODE_FILE="$USER_HOME/.config/stylus/mode"
 mkdir -p "$(dirname "$MODE_FILE")"
 echo "music" > "$MODE_FILE"
-chown -R stylus:stylus "$(dirname "$MODE_FILE")"
+chown -R "$REAL_USER":"$REAL_USER" "$(dirname "$MODE_FILE")"
 
 ok "Modo padrão: music"
 
