@@ -28,10 +28,10 @@ ok "Usuário: $REAL_USER ($USER_HOME)"
 # remover o i3.
 info "Instalando KDE Plasma..."
 pacman -S --needed --noconfirm \
-    plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil khotkeys \
+    plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil \
     kde-gtk-config kvantum konsole dolphin gwenview kate \
     xdg-desktop-portal-kde \
-    2>/dev/null && ok "KDE Plasma instalado" || { fail "KDE não instalou — i3 mantido"; exit 1; }
+    && ok "KDE Plasma instalado" || { fail "KDE não instalou — i3 mantido"; exit 1; }
 
 # Verificar se startplasma-x11 existe
 if ! command -v startplasma-x11 >/dev/null 2>&1; then
