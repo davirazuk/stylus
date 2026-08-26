@@ -631,6 +631,12 @@ class VinylActivity : AppCompatActivity() {
                     "io.stylus.player.MEDIA_NEXT" -> skipToNext()
                     "io.stylus.player.MEDIA_TOGGLE" -> togglePlayPause()
                     "io.stylus.player.TOGGLE_PLAY" -> togglePlayPause()
+                    "io.stylus.player.MEDIA_STOP" -> {
+                        playing = false; player?.pause()
+                        if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                        VinylActivity.clearNowPlaying()
+                        finish()
+                    }
                 }
             }
         }
@@ -639,6 +645,7 @@ class VinylActivity : AppCompatActivity() {
             addAction("io.stylus.player.MEDIA_NEXT")
             addAction("io.stylus.player.MEDIA_TOGGLE")
             addAction("io.stylus.player.TOGGLE_PLAY")
+            addAction("io.stylus.player.MEDIA_STOP")
         }
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             registerReceiver(mediaReceiver, filter, android.content.Context.RECEIVER_EXPORTED)

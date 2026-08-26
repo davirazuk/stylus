@@ -39,6 +39,11 @@ class BitPerfectService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             "TOGGLE" -> sendBroadcast(Intent("io.stylus.player.TOGGLE_PLAY"))
+            "STOP" -> {
+                sendBroadcast(Intent("io.stylus.player.MEDIA_STOP"))
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
         return START_STICKY
     }
@@ -49,13 +54,15 @@ class BitPerfectService : Service() {
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Pending intents for prev/pause/next broadcast to activity
+        // Pending intents for prev/pause/next/stop broadcast to activity
         val prevPi = PendingIntent.getBroadcast(this, 1,
             Intent("io.stylus.player.MEDIA_PREV"), PendingIntent.FLAG_IMMUTABLE)
         val togglePi = PendingIntent.getBroadcast(this, 2,
             Intent("io.stylus.player.MEDIA_TOGGLE"), PendingIntent.FLAG_IMMUTABLE)
         val nextPi = PendingIntent.getBroadcast(this, 3,
             Intent("io.stylus.player.MEDIA_NEXT"), PendingIntent.FLAG_IMMUTABLE)
+        val stopPi = PendingIntent.getService(this, 4,
+            Intent(this, BitPerfectService::class.java).apply { action = "STOP" }, PendingIntent.FLAG_IMMUTABLE)
 
         val builder = Notification.Builder(this, CH)
             .setSmallIcon(android.R.drawable.ic_media_play)
@@ -69,6 +76,7 @@ class BitPerfectService : Service() {
             .addAction(Notification.Action.Builder(null,
                 if (playing) "Pause" else "Play", togglePi).build())
             .addAction(Notification.Action.Builder(null, "Next", nextPi).build())
+            .addAction(Notification.Action.Builder(null, "Stop", stopPi).build())
             .setStyle(
                 Notification.MediaStyle()
                     .setMediaSession(token)
