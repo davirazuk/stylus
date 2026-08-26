@@ -401,12 +401,22 @@ class VinylActivity : AppCompatActivity() {
         }
         controlsRow.addView(sleepBtn)
 
+        // DLNA cast button
+        val castBtn = TextView(this).apply {
+            text = "\u25C8"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 14f
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            setOnClickListener { showCastDialog() }
+        }
+        controlsRow.addView(castBtn)
+
         val hint = TextView(this).apply {
-            text = "toque para pausar"
+            text = "toque = pausar | swipe = faixa | duplo toque = playlist"
             setTextColor(0xFF8892B0.toInt())
-            textSize = 9f
+            textSize = 8f
             gravity = android.view.Gravity.CENTER
-            alpha = 0.5f
+            alpha = 0.4f
         }
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100; progress = 0
