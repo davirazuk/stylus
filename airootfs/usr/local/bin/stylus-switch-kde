@@ -22,26 +22,31 @@ REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo stylus)}"
 USER_HOME=$(eval echo "~$REAL_USER")
 ok "Usuário: $REAL_USER ($USER_HOME)"
 
-# ── 1. Remover i3 e dependências ────────────────────────────────────────
-I3_PKGS=(i3-wm i3lock xss-lock polybar rofi picom dunst feh arandr autorandr)
-
-info "Removendo i3 e dependências..."
-pacman -Rns --noconfirm "${I3_PKGS[@]}" 2>/dev/null && ok "i3 removido" || warn "i3 não estava instalado"
-
-# ── 2. Instalar KDE Plasma completo ─────────────────────────────────────
+# ── 1. Instalar KDE Plasma PRIMEIRO ────────────────────────────────────
+# NÃO remover i3 antes: se a instalação do KDE falhar, a máquina fica
+# sem nenhum window manager e trava. Instalar, verificar, e SÓ DEPOIS
+# remover o i3.
 info "Instalando KDE Plasma..."
 pacman -S --needed --noconfirm \
     plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil khotkeys \
     kde-gtk-config kvantum konsole dolphin gwenview kate \
     xdg-desktop-portal-kde \
-    2>/dev/null && ok "KDE Plasma instalado" || warn "algum pacote falhou"
+    2>/dev/null && ok "KDE Plasma instalado" || { fail "KDE não instalou — i3 mantido"; exit 1; }
 
 # Verificar se startplasma-x11 existe
 if ! command -v startplasma-x11 >/dev/null 2>&1; then
     fail "startplasma-x11 não encontrado — KDE não instalou direito"
-    fail "Rode: sudo pacman -S plasma-desktop && sudo stylus-switch-kde"
+    fail "i3 continua funcionando. Tente: sudo pacman -S plasma-desktop"
     exit 1
 fi
+
+ok "startplasma-x11 encontrado"
+
+# ── 2. Agora sim: remover i3 ──────────────────────────────────────────
+I3_PKGS=(i3-wm i3lock xss-lock polybar rofi picom dunst feh arandr autorandr)
+
+info "Removendo i3..."
+pacman -Rns --noconfirm "${I3_PKGS[@]}" 2>/dev/null && ok "i3 removido" || warn "i3 não estava instalado"
 
 # ── 3. Modo ────────────────────────────────────────────────────────────
 mkdir -p "$USER_HOME/.config/stylus"
