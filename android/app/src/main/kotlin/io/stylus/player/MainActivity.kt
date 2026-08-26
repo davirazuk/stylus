@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private var allAlbums = listOf<Library.Album>()
     private var filteredAlbums = listOf<Library.Album>()
     private var sortMode = 0
+    private val sortLabels = listOf("A-Z", "ARTISTA", "RECENTE", "FAVORITOS")
 
     companion object {
         private const val PERM_REQ = 100
@@ -96,14 +97,14 @@ class MainActivity : AppCompatActivity() {
         headerRow.addView(dacIndicator)
 
         sortBtn = TextView(this).apply {
-            text = listOf("A-Z", "ARTISTA", "RECENTE")[sortMode]
+            text = sortLabels[sortMode]
             setTextColor(0xFF4A5570.toInt())
             textSize = 9f
             letterSpacing = 0.06f
             setPadding(dp(12), dp(4), dp(4), dp(4))
             setOnClickListener {
-                sortMode = (sortMode + 1) % 3
-                text = listOf("A-Z", "ARTISTA", "RECENTE")[sortMode]
+                sortMode = (sortMode + 1) % sortLabels.size
+                text = sortLabels[sortMode]
                 prefs.edit().putInt("sort_mode", sortMode).apply()
                 applyFilter()
             }
@@ -353,6 +354,7 @@ class MainActivity : AppCompatActivity() {
         filteredAlbums = when (sortMode) {
             1 -> filteredAlbums.sortedBy { it.artist.lowercase() }
             2 -> filteredAlbums.recentlyPlayed(prefs)
+            3 -> filteredAlbums.filter { prefs.getBoolean("fav_${it.id}", false) }
             else -> filteredAlbums.sortedBy { it.name.lowercase() }
         }
 
@@ -658,7 +660,17 @@ class MainActivity : AppCompatActivity() {
             }
             card.addView(meta)
 
-            return VH(card, cover, title, artist, meta)
+            // Favorite star button (click handled in onBindViewHolder)
+            val favBtn = TextView(ctx).apply {
+                text = "\u2606"
+                setTextColor(0xFF4A5570.toInt())
+                textSize = 14f
+                setPadding(dp2(ctx, 4), 0, dp2(ctx, 6), dp2(ctx, 2))
+                id = View.generateViewId()
+            }
+            card.addView(favBtn)
+
+            return VH(card, cover, title, artist, meta, favBtn)
         }
 
         override fun onBindViewHolder(holder: VH, position: Int) {
@@ -696,6 +708,17 @@ class MainActivity : AppCompatActivity() {
                 holder.artist.setTextColor(0xFF4A5570.toInt())
             }
 
+            // Favorite state + click
+            val isFav = prefs.getBoolean("fav_${album.id}", false)
+            holder.favBtn?.text = if (isFav) "\u2605" else "\u2606"
+            holder.favBtn?.setTextColor(if (isFav) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+            holder.favBtn?.setOnClickListener {
+                val wasFav = prefs.getBoolean("fav_${album.id}", false)
+                prefs.edit().putBoolean("fav_${album.id}", !wasFav).apply()
+                holder.favBtn.text = if (!wasFav) "\u2605" else "\u2606"
+                holder.favBtn.setTextColor(if (!wasFav) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+            }
+
             // Fix click and long-click
             holder.card.setOnClickListener { onClick(album) }
             holder.card.setOnLongClickListener { onLongClick(album); true }
@@ -711,6 +734,7 @@ class MainActivity : AppCompatActivity() {
         val cover: ImageView,
         val title: TextView,
         val artist: TextView,
-        val meta: TextView
+        val meta: TextView,
+        val favBtn: TextView? = null
     ) : RecyclerView.ViewHolder(card)
 }
