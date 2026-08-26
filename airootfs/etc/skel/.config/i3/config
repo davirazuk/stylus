@@ -105,6 +105,10 @@ bindsym $mod+Return    exec $term
 bindsym $mod+d         exec $menu
 bindsym $mod+e         exec thunar
 bindsym $mod+g         exec stylus-ui
+# Mod+M — o vinil. Tocando algo: abre o deck em modo view (observa, não
+# reinicia nada). Nada tocando: sorteia um disco com a cerimônia inteira.
+# A mesma decisão que o Enter da AGORA toma — um atalho, dois contextos.
+bindsym $mod+m         exec --no-startup-id bash -c 'if playerctl -l 2>/dev/null | grep -q .; then exec stylus-deck --view; else exec stylus-deck; fi'
 # Ctrl+Shift+Esc is the reflex everyone brings from Windows; Mod+Esc is the
 # same idea without clashing with a terminal's Ctrl+Shift bindings. Falls back
 # to htop in a terminal if the graphical one is not installed.

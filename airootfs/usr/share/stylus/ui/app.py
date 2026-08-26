@@ -170,6 +170,15 @@ class NowScreen(Screen):
             spawn(["pamixer", "-d", "5"])
             self.app.toast(f"volume {self.app.volume_pct()}%")
             return True
+        # D de deck: o protetor de tela que é o próprio deck, ligado ou não.
+        # Quem sentou para CONVERSAR não quer a tela virando sozinha; quem
+        # saiu do sofá quer. É uma escolha da noite, e fica guardada.
+        if ev.key == pygame.K_d:
+            self.app.auto_deck = not self.app.auto_deck
+            _save_prefs({"auto_deck": self.app.auto_deck})
+            self.app.toast("deck sozinho: LIGADO" if self.app.auto_deck
+                           else "deck sozinho: DESLIGADO (fica na AGORA)")
+            return True
         return False
 
     def draw(self, s, r):
@@ -263,7 +272,9 @@ class NowScreen(Screen):
                     yl += 12
 
         self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
-                            "n/p faixa   ←/→ busca   v/b lado   +/- volume")
+                            "n/p faixa   ←/→ busca   v/b lado   +/- volume   "
+                            + ("D deck sozinho: ligado" if self.app.auto_deck
+                               else "D deck sozinho: desligado"))
 
     def _groove(self, s, rect, frac):
         """Barra de progresso como sulco — começo na borda, fim no centro."""
@@ -1417,6 +1428,26 @@ class InstallScreen(Screen):
 # A casca
 # ═══════════════════════════════════════════════════════════════════════════
 STACK_FILE = os.path.expanduser("~/.local/share/stylus/stack.json")
+UI_PREFS_FILE = os.path.expanduser("~/.local/share/stylus/ui.json")
+
+
+def _load_prefs():
+    try:
+        import json
+        with open(UI_PREFS_FILE, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:                 # noqa: BLE001 — sem arquivo é primeiro uso
+        return {}
+
+
+def _save_prefs(p):
+    try:
+        import json
+        os.makedirs(os.path.dirname(UI_PREFS_FILE), exist_ok=True)
+        with open(UI_PREFS_FILE, "w", encoding="utf-8") as fh:
+            json.dump(p, fh)
+    except OSError:
+        pass
 
 
 class _DesktopItem:
@@ -1489,9 +1520,12 @@ class App:
         self._backdrops = {}
         # Protetor de tela que é o PROPRIO deck: parado na AGORA sem tocar em
         # nada, a tela chama o disco sozinha, uma vez por álbum (ver run()).
+        # Ligado/desligado pelo 'D' na AGORA — e a escolha fica guardada:
+        # quem desligou uma vez não quer que a máquina "esqueça" e volte.
         self.IDLE_DECK_SECS = 240
         self._ultima_entrada = time.time()
         self._deck_auto = None
+        self.auto_deck = bool(_load_prefs().get("auto_deck", True))
         self._born = time.time()
         self.pads = []
         self._pad_ax = 0.0
@@ -2075,6 +2109,8 @@ class App:
         janela de desenvolvimento, que não é uma sala de estar.
         """
         if os.environ.get("STYLUS_UI_WINDOWED"):
+            return
+        if not self.auto_deck:
             return
         if not isinstance(self.screens[self.cur], NowScreen):
             return

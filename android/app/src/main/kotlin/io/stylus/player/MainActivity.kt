@@ -199,11 +199,12 @@ class MainActivity : AppCompatActivity() {
 
         // Empty
         emptyView = TextView(this).apply {
-            text = "Nenhuma musica encontrada"
+            text = "\u25CE\nNenhuma musica encontrada\n\nConecte um USB com musicas\nou configure o WebDAV"
             setTextColor(0xFF3A4560.toInt())
             textSize = 14f
             visibility = View.GONE
             gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.4f)
         }
         root.addView(emptyView, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
