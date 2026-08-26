@@ -43,7 +43,10 @@ fi
 ok "startplasma-x11 encontrado"
 
 # ── 2. Agora sim: remover i3 ──────────────────────────────────────────
-I3_PKGS=(i3-wm i3lock xss-lock polybar rofi picom dunst feh arandr autorandr)
+# rofi NÃO é removido: stylus-shelf e stylus-pickfolder dependem dele
+# dunst NÃO é removido: stylus-mouse e stylus-side-watch dependem dele
+# feh NÃO é removido: stylus-wallpaper depende dele
+I3_PKGS=(i3-wm i3lock xss-lock polybar picom arandr autorandr)
 
 info "Removendo i3..."
 pacman -Rns --noconfirm "${I3_PKGS[@]}" 2>/dev/null && ok "i3 removido" || warn "i3 não estava instalado"
@@ -84,11 +87,19 @@ Numlock=on
 
 [Theme]
 Current=stylus
+CursorTheme=Adwaita
+CursorSize=24
 
 [Autologin]
 User=$REAL_USER
 Session=plasma.desktop
 Relogin=true
+
+[X11]
+MinimumVT=7
+
+[Users]
+HideShells=/usr/bin/nologin,/sbin/nologin
 SDDM
 ok "SDDM → plasma.desktop"
 
@@ -118,25 +129,10 @@ chmod 0440 "$SUDOERS_STYLUS"
 ok "sudoers: stylus-mode pode trocar sessão"
 
 # ── 7. KDE Config ──────────────────────────────────────────────────────
+# Stock KDE: não mexemos no kwinrc (deixa o KDE decidir focus policy,
+# compositor, atalhos). Só tema e visual.
 C="$USER_HOME/.config"
 mkdir -p "$C"
-
-cat > "$C/kwinrc" <<'EOF'
-[Compositing]
-OpenGLIsUnsafe=false
-LatencyPolicy=85
-
-[Desktops]
-Number=1
-
-[Windows]
-BorderlessMaximizedWindows=true
-FocusPolicy=ClickRaise
-BorderlessMouseQuickTileEnabled=true
-
-[TabBox]
-LayoutName=Compact
-EOF
 
 cat > "$C/plasmarc" <<'EOF'
 [Theme]
@@ -239,14 +235,7 @@ X-KDE-autostart-after-desktop=true
 OnlyShowIn=KDE;
 EOF
 
-# ── 9. kglobalshortcutsrc corrompido ───────────────────────────────────
-KGSC="$C/kglobalshortcutsrc"
-if [[ -f "$KGSC" ]] && ! grep -q "plasma-show-desktop\|_k_friendly_name" "$KGSC" 2>/dev/null; then
-    rm -f "$KGSC"
-    ok "kglobalshortcutsrc corrompido removido"
-fi
-
-# ── 10. Dono ───────────────────────────────────────────────────────────
+# ── 9. Dono ───────────────────────────────────────────────────────────
 chown -R "$REAL_USER":"$REAL_USER" "$C"
 
 echo ""

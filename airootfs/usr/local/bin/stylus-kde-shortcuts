@@ -1,48 +1,19 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  stylus-kde-shortcuts — roda no login do KDE, garante que tudo funciona
+#  stylus-kde-shortcuts — roda no login do KDE
 # ═══════════════════════════════════════════════════════════════════════════
-#  Chamado pelo autostart do KDE. NÃO checa XDG_CURRENT_DESKTOP porque
-#  no autostart pode não estar setado ainda. Se existe plasmashell OU
-#  kwin, estamos no KDE.
+#  Stock KDE + atalho Mod+M para a estante. Não mexe no kglobalshortcutsrc,
+#  não mexe no kwinrc — o KDE cuida disso. Só adiciona o atalho do Stylus
+#  e aplica wallpaper.
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-# ── Detectar KDE por processos, não por variável ───────────────────────
+# ── Detectar KDE ───────────────────────────────────────────────────────
 if ! pgrep -x plasmashell >/dev/null 2>&1 && \
    ! pgrep -x kwin_x11 >/dev/null 2>&1 && \
    ! pgrep -x kwin_wayland >/dev/null 2>&1; then
     exit 0
 fi
-
-# ── kglobalaccel5: Meta key ────────────────────────────────────────────
-if ! pgrep -x kglobalaccel5 >/dev/null 2>&1; then
-    kglobalaccel5 &>/dev/null &
-    sleep 2
-fi
-
-# ── plasmashell: painel e desktop ──────────────────────────────────────
-if ! pgrep -x plasmashell >/dev/null 2>&1; then
-    plasmashell &>/dev/null &
-    sleep 3
-fi
-
-# ── kglobalshortcutsrc: deletar se corrompido ──────────────────────────
-KGSC="$HOME/.config/kglobalshortcutsrc"
-if [[ -f "$KGSC" ]]; then
-    if ! grep -q "plasma-show-desktop\|_k_friendly_name" "$KGSC" 2>/dev/null; then
-        rm -f "$KGSC"
-    fi
-fi
-
-# ── KWin ───────────────────────────────────────────────────────────────
-kwriteconfig5 --file kwinrc --group Compositing --key OpenGLIsUnsafe false 2>/dev/null
-kwriteconfig5 --file kwinrc --group Desktops --key Number 1 2>/dev/null
-kwriteconfig5 --file kwinrc --group Windows --key BorderlessMaximizedWindows true 2>/dev/null
-kwriteconfig5 --file kwinrc --group Windows --key FocusPolicy ClickRaise 2>/dev/null
-
-# ── Tema ───────────────────────────────────────────────────────────────
-kwriteconfig5 --file plasmarc --group Theme --key name "Breeze Dark" 2>/dev/null
 
 # ── Wallpaper ──────────────────────────────────────────────────────────
 WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
@@ -53,5 +24,19 @@ fi
 # ── Numlock ────────────────────────────────────────────────────────────
 command -v numlockx &>/dev/null && numlockx on 2>/dev/null
 
-# ── Aplicar ────────────────────────────────────────────────────────────
-qdbus org.kde.KWin /KWin reconfigure 2>/dev/null
+# ── Atalho: Mod+M → estante ──────────────────────────────────────────
+KGSC="$HOME/.config/kglobalshortcutsrc"
+SHELF_ID="styalus-shelf"
+mkdir -p "$(dirname "$KGSC")"
+if ! grep -q "\[$SHELF_ID\]" "$KGSC" 2>/dev/null; then
+    killall kglobalaccel5 2>/dev/null
+    sleep 0.5
+    {
+        echo ""
+        echo "[$SHELF_ID]"
+        echo "_k_friendly_name=Stylus Shelf"
+        echo "$SHELF_ID=Meta+M,none,Abrir estante"
+    } >> "$KGSC"
+    kglobalaccel5 &>/dev/null &
+    sleep 1
+fi
