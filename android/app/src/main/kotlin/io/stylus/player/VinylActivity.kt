@@ -469,6 +469,10 @@ class VinylActivity : AppCompatActivity() {
             textSize = 8f
             gravity = android.view.Gravity.CENTER
             alpha = 0.4f
+            // Fade out after 5 seconds
+            postDelayed({
+                animate().alpha(0f).setDuration(1000).start()
+            }, 5000)
         }
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100; progress = 0
