@@ -14,6 +14,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -23,19 +24,20 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlin.math.min
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var recycler: RecyclerView
     private lateinit var emptyView: TextView
-    private lateinit var bottomText: TextView
-    private lateinit var searchInput: android.widget.EditText
+    private lateinit var statsBar: LinearLayout
+    private lateinit var searchInput: EditText
     private lateinit var sortBtn: TextView
     private lateinit var dacIndicator: TextView
     private lateinit var prefs: SharedPreferences
     private var allAlbums = listOf<Library.Album>()
     private var filteredAlbums = listOf<Library.Album>()
-    private var sortMode = 0 // 0=name, 1=artist, 2=recent
+    private var sortMode = 0
 
     companion object {
         private const val PERM_REQ = 100
@@ -53,52 +55,50 @@ class MainActivity : AppCompatActivity() {
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         )
-        window.statusBarColor = 0xFF07080B.toInt()
-        window.navigationBarColor = 0xFF07080B.toInt()
+        window.statusBarColor = 0xFF050608.toInt()
+        window.navigationBarColor = 0xFF050608.toInt()
 
-        val root = FrameLayout(this).apply { setBackgroundColor(0xFF07080B.toInt()) }
+        val root = FrameLayout(this).apply { setBackgroundColor(0xFF050608.toInt()) }
 
-        // Header row: STYLUS + sort + settings
+        // Header
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(20), dp(48), dp(20), dp(4))
+            setPadding(dp(20), dp(44), dp(20), dp(2))
             gravity = Gravity.CENTER_VERTICAL
         }
         val header = TextView(this).apply {
             text = "STYLUS"
-            setTextColor(0xFF8892B0.toInt())
-            textSize = 11f
-            letterSpacing = 0.18f
+            setTextColor(0xFF6A7590.toInt())
+            textSize = 10f
+            letterSpacing = 0.22f
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         headerRow.addView(header)
 
-        // USB DAC indicator
         dacIndicator = TextView(this).apply {
             text = ""
             setTextColor(0xFF5A8A5A.toInt())
-            textSize = 9f
+            textSize = 8f
             setPadding(dp(6), dp(2), dp(6), dp(2))
             visibility = View.GONE
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0x225A8A5A.toInt())
-                cornerRadius = dp(6).toFloat()
-                setStroke(1, 0x445A8A5A)
+                setColor(0x185A8A5A.toInt())
+                cornerRadius = dp(4).toFloat()
+                setStroke(1, 0x335A8A5A)
             }
         }
         headerRow.addView(dacIndicator)
 
-        // Sort button
-        val sortLabels = arrayOf("A-Z", "Artista", "Recente")
         sortBtn = TextView(this).apply {
-            text = sortLabels[sortMode]
-            setTextColor(0xFF6B7898.toInt())
-            textSize = 10f
+            text = listOf("A-Z", "ARTISTA", "RECENTE")[sortMode]
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 9f
+            letterSpacing = 0.06f
             setPadding(dp(12), dp(4), dp(4), dp(4))
             setOnClickListener {
                 sortMode = (sortMode + 1) % 3
-                text = sortLabels[sortMode]
+                text = listOf("A-Z", "ARTISTA", "RECENTE")[sortMode]
                 prefs.edit().putInt("sort_mode", sortMode).apply()
                 applyFilter()
             }
@@ -106,40 +106,36 @@ class MainActivity : AppCompatActivity() {
         headerRow.addView(sortBtn)
 
         val menuBtn = TextView(this).apply {
-            text = "⋮"
-            setTextColor(0xFF6B7898.toInt())
-            textSize = 20f
+            text = "\u22EE"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 18f
             setPadding(dp(12), dp(4), dp(4), dp(4))
-            setOnClickListener { showWebdavDialog() }
+            setOnClickListener { showMenuDialog() }
         }
         headerRow.addView(menuBtn)
         root.addView(headerRow, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
-        // Search bar
+        // Search
         val searchContainer = FrameLayout(this).apply {
-            setPadding(dp(20), dp(56), dp(20), dp(0))
+            setPadding(dp(16), dp(50), dp(16), dp(0))
         }
-        searchInput = android.widget.EditText(this).apply {
-            hint = "Buscar album ou artista..."
+        searchInput = EditText(this).apply {
+            hint = "Buscar..."
             setTextColor(0xFFD0D8E8.toInt())
-            setHintTextColor(0xFF4A5570.toInt())
+            setHintTextColor(0xFF3A4560.toInt())
             textSize = 13f
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
             isSingleLine = true
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xFF0E1018.toInt())
-                cornerRadius = dp(10).toFloat()
-                setStroke(1, 0xFF1A2030.toInt())
+                setColor(0xFF0A0C12.toInt())
+                cornerRadius = dp(8).toFloat()
+                setStroke(1, 0xFF151A28.toInt())
             }
-            setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, android.R.drawable.ic_menu_search, 0)
-            compoundDrawablePadding = dp(8)
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    applyFilter()
-                }
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { applyFilter() }
                 override fun afterTextChanged(s: android.text.Editable?) {}
             })
         }
@@ -148,23 +144,34 @@ class MainActivity : AppCompatActivity() {
         ))
         root.addView(searchContainer, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(88) })
+        ).apply { topMargin = dp(80) })
+
+        // Stats bar
+        statsBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(20), dp(4), dp(20), dp(2))
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        root.addView(statsBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(118) })
 
         // Grid
         recycler = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@MainActivity, calcCols())
-            setPadding(dp(14), dp(140), dp(14), dp(72))
+            setPadding(dp(10), dp(150), dp(10), dp(60))
             clipToPadding = false
+            overScrollMode = RecyclerView.OVER_SCROLL_NEVER
         }
         root.addView(recycler, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        // Empty state
+        // Empty
         emptyView = TextView(this).apply {
             text = "Nenhuma musica encontrada"
-            setTextColor(0xFF5A6480.toInt())
-            textSize = 15f
+            setTextColor(0xFF3A4560.toInt())
+            textSize = 14f
             visibility = View.GONE
             gravity = Gravity.CENTER
         }
@@ -172,28 +179,26 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        // Bottom bar: album count + shuffle + play
+        // Bottom bar
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF141824.toInt())
-            setPadding(dp(16), dp(10), dp(16), dp(10))
+            setBackgroundColor(0xFF0A0C12.toInt())
+            setPadding(dp(16), dp(8), dp(16), dp(8))
             gravity = Gravity.CENTER_VERTICAL
-            elevation = dp(8).toFloat()
         }
-        bottomText = TextView(this).apply {
-            text = "${allAlbums.size} albuns"
-            setTextColor(0xFF8A94B0.toInt())
-            textSize = 12f
+        val bottomText = TextView(this).apply {
+            text = ""
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 11f
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        bottomBar.addView(bottomText)
+        statsBar.tag = bottomText  // store reference
 
-        // Shuffle button
         val shuffleBtn = TextView(this).apply {
-            text = "\u21C4"  // shuffle symbol
-            setTextColor(0xFF6B7898.toInt())
+            text = "\u21C4"
+            setTextColor(0xFF4A5570.toInt())
             textSize = 16f
-            setPadding(dp(8), dp(4), dp(12), dp(4))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
             setOnClickListener {
                 if (filteredAlbums.isNotEmpty()) {
                     val shuffled = filteredAlbums.shuffled()
@@ -203,20 +208,22 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        bottomBar.addView(shuffleBtn)
 
-        // Play button
         val playBtn = TextView(this).apply {
             text = "\u25B6"
-            setTextColor(0xFFE8ECF5.toInt())
-            textSize = 18f
-            setPadding(dp(12), dp(4), dp(12), dp(4))
+            setTextColor(0xFFB0B8D0.toInt())
+            textSize = 16f
+            setPadding(dp(10), dp(4), dp(10), dp(4))
             setOnClickListener {
                 if (filteredAlbums.isNotEmpty()) {
+                    prefs.edit().putLong("played_${filteredAlbums[0].id}", System.currentTimeMillis()).apply()
                     startActivity(VinylActivity.ceremonyIntent(this@MainActivity, filteredAlbums[0].id))
                 }
             }
         }
+
+        bottomBar.addView(bottomText)
+        bottomBar.addView(shuffleBtn)
         bottomBar.addView(playBtn)
         root.addView(bottomBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -229,18 +236,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun calcCols(): Int {
         val px = resources.displayMetrics.widthPixels
-        return (px / dp(160)).coerceIn(2, 5)
+        return (px / dp(170)).coerceIn(2, 5)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun hasPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= 33) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
-        } else {
-            @Suppress("DEPRECATION")
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-        }
+    private fun hasPermission(): Boolean = if (Build.VERSION.SDK_INT >= 33) {
+        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+    } else {
+        @Suppress("DEPRECATION")
+        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun requestPermission() {
@@ -251,12 +256,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(code, permissions, results)
-        if (code == PERM_REQ && results.isNotEmpty() && results[0] == PackageManager.PERMISSION_GRANTED) {
-            loadAlbums()
-        } else if (code == PERM_REQ) {
-            emptyView.text = "Sem permissao de leitura"
-            emptyView.visibility = View.VISIBLE
-        }
+        if (code == PERM_REQ && results.isNotEmpty() && results[0] == PackageManager.PERMISSION_GRANTED) loadAlbums()
+        else if (code == PERM_REQ) { emptyView.text = "Sem permissao"; emptyView.visibility = View.VISIBLE }
     }
 
     private fun loadAlbums() {
@@ -270,13 +271,9 @@ class MainActivity : AppCompatActivity() {
             val folderAlbums = Library.shelfByFolders(roots)
             if (list.isEmpty() && folderAlbums.isNotEmpty()) {
                 list = folderAlbums.mapIndexed { idx, f ->
-                    Library.Album(
-                        id = 900000L + idx,
-                        name = f.name,
+                    Library.Album(id = 900000L + idx, name = f.name,
                         artist = f.parentFile?.name ?: "Desconhecido",
-                        trackCount = Library.tracksFromFolder(f).size,
-                        artUri = null
-                    )
+                        trackCount = Library.tracksFromFolder(f).size, artUri = null)
                 }
             }
         } catch (_: Exception) {}
@@ -289,25 +286,31 @@ class MainActivity : AppCompatActivity() {
         filteredAlbums = if (query.isEmpty()) allAlbums else {
             allAlbums.filter { it.name.lowercase().contains(query) || it.artist.lowercase().contains(query) }
         }
-        // Sort
         filteredAlbums = when (sortMode) {
             1 -> filteredAlbums.sortedBy { it.artist.lowercase() }
             2 -> filteredAlbums.recentlyPlayed(prefs)
             else -> filteredAlbums.sortedBy { it.name.lowercase() }
         }
 
-        bottomText.text = when {
+        // Stats
+        val totalTracks = filteredAlbums.sumOf { it.trackCount }
+        val totalMs = filteredAlbums.sumOf { it.totalDuration }
+        val totalH = totalMs / 3600000
+        val totalM = (totalMs % 3600000) / 60000
+        val statsText = when {
             filteredAlbums.isEmpty() -> "Nenhum album"
             query.isNotEmpty() -> "${filteredAlbums.size} resultado${if (filteredAlbums.size != 1) "s" else ""}"
-            else -> "${filteredAlbums.size} albuns"
+            else -> "${filteredAlbums.size} albuns \u2022 ${totalTracks} faixas \u2022 ${totalH}h${totalM}m"
         }
+        val tv = statsBar.tag as? TextView
+        tv?.text = statsText
+
         if (filteredAlbums.isEmpty()) {
             emptyView.text = if (query.isNotEmpty()) "Nada para \"$query\"" else "Nenhuma musica encontrada"
             emptyView.visibility = View.VISIBLE
         } else {
             emptyView.visibility = View.GONE
             recycler.adapter = AlbumAdapter(filteredAlbums, contentResolver, prefs) { album ->
-                // Record play for recently played
                 prefs.edit().putLong("played_${album.id}", System.currentTimeMillis()).apply()
                 startActivity(VinylActivity.ceremonyIntent(this, album.id))
             }
@@ -335,57 +338,46 @@ class MainActivity : AppCompatActivity() {
                 }
                 val name = usbDev?.productName?.toString() ?: "USB DAC"
                 val rates = usbDev?.sampleRates
-                val rateStr = if (rates != null && rates.isNotEmpty()) {
-                    val maxRate = rates.max() / 1000
-                    " \u2022 ${maxRate}kHz"
-                } else ""
+                val rateStr = if (rates != null && rates.isNotEmpty()) " \u2022 ${rates.max() / 1000}kHz" else ""
                 dacIndicator.text = "DAC: $name$rateStr"
                 dacIndicator.visibility = View.VISIBLE
-            } else {
-                dacIndicator.visibility = View.GONE
-            }
-        } catch (_: Exception) {
-            dacIndicator.visibility = View.GONE
-        }
+            } else dacIndicator.visibility = View.GONE
+        } catch (_: Exception) { dacIndicator.visibility = View.GONE }
     }
 
-    private fun showWebdavDialog() {
-        val cur = prefs.getString("webdav_url", "") ?: ""
-        val input = android.widget.EditText(this).apply {
-            hint = "https://seu.webdav/exemplo/"
-            setText(cur)
-            setTextColor(0xFFE8ECF5.toInt())
-            setHintTextColor(0xFF6B7898.toInt())
-        }
-        val pad = dp(20)
-        val container = FrameLayout(this).apply {
-            setPadding(pad, pad, pad, pad)
-            addView(input)
-        }
-        // Sleep timer option
+    private fun showMenuDialog() {
         val timerOptions = arrayOf("Sem timer", "15 min", "30 min", "60 min", "90 min")
-        val timerValues = longArrayOf(0, 15*60*1000, 30*60*1000, 60*60*1000, 90*60*1000)
+        val timerValues = longArrayOf(0, 15*60000, 30*60000, 60*60000, 90*60000)
         val currentTimer = prefs.getLong("sleep_timer", 0)
         val timerIdx = timerValues.indexOf(currentTimer).coerceAtLeast(0)
 
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("STYLUS")
-            .setItems(arrayOf("WebDAV", "Sleep Timer (atual: ${timerOptions[timerIdx]})")) { _, which ->
+            .setItems(arrayOf("WebDAV \u2022 Sleep Timer (atual: ${timerOptions[timerIdx]})", "Sobre")) { _, which ->
                 when (which) {
-                    0 -> showWebdavInput(input)
-                    1 -> showSleepTimerPicker(timerOptions, timerValues)
+                    0 -> showWebdavDialog()
+                    1 -> showAboutDialog()
                 }
             }
             .setNegativeButton("Fechar", null)
             .show()
     }
 
-    private fun showWebdavInput(input: android.widget.EditText) {
-        val pad = dp(20)
-        val container = FrameLayout(this).apply {
-            setPadding(pad, pad, pad, pad)
-            addView(input)
+    private fun showWebdavDialog() {
+        val cur = prefs.getString("webdav_url", "") ?: ""
+        val input = EditText(this).apply {
+            hint = "https://seu.webdav/exemplo/"
+            setText(cur)
+            setTextColor(0xFFE8ECF5.toInt())
+            setHintTextColor(0xFF6B7898.toInt())
+            textSize = 13f
         }
+        val pad = dp(20)
+        val container = FrameLayout(this).apply { setPadding(pad, pad, pad, pad); addView(input) }
+
+        val timerOptions = arrayOf("Sem timer", "15 min", "30 min", "60 min", "90 min")
+        val timerValues = longArrayOf(0, 15*60000, 30*60000, 60*60000, 90*60000)
+
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("WebDAV")
             .setMessage("URL da colecao remota")
@@ -394,81 +386,156 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putString("webdav_url", input.text.toString().trim()).apply()
                 android.widget.Toast.makeText(this, "WebDAV salvo", android.widget.Toast.LENGTH_SHORT).show()
             }
+            .setNeutralButton("Sleep Timer") { _, _ ->
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Sleep Timer")
+                    .setItems(timerOptions) { _, which ->
+                        prefs.edit().putLong("sleep_timer", timerValues[which]).apply()
+                        android.widget.Toast.makeText(this, timerOptions[which], android.widget.Toast.LENGTH_SHORT).show()
+                    }.show()
+            }
             .setNegativeButton("Cancelar", null)
             .show()
     }
 
-    private fun showSleepTimerPicker(options: Array<String>, values: LongArray) {
+    private fun showAboutDialog() {
+        val tv = TextView(this).apply {
+            text = "STYLUS Player\nBit-perfect audio for Android\n\n" +
+                   "Formatos: FLAC, ALAC, WAV, AIFF, MP3, AAC, OGG\n" +
+                   "Saidas: USB DAC bit-perfect, DLNA/UPnP\n" +
+                   "last.fm: scrobble autom\u00e1tico\n\n" +
+                   "${allAlbums.size} albuns na estante"
+            setTextColor(0xFF8892B0.toInt())
+            textSize = 12f
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+            setLineSpacing(0f, 1.3f)
+        }
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Sleep Timer")
-            .setItems(options) { _, which ->
-                val ms = values[which]
-                prefs.edit().putLong("sleep_timer", ms).apply()
-                if (ms > 0) {
-                    android.widget.Toast.makeText(this, "Timer: ${options[which]}", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    android.widget.Toast.makeText(this, "Timer desligado", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
+            .setTitle("STYLUS")
+            .setView(tv)
+            .setPositiveButton("OK", null)
             .show()
     }
 
-    // Recently played helper
     private fun List<Library.Album>.recentlyPlayed(prefs: SharedPreferences): List<Library.Album> {
         return sortedByDescending { prefs.getLong("played_${it.id}", 0L) }
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // ADAPTER — album cards
+    // ═══════════════════════════════════════════════════════════════════
     private class AlbumAdapter(
         private val items: List<Library.Album>,
         private val resolver: ContentResolver,
         private val prefs: SharedPreferences,
         private val onClick: (Library.Album) -> Unit
-    ) : RecyclerView.Adapter<AlbumVH>() {
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AlbumVH {
-            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_album, parent, false)
-            return AlbumVH(view)
-        }
-        override fun onBindViewHolder(holder: AlbumVH, position: Int) = holder.bind(items[position], resolver, prefs, onClick)
-        override fun getItemCount() = items.size
-    }
-
-    private class AlbumVH(view: View) : RecyclerView.ViewHolder(view) {
-        private val cover: ImageView = view.findViewById(R.id.cover)
-        private val title: TextView = view.findViewById(R.id.title)
-        private val artist: TextView = view.findViewById(R.id.artist)
-
-        fun bind(album: Library.Album, resolver: ContentResolver, prefs: SharedPreferences, onClick: (Library.Album) -> Unit) {
-            title.text = album.name
-            artist.text = "${album.artist} \u2022 ${album.durationString()}"
-            cover.setImageBitmap(null)
-            cover.setBackgroundColor(0xFF0E1018.toInt())
-
-            // Set cover aspect ratio (square)
-            cover.post {
-                val params = cover.layoutParams
-                params.height = cover.width  // square
-                cover.layoutParams = params
+    ) : RecyclerView.Adapter<VH>() {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            val ctx = parent.context
+            val card = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp2(ctx, 3), dp2(ctx, 3), dp2(ctx, 3), dp2(ctx, 3))
+                isClickable = true
+                isFocusable = true
+                val bg = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF0A0C12.toInt())
+                    cornerRadius = dp2(ctx, 6).toFloat()
+                }
+                background = bg
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        android.view.MotionEvent.ACTION_DOWN -> {
+                            bg.setColor(0xFF141828.toInt())
+                            bg.setStroke(1, 0xFF252E48.toInt())
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                            bg.setColor(0xFF0A0C12.toInt())
+                            bg.setStroke(0, 0)
+                        }
+                    }
+                    false
+                }
             }
 
+            val cover = ImageView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp2(ctx, 140))
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(0xFF08090C.toInt())
+                adjustViewBounds = true
+                id = View.generateViewId()
+            }
+            card.addView(cover)
+
+            val title = TextView(ctx).apply {
+                setTextColor(0xFFC0C8DD.toInt())
+                textSize = 11f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp2(ctx, 6), dp2(ctx, 5), dp2(ctx, 6), 0)
+                id = View.generateViewId()
+            }
+            card.addView(title)
+
+            val artist = TextView(ctx).apply {
+                setTextColor(0xFF4A5570.toInt())
+                textSize = 9f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp2(ctx, 6), dp2(ctx, 1), dp2(ctx, 6), dp2(ctx, 5))
+                id = View.generateViewId()
+            }
+            card.addView(artist)
+
+            return VH(card, cover, title, artist)
+        }
+
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            val album = items[position]
+            holder.title.text = album.name
+            holder.artist.text = album.artist
+            holder.cover.setImageBitmap(null)
+            holder.cover.setBackgroundColor(0xFF08090C.toInt())
+
+            // Square cover
+            holder.cover.post {
+                val params = holder.cover.layoutParams
+                params.height = min(holder.cover.width, dp2(holder.itemView.context, 200))
+                holder.cover.layoutParams = params
+            }
+
+            // Load cover async
             try {
-                resolver.openInputStream(album.coverUri())?.use { stream ->
-                    val bmp = BitmapFactory.decodeStream(stream)
-                    if (bmp != null) cover.setImageBitmap(bmp)
-                }
+                Thread {
+                    try {
+                        resolver.openInputStream(album.coverUri())?.use { stream ->
+                            val bmp = BitmapFactory.decodeStream(stream)
+                            if (bmp != null) holder.cover.post { holder.cover.setImageBitmap(bmp) }
+                        }
+                    } catch (_: Exception) {}
+                }.start()
             } catch (_: Exception) {}
 
             // Recently played indicator
             val lastPlayed = prefs.getLong("played_${album.id}", 0L)
             if (lastPlayed > 0 && System.currentTimeMillis() - lastPlayed < 7 * 24 * 60 * 60 * 1000) {
-                artist.setTextColor(0xFF7A9A5A.toInt())
+                holder.artist.setTextColor(0xFF5A8A5A.toInt())
             } else {
-                artist.setTextColor(0xFF586888.toInt())
+                holder.artist.setTextColor(0xFF4A5570.toInt())
             }
 
-            // Click handling — explicit on the itemView
-            itemView.setOnClickListener { onClick(album) }
-            itemView.isClickable = true
-            itemView.isFocusable = true
+            // Fix click — use explicit click on the card itself
+            holder.card.setOnClickListener { onClick(album) }
         }
+
+        override fun getItemCount() = items.size
+
+        private fun dp2(ctx: Context, v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
     }
+
+    private class VH(
+        val card: LinearLayout,
+        val cover: ImageView,
+        val title: TextView,
+        val artist: TextView
+    ) : RecyclerView.ViewHolder(card)
 }

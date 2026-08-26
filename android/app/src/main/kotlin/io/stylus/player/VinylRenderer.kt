@@ -43,7 +43,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     // ─── GL ────────────────────────────────────────────────────────────────
     private var prog = 0; private var progP = 0
     private var uMvp = -1; private var uTime = -1; private var uTimeP = -1
-    private var uCx = -1; private var uCy = -1
+    private var uCx = -1; private var uCy = -1; private var uAudio = -1
     private val model = FloatArray(16)
     private var pVbo = 0
     private var dScaleX = 1f; private var dScaleY = 1f
@@ -59,6 +59,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     @Volatile var viewW = 1080
     @Volatile var viewH = 1920
     @Volatile var wearSeed = 42  // album-specific seed for unique wear marks
+    @Volatile var audioLevel = 0f  // 0..1, from audio buffer RMS for reactive effects
 
     private val PVA = atan2(
         (sin(Math.toRadians(38.0)) * 1.24 + 0.10).toFloat(),
@@ -142,6 +143,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
         uniform float uT;
         uniform float uCx;
         uniform float uCy;
+        uniform float uAudio;
         void main(){
             vec2 p=vU*2.0-1.0;
             vec2 dc=vec2(uCx, uCy);
@@ -149,10 +151,11 @@ class VinylRenderer : GLSurfaceView.Renderer {
             // Deep void — dark center, slightly lighter edges
             vec3 col=mix(vec3(0.010,0.011,0.018), vec3(0.004,0.004,0.006),
                          smoothstep(0.0,1.2,dd));
-            // Warm halo from the disc
+            // Warm halo — breathes with audio
             float breathe=0.85+0.15*sin(uT*0.4);
-            col+=vec3(0.30,0.18,0.08)*exp(-dd*dd*3.2)*0.20*breathe;
-            col+=vec3(0.15,0.09,0.04)*exp(-dd*dd*1.0)*0.08*breathe;
+            float audioBloom=uAudio*0.18;
+            col+=vec3(0.30,0.18,0.08)*exp(-dd*dd*3.2)*0.20*breathe*(1.0+audioBloom);
+            col+=vec3(0.15,0.09,0.04)*exp(-dd*dd*1.0)*0.08*breathe*(1.0+audioBloom*0.6);
             // Vignette
             col*=1.0-dot(p,p)*0.32;
             // Film grain
@@ -172,6 +175,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
         uTimeP = GL.glGetUniformLocation(progP, "uT")
         uCx = GL.glGetUniformLocation(progP, "uCx")
         uCy = GL.glGetUniformLocation(progP, "uCy")
+        uAudio = GL.glGetUniformLocation(progP, "uAudio")
         vb = FloatArray(SZ)
         pVbo = qbo()
     }
@@ -195,6 +199,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
         if (uTimeP >= 0) GL.glUniform1f(uTimeP, time)
         if (uCx >= 0) GL.glUniform1f(uCx, discCx)
         if (uCy >= 0) GL.glUniform1f(uCy, discCy)
+        if (uAudio >= 0) GL.glUniform1f(uAudio, audioLevel)
         GL.glBindBuffer(GL.GL_ARRAY_BUFFER, pVbo)
         GL.glEnableVertexAttribArray(0)
         GL.glVertexAttribPointer(0, 2, GL.GL_FLOAT, false, 8, 0)
@@ -207,6 +212,12 @@ class VinylRenderer : GLSurfaceView.Renderer {
         Matrix.setIdentityM(model, 0)
         Matrix.translateM(model, 0, discCx, discCy, 0f)
         Matrix.scaleM(model, 0, dScaleX, dScaleY, 1f)
+
+        // Disc shadow — dark soft glow underneath for depth
+        vi = 0
+        discShadow()
+        flush(true)
+
         Matrix.rotateM(model, 0, Math.toDegrees(deckRotation.toDouble()).toFloat(), 0f, 0f, 1f)
         vi = 0
         discBody()
@@ -233,6 +244,20 @@ class VinylRenderer : GLSurfaceView.Renderer {
     // ═══════════════════════════════════════════════════════════════════════
     // DISCO
     // ═══════════════════════════════════════════════════════════════════════
+    private fun discShadow() {
+        val n = 40
+        val r = RO + 0.025f
+        for (j in 0 until n) {
+            val a0 = j.toFloat() / n * 2f * PI.toFloat()
+            val a1 = (j + 1).toFloat() / n * 2f * PI.toFloat()
+            val fade = 1f  // uniform dark
+            val c = sc(floatArrayOf(0f, 0f, 0f), 0.12f)
+            v(0f, 0f, c, 0f)
+            v(cos(a0) * r, sin(a0) * r, c, -1f)
+            v(cos(a1) * r, sin(a1) * r, c, -1f)
+        }
+    }
+
     private fun discBody() {
         val rot = deckRotation
         // Two light sources: main highlight + secondary fill
@@ -558,84 +583,71 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // TRAILING BEAM + PONTO DA AGULHA
+    // TRAILING BEAM + PONTO DA AGULHA — fade in as arm drops
     // ═══════════════════════════════════════════════════════════════════════
     private fun needleBeam() {
-        if (armLift > 0.5f) return
+        val lift = armLift
+        if (lift > 0.95f) return  // fully up, nothing visible
         val r = RPO + (RPI - RPO) * playProgress
         val pulse = 0.80f + 0.20f * sin(time * 1.6f)
+        val dropFade = (1f - lift).coerceIn(0f, 1f)  // 0 when up, 1 when down
 
-        // ── Groove highlight near needle — the groove being read ──
-        val ghN = 24
-        val ghArc = 0.6f
-        val ghBright = crackle * 0.20f * pulse
-        for (j in 0 until ghN) {
-            val a0 = PVA - ghArc / 2f + j.toFloat() / ghN * ghArc
-            val a1 = PVA - ghArc / 2f + (j + 1).toFloat() / ghN * ghArc
-            val fade = 1f - abs(a0 - PVA) / (ghArc / 2f)
-            val c = sc(AMB, ghBright * fade * fade)
-            val ri = r - 0.012f; val ro = r + 0.012f
-            v(cos(a0) * ri, sin(a0) * ri, c, 1f)
-            v(cos(a0) * ro, sin(a0) * ro, c, -1f)
-            v(cos(a1) * ri, sin(a1) * ri, c, 1f)
-            v(cos(a1) * ro, sin(a1) * ro, c, -1f)
-            v(cos(a0) * ro, sin(a0) * ro, c, -1f)
-            v(cos(a1) * ri, sin(a1) * ri, c, 1f)
-        }
-
-        // ── Trailing arc — tight, sharp trail behind the needle ──
-        val arcLen = 1.2f
-        val arcN = 48
+        // ── Trailing arc — fades in and lengthens as arm drops ──
+        val arcLen = 0.3f + 0.7f * dropFade  // grows from 0.3 to 1.0
+        val arcN = 36
         val rot = deckRotation
         for (j in 0 until arcN) {
             val t0 = j.toFloat() / arcN
             val t1 = (j + 1).toFloat() / arcN
             val a0 = PVA + rot - t0 * arcLen
             val a1 = PVA + rot - t1 * arcLen
-            val fade = (1f - t0).toDouble().pow(2.2).toFloat()
-            val fade1 = (1f - t1).toDouble().pow(2.2).toFloat()
-            val w0 = 0.0020f + 0.005f * fade
-            val w1 = 0.0020f + 0.005f * fade1
-            val c0 = sc(AMB, fade * pulse * 0.55f)
-            val c1 = sc(AMB, fade1 * pulse * 0.55f)
-            val o0x = cos(a0) * (r + w0); val o0y = sin(a0) * (r + w0)
-            val i0x = cos(a0) * (r - w0); val i0y = sin(a0) * (r - w0)
+            val fade = (1f - t0).toDouble().pow(2.0).toFloat()
+            val fade1 = (1f - t1).toDouble().pow(2.0).toFloat()
+            val w = 0.002f + 0.004f * fade
+            val w1 = 0.002f + 0.004f * fade1
+            val brightness = dropFade * pulse * 0.45f
+            val c0 = sc(AMB, fade * brightness)
+            val c1 = sc(AMB, fade1 * brightness)
+            val o0x = cos(a0) * (r + w); val o0y = sin(a0) * (r + w)
+            val i0x = cos(a0) * (r - w); val i0y = sin(a0) * (r - w)
             val o1x = cos(a1) * (r + w1); val o1y = sin(a1) * (r + w1)
             val i1x = cos(a1) * (r - w1); val i1y = sin(a1) * (r - w1)
             v(i0x, i0y, c0, -1f); v(i1x, i1y, c1, -1f); v(o0x, o0y, c0, 1f)
             v(i1x, i1y, c1, -1f); v(o1x, o1y, c1, 1f); v(o0x, o0y, c0, 1f)
         }
 
-        // ── Hot point — the stylus contact ──
+        // ── Hot point — fades in as arm contacts groove ──
         val ax = cos(PVA) * r; val ay = sin(PVA) * r
-        circleFill(ax, ay, 0.030f, 18, sc(AMB, 0.07f * pulse))
-        circleFill(ax, ay, 0.018f, 14, sc(AMB, 0.16f * pulse))
-        circleRing(ax, ay, 0.013f, 12, sc(AMB, 0.30f * pulse))
-        circleFill(ax, ay, 0.008f, 10, sc(AMB, 0.85f * pulse))
-        circleFill(ax, ay, 0.003f, 8, floatArrayOf(1.0f, 0.88f, 0.55f))
+        circleFill(ax, ay, 0.025f, 14, sc(AMB, 0.06f * pulse * dropFade))
+        circleFill(ax, ay, 0.014f, 10, sc(AMB, 0.14f * pulse * dropFade))
+        circleFill(ax, ay, 0.006f, 8, sc(AMB, 0.70f * pulse * dropFade))
+        if (dropFade > 0.8f) {
+            circleFill(ax, ay, 0.003f, 6, floatArrayOf(1.0f, 0.88f, 0.55f))
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // FAÍSCAS — 3 camadas
+    // FAÍSCAS — fade in with arm drop
     // ═══════════════════════════════════════════════════════════════════════
     private fun sparks() {
-        if (crackle < 0.02f || armLift > 0.5f) return
+        val dropFade = (1f - armLift).coerceIn(0f, 1f)
+        if (crackle < 0.02f || dropFade < 0.3f) return
         val r = RPO + (RPI - RPO) * playProgress
         val ax = cos(PVA) * r; val ay = sin(PVA) * r
-        val pulse = 0.75f + 0.25f * sin(time * 3.2f)
+        val pulse = (0.75f + 0.25f * sin(time * 3.2f)) * dropFade
 
         // Soft glow at contact point
         circleFill(ax, ay, 0.045f, 20, sc(AMB, 0.05f * crackle * pulse))
 
         // Fine sparks — tight, mechanical
         val rng1 = java.util.Random((time * 30).toInt().toLong())
-        val cnt1 = (30 * crackle).toInt()
+        val cnt1 = (30 * crackle * dropFade).toInt()
         for (k in 0 until cnt1) {
             val spread = (rng1.nextFloat() - 0.5f) * 0.45f
             val a = PVA + spread
             val dr = (rng1.nextFloat() - 0.3f) * 0.05f
             val rr = r + dr
-            val b = (0.25f + rng1.nextFloat() * 0.75f) * crackle
+            val b = (0.25f + rng1.nextFloat() * 0.75f) * crackle * dropFade
             val c = sc(AMB, b)
             val px = cos(a) * rr; val py = sin(a) * rr
             val spin = deckRotation * 0.08f * rng1.nextFloat()
@@ -646,12 +658,12 @@ class VinylRenderer : GLSurfaceView.Renderer {
 
         // Thick sparks — fewer, brighter
         val rng2 = java.util.Random((time * 10).toInt().toLong() + 777)
-        val cnt2 = (8 * crackle).toInt()
+        val cnt2 = (8 * crackle * dropFade).toInt()
         for (k in 0 until cnt2) {
             val spread = (rng2.nextFloat() - 0.5f) * 0.25f
             val a = PVA + spread
             val rr = r + (rng2.nextFloat() - 0.2f) * 0.03f
-            val b = (0.55f + rng2.nextFloat() * 0.45f) * crackle
+            val b = (0.55f + rng2.nextFloat() * 0.45f) * crackle * dropFade
             val c = sc(AMB, b)
             val px = cos(a) * rr; val py = sin(a) * rr
             val dx = cos(a + PI.toFloat() / 2f) * 0.007f * rng2.nextFloat()
@@ -662,7 +674,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // BRAÇO — detalhado, com glow e cantilever
+    // BRAÇO — S-curve tonearm, laser beam
     // ═══════════════════════════════════════════════════════════════════════
     private fun armLine() {
         val playR = RPO + (RPI - RPO) * playProgress
@@ -670,108 +682,133 @@ class VinylRenderer : GLSurfaceView.Renderer {
         val lift = armLift
         val ang = Math.toRadians(38.0).toFloat()
         val pvR = 1.24f
-        val px = cos(ang) * pvR + 0.06f
-        val py = sin(ang) * pvR + 0.10f
-        val ux = -px; val uy = -py
-        val ul = sqrt(ux * ux + uy * uy).coerceAtLeast(1e-6f)
-        var tx = px + ux / ul * (ul - r)
-        var ty = py + uy / ul * (ul - r)
-        // Subtle cartridge vibration when playing
+        // Pivot position
+        val pivotX = cos(ang) * pvR + 0.06f
+        val pivotY = sin(ang) * pvR + 0.10f
+        // Tip position (at groove radius, on the pivot→center line)
+        val toCenterX = -pivotX; val toCenterY = -pivotY
+        val toCenterLen = sqrt(toCenterX * toCenterX + toCenterY * toCenterY).coerceAtLeast(1e-6f)
+        val dirX = toCenterX / toCenterLen; val dirY = toCenterY / toCenterLen
+        val perpX = -dirY; val perpY = dirX
+        var tipX = pivotX + dirX * (toCenterLen - r)
+        var tipY = pivotY + dirY * (toCenterLen - r)
+        // Vibration
         if (lift < 0.5f) {
-            val vib = 0.0005f * crackle
-            tx += sin(time * 35.0f) * vib
-            ty += cos(time * 27.0f) * vib * 0.6f
+            val vib = 0.0004f * crackle
+            tipX += sin(time * 35.0f) * vib
+            tipY += cos(time * 27.0f) * vib * 0.6f
         }
         val bright = 1f + lift * 0.35f
-        val c = sc(ARM, bright)
-        val cHi = sc(ARM_HI, bright)
 
-        // Arm glow — warm light from disc reflecting on metal
+        // S-curve control points — real tonearm shape
+        // Goes: pivot → curve right → curve left → headshell → cartridge → stylus
+        val armLen = toCenterLen - r
+        val p0x = pivotX; val p0y = pivotY
+        val p1x = pivotX + dirX * armLen * 0.30f + perpX * 0.035f  // first curve right
+        val p1y = pivotY + dirY * armLen * 0.30f + perpY * 0.035f
+        val p2x = pivotX + dirX * armLen * 0.65f - perpX * 0.020f  // curve back left
+        val p2y = pivotY + dirY * armLen * 0.65f - perpY * 0.020f
+        val p3x = tipX; val p3y = tipY
+
+        // Draw S-curve as 3 connected segments
+        fun curvePt(t: Float): FloatArray {
+            // Cubic bezier p0,p1,p2,p3
+            val u = 1f - t
+            return floatArrayOf(
+                u*u*u*p0x + 3f*u*u*t*p1x + 3f*u*t*t*p2x + t*t*t*p3x,
+                u*u*u*p0y + 3f*u*u*t*p1y + 3f*u*t*t*p2y + t*t*t*p3y
+            )
+        }
+
+        // Warm glow along the curve
         if (lift < 0.5f) {
-            val glowA = 0.012f * (1f - lift) * (0.7f + 0.3f * crackle)
+            val glowA = 0.018f * (1f - lift) * (0.7f + 0.3f * crackle)
             val glowC = sc(AMB, glowA)
-            seg(px, py, tx, ty, glowC, 0.025f)
+            val segs = 16
+            for (i in 0 until segs) {
+                val t0 = i.toFloat() / segs; val t1 = (i + 1).toFloat() / segs
+                val a = curvePt(t0); val b = curvePt(t1)
+                seg(a[0], a[1], b[0], b[1], glowC, 0.018f)
+            }
         }
 
-        // Counterweight
-        val cwX = px + (ux / ul) * 0.070f; val cwY = py + (uy / ul) * 0.070f
-        circleRing(cwX, cwY, 0.030f, 18, sc(ARM, 0.45f * bright))
-        circleRing(cwX, cwY, 0.022f, 16, sc(ARM_HI, 0.25f * bright))
-        circleFill(cwX, cwY, 0.016f, 12, sc(ARM_D, 0.35f * bright))
-        circleRing(cwX, cwY, 0.026f, 14, sc(ARM_D, 0.20f * bright))
+        // Arm tube — shadow, body, highlight
+        val segs = 20
+        for (i in 0 until segs) {
+            val t0 = i.toFloat() / segs; val t1 = (i + 1).toFloat() / segs
+            val a = curvePt(t0); val b = curvePt(t1)
+            // Taper: thinner near the headshell
+            val taper0 = 1f - t0 * 0.4f; val taper1 = 1f - t1 * 0.4f
+            seg(a[0], a[1], b[0], b[1], sc(ARM_D, bright * 0.50f), 0.011f * taper0)
+            seg(a[0], a[1], b[0], b[1], sc(ARM, bright), 0.0045f * taper0)
+            seg(a[0], a[1], b[0], b[1], sc(ARM_HI, bright), 0.0015f * taper0)
+        }
 
-        // Arm tube — 4 layers for clean depth
-        seg(px, py, tx, ty, sc(ARM_D, bright * 0.5f), 0.014f)
-        seg(px, py, tx, ty, sc(ARM_D, bright * 0.8f), 0.009f)
-        seg(px, py, tx, ty, c, 0.006f)
-        seg(px, py, tx, ty, cHi, 0.0022f)
-
-        // Headshell
-        val armDx = tx - px; val armDy = ty - py
-        val armLen = sqrt(armDx * armDx + armDy * armDy).coerceAtLeast(1e-6f)
-        val perpX = -armDy / armLen; val perpY = armDx / armLen
-        val cartDirX = armDx / armLen; val cartDirY = armDy / armLen
-
-        val hsLen = 0.012f
+        // Headshell — small wedge at the end
+        val hsLen = 0.020f
+        val armDirX = tipX - p2x; val armDirY = tipY - p2y
+        val armDL = sqrt(armDirX * armDirX + armDirY * armDirY).coerceAtLeast(1e-6f)
+        val adx = armDirX / armDL; val ady = armDirY / armDL
+        val apx = -ady; val apy = adx
+        val hs0x = tipX - adx * hsLen; val hs0y = tipY - ady * hsLen
         val hsW0 = 0.004f; val hsW1 = 0.008f
-        val h0x = tx; val h0y = ty
-        val h1x = tx + cartDirX * hsLen; val h1y = ty + cartDirY * hsLen
-        v(h0x + perpX * hsW0, h0y + perpY * hsW0, sc(ARM, 0.85f * bright), -1f)
-        v(h0x - perpX * hsW0, h0y - perpY * hsW0, sc(ARM, 0.85f * bright), -1f)
-        v(h1x + perpX * hsW1, h1y + perpY * hsW1, sc(ARM, 0.90f * bright), 1f)
-        v(h0x - perpX * hsW0, h0y - perpY * hsW0, sc(ARM, 0.85f * bright), -1f)
-        v(h1x - perpX * hsW1, h1y - perpY * hsW1, sc(ARM, 0.90f * bright), 1f)
-        v(h1x + perpX * hsW1, h1y + perpY * hsW1, sc(ARM, 0.90f * bright), 1f)
+        v(hs0x + apx * hsW0, hs0y + apy * hsW0, sc(ARM, 0.80f * bright), -1f)
+        v(hs0x - apx * hsW0, hs0y - apy * hsW0, sc(ARM, 0.80f * bright), -1f)
+        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.88f * bright), 1f)
+        v(hs0x - apx * hsW0, hs0y - apy * hsW0, sc(ARM, 0.80f * bright), -1f)
+        v(tipX - apx * hsW1, tipY - apy * hsW1, sc(ARM, 0.88f * bright), 1f)
+        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.88f * bright), 1f)
 
-        // Cartridge body
-        val cBaseX = h1x; val cBaseY = h1y
-        val cartW = 0.012f; val cartH = 0.022f
-        val c0x = cBaseX + perpX * cartW; val c0y = cBaseY + perpY * cartW
-        val c1x = cBaseX - perpX * cartW; val c1y = cBaseY - perpY * cartW
-        val c2x = c0x + cartDirX * cartH; val c2y = c0y + cartDirY * cartH
-        val c3x = c1x + cartDirX * cartH; val c3y = c1y + cartDirY * cartH
-        val cartC = sc(ARM, 0.92f * bright)
-        val cartHi = sc(ARM_HI, 0.72f * bright)
-        val cartSh = sc(ARM_D, 1.1f * bright)
-        val so = 0.003f
-        v(c0x + so, c0y - so, sc(cartSh, 0.5f), -1f); v(c1x + so, c1y - so, sc(cartSh, 0.5f), -1f)
-        v(c2x + so, c2y - so, sc(cartSh, 0.5f), 1f)
-        v(c1x + so, c1y - so, sc(cartSh, 0.5f), -1f); v(c3x + so, c3y - so, sc(cartSh, 0.5f), 1f)
-        v(c2x + so, c2y - so, sc(cartSh, 0.5f), 1f)
-        v(c0x, c0y, cartC, -1f); v(c1x, c1y, cartC, -1f); v(c2x, c2y, cartC, 1f)
-        v(c1x, c1y, cartC, -1f); v(c3x, c3y, cartC, 1f); v(c2x, c2y, cartC, 1f)
-        v(c0x, c0y, cartHi, -1f); v(c0x, c0y, cartHi, 1f); v(c2x, c2y, cartHi, 1f)
-        v(c1x, c1y, sc(cartHi, 0.5f), -1f); v(c3x, c3y, sc(cartHi, 0.5f), 1f); v(c1x, c1y, sc(cartHi, 0.5f), 1f)
+        // Cartridge — small dark block
+        val cW = 0.007f; val cH = 0.014f
+        val c0x = tipX + apx * cW - adx * cH; val c0y = tipY + apy * cW - ady * cH
+        val c1x = tipX - apx * cW - adx * cH; val c1y = tipY - apy * cW - ady * cH
+        val c2x = tipX + apx * cW; val c2y = tipY + apy * cW
+        val c3x = tipX - apx * cW; val c3y = tipY - apy * cW
+        v(c0x, c0y, sc(ARM_D, 0.70f * bright), -1f)
+        v(c1x, c1y, sc(ARM_D, 0.70f * bright), -1f)
+        v(c2x, c2y, sc(ARM_D, 0.75f * bright), 1f)
+        v(c1x, c1y, sc(ARM_D, 0.70f * bright), -1f)
+        v(c3x, c3y, sc(ARM_D, 0.75f * bright), 1f)
+        v(c2x, c2y, sc(ARM_D, 0.75f * bright), 1f)
 
-        // Cantilever
-        val cantLen = 0.018f
-        val cantW = 0.0012f
-        val cantEndX = cBaseX + cartDirX * (cartH + cantLen)
-        val cantEndY = cBaseY + cartDirY * (cartH + cantLen)
-        seg(cBaseX + cartDirX * cartH, cBaseY + cartDirY * cartH,
-            cantEndX, cantEndY, sc(ARM_HI, 0.90f * bright), cantW)
+        // Stylus tip — bright point
+        circleFill(tipX, tipY, 0.005f, 8, sc(AMB, 0.80f * bright))
+        circleFill(tipX, tipY, 0.0025f, 6, floatArrayOf(1f, 0.88f, 0.55f))
 
-        // Stylus tip
-        val sx = cantEndX; val sy = cantEndY
-        if (lift < 0.5f) {
-            circleFill(sx, sy, 0.007f, 10, sc(AMB, 0.12f * bright))
-        }
-        circleFill(sx, sy, 0.004f, 8, sc(AMB, 0.85f * bright))
-        circleFill(sx, sy, 0.0025f, 6, floatArrayOf(1.0f, 0.88f, 0.55f))
-        circleFill(sx, sy, 0.0012f, 6, floatArrayOf(1.0f, 0.96f, 0.82f))
+        // Pivot — double ring
+        circleRing(pivotX, pivotY, 0.028f, 16, sc(ARM_D, 0.30f * bright))
+        circleRing(pivotX, pivotY, 0.022f, 12, sc(ARM, 0.45f * bright))
+        circleFill(pivotX, pivotY, 0.012f, 8, sc(ARM_D, 0.25f * bright))
 
-        // Pivot — triple ring
-        circleRing(px, py, 0.032f, 20, sc(ARM_D, 0.35f * bright))
-        circleRing(px, py, 0.026f, 16, cHi)
-        circleRing(px, py, 0.020f, 14, sc(ARM, 0.55f * bright))
-        circleFill(px, py, 0.012f, 10, sc(ARM_D, 0.30f * bright))
-
-        // Arm rest
+        // Arm rest when lifted
         if (lift > 0.5f) {
             val rx = 0.86f; val ry = 0.66f
-            circleRing(rx, ry, 0.022f, 14, sc(ARM, 0.8f))
-            circleRing(rx, ry, 0.016f, 12, sc(ARM_HI, 0.4f))
-            circleFill(rx, ry, 0.008f, 8, sc(ARM_D, 0.3f))
+            circleRing(rx, ry, 0.018f, 12, sc(ARM, 0.6f))
+            circleFill(rx, ry, 0.008f, 8, sc(ARM_D, 0.25f))
+        }
+
+        // ── LASER BEAM — shoots from stylus into groove ──
+        if (lift < 0.5f) {
+            val beamFade = (1f - lift * 2f).coerceIn(0f, 1f)
+            val beamPulse = beamFade * (0.7f + 0.3f * crackle)
+
+            // Beam shoots radially inward from stylus into the groove
+            val beamLen = 0.04f + 0.02f * crackle
+            val bx0 = tipX - dirX * beamLen
+            val by0 = tipY - dirY * beamLen
+
+            // Outer glow
+            seg(tipX, tipY, bx0, by0, sc(AMB, beamPulse * 0.20f), 0.010f)
+            // Core
+            seg(tipX, tipY, bx0, by0, sc(AMB, beamPulse * 0.70f), 0.0025f)
+            // Hot inner
+            seg(tipX, tipY, bx0, by0, floatArrayOf(1f, 0.92f, 0.65f), 0.0010f)
+
+            // Impact glow
+            circleFill(bx0, by0, 0.008f, 10, sc(AMB, beamPulse * 0.15f))
+            circleFill(bx0, by0, 0.004f, 8, sc(AMB, beamPulse * 0.40f))
+            circleFill(bx0, by0, 0.002f, 6, floatArrayOf(1f, 0.92f, 0.65f))
         }
     }
     private val ARR_REST = 1.06f

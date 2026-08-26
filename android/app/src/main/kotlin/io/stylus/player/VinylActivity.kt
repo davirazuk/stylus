@@ -92,6 +92,7 @@ class VinylActivity : AppCompatActivity() {
             renderer.deckRotation = deck.rotation
             renderer.armLift = deck.armLift(now)
             renderer.crackle = deck.crackle
+            renderer.audioLevel = deck.crackle
             coverView.rotation = Math.toDegrees(deck.rotation.toDouble()).toFloat()
 
             // Landscape detection

@@ -3,44 +3,41 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="4dp"
+    android:padding="3dp"
     android:clickable="true"
     android:focusable="true"
-    android:background="?android:attr/selectableItemBackground">
+    android:background="@android:color/transparent">
 
     <ImageView
         android:id="@+id/cover"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:adjustViewBounds="true"
+        android:layout_height="140dp"
         android:scaleType="centerCrop"
-        android:background="#0D0F15"
+        android:background="#08090C"
         android:contentDescription="Capa" />
 
     <TextView
         android:id="@+id/title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#D0D8E8"
+        android:textColor="#C0C8DD"
         android:textSize="11sp"
         android:ellipsize="end"
         android:maxLines="1"
-        android:paddingTop="6dp"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
-        android:singleLine="true" />
+        android:paddingTop="5dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp" />
 
     <TextView
         android:id="@+id/artist"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#586888"
-        android:textSize="10sp"
+        android:textColor="#4A5570"
+        android:textSize="9sp"
         android:ellipsize="end"
         android:maxLines="1"
         android:paddingTop="1dp"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
-        android:paddingBottom="4dp"
-        android:singleLine="true" />
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="5dp" />
 </LinearLayout>
