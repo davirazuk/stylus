@@ -26,11 +26,12 @@ command -v numlockx &>/dev/null && numlockx on 2>/dev/null
 
 # ── Atalho: Mod+M → estante ──────────────────────────────────────────
 KGSC="$HOME/.config/kglobalshortcutsrc"
-SHELF_ID="styalus-shelf"
+SHELF_ID="stylus-shelf"
 mkdir -p "$(dirname "$KGSC")"
 if ! grep -q "\[$SHELF_ID\]" "$KGSC" 2>/dev/null; then
-    killall kglobalaccel5 2>/dev/null
-    sleep 0.5
+    # Para kglobalaccel e espera sair — sem isso ele sobrescreve o arquivo
+    killall -w kglobalaccel5 2>/dev/null
+    sleep 0.3
     {
         echo ""
         echo "[$SHELF_ID]"

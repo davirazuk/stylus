@@ -47,8 +47,10 @@ if [[ -f "$SDDM_CONF" ]]; then
     else
         echo "Session=stylus.desktop" >> "$SDDM_CONF"
     fi
+    ok "SDDM configurado para i3"
+else
+    warn "stylus.conf não existe — SDDM não configurado"
 fi
-ok "SDDM configurado para i3"
 
 # ── Sudoers: permitir stylus-mode trocar sessão sem senha ───────────────
 SUDOERS_STYLUS="/etc/sudoers.d/stylus-mode"

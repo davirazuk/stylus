@@ -6,6 +6,7 @@
 # nomes é um índice, e a resposta honesta a um índice acaba sendo
 # "embaralha"; numa estante você passa o olho e alguma capa chama.
 set -uo pipefail
+command -v rofi >/dev/null 2>&1 || { echo "stylus-shelf: rofi não encontrado" >&2; exit 1; }
 PY=/usr/share/stylus/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
 export PYTHONPATH=/usr/share/stylus/deck
 CACHE="$HOME/.cache/stylus/shelf.tsv"

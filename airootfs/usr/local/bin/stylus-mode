@@ -31,6 +31,12 @@ if [[ $novo == "desktop" || $novo == "kde" ]]; then
     sudo /usr/local/bin/stylus-set-session plasma.desktop 2>/dev/null \
         || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-kde" >&2
 else
+    # Verificar se i3 está instalado antes de trocar
+    if ! command -v i3 >/dev/null 2>&1; then
+        echo "⚠ i3 não está instalado — rode: sudo stylus-switch-i3" >&2
+        echo "$cur" > "$F"
+        exit 1
+    fi
     sudo /usr/local/bin/stylus-set-session stylus.desktop 2>/dev/null \
         || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-i3" >&2
 fi
