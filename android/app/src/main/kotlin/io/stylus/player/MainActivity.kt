@@ -440,6 +440,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         checkDacStatus()
         updateNowPlayingBar()
+        // Refresh play counts
+        recycler.adapter?.notifyDataSetChanged()
     }
 
     private fun updateNowPlayingBar() {

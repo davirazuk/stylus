@@ -343,6 +343,29 @@ class VinylActivity : AppCompatActivity() {
         }
         controlsRow.addView(nextBtn)
 
+        // Sleep timer button
+        val sleepBtn = TextView(this).apply {
+            text = "\u23F0"
+            setTextColor(0xFF6B7394.toInt())
+            textSize = 14f
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setOnClickListener {
+                val options = arrayOf("Sem timer", "15 min", "30 min", "60 min", "90 min")
+                val values = longArrayOf(0, 15*60000, 30*60000, 60*60000, 90*60000)
+                androidx.appcompat.app.AlertDialog.Builder(this@VinylActivity)
+                    .setTitle("Sleep Timer")
+                    .setItems(options) { _, which ->
+                        if (values[which] > 0) {
+                            sleepTimerEnd = System.currentTimeMillis() + values[which]
+                            android.widget.Toast.makeText(this@VinylActivity, options[which], android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            sleepTimerEnd = 0
+                        }
+                    }.show()
+            }
+        }
+        controlsRow.addView(sleepBtn)
+
         val hint = TextView(this).apply {
             text = "toque para pausar"
             setTextColor(0xFF8892B0.toInt())
@@ -405,7 +428,13 @@ class VinylActivity : AppCompatActivity() {
                     // Time display
                     val cur = p.currentPosition / 1000
                     val rem = (p.duration - p.currentPosition) / 1000
-                    timeView?.text = String.format("%d:%02d  \u2014  -%d:%02d", cur / 60, cur % 60, rem / 60, rem % 60)
+                    var timeStr = String.format("%d:%02d  \u2014  -%d:%02d", cur / 60, cur % 60, rem / 60, rem % 60)
+                    // Sleep timer countdown
+                    if (sleepTimerEnd > 0) {
+                        val sleepRem = ((sleepTimerEnd - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
+                        timeStr += "  \u2022  Sleep ${sleepRem / 60}:${String.format("%02d", sleepRem % 60)}"
+                    }
+                    timeView?.text = timeStr
                     // Lyrics + track info
                     val idx = p.currentTrackIndex
                     val tracks = cachedTracks ?: emptyList()
@@ -484,8 +513,19 @@ class VinylActivity : AppCompatActivity() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
                 if (e1 == null) return false
                 val dx = e2.x - e1.x
-                if (Math.abs(dx) > 100 && Math.abs(dx) > Math.abs(vy)) {
+                val dy = e2.y - e1.y
+                if (Math.abs(dx) > 100 && Math.abs(dx) > Math.abs(dy)) {
                     if (dx > 0) skipToPrev() else skipToNext()
+                    return true
+                }
+                // Vertical swipe = seek (up = forward 10s, down = back 10s)
+                if (Math.abs(dy) > 120 && Math.abs(dy) > Math.abs(dx)) {
+                    val p = player
+                    if (p != null && p.duration > 0) {
+                        val seekMs = if (dy < 0) (p.currentPosition + 10000).coerceAtMost(p.duration)
+                        else (p.currentPosition - 10000).coerceAtLeast(0)
+                        p.exo.seekTo(seekMs)
+                    }
                     return true
                 }
                 return false
