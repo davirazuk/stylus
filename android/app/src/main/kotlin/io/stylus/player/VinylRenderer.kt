@@ -674,7 +674,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // BRAÇO — real straight tonearm with headshell offset
+    // BRAÇO — real J-curve tonearm: straight tube → gentle inward curve → headshell
     // ═══════════════════════════════════════════════════════════════════════
     private fun armLine() {
         val playR = RPO + (RPI - RPO) * playProgress
@@ -697,24 +697,57 @@ class VinylRenderer : GLSurfaceView.Renderer {
         }
         val bright = 1f + lift * 0.35f
 
-        // Headshell offset angle — the cartridge is canted ~23 degrees
-        // so the stylus tracks the groove arc properly
+        // J-curve: straight 70% → gentle curve inward last 30%
+        val armLen = toCenterLen - r
+        // Straight section endpoint (70% of arm length)
+        val straightEndX = pivotX + dirX * armLen * 0.70f
+        val straightEndY = pivotY + dirY * armLen * 0.70f
+        // Control point for the curve — bends inward (toward center)
+        val curveX = pivotX + dirX * armLen * 0.85f - perpX * 0.025f
+        val curveY = pivotY + dirY * armLen * 0.85f - perpY * 0.025f
+        // Headshell offset angle (~23 degrees like real tonearms)
         val offAng = Math.toRadians(23.0).toFloat()
         val hsDirX = dirX * cos(offAng) - dirY * sin(offAng)
         val hsDirY = dirX * sin(offAng) + dirY * cos(offAng)
-        val hsLen = 0.028f
+        val hsLen = 0.025f
         val hsStartX = tipX - hsDirX * hsLen; val hsStartY = tipY - hsDirY * hsLen
 
         // Warm glow along arm when playing
         if (lift < 0.5f) {
             val glowA = 0.020f * (1f - lift) * (0.7f + 0.3f * crackle)
-            seg(pivotX, pivotY, hsStartX, hsStartY, sc(AMB, glowA), 0.018f)
+            // Straight section glow
+            seg(pivotX, pivotY, straightEndX, straightEndY, sc(AMB, glowA), 0.016f)
+            // Curved section glow (3 segments for the bezier)
+            val segs = 8
+            for (i in 0 until segs) {
+                val t0 = i.toFloat() / segs; val t1 = (i + 1).toFloat() / segs
+                val ax = straightEndX * (1 - t0) * (1 - t0) + curveX * 2 * t0 * (1 - t0) + hsStartX * t0 * t0
+                val ay = straightEndY * (1 - t0) * (1 - t0) + curveY * 2 * t0 * (1 - t0) + hsStartY * t0 * t0
+                val bx = straightEndX * (1 - t1) * (1 - t1) + curveX * 2 * t1 * (1 - t1) + hsStartX * t1 * t1
+                val by = straightEndY * (1 - t1) * (1 - t1) + curveY * 2 * t1 * (1 - t1) + hsStartY * t1 * t1
+                seg(ax, ay, bx, by, sc(AMB, glowA), 0.016f)
+            }
         }
 
-        // Arm tube — 3 layers (shadow, body, highlight), straight line
-        seg(pivotX, pivotY, hsStartX, hsStartY, sc(ARM_D, bright * 0.50f), 0.011f)
-        seg(pivotX, pivotY, hsStartX, hsStartY, sc(ARM, bright), 0.005f)
-        seg(pivotX, pivotY, hsStartX, hsStartY, sc(ARM_HI, bright), 0.0018f)
+        // Arm tube — straight section (3 layers)
+        seg(pivotX, pivotY, straightEndX, straightEndY, sc(ARM_D, bright * 0.50f), 0.011f)
+        seg(pivotX, pivotY, straightEndX, straightEndY, sc(ARM, bright), 0.005f)
+        seg(pivotX, pivotY, straightEndX, straightEndY, sc(ARM_HI, bright), 0.0018f)
+
+        // Arm tube — curved section (quadratic bezier: straightEnd → curve → hsStart)
+        val curveSegs = 12
+        for (i in 0 until curveSegs) {
+            val t0 = i.toFloat() / curveSegs; val t1 = (i + 1).toFloat() / curveSegs
+            val ax = straightEndX * (1 - t0) * (1 - t0) + curveX * 2 * t0 * (1 - t0) + hsStartX * t0 * t0
+            val ay = straightEndY * (1 - t0) * (1 - t0) + curveY * 2 * t0 * (1 - t0) + hsStartY * t0 * t0
+            val bx = straightEndX * (1 - t1) * (1 - t1) + curveX * 2 * t1 * (1 - t1) + hsStartX * t1 * t1
+            val by = straightEndY * (1 - t1) * (1 - t1) + curveY * 2 * t1 * (1 - t1) + hsStartY * t1 * t1
+            // Taper: gets thinner toward headshell
+            val taper = 1f - t1 * 0.35f
+            seg(ax, ay, bx, by, sc(ARM_D, bright * 0.50f), 0.010f * taper)
+            seg(ax, ay, bx, by, sc(ARM, bright), 0.0045f * taper)
+            seg(ax, ay, bx, by, sc(ARM_HI, bright), 0.0015f * taper)
+        }
 
         // Headshell — wider wedge at the end of the tube
         val hsW0 = 0.003f; val hsW1 = 0.009f
