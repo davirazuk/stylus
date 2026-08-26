@@ -567,8 +567,19 @@ class VinylActivity : AppCompatActivity() {
                     if (dx > 0) skipToPrev() else skipToNext()
                     return true
                 }
-                // Vertical swipe = seek (up = forward 10s, down = back 10s)
+                // Vertical swipe = seek or volume
                 if (Math.abs(dy) > 120 && Math.abs(dy) > Math.abs(dx)) {
+                    // Right half of screen = volume control
+                    if (e1.x > resources.displayMetrics.widthPixels * 0.6f) {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                        val maxVol = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                        val curVol = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                        val delta = if (dy < 0) 1 else -1
+                        am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC,
+                            (curVol + delta).coerceIn(0, maxVol), 0)
+                        return true
+                    }
+                    // Left half = seek
                     val p = player
                     if (p != null && p.duration > 0) {
                         val seekMs = if (dy < 0) (p.currentPosition + 10000).coerceAtMost(p.duration)

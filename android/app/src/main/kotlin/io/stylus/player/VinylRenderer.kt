@@ -674,7 +674,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // BRAÇO — S-curve tonearm, laser beam
+    // BRAÇO — real straight tonearm with headshell offset
     // ═══════════════════════════════════════════════════════════════════════
     private fun armLine() {
         val playR = RPO + (RPI - RPO) * playProgress
@@ -682,17 +682,14 @@ class VinylRenderer : GLSurfaceView.Renderer {
         val lift = armLift
         val ang = Math.toRadians(38.0).toFloat()
         val pvR = 1.24f
-        // Pivot position
         val pivotX = cos(ang) * pvR + 0.06f
         val pivotY = sin(ang) * pvR + 0.10f
-        // Tip position (at groove radius, on the pivot→center line)
         val toCenterX = -pivotX; val toCenterY = -pivotY
         val toCenterLen = sqrt(toCenterX * toCenterX + toCenterY * toCenterY).coerceAtLeast(1e-6f)
         val dirX = toCenterX / toCenterLen; val dirY = toCenterY / toCenterLen
         val perpX = -dirY; val perpY = dirX
         var tipX = pivotX + dirX * (toCenterLen - r)
         var tipY = pivotY + dirY * (toCenterLen - r)
-        // Vibration
         if (lift < 0.5f) {
             val vib = 0.0004f * crackle
             tipX += sin(time * 35.0f) * vib
@@ -700,69 +697,39 @@ class VinylRenderer : GLSurfaceView.Renderer {
         }
         val bright = 1f + lift * 0.35f
 
-        // S-curve control points — real tonearm shape
-        // Goes: pivot → curve right → curve left → headshell → cartridge → stylus
-        val armLen = toCenterLen - r
-        val p0x = pivotX; val p0y = pivotY
-        val p1x = pivotX + dirX * armLen * 0.30f + perpX * 0.035f  // first curve right
-        val p1y = pivotY + dirY * armLen * 0.30f + perpY * 0.035f
-        val p2x = pivotX + dirX * armLen * 0.65f - perpX * 0.020f  // curve back left
-        val p2y = pivotY + dirY * armLen * 0.65f - perpY * 0.020f
-        val p3x = tipX; val p3y = tipY
+        // Headshell offset angle — the cartridge is canted ~23 degrees
+        // so the stylus tracks the groove arc properly
+        val offAng = Math.toRadians(23.0).toFloat()
+        val hsDirX = dirX * cos(offAng) - dirY * sin(offAng)
+        val hsDirY = dirX * sin(offAng) + dirY * cos(offAng)
+        val hsLen = 0.028f
+        val hsStartX = tipX - hsDirX * hsLen; val hsStartY = tipY - hsDirY * hsLen
 
-        // Draw S-curve as 3 connected segments
-        fun curvePt(t: Float): FloatArray {
-            // Cubic bezier p0,p1,p2,p3
-            val u = 1f - t
-            return floatArrayOf(
-                u*u*u*p0x + 3f*u*u*t*p1x + 3f*u*t*t*p2x + t*t*t*p3x,
-                u*u*u*p0y + 3f*u*u*t*p1y + 3f*u*t*t*p2y + t*t*t*p3y
-            )
-        }
-
-        // Warm glow along the curve
+        // Warm glow along arm when playing
         if (lift < 0.5f) {
-            val glowA = 0.018f * (1f - lift) * (0.7f + 0.3f * crackle)
-            val glowC = sc(AMB, glowA)
-            val segs = 16
-            for (i in 0 until segs) {
-                val t0 = i.toFloat() / segs; val t1 = (i + 1).toFloat() / segs
-                val a = curvePt(t0); val b = curvePt(t1)
-                seg(a[0], a[1], b[0], b[1], glowC, 0.018f)
-            }
+            val glowA = 0.020f * (1f - lift) * (0.7f + 0.3f * crackle)
+            seg(pivotX, pivotY, hsStartX, hsStartY, sc(AMB, glowA), 0.018f)
         }
 
-        // Arm tube — shadow, body, highlight
-        val segs = 20
-        for (i in 0 until segs) {
-            val t0 = i.toFloat() / segs; val t1 = (i + 1).toFloat() / segs
-            val a = curvePt(t0); val b = curvePt(t1)
-            // Taper: thinner near the headshell
-            val taper0 = 1f - t0 * 0.4f; val taper1 = 1f - t1 * 0.4f
-            seg(a[0], a[1], b[0], b[1], sc(ARM_D, bright * 0.50f), 0.011f * taper0)
-            seg(a[0], a[1], b[0], b[1], sc(ARM, bright), 0.0045f * taper0)
-            seg(a[0], a[1], b[0], b[1], sc(ARM_HI, bright), 0.0015f * taper0)
-        }
+        // Arm tube — 3 layers (shadow, body, highlight), straight line
+        seg(pivotX, pivotY, hsStartX, hsStartY, sc(ARM_D, bright * 0.50f), 0.011f)
+        seg(pivotX, pivotY, hsStartX, hsStartY, sc(ARM, bright), 0.005f)
+        seg(pivotX, pivotY, hsStartX, hsStartY, sc(ARM_HI, bright), 0.0018f)
 
-        // Headshell — small wedge at the end
-        val hsLen = 0.020f
-        val armDirX = tipX - p2x; val armDirY = tipY - p2y
-        val armDL = sqrt(armDirX * armDirX + armDirY * armDirY).coerceAtLeast(1e-6f)
-        val adx = armDirX / armDL; val ady = armDirY / armDL
-        val apx = -ady; val apy = adx
-        val hs0x = tipX - adx * hsLen; val hs0y = tipY - ady * hsLen
-        val hsW0 = 0.004f; val hsW1 = 0.008f
-        v(hs0x + apx * hsW0, hs0y + apy * hsW0, sc(ARM, 0.80f * bright), -1f)
-        v(hs0x - apx * hsW0, hs0y - apy * hsW0, sc(ARM, 0.80f * bright), -1f)
-        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.88f * bright), 1f)
-        v(hs0x - apx * hsW0, hs0y - apy * hsW0, sc(ARM, 0.80f * bright), -1f)
-        v(tipX - apx * hsW1, tipY - apy * hsW1, sc(ARM, 0.88f * bright), 1f)
-        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.88f * bright), 1f)
+        // Headshell — wider wedge at the end of the tube
+        val hsW0 = 0.003f; val hsW1 = 0.009f
+        val apx = -hsDirY; val apy = hsDirX
+        v(hsStartX + apx * hsW0, hsStartY + apy * hsW0, sc(ARM, 0.82f * bright), -1f)
+        v(hsStartX - apx * hsW0, hsStartY - apy * hsW0, sc(ARM, 0.82f * bright), -1f)
+        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.90f * bright), 1f)
+        v(hsStartX - apx * hsW0, hsStartY - apy * hsW0, sc(ARM, 0.82f * bright), -1f)
+        v(tipX - apx * hsW1, tipY - apy * hsW1, sc(ARM, 0.90f * bright), 1f)
+        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.90f * bright), 1f)
 
-        // Cartridge — small dark block
-        val cW = 0.007f; val cH = 0.014f
-        val c0x = tipX + apx * cW - adx * cH; val c0y = tipY + apy * cW - ady * cH
-        val c1x = tipX - apx * cW - adx * cH; val c1y = tipY - apy * cW - ady * cH
+        // Cartridge body — dark rectangle
+        val cW = 0.008f; val cH = 0.016f
+        val c0x = tipX + apx * cW - hsDirX * cH; val c0y = tipY + apy * cW - hsDirY * cH
+        val c1x = tipX - apx * cW - hsDirX * cH; val c1y = tipY - apy * cW - hsDirY * cH
         val c2x = tipX + apx * cW; val c2y = tipY + apy * cW
         val c3x = tipX - apx * cW; val c3y = tipY - apy * cW
         v(c0x, c0y, sc(ARM_D, 0.70f * bright), -1f)
@@ -771,40 +738,39 @@ class VinylRenderer : GLSurfaceView.Renderer {
         v(c1x, c1y, sc(ARM_D, 0.70f * bright), -1f)
         v(c3x, c3y, sc(ARM_D, 0.75f * bright), 1f)
         v(c2x, c2y, sc(ARM_D, 0.75f * bright), 1f)
+        // Cartridge highlight edge
+        v(c0x, c0y, sc(ARM_HI, 0.35f * bright), -1f)
+        v(c2x, c2y, sc(ARM_HI, 0.35f * bright), 1f)
 
-        // Stylus tip — bright point
-        circleFill(tipX, tipY, 0.005f, 8, sc(AMB, 0.80f * bright))
+        // Stylus tip — bright amber point
+        circleFill(tipX, tipY, 0.005f, 8, sc(AMB, 0.85f * bright))
         circleFill(tipX, tipY, 0.0025f, 6, floatArrayOf(1f, 0.88f, 0.55f))
 
-        // Pivot — double ring
-        circleRing(pivotX, pivotY, 0.028f, 16, sc(ARM_D, 0.30f * bright))
-        circleRing(pivotX, pivotY, 0.022f, 12, sc(ARM, 0.45f * bright))
-        circleFill(pivotX, pivotY, 0.012f, 8, sc(ARM_D, 0.25f * bright))
+        // Pivot — clean ring
+        circleRing(pivotX, pivotY, 0.026f, 14, sc(ARM_D, 0.30f * bright))
+        circleRing(pivotX, pivotY, 0.020f, 10, sc(ARM, 0.45f * bright))
+        circleFill(pivotX, pivotY, 0.010f, 8, sc(ARM_D, 0.22f * bright))
 
         // Arm rest when lifted
         if (lift > 0.5f) {
             val rx = 0.86f; val ry = 0.66f
-            circleRing(rx, ry, 0.018f, 12, sc(ARM, 0.6f))
-            circleFill(rx, ry, 0.008f, 8, sc(ARM_D, 0.25f))
+            circleRing(rx, ry, 0.016f, 10, sc(ARM, 0.5f))
+            circleFill(rx, ry, 0.006f, 6, sc(ARM_D, 0.2f))
         }
 
         // ── LASER BEAM — shoots from stylus into groove ──
         if (lift < 0.5f) {
             val beamFade = (1f - lift * 2f).coerceIn(0f, 1f)
             val beamPulse = beamFade * (0.7f + 0.3f * crackle)
-
-            // Beam shoots radially inward from stylus into the groove
             val beamLen = 0.04f + 0.02f * crackle
             val bx0 = tipX - dirX * beamLen
             val by0 = tipY - dirY * beamLen
-
             // Outer glow
             seg(tipX, tipY, bx0, by0, sc(AMB, beamPulse * 0.20f), 0.010f)
             // Core
             seg(tipX, tipY, bx0, by0, sc(AMB, beamPulse * 0.70f), 0.0025f)
             // Hot inner
             seg(tipX, tipY, bx0, by0, floatArrayOf(1f, 0.92f, 0.65f), 0.0010f)
-
             // Impact glow
             circleFill(bx0, by0, 0.008f, 10, sc(AMB, beamPulse * 0.15f))
             circleFill(bx0, by0, 0.004f, 8, sc(AMB, beamPulse * 0.40f))
