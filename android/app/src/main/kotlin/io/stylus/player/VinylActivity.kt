@@ -71,6 +71,7 @@ class VinylActivity : AppCompatActivity() {
     private var timeView: TextView? = null
     private var bottomBar: LinearLayout? = null
     private var progressBar: ProgressBar? = null
+    private var seekBarRef: android.widget.SeekBar? = null
     private var lyricView: TextView? = null
     private var prevBtn: TextView? = null
     private var nextBtn: TextView? = null
@@ -421,7 +422,28 @@ class VinylActivity : AppCompatActivity() {
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100; progress = 0
             layoutParams = LinearLayout.LayoutParams(dp(260), dp(3)).apply { topMargin = dp(6) }
+            visibility = View.GONE
         }
+
+        // Seekable seekbar — tap or drag to seek
+        val seekBar = android.widget.SeekBar(this).apply {
+            max = 100; progress = 0
+            layoutParams = LinearLayout.LayoutParams(dp(260), dp(16)).apply { topMargin = dp(2) }
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar) {}
+                override fun onProgressChanged(sb: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        val p = player ?: return
+                        if (p.duration > 0) {
+                            val ms = (progress.toLong() * p.duration / 100)
+                            p.exo.seekTo(ms)
+                        }
+                    }
+                }
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar) {}
+            })
+        }
+        seekBarRef = seekBar
 
         val bottomCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -431,7 +453,7 @@ class VinylActivity : AppCompatActivity() {
         bottomCol.addView(timeView)
         bottomCol.addView(controlsRow)
         bottomCol.addView(hint)
-        bottomCol.addView(progressBar)
+        bottomCol.addView(seekBar)
         root.addView(bottomCol, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -469,7 +491,7 @@ class VinylActivity : AppCompatActivity() {
                 }
                 val p = player
                 if (p != null && p.duration > 0) {
-                    progressBar?.progress = ((p.currentPosition.toFloat() / p.duration) * 100).toInt()
+                    seekBarRef?.progress = ((p.currentPosition.toFloat() / p.duration) * 100).toInt()
                     // Time display
                     val cur = p.currentPosition / 1000
                     val rem = (p.duration - p.currentPosition) / 1000
@@ -492,7 +514,7 @@ class VinylActivity : AppCompatActivity() {
                         trackInfoView?.alpha = 0.8f
                     }
                 } else {
-                    progressBar?.progress = (renderer.playProgress * 100).toInt()
+                    seekBarRef?.progress = (renderer.playProgress * 100).toInt()
                     timeView?.text = ""
                 }
                 root.postDelayed(this, 500)
