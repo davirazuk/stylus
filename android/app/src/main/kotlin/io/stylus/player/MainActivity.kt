@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private var filteredAlbums = listOf<Library.Album>()
     private var sortMode = 0
     private val sortLabels = listOf("A-Z", "ARTISTA", "RECENTE", "FAVORITOS")
+    private var albumAdapter: AlbumAdapter? = null
 
     companion object {
         private const val PERM_REQ = 100
@@ -427,15 +428,22 @@ class MainActivity : AppCompatActivity() {
         if (filteredAlbums.isEmpty()) {
             emptyView.text = if (query.isNotEmpty()) "Nada para \"$query\"" else "Nenhuma musica encontrada"
             emptyView.visibility = View.VISIBLE
+            recycler.visibility = View.GONE
         } else {
             emptyView.visibility = View.GONE
-            recycler.adapter = AlbumAdapter(filteredAlbums, contentResolver, prefs,
-                onClick = { album ->
-                    recordPlay(album.id)
-                    startActivity(VinylActivity.ceremonyIntent(this, album.id))
-                },
-                onLongClick = { album -> showTrackList(album) }
-            )
+            recycler.visibility = View.VISIBLE
+            if (albumAdapter == null) {
+                albumAdapter = AlbumAdapter(filteredAlbums.toMutableList(), contentResolver, prefs,
+                    onClick = { album ->
+                        recordPlay(album.id)
+                        startActivity(VinylActivity.ceremonyIntent(this, album.id))
+                    },
+                    onLongClick = { album -> showTrackList(album) }
+                )
+                recycler.adapter = albumAdapter
+            } else {
+                albumAdapter?.updateData(filteredAlbums)
+            }
         }
     }
 
@@ -617,12 +625,19 @@ class MainActivity : AppCompatActivity() {
     // ADAPTER — album cards
     // ═══════════════════════════════════════════════════════════════════
     private class AlbumAdapter(
-        private val items: List<Library.Album>,
+        private val items: MutableList<Library.Album>,
         private val resolver: ContentResolver,
         private val prefs: SharedPreferences,
         private val onClick: (Library.Album) -> Unit,
         private val onLongClick: (Library.Album) -> Unit
     ) : RecyclerView.Adapter<VH>() {
+
+        fun updateData(newItems: List<Library.Album>) {
+            items.clear()
+            items.addAll(newItems)
+            notifyDataSetChanged()
+        }
+
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val ctx = parent.context
             val card = LinearLayout(ctx).apply {

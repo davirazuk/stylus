@@ -750,9 +750,11 @@ class VinylActivity : AppCompatActivity() {
             playScrubSound()
             p.skipToNext()
             if (deck.phase == Phase.PLAY || deck.phase == Phase.DROP) {
-                deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                val now = System.nanoTime() / 1e9f
+                deck.go(Phase.LIFT, now)
                 pendingDrop = true
-                dropAt = System.nanoTime() / 1e9f + 0.8f  // hold at top 0.8s
+                // Wait for full lift (1.0s) + brief pause (0.4s) before dropping
+                dropAt = now + VinylConst.LIFT_T + 0.4f
             }
         }
     }
@@ -763,9 +765,10 @@ class VinylActivity : AppCompatActivity() {
             playScrubSound()
             p.skipToPrev()
             if (deck.phase == Phase.PLAY || deck.phase == Phase.DROP) {
-                deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                val now = System.nanoTime() / 1e9f
+                deck.go(Phase.LIFT, now)
                 pendingDrop = true
-                dropAt = System.nanoTime() / 1e9f + 0.8f
+                dropAt = now + VinylConst.LIFT_T + 0.4f
             }
         }
     }
