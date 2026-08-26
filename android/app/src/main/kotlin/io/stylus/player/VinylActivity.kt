@@ -829,7 +829,7 @@ class VinylActivity : AppCompatActivity() {
         val dm = resources.displayMetrics
         if (isLandscape) {
             bp.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-            bp.width = (dm.widthPixels * 0.35f).toInt()
+            bp.width = (dm.widthPixels * 0.38f).toInt()
         } else {
             bp.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
             bp.width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -845,21 +845,21 @@ class VinylActivity : AppCompatActivity() {
             // Title on right side, vertically centered
             tp?.let {
                 it.gravity = android.view.Gravity.TOP or android.view.Gravity.START
-                it.leftMargin = (dm.widthPixels * 0.60f).toInt()
-                it.topMargin = (dm.heightPixels * 0.35f).toInt()
-                it.width = ViewGroup.LayoutParams.WRAP_CONTENT
+                it.leftMargin = (dm.widthPixels * 0.58f).toInt()
+                it.topMargin = (dm.heightPixels * 0.28f).toInt()
+                it.width = (dm.widthPixels * 0.38f).toInt()
                 titleView?.layoutParams = it
                 titleView?.gravity = android.view.Gravity.START
-                titleView?.setPadding(0, 0, 0, 0)
+                titleView?.setPadding(dp(8), 0, 0, 0)
             }
             ti?.let {
                 it.gravity = android.view.Gravity.TOP or android.view.Gravity.START
-                it.leftMargin = (dm.widthPixels * 0.60f).toInt()
-                it.topMargin = (dm.heightPixels * 0.35f + dp(40)).toInt()
-                it.width = ViewGroup.LayoutParams.WRAP_CONTENT
+                it.leftMargin = (dm.widthPixels * 0.58f).toInt()
+                it.topMargin = (dm.heightPixels * 0.28f + dp(44)).toInt()
+                it.width = (dm.widthPixels * 0.38f).toInt()
                 trackInfoView?.layoutParams = it
                 trackInfoView?.gravity = android.view.Gravity.START
-                trackInfoView?.setPadding(0, 0, 0, 0)
+                trackInfoView?.setPadding(dp(8), 0, 0, 0)
             }
         } else {
             tp?.let {
