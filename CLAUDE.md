@@ -199,13 +199,42 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
 
 ## 5. O tom
 
-Comentário explica **por que**, não o que. O código já diz o que faz; o que
+Comentário explica **por quê**, não o que. O código já diz o que faz; o que
 se perde é o motivo — e o motivo quase sempre é um defeito que já aconteceu.
 Quando consertar algo não óbvio, escreva o sintoma no comentário: é isso que
 impede o conserto de ser desfeito por engano seis meses depois.
 
 Texto que o usuário vê é em português. Comentário de código acompanha o
 arquivo em que está.
+
+## 5.5 A lei do desenho do vinil — NÃO É REALISMO
+
+> **O vinil existe para tornar ouvir música digital menos chato, dando a
+> SENSação analógica. O desenho é irmão do scope: luz viva no escuro.
+> NUNCA realismo.**
+
+Isto já custou semanas de volta e vai custar de novo se esquecido. Toda vez
+que alguém (IA inclusive) tentou desenhar o deck "como um toca-discos de
+verdade" — madeira, prafuso, braço de metal com contrapeso, sala com poeira
+— o resultado foi reprovado na hora: parecia app de um dólar. O que o usuário
+quer:
+
+- **O RITUAL é o analógico** — cerimônia (spinup→cue→drop), raio é tempo,
+  sulco conta faixa, agulha anda pelo lado, virar o disco. Isso é sagrado e
+  não muda.
+- **O DESENHO é fosforo, não foto** — disco de luz flutuando no quase-preto,
+  feixe âmbar na agulha pulsando, faíscas na gota da agulha (o `crackle` do
+  Deck EXISTE e deve ser desenhado), halo respirando atrás do disco, bloom
+  no que é claro, grão sutil. Paleta: preto frio + âmbar como ÚNICA cor
+  viva (a mesma lei do vinyl.py: âmbar contrasta, não compete).
+- **Proibido**: madeira/prateleira/plinto de móvel, parafuso, sala, poeira
+  de ambiente, braço de metal com contrapeso desenhado, sombra de contato
+  "física", qualquer coisa que exista numa foto de toca-discos.
+- O mesmo vale para o Android (`android/app/.../VinylRenderer.kt`): sem
+  plinto, sem sala — o fundo é o halo do próprio disco.
+
+Quando quiser "melhorar o visual", a direção é SEMPRE: mais vida, mais
+reação ao som, mais luz com propósito — nunca mais realismo.
 
 ## 6. Mudanças Recentes e Pendências
 

@@ -102,10 +102,13 @@ class Deck {
         }
         val e = elapsed(now)
         when {
-            phase == Phase.CUE && e >= VinylConst.CUE_T -> go(Phase.DROP, now)
+            phase == Phase.CUE && playing && e >= VinylConst.CUE_T -> go(Phase.DROP, now)
             phase == Phase.DROP && e >= VinylConst.DROP_T -> { crackle = 1.0f; go(Phase.PLAY, now) }
             phase == Phase.LIFT && e >= VinylConst.LIFT_T -> go(Phase.BREAK, now)
-            phase == Phase.RETURN && e >= VinylConst.RETURN_T -> go(Phase.CUE, now)
+            phase == Phase.BREAK && e >= 0.4f -> go(Phase.RETURN, now)
+            phase == Phase.RETURN && e >= VinylConst.RETURN_T -> {
+                if (playing) go(Phase.CUE, now) else go(Phase.STOP, now)
+            }
         }
         rotation = (rotation + speed * dt * 2.0f * PI.toFloat()) % (2.0f * PI.toFloat())
         // Wow/flutter: subtle speed variation that makes the disc feel mechanical

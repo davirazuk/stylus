@@ -340,18 +340,6 @@ class VinylActivity : AppCompatActivity() {
                         topMargin = dp(52)
                     })
 
-                    // Cast button — top right
-                    val castBtn = TextView(this).apply {
-                        text = "\u25C7"
-                        setTextColor(0xFF5A6888.toInt())
-                        textSize = 18f
-                        setPadding(dp(16), dp(20), dp(16), dp(8))
-                        setOnClickListener { showCastDialog() }
-                    }
-                    root.addView(castBtn, FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        android.view.Gravity.TOP or android.view.Gravity.END))
                 }
             } catch (_: Exception) {}
         }
@@ -519,23 +507,25 @@ class VinylActivity : AppCompatActivity() {
         lyricPanel = android.widget.ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             alpha = 0f
-            setPadding(dp(16), dp(8), dp(16), dp(8))
+            setPadding(dp(16), dp(10), dp(16), dp(10))
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xCC0A0C14.toInt())
-                cornerRadius = dp(16).toFloat()
+                setColor(0xE60A0C14.toInt())
+                cornerRadius = dp(20).toFloat()
             }
+            isVerticalFadingEdgeEnabled = true
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
         }
         lyricInner = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             gravity = android.view.Gravity.CENTER_HORIZONTAL
         }
         lyricPanel?.addView(lyricInner)
         root.addView(lyricPanel, FrameLayout.LayoutParams(
-            (dm.widthPixels * 0.88f).toInt(),
-            dp(160),
+            (dm.widthPixels * 0.90f).toInt(),
+            dp(190),
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(90)
+            bottomMargin = dp(100)
         })
 
         // Volume overlay — appears when adjusting volume
@@ -599,16 +589,43 @@ class VinylActivity : AppCompatActivity() {
                                 val end = (curIdx + contextAfter + 1).coerceAtMost(lys.size)
                                 for (i in start until end) {
                                     val isCurrent = i == curIdx
+                                    val distFromCur = Math.abs(i - curIdx)
+                                    val fade = if (isCurrent) 1f else (0.5f - distFromCur * 0.1f).coerceAtLeast(0.2f)
                                     val tv = TextView(this@VinylActivity).apply {
                                         text = lys[i].second.ifBlank { "\u00B7" }
-                                        textSize = if (isCurrent) 14f else 11f
-                                        setTextColor(if (isCurrent) 0xFFF0F4FF.toInt() else 0xFF5A6580.toInt())
+                                        textSize = if (isCurrent) 14.5f else 11f
+                                        setTextColor(
+                                            if (isCurrent) 0xFFEEF2FA.toInt()
+                                            else 0xFF6878A0.toInt()
+                                        )
                                         gravity = android.view.Gravity.CENTER
-                                        setPadding(dp(4), dp(3), dp(4), dp(3))
-                                        alpha = if (isCurrent) 1f else 0.5f
-                                        if (isCurrent) typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                        setPadding(dp(4), dp(5), dp(4), dp(5))
+                                        alpha = fade
+                                        if (isCurrent) {
+                                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                            letterSpacing = 0.02f
+                                        }
                                     }
                                     lyricInner?.addView(tv)
+                                }
+                                // Safe smooth scroll after layout
+                                lyricPanel?.post {
+                                    val inner = lyricInner ?: return@post
+                                    if (inner.childCount == 0) return@post
+                                    val childIdx = (curIdx - start).coerceIn(0, inner.childCount - 1)
+                                    val curChild = inner.getChildAt(childIdx) ?: return@post
+                                    // The lyricPanel is a View, not ScrollView, so use the View's scroll
+                                    if (lyricPanel is android.widget.ScrollView) {
+                                        val scrollView = lyricPanel as android.widget.ScrollView
+                                        val targetY = (curChild.top + curChild.height / 2 - scrollView.height / 2)
+                                            .coerceAtLeast(0)
+                                        if (targetY > 0) {
+                                            scrollView.smoothScrollTo(0, targetY)
+                                        }
+                                    } else {
+                                        // Fallback: just post invalidate
+                                        lyricPanel.invalidate()
+                                    }
                                 }
                             }
                             lyricPanel?.alpha = 1f
@@ -686,7 +703,6 @@ class VinylActivity : AppCompatActivity() {
         }
 
         // Gestures: tap = toggle controls + play/pause, swipe = prev/next, long press = back
-        var controlsVisible = true
         val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 togglePlayPause()
@@ -694,12 +710,7 @@ class VinylActivity : AppCompatActivity() {
             }
             override fun onLongPress(e: MotionEvent) { finish() }
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                // Double tap toggles controls visibility
-                controlsVisible = !controlsVisible
-                val alpha = if (controlsVisible) 1f else 0f
-                bottomBar?.animate()?.alpha(alpha)?.setDuration(200)?.start()
-                titleView?.animate()?.alpha(alpha)?.setDuration(200)?.start()
-                trackInfoView?.animate()?.alpha(alpha)?.setDuration(200)?.start()
+                showTrackListOverlay()
                 return true
             }
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
@@ -792,9 +803,15 @@ class VinylActivity : AppCompatActivity() {
         playing = !playing
         if (!playing) {
             player?.pause()
-            if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+            if (deck.phase == Phase.PLAY || deck.phase == Phase.DROP) {
+                deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+            }
         } else {
             if (deck.phase == Phase.LIFT || deck.phase == Phase.BREAK) {
+                deck.go(Phase.CUE, System.nanoTime() / 1e9f)
+            } else if (deck.phase == Phase.STOP) {
+                deck.go(Phase.SPINUP, System.nanoTime() / 1e9f)
+            } else if (deck.phase == Phase.RETURN) {
                 deck.go(Phase.CUE, System.nanoTime() / 1e9f)
             } else {
                 player?.play()

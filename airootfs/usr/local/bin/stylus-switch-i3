@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-switch-i3 — volta do KDE para o i3
+# ═══════════════════════════════════════════════════════════════════════════
+#  Restaura o i3 como WM padrão. O plasma-desktop NÃO é removido — quem
+#  quer o KDE de volta roda stylus-switch-kde de novo.
+#
+#  sudo stylus-switch-i3
+#  sudo reboot
+# ═══════════════════════════════════════════════════════════════════════════
+set -euo pipefail
+
+RED='\033[1;31m'; GREEN='\033[1;32m'; YELLOW='\033[1;33m'; BLUE='\033[1;34m'; NC='\033[0m'
+info()  { printf "${BLUE}==>${NC} %s\n" "$*"; }
+ok()    { printf "${GREEN}  ✓${NC} %s\n" "$*"; }
+warn()  { printf "${YELLOW}  !${NC} %s\n" "$*"; }
+err()   { printf "${RED}  ✗${NC} %s\n" "$*"; }
+
+[[ $EUID -eq 0 ]] || { err "rode como root: sudo stylus-switch-i3"; exit 1; }
+
+# ── Reinstalar i3 e dependências ──────────────────────────────────────────
+I3_PKGS=(
+    i3-wm
+    i3lock
+    xss-lock
+    polybar
+    rofi
+    picom
+    dunst
+    feh
+    arandr
+    autorandr
+)
+
+info "Reinstalando i3 e barra..."
+pacman -S --needed --noconfirm "${I3_PKGS[@]}"
+ok "i3 reinstalado"
+
+# ── Sessão i3 ─────────────────────────────────────────────────────────────
+SDDM_CONF="/etc/sddm.conf.d/stylus.conf"
+if [[ -f "$SDDM_CONF" ]]; then
+    if grep -q "^Session=" "$SDDM_CONF"; then
+        sed -i 's/^Session=.*/Session=stylus.desktop/' "$SDDM_CONF"
+    else
+        echo "Session=stylus.desktop" >> "$SDDM_CONF"
+    fi
+fi
+
+ok "SDDM configurado para i3"
+
+# ── Modo padrão ──────────────────────────────────────────────────────────
+MODE_FILE="/home/stylus/.config/stylus/mode"
+mkdir -p "$(dirname "$MODE_FILE")"
+echo "music" > "$MODE_FILE"
+chown -R stylus:stylus "$(dirname "$MODE_FILE")"
+
+ok "Modo padrão: music"
+
+echo ""
+printf "${GREEN}═══ PRONTO ═══${NC}\n"
+echo ""
+echo "  i3 restaurado como WM padrão."
+echo "  Reinicie: sudo reboot"
+echo ""
+echo "  Para voltar ao KDE:"
+echo "    sudo stylus-switch-kde"
+echo "    sudo reboot"
+echo ""

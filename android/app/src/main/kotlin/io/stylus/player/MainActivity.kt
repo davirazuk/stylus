@@ -67,7 +67,32 @@ class MainActivity : AppCompatActivity() {
 
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF050608.toInt()) }
 
-        // Header
+        // Grid FIRST — it's behind everything
+        recycler = RecyclerView(this).apply {
+            layoutManager = GridLayoutManager(this@MainActivity, calcCols())
+            setPadding(dp(10), dp(290), dp(10), dp(60))
+            clipToPadding = false
+            overScrollMode = RecyclerView.OVER_SCROLL_NEVER
+        }
+        root.addView(recycler, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        // Empty
+        emptyView = TextView(this).apply {
+            text = "\u266B\n\nNenhuma musica encontrada\n\nConecte um USB com musicas\nou configure o WebDAV"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 15f
+            visibility = View.GONE
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.5f)
+            letterSpacing = 0.02f
+        }
+        root.addView(emptyView, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        // Header — on top of grid
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(20), dp(44), dp(20), dp(2))
@@ -124,9 +149,9 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
-        // Search
+        // Search — on top of grid
         val searchContainer = FrameLayout(this).apply {
-            setPadding(dp(16), dp(50), dp(16), dp(0))
+            setPadding(dp(16), dp(0), dp(16), dp(0))
         }
         searchInput = EditText(this).apply {
             hint = "Buscar..."
@@ -153,7 +178,7 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(80) })
 
-        // Stats bar
+        // Stats bar — on top of grid
         statsBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(20), dp(4), dp(20), dp(2))
@@ -163,7 +188,7 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(118) })
 
-        // Recently played horizontal section
+        // Recently played — on top of grid
         recentHeader = TextView(this).apply {
             text = "RECENTE"
             setTextColor(0xFF3A4560.toInt())
@@ -187,31 +212,6 @@ class MainActivity : AppCompatActivity() {
         root.addView(recentScroll, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(155) })
-
-        // Grid
-        recycler = RecyclerView(this).apply {
-            layoutManager = GridLayoutManager(this@MainActivity, calcCols())
-            setPadding(dp(10), dp(280), dp(10), dp(60))
-            clipToPadding = false
-            overScrollMode = RecyclerView.OVER_SCROLL_NEVER
-        }
-        root.addView(recycler, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-
-        // Empty
-        emptyView = TextView(this).apply {
-            text = "\u266B\n\nNenhuma musica encontrada\n\nConecte um USB com musicas\nou configure o WebDAV"
-            setTextColor(0xFF4A5570.toInt())
-            textSize = 15f
-            visibility = View.GONE
-            gravity = Gravity.CENTER
-            setLineSpacing(0f, 1.5f)
-            letterSpacing = 0.02f
-        }
-        root.addView(emptyView, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
 
         // Bottom bar
         val bottomBar = LinearLayout(this).apply {
@@ -295,7 +295,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(nowPlayingBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM
-        ).apply { bottomMargin = dp(36) })
+        ).apply { bottomMargin = dp(40) })
 
         setContentView(root)
         if (hasPermission()) loadAlbums() else requestPermission()

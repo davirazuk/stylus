@@ -253,6 +253,16 @@ class VinylRenderer : GLSurfaceView.Renderer {
         nebulaPatches()
         flush(true)
 
+        // Ambient dust — floating particles in the void
+        vi = 0
+        ambientDust()
+        flush(true)
+
+        // Void rings — faint concentric circles
+        vi = 0
+        voidRings()
+        flush(true)
+
         Matrix.rotateM(model, 0, Math.toDegrees(deckRotation.toDouble()).toFloat(), 0f, 0f, 1f)
         vi = 0
         discBody()
@@ -263,6 +273,11 @@ class VinylRenderer : GLSurfaceView.Renderer {
         labelGlow()
         spindle()
         wearMarks()
+        flush(true)
+
+        // Edge shimmer — bright pulse along disc rim synced to crackle
+        vi = 0
+        edgeShimmer()
         flush(true)
 
         // ── Arm + beam + sparks (screen space) ──

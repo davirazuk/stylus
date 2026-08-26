@@ -68,7 +68,14 @@ fi
 
 case "$mode" in
     desktop)
+        # KDE Plasma se instalado, i3 como fallback
+        if command -v startplasma-x11 >/dev/null 2>&1; then
+            exec startplasma-x11
+        fi
         exec i3
+        ;;
+    kde)
+        exec startplasma-x11
         ;;
     *)
         exec i3 -c /usr/share/stylus/i3-music.config

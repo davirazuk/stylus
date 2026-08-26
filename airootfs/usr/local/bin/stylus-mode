@@ -15,7 +15,7 @@ cur=$(cat "$F" 2>/dev/null || echo music)
 
 case "${1:-}" in
     "")        echo "$cur"; exit 0 ;;
-    music|desktop) novo=$1 ;;
+    music|desktop|kde) novo=$1 ;;
     toggle)    novo=$([[ $cur == music ]] && echo desktop || echo music) ;;
     -h|--help) sed -n '2,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *)         echo "stylus-mode: música ou área de trabalho, só isso." >&2; exit 1 ;;
