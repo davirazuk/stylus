@@ -2,21 +2,6 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  stylus-session — decide em qual dos dois modos a máquina liga
 # ═══════════════════════════════════════════════════════════════════════════
-#  MODO MÚSICA     a tela cheia, e nada mais. É o modo padrão e é o que a
-#                  máquina é: você senta, escolhe um disco, e pronto.
-#  MODO ÁREA DE    o i3 de verdade, com barra, terminal e o resto. Está aqui
-#  TRABALHO        porque um computador precisa ser um computador às vezes.
-#
-#  Os dois são sessões X separadas com o MESMO gerenciador de janelas por
-#  baixo (i3), e só isto: uma configuração enxuta contra a completa. Ter o
-#  mesmo WM nos dois é o que faz o Steam abrir igual nos dois lados — um modo
-#  sem gerenciador de janela nenhum deixa qualquer diálogo de jogo sem
-#  decoração e sem foco, que é o defeito clássico de "modo grande" caseiro.
-#
-#  Trocar de modo é `stylus-mode`, e o que ele faz é escrever o arquivo
-#  abaixo e encerrar a sessão. O SDDM entra de novo sozinho e este script lê
-#  o arquivo novo. Sem root, sem serviço, sem mágica.
-# ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
 MODE_FILE="$HOME/.config/stylus/mode"
@@ -26,27 +11,11 @@ mode=$(cat "$MODE_FILE" 2>/dev/null || echo music)
 
 export STYLUS_MODE="$mode"
 
-# ── UTF-8, sempre ──────────────────────────────────────────────────────────
-#  Sem um locale UTF-8, o bash conta BYTES em ${#texto} e ${texto:0:N} em vez
-#  de caracteres — e a barra corta o nome do disco no meio de um "ç", pondo
-#  meio caractere na tela. É o defeito que aparece como "acento errado" e não
-#  como "faltou fonte", porque não faltou: faltou locale.
-#
-#  O mesmo vale para o python: com LANG=C ele abre arquivo em ASCII e uma
-#  pasta chamada "Músicas" vira UnicodeDecodeError.
-#
-#  A sessão gráfica costuma herdar isso do /etc/locale.conf pelo pam_systemd,
-#  mas "costuma" não é o suficiente para uma coisa que quebra o sistema
-#  inteiro em silêncio — e no medium ao vivo não há pam nenhum no caminho.
+# ── UTF-8 ──────────────────────────────────────────────────────────────────
 case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
     *UTF-8|*utf-8|*UTF8|*utf8) : ;;
     *)
-        # `unset LC_ALL` primeiro, e não é detalhe: LC_ALL ganha de LC_CTYPE e
-        # de LANG. Exportar LC_CTYPE com um LC_ALL=C herdado no ambiente não
-        # muda absolutamente nada, e a defesa passaria despercebida.
         unset LC_ALL
-        # pt_BR se o locale-gen já o criou; C.UTF-8 sempre existe na glibc
-        # moderna e não precisa ser gerado.
         if locale -a 2>/dev/null | grep -qix 'pt_BR.utf8'; then
             export LANG=pt_BR.UTF-8
         else
@@ -55,26 +24,51 @@ case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
         export LC_CTYPE="$LANG"
         ;;
 esac
-# xdg-user-dirs cria ~/Música etc. na primeira vez; sem isto a primeira
-# execução acha que a coleção não existe.
 command -v xdg-user-dirs-update >/dev/null && xdg-user-dirs-update
 
-# Primeira vez nesta conta: perguntar onde fica a coleção antes de qualquer
-# outra coisa. Um sistema de música que abre numa estante vazia parece
-# quebrado, e a causa é sempre a mesma pergunta não respondida.
 if [[ ! -s $HOME/.config/stylus/library ]]; then
     /usr/share/stylus/first-run.sh || true
 fi
 
+# ── Deploy autostart do KDE se não existe ───────────────────────────────
+# skel só copia para usuários NOVOS. Usuários que já existiam não recebem.
+# Fazer aqui garante que o autostart existe SEMPRE que o KDE for iniciado.
+KDE_AUTOSTART="$HOME/.config/autostart/stylus-kde.desktop"
+if [[ "$mode" == "desktop" || "$mode" == "kde" ]]; then
+    if [[ ! -f "$KDE_AUTOSTART" ]] && command -v startplasma-x11 &>/dev/null; then
+        mkdir -p "$HOME/.config/autostart"
+        cat > "$KDE_AUTOSTART" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Stylus KDE
+Exec=/usr/local/bin/stylus-kde-shortcuts
+Hidden=false
+NoDisplay=true
+X-KDE-autostart-after-desktop=true
+OnlyShowIn=KDE;
+EOF
+    fi
+fi
+
 case "$mode" in
     desktop)
-        # KDE Plasma se instalado, i3 como fallback
         if command -v startplasma-x11 >/dev/null 2>&1; then
+            # Plasma precisa de D-Bus session bus. startplasma-x11 normalmente
+            # é chamado pelo SDDM que já configurou tudo, mas quando passa
+            # pelo stylus-session o D-Bus pode não estar pronto.
+            if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+                eval "$(dbus-launch --sh-syntax)" 2>/dev/null
+                export DBUS_SESSION_BUS_ADDRESS
+            fi
             exec startplasma-x11
         fi
         exec i3
         ;;
     kde)
+        if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+            eval "$(dbus-launch --sh-syntax)" 2>/dev/null
+            export DBUS_SESSION_BUS_ADDRESS
+        fi
         exec startplasma-x11
         ;;
     *)
