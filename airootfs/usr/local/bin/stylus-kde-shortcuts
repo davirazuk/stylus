@@ -9,7 +9,20 @@ set -uo pipefail
 # ── Só roda no KDE ─────────────────────────────────────────────────────
 [[ "$XDG_CURRENT_DESKTOP" == *"KDE"* ]] || exit 0
 
-sleep 4
+# ── Garantir que kglobalaccel5 está rodando ─────────────────────────────
+# É isso que faz o Meta key funcionar. Sem ele, nada de atalhos.
+if ! pgrep -x kglobalaccel5 >/dev/null 2>&1; then
+    kglobalaccel5 &>/dev/null &
+    sleep 2
+fi
+
+# ── Garantir que plasmashell está rodando ───────────────────────────────
+if ! pgrep -x plasmashell >/dev/null 2>&1; then
+    plasmashell &>/dev/null &
+    sleep 3
+fi
+
+sleep 2
 
 # ── Tema escuro ────────────────────────────────────────────────────────
 kwriteconfig5 --file plasmarc --group Theme --key name "Breeze Dark" 2>/dev/null
@@ -22,7 +35,19 @@ kwriteconfig5 --file kwinrc --group Windows --key BorderlessMaximizedWindows tru
 kwriteconfig5 --file kwinrc --group Windows --key FocusPolicy ClickRaise 2>/dev/null
 kwriteconfig5 --file kwinrc --group Windows --key BorderlessMouseQuickTileEnabled true 2>/dev/null
 kwriteconfig5 --file kwinrc --group TabBox --key LayoutName Compact 2>/dev/null
-qdbus org.kde.KWin /KWin reconfigure 2>/dev/null
+
+# ── Meta key: garantir que o atalho padrão do KDE existe ────────────────
+# O Plasma usa kglobalaccel5 para gerenciar atalhos. O Meta abre o
+# launcher por padrão. Se alguém sobrescreveu o kglobalshortcutsrc,
+# esse atalho some.
+KGSC="$HOME/.config/kglobalshortcutsrc"
+if [[ -f "$KGSC" ]]; then
+    # Se o plasma.desktop não tem mais o atalho do launcher, repor
+    if ! grep -q "plasma-show-desktop\|_k_friendly_name" "$KGSC" 2>/dev/null; then
+        # Deixar o KDE recriar — apagar o arquivo corrompido
+        rm -f "$KGSC"
+    fi
+fi
 
 # ── Wallpaper ──────────────────────────────────────────────────────────
 WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
@@ -38,56 +63,6 @@ if command -v xsettingsd &>/dev/null; then
     pgrep -x xsettingsd >/dev/null || xsettingsd &>/dev/null &
 fi
 
-# ── Atalhos Stylus via custom shortcuts do KDE ────────────────────────
-# Usar qdbus é o jeito mais confiável — não depende de khotkeys instalado
-SHORTCUTS_DIR="$HOME/.local/share/knetattach"
-mkdir -p "$SHORTCUTS_DIR"
-
-# Verificar se os atalhos já existem
-EXISTING=$(qdbus org.kde.kglobalaccel /component/kwin listShortcuts 2>/dev/null | grep -c "stylus" || true)
-
-if [[ "$EXISTING" -eq 0 ]]; then
-    # Criar desktop files para custom shortcuts do Plasma
-    SHORTCUTS_DIR="$HOME/.local/share/kglobalaccel"
-    mkdir -p "$SHORTCUTS_DIR"
-
-    cat > "$SHORTCUTS_DIR/stylus-shelf.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Estante
-Exec=stylus-shelf
-X-KDE-Shortcuts=Meta+M
-EOF
-
-    cat > "$SHORTCUTS_DIR/stylus-deck.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Deck
-Exec=stylus-deck
-X-KDE-Shortcuts=Meta+O
-EOF
-
-    cat > "$SHORTCUTS_DIR/stylus-ui.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Interface
-Exec=stylus-ui
-X-KDE-Shortcuts=Meta+G
-EOF
-
-    cat > "$SHORTCUTS_DIR/stylus-toggle.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Trocar Modo
-Exec=stylus-mode toggle
-X-KDE-Shortcuts=Meta+T
-EOF
-
-    cat > "$SHORTCUTS_DIR/stylus-virar.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Virar Lado
-Exec=stylus-side-watch --virar
-X-KDE-Shortcuts=Meta+Shift+V
-EOF
-fi
+# ── Reconfigurar KWin para aplicar mudanças ────────────────────────────
+qdbus org.kde.KWin /KWin reconfigure 2>/dev/null
+qdbus org.kde.plasmashell /PlasmaShell evaluateScript "plasmashell.reloadConfig()" 2>/dev/null
