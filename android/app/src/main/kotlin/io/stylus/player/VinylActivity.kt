@@ -399,13 +399,15 @@ class VinylActivity : AppCompatActivity() {
             setOnClickListener {
                 val p = player ?: return@setOnClickListener
                 p.toggleShuffle()
-                setTextColor(if (p.shuffleMode) 0xFFE8ECF5.toInt() else 0xFF4A5570.toInt())
+                setTextColor(if (p.shuffleMode) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+                textSize = if (p.shuffleMode) 16f else 14f
             }
             shuffleBtnRef = this
         }
         controlsRow.addView(shuffleBtn)
 
         // Repeat button
+        var repeatBtnRef: TextView? = null
         val repeatBtn = TextView(this).apply {
             text = "\u27F3"
             setTextColor(0xFF4A5570.toInt())
@@ -415,12 +417,15 @@ class VinylActivity : AppCompatActivity() {
                 val p = player ?: return@setOnClickListener
                 p.toggleRepeat()
                 text = when (p.repeatMode) {
-                    1 -> "\u27F3\u2081"  // repeat one
-                    2 -> "\u27F3"        // repeat all
+                    1 -> "\u27F3\u2081"
+                    2 -> "\u27F3"
                     else -> "\u27F3"
                 }
-                setTextColor(if (p.repeatMode != 0) 0xFFE8ECF5.toInt() else 0xFF4A5570.toInt())
+                val active = p.repeatMode != 0
+                setTextColor(if (active) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+                textSize = if (active) 16f else 14f
             }
+            repeatBtnRef = this
         }
         controlsRow.addView(repeatBtn)
 
