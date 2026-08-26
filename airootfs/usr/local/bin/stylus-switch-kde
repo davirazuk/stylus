@@ -12,7 +12,7 @@
 #    sudo stylus-switch-i3
 #    sudo reboot
 # ═══════════════════════════════════════════════════════════════════════════
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[1;31m'; GREEN='\033[1;32m'; YELLOW='\033[1;33m'; BLUE='\033[1;34m'; NC='\033[0m'
 info()  { printf "${BLUE}==>${NC} %s\n" "$*"; }
@@ -31,13 +31,13 @@ KDE_PKGS=(
     plasma-desktop plasma-workspace plasma-nm plasma-pa
     plasma-browser-integration kde-gtk-config kvantum sddm
     konsole dolphin ark gwenview spectacle kate
-    nitrogen xdg-desktop-portal-kde xsettingsd
+    xdg-desktop-portal-kde xsettingsd
     qt5ct qt6ct adw-gtk-theme papirus-icon-theme
     ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji noto-fonts-cjk
 )
 
 info "Instalando KDE Plasma..."
-pacman -S --needed --noconfirm "${KDE_PKGS[@]}"
+pacman -S --needed --noconfirm "${KDE_PKGS[@]}" || warn "algum pacote não instalou — KDE pode estar incompleto"
 ok "KDE instalado"
 
 # NÃO remove i3 — é fallback de segurança
