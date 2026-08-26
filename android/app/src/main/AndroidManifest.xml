@@ -5,8 +5,13 @@
     <!-- bit-perfect + vinyl -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
@@ -39,6 +44,8 @@
 
         <activity android:name=".VinylActivity"
             android:exported="true"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|screenLayout"
+            android:theme="@style/Theme.Stylus" />
     </application>
 </manifest>

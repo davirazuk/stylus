@@ -31,6 +31,7 @@ class Deck {
     var speed: Float = 0f
     var crackle: Float = 0f
     var cueRamp: Float = 0f
+    private var wowPhase: Float = 0f  // wow/flutter oscillator phase
 
     fun elapsed(now: Float) = now - t0
     fun go(p: Phase, now: Float) { phase = p; t0 = now }
@@ -70,6 +71,10 @@ class Deck {
             phase == Phase.RETURN && e >= VinylConst.RETURN_T -> go(Phase.CUE, now)
         }
         rotation = (rotation + speed * dt * 2.0f * PI.toFloat()) % (2.0f * PI.toFloat())
+        // Wow/flutter: subtle speed variation that makes the disc feel mechanical
+        wowPhase += dt * 0.7f  // slow drift
+        val wow = 0.0008f * sin(wowPhase) + 0.0004f * sin(wowPhase * 3.7f)  // two overlapping oscillators
+        rotation += wow * dt * speed
         crackle *= max(0.0f, 1.0f - dt * 2.5f)
         return phase
     }

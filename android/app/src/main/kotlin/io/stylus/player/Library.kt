@@ -26,9 +26,16 @@ object Library {
         val name: String,
         val artist: String,
         val trackCount: Int,
-        val artUri: Uri?
+        val artUri: Uri?,
+        val totalDuration: Long = 0L
     ) {
         fun coverUri(): Uri = artUri ?: Uri.parse("content://media/external/audio/albumart/$id")
+        fun durationString(): String {
+            if (totalDuration <= 0) return "$trackCount faixas"
+            val min = totalDuration / 60000
+            val sec = (totalDuration / 1000) % 60
+            return "$trackCount faixas \u2022 ${min}:${String.format("%02d", sec)}"
+        }
     }
 
     private val AUDIO_EXT = setOf(".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac")
@@ -40,6 +47,23 @@ object Library {
     fun albums(ctx: Context): List<Album> {
         val out = mutableListOf<Album>()
         val cr = ctx.contentResolver
+
+        // Single query: sum durations grouped by album_id
+        val durMap = mutableMapOf<Long, Long>()
+        try {
+            cr.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Audio.Media.ALBUM_ID, "SUM(${MediaStore.Audio.Media.DURATION}) AS total_dur"),
+                "${MediaStore.Audio.Media.IS_MUSIC}=1",
+                null,
+                MediaStore.Audio.Media.ALBUM_ID)?.use { cur ->
+                val iId = cur.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                val iDur = cur.getColumnIndexOrThrow("total_dur")
+                while (cur.moveToNext()) {
+                    durMap[cur.getLong(iId)] = cur.getLong(iDur)
+                }
+            }
+        } catch (_: Exception) {}
+
         val uri = MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI
         val proj = arrayOf(
             MediaStore.Audio.Albums._ID,
@@ -59,14 +83,14 @@ object Library {
                     val artUri = ContentUris.withAppendedId(
                         Uri.parse("content://media/external/audio/albumart"), id
                     )
-                    out.add(Album(id, cur.getString(iName), cur.getString(iArtist), count, artUri))
+                    out.add(Album(id, cur.getString(iName), cur.getString(iArtist), count, artUri, durMap[id] ?: 0L))
                 }
             }
         }
         return out
     }
 
-    /** Faixas de um álbum, ordenadas por track number */
+    /** Faixas de um álbum, ordenadas por disc number e track number */
     fun albumTracks(ctx: Context, albumId: Long): List<Track> {
         val out = mutableListOf<Track>()
         val cr = ctx.contentResolver
@@ -79,8 +103,10 @@ object Library {
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.TRACK,
+            MediaStore.Audio.Media.DISC_NUMBER,
         )
-        cr.query(uri, proj, sel, arrayOf(albumId.toString()), "${MediaStore.Audio.Media.TRACK} ASC")?.use { cur ->
+        cr.query(uri, proj, sel, arrayOf(albumId.toString()), "${MediaStore.Audio.Media.DISC_NUMBER} ASC, ${MediaStore.Audio.Media.TRACK} ASC")?.use { cur ->
             val iId = cur.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val iTitle = cur.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val iAlbumId = cur.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
@@ -93,7 +119,7 @@ object Library {
                 out.add(Track(id, cur.getString(iTitle), cur.getLong(iAlbumId), cur.getString(iAlbum), cur.getString(iArtist), cur.getLong(iDur), contentUri))
             }
         }
-        return out.sortedWith(compareBy({ it.uri.toString() }, { trackSortKey(it.title) }))
+        return out
     }
 
     /** Por áudio em pasta — recursivo até 4 níveis, como vinyl._collect_audio_recursive */

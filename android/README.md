@@ -14,11 +14,13 @@ Phone detected: `samsung SM-S938B` (Android 16) on `RQCY204AYDD` — ready for `
   USB DAC via `UsbManager` bulk transfer when `ACTION_USB_DEVICE_ATTACHED` —
   same path UAPP uses, not `AudioTrack` mix.
 
-* **Vinyl** — `VinylRenderer` (OpenGL ES 3.0) ports `deck/vinyl.py` + `ritual.py`
-  shaders verbatim: neutral palette (played 0.190 milky vs unplayed 0.095 graphite,
-  gap near-white 0.76), flat `RIBBON_FS`, studio `COMPOSITE_FS` (no CRT curve/scanline),
-  8 annuli disc body, radial wear, amber live groove (`live_groove` ported to Kotlin
-  with same `depth 0.0048` signed wander), tonearm with correct `iso` math.
+* **Vinyl** — `VinylRenderer` (OpenGL ES 3.0). **LEIA A LEI DO DESENHO em
+  `../CLAUDE.md` §5.5 antes de mexer: NÃO É REALISMO.** O ritual é o analógico
+  (raio=tempo, sulco conta faixa, cerimônia SPINUP→CUE→DROP); o desenho é
+  irmão do scope: disco de luz no quase-preto, feixe âmbar na agulha (rastro
+  que se apaga + ponto quente + bloom), faíscas no `crackle` da gota, halo
+  respirando atrás do disco, grão sutil. Sem madeira, sem plinto, sem sala,
+  sem braço de metal — isso já foi tentado e reprovado pelo usuário.
 
 * **Launcher** — `Library` ports `vinyl.shelf` + `track_paths` recursive depth 4,
   `library_roots` via `SAF` + `WebDAV` (rclone config imported, or native `OkHttp` WebDAV

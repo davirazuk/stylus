@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- fundo: vazio quase preto, levemente frio -->
+    <radialGradient id="void" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#16171f"/>
+      <stop offset="60%" stop-color="#0b0c12"/>
+      <stop offset="100%" stop-color="#05060a"/>
+    </radialGradient>
+    <!-- o halo que o disco acende na sala que não existe -->
+    <radialGradient id="halo" cx="46%" cy="46%" r="52%">
+      <stop offset="0%" stop-color="#c07818" stop-opacity="0.55"/>
+      <stop offset="45%" stop-color="#8a5510" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <!-- o corpo do disco: preto com a borda pegando o halo -->
+    <radialGradient id="disc" cx="42%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#0a0b10"/>
+      <stop offset="72%" stop-color="#101218"/>
+      <stop offset="94%" stop-color="#1d2029"/>
+      <stop offset="100%" stop-color="#2a2e3a"/>
+    </radialGradient>
+    <radialGradient id="label" cx="45%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#e8934a"/>
+      <stop offset="55%" stop-color="#c96a24"/>
+      <stop offset="100%" stop-color="#8f3f12"/>
+    </radialGradient>
+  </defs>
+
+  <!-- o vazio -->
+  <rect width="512" height="512" rx="112" fill="url(#void)"/>
+  <rect width="512" height="512" rx="112" fill="url(#halo)"/>
+
+  <!-- o disco -->
+  <circle cx="248" cy="252" r="168" fill="url(#disc)"/>
+
+  <!-- sulcos: anéis finos, alguns mais claros (os intervalos contam faixas) -->
+  <g fill="none" stroke="#ffffff">
+    <circle cx="248" cy="252" r="150" stroke-opacity="0.045" stroke-width="2"/>
+    <circle cx="248" cy="252" r="132" stroke-opacity="0.06"  stroke-width="2"/>
+    <circle cx="248" cy="252" r="114" stroke-opacity="0.045" stroke-width="2"/>
+    <circle cx="248" cy="252" r="96"  stroke-opacity="0.075" stroke-width="2.5"/>
+    <circle cx="248" cy="252" r="80"  stroke-opacity="0.05"  stroke-width="2"/>
+  </g>
+
+  <!-- o rastro do feixe: arco âmbar que se apaga -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M 248 252 m 118 0 a 118 118 0 0 0 -74 -100"
+          stroke="#f5a623" stroke-opacity="0.16" stroke-width="22"/>
+    <path d="M 248 252 m 118 0 a 118 118 0 0 0 -52 -106"
+          stroke="#f7a41e" stroke-opacity="0.38" stroke-width="14"/>
+    <path d="M 248 252 m 118 0 a 118 118 0 0 0 -30 -110"
+          stroke="#ffb84d" stroke-opacity="0.85" stroke-width="7"/>
+  </g>
+
+  <!-- o rótulo -->
+  <circle cx="248" cy="252" r="56" fill="url(#label)"/>
+  <circle cx="248" cy="252" r="56" fill="none" stroke="#000000" stroke-opacity="0.25" stroke-width="3"/>
+  <!-- o eixo -->
+  <circle cx="248" cy="252" r="9" fill="#0b0c11"/>
+  <circle cx="248" cy="252" r="9" fill="none" stroke="#3a3f4d" stroke-width="2.5"/>
+
+  <!-- o ponto: a agulha, o pixel mais quente -->
+  <circle cx="366" cy="252" r="13" fill="#ffb84d"/>
+  <circle cx="366" cy="252" r="13" fill="none" stroke="#ffd98f" stroke-opacity="0.9" stroke-width="4"/>
+  <circle cx="366" cy="252" r="24" fill="#f7a41e" opacity="0.25"/>
+
+  <!-- o braço: uma linha fria do canto ao ponto -->
+  <line x1="452" y1="96" x2="374" y2="244"
+        stroke="#9aa2b8" stroke-opacity="0.85" stroke-width="10" stroke-linecap="round"/>
+  <line x1="452" y1="96" x2="374" y2="244"
+        stroke="#e8ecf5" stroke-opacity="0.95" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="452" cy="96" r="17" fill="none" stroke="#c7cddb" stroke-opacity="0.9" stroke-width="7"/>
+</svg>

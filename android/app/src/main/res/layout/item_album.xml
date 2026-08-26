@@ -4,17 +4,18 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="4dp"
+    android:clickable="true"
+    android:focusable="true"
     android:background="?android:attr/selectableItemBackground">
 
     <ImageView
         android:id="@+id/cover"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
         android:scaleType="centerCrop"
         android:background="#0D0F15"
-        android:contentDescription="Capa"
-        android:adjustViewBounds="true" />
+        android:contentDescription="Capa" />
 
     <TextView
         android:id="@+id/title"
