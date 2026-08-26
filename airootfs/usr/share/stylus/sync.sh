@@ -107,6 +107,23 @@ if [[ -d $SKEL ]]; then
     fi
 fi
 
+# ── 2b. autostart do KDE: SEMPRE sobrescrever ───────────────────────────
+# O autostart é configuração do SISTEMA que mora em ~/.config/autostart/.
+# O usuário não mexe nisso — ele é o que faz o KDE funcionar direito.
+# Se existir, substituir. Se não existir, copiar.
+AUTOSTART_SKEL="$SRC/etc/skel/.config/autostart"
+if [[ -d $AUTOSTART_SKEL ]]; then
+    while IFS= read -r usuario; do
+        casa=$(getent passwd "$usuario" | cut -d: -f6)
+        [[ -d $casa ]] || continue
+        [[ $casa == /home/* ]] || continue
+        mkdir -p "$casa/.config/autostart"
+        cp -a --no-preserve=ownership "$AUTOSTART_SKEL/." "$casa/.config/autostart/"
+        chown -R "$usuario": "$casa/.config/autostart" 2>/dev/null || true
+    done < <(getent passwd | awk -F: '$3>=1000 && $3<65000')
+    ok "autostart KDE atualizado"
+fi
+
 # ── 3. o venv do deck, se sumiu ou está velho ──────────────────────────────
 VENV="$DST/usr/share/stylus/deck/venv"
 if [[ ! -x $VENV/bin/python3 ]]; then

@@ -1,47 +1,48 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  stylus-kde-shortcuts — roda no login do KDE, configura tudo
+#  stylus-kde-shortcuts — roda no login do KDE, garante que tudo funciona
+# ═══════════════════════════════════════════════════════════════════════════
+#  Chamado pelo autostart do KDE. NÃO checa XDG_CURRENT_DESKTOP porque
+#  no autostart pode não estar setado ainda. Se existe plasmashell OU
+#  kwin, estamos no KDE.
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-# ── Só roda no KDE ─────────────────────────────────────────────────────
+# ── Detectar KDE por processos, não por variável ───────────────────────
 if ! pgrep -x plasmashell >/dev/null 2>&1 && \
-   [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
+   ! pgrep -x kwin_x11 >/dev/null 2>&1 && \
+   ! pgrep -x kwin_wayland >/dev/null 2>&1; then
     exit 0
 fi
 
-# ── kglobalaccel5: o daemon que faz o Meta key funcionar ────────────────
+# ── kglobalaccel5: Meta key ────────────────────────────────────────────
 if ! pgrep -x kglobalaccel5 >/dev/null 2>&1; then
     kglobalaccel5 &>/dev/null &
-    sleep 1
-fi
-
-# ── plasmashell: o painel e desktop ────────────────────────────────────
-if ! pgrep -x plasmashell >/dev/null 2>&1; then
-    plasmashell &>/dev/null &
     sleep 2
 fi
 
-# ── Corrigir kglobalshortcutsrc se corrompido ──────────────────────────
+# ── plasmashell: painel e desktop ──────────────────────────────────────
+if ! pgrep -x plasmashell >/dev/null 2>&1; then
+    plasmashell &>/dev/null &
+    sleep 3
+fi
+
+# ── kglobalshortcutsrc: deletar se corrompido ──────────────────────────
 KGSC="$HOME/.config/kglobalshortcutsrc"
 if [[ -f "$KGSC" ]]; then
-    # Se não tem nenhuma entrada do plasma, está vazio ou corrompido
-    if ! grep -q "plasma-show-desktop\|_k_friendly_name\|Text\s*=" "$KGSC" 2>/dev/null; then
+    if ! grep -q "plasma-show-desktop\|_k_friendly_name" "$KGSC" 2>/dev/null; then
         rm -f "$KGSC"
     fi
 fi
 
-# ── KWin: janelas funcionam direito ────────────────────────────────────
+# ── KWin ───────────────────────────────────────────────────────────────
 kwriteconfig5 --file kwinrc --group Compositing --key OpenGLIsUnsafe false 2>/dev/null
 kwriteconfig5 --file kwinrc --group Desktops --key Number 1 2>/dev/null
 kwriteconfig5 --file kwinrc --group Windows --key BorderlessMaximizedWindows true 2>/dev/null
 kwriteconfig5 --file kwinrc --group Windows --key FocusPolicy ClickRaise 2>/dev/null
-kwriteconfig5 --file kwinrc --group Windows --key BorderlessMouseQuickTileEnabled true 2>/dev/null
-kwriteconfig5 --file kwinrc --group TabBox --key LayoutName Compact 2>/dev/null
 
-# ── Tema escuro ────────────────────────────────────────────────────────
+# ── Tema ───────────────────────────────────────────────────────────────
 kwriteconfig5 --file plasmarc --group Theme --key name "Breeze Dark" 2>/dev/null
-plasma-apply-desktop-theme "Breeze Dark" 2>/dev/null
 
 # ── Wallpaper ──────────────────────────────────────────────────────────
 WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
@@ -52,10 +53,5 @@ fi
 # ── Numlock ────────────────────────────────────────────────────────────
 command -v numlockx &>/dev/null && numlockx on 2>/dev/null
 
-# ── xsettingsd ─────────────────────────────────────────────────────────
-if command -v xsettingsd &>/dev/null; then
-    pgrep -x xsettingsd >/dev/null || xsettingsd &>/dev/null &
-fi
-
-# ── Aplicar configs do KWin ────────────────────────────────────────────
+# ── Aplicar ────────────────────────────────────────────────────────────
 qdbus org.kde.KWin /KWin reconfigure 2>/dev/null
