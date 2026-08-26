@@ -545,6 +545,10 @@ class VinylActivity : AppCompatActivity() {
                 return true
             }
             override fun onLongPress(e: MotionEvent) { finish() }
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                showTrackListOverlay()
+                return true
+            }
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
                 if (e1 == null) return false
                 val dx = e2.x - e1.x
@@ -572,7 +576,9 @@ class VinylActivity : AppCompatActivity() {
             true
         }
 
-        // Notification action receivers
+        // Notification action receivers + volume control
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val maxVol = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
         mediaReceiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 when (intent.action) {
@@ -710,6 +716,70 @@ class VinylActivity : AppCompatActivity() {
                 trackInfoView?.setPadding(24, 0, 24, 4)
             }
         }
+    }
+
+    private fun showTrackListOverlay() {
+        val tracks = cachedTracks ?: return
+        if (tracks.isEmpty()) return
+        val currentIdx = player?.currentTrackIndex ?: 0
+
+        val root = window.decorView.findViewById<ViewGroup>(android.R.id.content)
+
+        val overlay = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xE807080B.toInt())
+            setPadding(0, dp(24), 0, 0)
+        }
+
+        val header = TextView(this).apply {
+            text = "FAIXAS"
+            setTextColor(0xFF6A7590.toInt())
+            textSize = 10f
+            letterSpacing = 0.15f
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        overlay.addView(header)
+
+        val list = android.widget.ListView(this)
+        list.adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = tracks.size
+            override fun getItem(i: Int) = tracks[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, convertView: View?, parent: ViewGroup): View {
+                val tv = (convertView as? TextView) ?: TextView(this@VinylActivity).apply {
+                    setPadding(dp(20), dp(10), dp(20), dp(10))
+                    textSize = 12f
+                }
+                val t = tracks[i]
+                tv.text = "${i + 1}. ${t.title}"
+                tv.setTextColor(if (i == currentIdx) 0xFFE8ECF5.toInt() else 0xFF8892B0.toInt())
+                return tv
+            }
+        }
+        list.setOnItemClickListener { _, _, i, _ ->
+            player?.exo?.seekToDefaultPosition(i)
+            player?.play()
+            root.removeView(overlay)
+        }
+        list.divider = null
+        list.selector = android.graphics.drawable.ColorDrawable(0x20FFFFFF)
+        overlay.addView(list, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        val closeBtn = TextView(this).apply {
+            text = "FECHAR"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 10f
+            letterSpacing = 0.1f
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(12), 0, dp(16))
+            setOnClickListener { root.removeView(overlay) }
+        }
+        overlay.addView(closeBtn)
+
+        root.addView(overlay, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
