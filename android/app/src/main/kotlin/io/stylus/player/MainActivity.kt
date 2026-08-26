@@ -439,12 +439,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var usbReceiver: android.content.BroadcastReceiver? = null
+
     override fun onResume() {
         super.onResume()
         checkDacStatus()
         updateNowPlayingBar()
-        // Refresh play counts
         recycler.adapter?.notifyDataSetChanged()
+        // Listen for USB plug/unplug
+        usbReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: android.content.Intent) {
+                checkDacStatus()
+            }
+        }
+        val usbFilter = android.content.IntentFilter().apply {
+            addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(usbReceiver, usbFilter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(usbReceiver, usbFilter)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        usbReceiver?.let { unregisterReceiver(it) }
+        usbReceiver = null
     }
 
     private fun updateNowPlayingBar() {
