@@ -369,6 +369,14 @@ class RitualScene:
         if side is None: return [],None
         span=max(1e-6,side["end"]-side["start"]); frac=float(np.clip((t_abs-side["start"])/span,0,1))
         strips=[v for v in vinyl.disc_body(cx,cy,radius,iso,light)]
+        # Disc shadow — dark ring behind disc for depth
+        n_sh = 48
+        sh_thetas = np.linspace(0, 2 * np.pi, n_sh, endpoint=False)
+        sh_x = cx + np.cos(sh_thetas) * radius * 1.04
+        sh_y = cy + np.sin(sh_thetas) * radius * 1.04 * iso[1]
+        sh_pts = np.column_stack([sh_x, sh_y])
+        sh_cols = np.full((n_sh, 3), [0.015, 0.01, 0.008], dtype=np.float32)
+        strips.insert(0, build_strip(sh_pts, 0.025 * radius, W, H, sh_cols))
         tris=[]
         wm=vinyl.wear_marks(cx,cy,radius,iso,rot,seed=al.seed,plays=al.plays,crackle=self.deck.crackle)
         if wm is not None and len(wm[0]): tris.append(build_segs(wm[0],1.2,W,H,wm[1]))
