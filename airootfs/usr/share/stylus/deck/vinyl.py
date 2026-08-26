@@ -224,11 +224,11 @@ AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
 # anything >0.35 blooms, so body stays in hundredths to remain matte.
 # Contrast comes from luminance (shade), not hue. The amber live groove
 # is the only saturated accent — it contrasts grey, not competes.
-VINYL_CORE      = (0.013, 0.013, 0.014)   # black plastic — neutral, matte
-VINYL_RIM       = (0.052, 0.050, 0.048)   # warm edge, catches room light
-SHEEN           = (0.105, 0.108, 0.100)   # white specular lobes
-GROOVE_UNPLAYED = (0.095, 0.102, 0.110)   # ahead: dark graphite
-GROOVE_PLAYED   = (0.190, 0.198, 0.208)   # behind: milky warm grey — lit
+VINYL_CORE      = (0.016, 0.016, 0.017)   # black plastic — a touch lighter so groove contrast reads
+VINYL_RIM       = (0.064, 0.062, 0.058)   # warm edge, a bit brighter so disc pops from plinth
+SHEEN           = (0.128, 0.132, 0.122)   # white specular — slightly stronger, like scope's bloom but restrained
+GROOVE_UNPLAYED = (0.105, 0.112, 0.120)   # ahead: graphite, a touch milky for visibility
+GROOVE_PLAYED   = (0.210, 0.218, 0.228)   # behind: lit, a touch brighter
 GROOVE_GAP      = (0.760, 0.750, 0.735)   # gap: near-white, countable de longe
 STYLUS_HOT      = (0.740, 0.520, 0.140)   # live: hot amber, only saturated accent
 ARM_METAL       = (0.285, 0.285, 0.290)   # brushed steel — warm neutral

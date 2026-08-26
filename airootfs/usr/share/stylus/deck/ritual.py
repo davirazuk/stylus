@@ -191,7 +191,7 @@ class TextOSD:
         surf=self._surfs.get(W)
         if surf is None:
             surf=self.font.render(self._text,True,(255,255,255)); self._surfs[W]=surf
-        rw,rh=surf.get_size(); tex_data=pygame.image.tostring(surf,"RGBA",True)
+        rw,rh=surf.get_size(); tex_data=pygame.image.tostring(surf,"RGBA",False)
         glBindTexture(GL_TEXTURE_2D,self.tex)
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR); glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
         glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,rw,rh,0,GL_RGBA,GL_UNSIGNED_BYTE,tex_data)
@@ -204,6 +204,13 @@ class TextOSD:
             y0=m if "top" in self.anchor else H-rh-m
         def px(x,y): return (x/W*2-1,1-y/H*2)
         p0=px(x0,y0); p1=px(x0+rw,y0); p2=px(x0+rw,y0+rh); p3=px(x0,y0+rh)
+        # v=0 nos vértices de CIMA da tela: com tostring(...,False) a linha 0
+        # da memória é o topo da surface, e o GL trata a linha 0 como v=0 —
+        # então topo↔v=0. Conferido desenhando com o driver offscreen do SDL:
+        # o par (False + v=1 em cima) que esteve aqui (e o (True + v=0) de
+        # antes) desenhava o texto da faixa de CABEÇA PARA BAIXO — os dois
+        # são a mesma inversão dupla. Sintoma visível: título do disco
+        # espelhado em pé no OSD.
         arr=np.array([*p0,0,0,*p1,1,0,*p2,1,1,*p0,0,0,*p2,1,1,*p3,0,1],dtype=np.float32)
         r,g,b=col
         glUniform1i(glGetUniformLocation(prog,"tex"),0)
