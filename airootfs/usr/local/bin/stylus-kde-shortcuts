@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# stylus-kde-shortcuts — configura atalhos do KDE via kwriteconfig5
+# Roda como autostart uma vez por sessão.
+set -uo pipefail
+
+# Espera KDE carregar completamente
+sleep 5
+
+# ── Atalhos do Stylus ──────────────────────────────────────────────────
+# kwriteconfig5 é o jeito certo de configurar atalhos no KDE.
+# Escrever kglobalshortcutsrc direto é apagado pelo KDE ao encerrar.
+
+# Estes são custom shortcuts — precisam de .desktop files em ~/.local/share/konsole/
+mkdir -p "$HOME/.local/share/kservices5/plasma/bookmarks"
+
+# Usar qdbus para atalhos globais do Plasma
+# O KDE não expõe atalhos customizados facilmente, então usamos
+# khotkeys (o módulo de atalhos do KDE)
+
+KHOTKEYS="$HOME/.config/khotkeysrc"
+mkdir -p "$(dirname "$KHOTKEYS")"
+
+# Se não existe, criar básico
+if [[ ! -f "$KHOTKEYS" ]]; then
+    cat > "$KHOTKEYS" <<'EOF'
+[Data]
+ProfilesCount=1
+
+[Data][Profile_0][Data][Actions][0][Action][Triggers][0][Trigger][Type]=1
+[Data][Profile_0][Data][Actions][0][Action][Triggers][0][Trigger][Key]=Meta+M
+[Data][Profile_0][Data][Actions][0][Action][CommandURL_0]=stylus-shelf
+[Data][Profile_0][Data][Actions][0][Action][Title]=Stylus Estante
+
+[Data][Profile_0][Data][Actions][1][Action][Triggers][0][Trigger][Type]=1
+[Data][Profile_0][Data][Actions][1][Action][Triggers][0][Trigger][Key]=Meta+O
+[Data][Profile_0][Data][Actions][1][Action][CommandURL_0]=stylus-deck
+[Data][Profile_0][Data][Actions][1][Action][Title]=Stylus Deck
+
+[Data][Profile_0][Data][Actions][2][Action][Triggers][0][Trigger][Type]=1
+[Data][Profile_0][Data][Actions][2][Action][Triggers][0][Trigger][Key]=Meta+G
+[Data][Profile_0][Data][Actions][2][Action][CommandURL_0]=stylus-ui
+[Data][Profile_0][Data][Actions][2][Action][Title]=Stylus Interface
+
+[Data][Profile_0][Data][Actions][3][Action][Triggers][0][Trigger][Type]=1
+[Data][Profile_0][Data][Actions][3][Action][Triggers][0][Trigger][Key]=Meta+T
+[Data][Profile_0][Data][Actions][3][Action][CommandURL_0]=stylus-mode toggle
+[Data][Profile_0][Data][Actions][3][Action][Title]=Trocar Modo
+
+[Data][Profile_0][Data][Actions][4][Action][Triggers][0][Trigger][Type]=1
+[Data][Profile_0][Data][Actions][4][Action][Triggers][0][Trigger][Key]=Meta+Shift+V
+[Data][Profile_0][Data][Actions][4][Action][CommandURL_0]=stylus-side-watch --virar
+[Data][Profile_0][Data][Actions][4][Action][Title]=Virar o Lado
+EOF
+fi
+
+# ── KWin: janelas ──────────────────────────────────────────────────────
+# Garantir que janelas se comportam bem
+kwriteconfig5 --file kwinrc --group Compositing --key OpenGLIsUnsafe false 2>/dev/null
+kwriteconfig5 --file kwinrc --group Desktops --key Number 1 2>/dev/null
+
+# ── Plasma: tema ────────────────────────────────────────────────────────
+kwriteconfig5 --file plasmarc --group Theme --key name "Breeze Dark" 2>/dev/null
+
+# ── Wallpaper ──────────────────────────────────────────────────────────
+WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
+if [[ -f "$WALLPAPER" ]] && command -v plasma-apply-wallpaperimage &>/dev/null; then
+    plasma-apply-wallpaperimage "$WALLPAPER" 2>/dev/null
+fi
+
+# ── Numlock ────────────────────────────────────────────────────────────
+command -v numlockx &>/dev/null && numlockx on 2>/dev/null
+
+# ── xsettingsd ─────────────────────────────────────────────────────────
+if command -v xsettingsd &>/dev/null; then
+    pgrep -x xsettingsd >/dev/null || xsettingsd &>/dev/null &
+fi

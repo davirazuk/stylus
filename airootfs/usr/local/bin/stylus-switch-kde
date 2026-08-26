@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  stylus-switch-kde — troca o i3 pelo KDE Plasma
+#  stylus-switch-kde — instala KDE Plasma e configura tudo
 # ═══════════════════════════════════════════════════════════════════════════
-#  Instala o plasma-desktop, configura tema escuro e define modo desktop.
-#  NÃO remove i3 — é fallback se KDE quebrar. Roda como root.
-#
-#    sudo stylus-switch-kde
-#    sudo reboot
+#    sudo stylus-switch-kde && sudo reboot
 #
 #  Para voltar ao i3:
-#    sudo stylus-switch-i3
-#    sudo reboot
+#    sudo stylus-switch-i3 && sudo reboot
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -18,122 +13,105 @@ RED='\033[1;31m'; GREEN='\033[1;32m'; YELLOW='\033[1;33m'; BLUE='\033[1;34m'; NC
 info()  { printf "${BLUE}==>${NC} %s\n" "$*"; }
 ok()    { printf "${GREEN}  ✓${NC} %s\n" "$*"; }
 warn()  { printf "${YELLOW}  !${NC} %s\n" "$*"; }
-err()   { printf "${RED}  ✗${NC} %s\n" "$*"; }
+fail()  { printf "${RED}  ✗${NC} %s\n" "$*"; }
 
-[[ $EUID -eq 0 ]] || { err "rode como root: sudo stylus-switch-kde"; exit 1; }
+[[ $EUID -eq 0 ]] || { fail "sudo stylus-switch-kde"; exit 1; }
 
 REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo stylus)}"
 USER_HOME=$(eval echo "~$REAL_USER")
-ok "Usuário: $REAL_USER"
+ok "Usuário: $REAL_USER ($USER_HOME)"
 
-# ── 1. Instalar KDE ───────────────────────────────────────────────────
-KDE_PKGS=(
-    plasma-desktop plasma-workspace plasma-nm plasma-pa
-    plasma-browser-integration kde-gtk-config kvantum sddm
-    konsole dolphin ark gwenview spectacle kate
-    xdg-desktop-portal-kde xsettingsd
-    qt5ct qt6ct adw-gtk-theme papirus-icon-theme
-    ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji noto-fonts-cjk
-)
+# ── 1. Pacotes ─────────────────────────────────────────────────────────
+info "Instalando KDE..."
+pacman -S --needed --noconfirm \
+    plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil \
+    kde-gtk-config kvantum sddm konsole dolphin gwenview kate \
+    xdg-desktop-portal-kde qt5ct qt6ct \
+    adw-gtk-theme papirus-icon-theme \
+    ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji noto-fonts-cjk \
+    2>/dev/null && ok "Pacotes OK" || warn "algum pacote falhou"
 
-info "Instalando KDE Plasma..."
-pacman -S --needed --noconfirm "${KDE_PKGS[@]}" || warn "algum pacote não instalou — KDE pode estar incompleto"
-ok "KDE instalado"
+# ── 2. Modo ────────────────────────────────────────────────────────────
+mkdir -p "$USER_HOME/.config/stylus"
+echo "desktop" > "$USER_HOME/.config/stylus/mode"
+chown "$REAL_USER":"$REAL_USER" "$USER_HOME/.config/stylus/mode"
+ok "Modo: desktop"
 
-# NÃO remove i3 — é fallback de segurança
-
-# ── 2. Modo desktop ───────────────────────────────────────────────────
-# stylus-session já detecta KDE: se startplasma-x11 existe, usa ele.
-# Só precisamos escrever "desktop" no arquivo de modo.
-MODE_FILE="$USER_HOME/.config/stylus/mode"
-mkdir -p "$(dirname "$MODE_FILE")"
-echo "desktop" > "$MODE_FILE"
-chown "$REAL_USER":"$REAL_USER" "$MODE_FILE"
-ok "Modo: desktop (KDE na próxima sessão)"
-
-# ── 3. SDDM: manter stylus.desktop como sessão ────────────────────────
-# stylus.desktop é o dispatcher — ele lê o modo e decide KDE ou i3.
-# NÃO trocar para plasma.desktop, senão o stylus-mode para de funcionar.
-SDDM_CONF="/etc/sddm.conf.d/stylus.conf"
+# ── 3. SDDM ────────────────────────────────────────────────────────────
 mkdir -p /etc/sddm.conf.d
-cat > "$SDDM_CONF" <<SDDM
+cat > /etc/sddm.conf.d/stylus.conf <<SDDM
 [General]
 DisplayServer=x11
 Numlock=on
 
 [Theme]
 Current=stylus
-CursorTheme=Adwaita
-CursorSize=24
 
 [Autologin]
 User=$REAL_USER
 Session=stylus.desktop
 Relogin=true
-
-[X11]
-MinimumVT=7
-
-[Users]
-HideShells=/usr/bin/nologin,/sbin/nologin
 SDDM
+ok "SDDM configurado"
 
-ok "SDDM: autologin=$REAL_USER, sessão=stylus.desktop (dispatcher)"
-
-# ── 4. KDE configs ────────────────────────────────────────────────────
-KDE_CONF="$USER_HOME/.config"
-mkdir -p "$KDE_CONF"
+# ── 4. KDE Config ──────────────────────────────────────────────────────
+C="$USER_HOME/.config"
+mkdir -p "$C"
 
 # KWin
-cat > "$KDE_CONF/kwinrc" <<'KWIN'
+cat > "$C/kwinrc" <<'EOF'
 [Compositing]
 OpenGLIsUnsafe=false
+LatencyPolicy=85
 
 [Desktops]
 Number=1
 
-[Wayland]
-Enabled=false
-KWIN
+[Windows]
+BorderlessMaximizedWindows=true
+FocusPolicy=ClickRaise
+BorderlessMouseQuickTileEnabled=true
 
-# Plasma tema escuro
-cat > "$KDE_CONF/plasmarc" <<'PLASMA'
+[TabBox]
+LayoutName=Compact
+EOF
+
+# Plasma Dark
+cat > "$C/plasmarc" <<'EOF'
 [Theme]
 name=Breeze Dark
-PLASMA
+EOF
 
-# GTK
-mkdir -p "$KDE_CONF/gtk-3.0" "$KDE_CONF/gtk-4.0"
-cat > "$KDE_CONF/gtk-3.0/settings.ini" <<'GTK3'
+# GTK Dark
+mkdir -p "$C/gtk-3.0" "$C/gtk-4.0"
+cat > "$C/gtk-3.0/settings.ini" <<'EOF'
 [Settings]
 gtk-theme-name=adw-gtk3-dark
 gtk-icon-theme-name=Papirus-Dark
 gtk-cursor-theme-name=Adwaita
 gtk-font-name=Noto Sans 11
-GTK3
-cp "$KDE_CONF/gtk-3.0/settings.ini" "$KDE_CONF/gtk-4.0/settings.ini"
+EOF
+cp "$C/gtk-3.0/settings.ini" "$C/gtk-4.0/settings.ini"
 
-# Qt
+# Qt Fusion Dark
 for ver in qt5ct qt6ct; do
-    mkdir -p "$KDE_CONF/$ver"
-    cat > "$KDE_CONF/$ver/$ver.conf" <<QT
+    mkdir -p "$C/$ver"
+    cat > "$C/$ver/$ver.conf" <<EOF
 [Appearance]
 custom_palette=true
 color_scheme_path=/usr/share/$ver/colors/stylus.conf
 icon_theme=Papirus-Dark
-standard_dialogs=default
 style=Fusion
 
 [Fonts]
 fixed=@Variant(\0\0\0@\0\0\0\x16JetBrainsMono Nerd Font\0\0\0\n\0\0\0\0\x32\x7f\0\0\x18)
 general=@Variant(\0\0\0@\0\0\0\x12Noto Sans\0\0\0\n\0\0\0\0\x28\x7f\0\0\x14)
-QT
+EOF
 done
 
-# Konsole
-KONSOLE_DIR="$KDE_CONF/konsole"
-mkdir -p "$KONSOLE_DIR"
-cat > "$KONSOLE_DIR/Stylus.profile" <<'KONSOLE'
+# Konsole Stylus
+mkdir -p "$C/konsole"
+cat > "$C/konsole/Stylus.profile" <<'EOF'
 [General]
 Name=Stylus
 Parent=FALLBACK/
@@ -145,15 +123,13 @@ UseCustomFont=true
 
 [Scrolling]
 HistoryMode=2
-KONSOLE
+EOF
 
-cat > "$KONSOLE_DIR/Stylus.colorscheme" <<'COLORS'
+cat > "$C/konsole/Stylus.colorscheme" <<'EOF'
 [Background]
 Color=7,8,11
-
 [Foreground]
 Color=204,208,224
-
 [Color0]
 Color=26,29,36
 [Color1]
@@ -170,7 +146,6 @@ Color=180,100,220
 Color=0,180,180
 [Color7]
 Color=204,208,224
-
 [Color8]
 Color=61,65,80
 [Color9]
@@ -187,36 +162,43 @@ Color=200,120,240
 Color=0,200,200
 [Color15]
 Color=255,255,255
-
 [General]
 Description=Stylus Dark
 Opacity=0.95
 Blur=true
-COLORS
+EOF
 
-ok "KDE: tema escuro, Konsole, Dolphin, GTK, Qt"
+# ── 5. KDE Shortcuts (via kwriteconfig5) ───────────────────────────────
+# Usar kwriteconfig5 em vez de escrever kglobalshortcutsrc direto
+# — o KDE reescreve o arquivo quando encerra e apaga o que não conhece.
 
-# ── 5. Dono dos configs ───────────────────────────────────────────────
-chown -R "$REAL_USER":"$REAL_USER" "$KDE_CONF"
-chown -R "$REAL_USER":"$REAL_USER" "$USER_HOME/.config/stylus"
+# Atalhos customizados via scripts shell
+mkdir -p "$C/autostart"
 
-# ── Resumo ─────────────────────────────────────────────────────────────
+cat > "$C/autostart/stylus-kde-shortcuts.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Stylus Shortcuts
+Exec=/usr/local/bin/stylus-kde-shortcuts
+Hidden=false
+NoDisplay=true
+X-KDE-autostart-after-desktop=true
+EOF
+
+ok "KDE configs escritas"
+
+# ── 6. Dono ────────────────────────────────────────────────────────────
+chown -R "$REAL_USER":"$REAL_USER" "$C"
+
 echo ""
 printf "${GREEN}═══ PRONTO ═══${NC}\n"
 echo ""
-echo "  KDE Plasma instalado."
-echo "  Tema: escuro, Papirus-Dark, JetBrains Mono"
-echo "  Autologin: $REAL_USER"
-echo "  Sessão: stylus.desktop (dispatcher → KDE automaticamente)"
-echo ""
-echo "  Reinicie: sudo reboot"
+echo "  sudo reboot"
 echo ""
 echo "  Depois do reboot:"
-echo "    • Modo música: stilu-mode music"
+echo "    • Modo música: stylus-mode music"
 echo "    • Modo desktop: stylus-mode desktop"
-echo "    • Deck: Meta+D ou stylus-deck"
-echo "    • Trocar modo: Meta+T"
-echo ""
-echo "  Para voltar ao i3:"
-echo "    sudo stylus-switch-i3 && sudo reboot"
+echo "    • Deck: stylus-deck"
+echo "    • Estante: stylus-shelf"
+echo "    • Volta pro i3: sudo stylus-switch-i3 && sudo reboot"
 echo ""
