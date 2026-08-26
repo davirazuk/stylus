@@ -375,7 +375,7 @@ class VinylActivity : AppCompatActivity() {
         }
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100; progress = 0
-            layoutParams = LinearLayout.LayoutParams(dp(220), dp(3)).apply { topMargin = dp(6) }
+            layoutParams = LinearLayout.LayoutParams(dp(260), dp(3)).apply { topMargin = dp(6) }
         }
 
         val bottomCol = LinearLayout(this).apply {

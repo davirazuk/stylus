@@ -389,6 +389,25 @@ class RitualScene:
         play_r=vinyl.R_PROG_OUT + (vinyl.R_PROG_IN - vinyl.R_PROG_OUT)*frac
         segs,cols,_=vinyl.tonearm(cx,cy,radius,iso,self.deck.arm_target_radius(play_r),lift=self.deck.arm_lift())
         if len(segs): tris.append(build_segs(segs,2.2,W,H,cols))
+        # Laser beam — shoots from stylus tip into groove
+        if self.deck.arm_lift() < 0.3:
+            beam_fade = max(0.0, 1.0 - self.deck.arm_lift() * 3.3)
+            beam_pulse = beam_fade * (0.6 + 0.4 * self.deck.crackle)
+            _, (sx, sy) = vinyl.stylus_xy(cx, cy, radius, iso, self.deck.arm_target_radius(play_r), lift=self.deck.arm_lift())
+            # Beam direction: radially inward from stylus
+            to_cx, to_cy = cx - sx, cy - sy
+            to_cl = math.hypot(to_cx, to_cy) or 1.0
+            to_cx, to_cy = to_cx / to_cl, to_cy / to_cl
+            beam_len = 0.06 * radius + 0.03 * self.deck.crackle * radius
+            bx, by = sx + to_cx * beam_len, sy + to_cy * beam_len
+            amber = (0.96 * beam_pulse, 0.56 * beam_pulse, 0.13 * beam_pulse)
+            hot = (1.0 * beam_pulse, 0.92 * beam_pulse, 0.65 * beam_pulse)
+            beam_segs = np.array([[sx, sy], [bx, by]], dtype=np.float32)
+            beam_cols = np.array([[*amber, 1.0], [*amber, 1.0]], dtype=np.float32)
+            tris.append(build_segs(beam_segs, 0.3, W, H, beam_cols))
+            beam_segs2 = np.array([[sx, sy], [bx, by]], dtype=np.float32)
+            beam_cols2 = np.array([[*hot, 1.0], [*hot, 1.0]], dtype=np.float32)
+            tris.append(build_segs(beam_segs2, 0.08, W, H, beam_cols2))
         arm=np.concatenate(tris,axis=0) if tris else None
         return strips, arm
     def banner(self):
