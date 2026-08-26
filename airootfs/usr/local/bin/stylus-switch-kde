@@ -168,11 +168,15 @@ Opacity=0.95
 Blur=true
 EOF
 
-# ── 5. KDE Shortcuts (via kwriteconfig5) ───────────────────────────────
-# Usar kwriteconfig5 em vez de escrever kglobalshortcutsrc direto
-# — o KDE reescreve o arquivo quando encerra e apaga o que não conhece.
+# ── 5. KDE Shortcuts ──────────────────────────────────────────────────
+# kglobalaccel5 é o daemon que faz o Meta key funcionar. Se o
+# kglobalshortcutsrc estiver corrompido, deletar para o KDE recriar.
+KGSC="$C/kglobalshortcutsrc"
+if [[ -f "$KGSC" ]] && ! grep -q "plasma-show-desktop\|_k_friendly_name" "$KGSC" 2>/dev/null; then
+    rm -f "$KGSC"
+    ok "kglobalshortcutsrc corrompido — removido (KDE recria no boot)"
+fi
 
-# Atalhos customizados via scripts shell
 mkdir -p "$C/autostart"
 
 cat > "$C/autostart/stylus-kde.desktop" <<'EOF'
