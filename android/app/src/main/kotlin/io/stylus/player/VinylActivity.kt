@@ -65,6 +65,7 @@ class VinylActivity : AppCompatActivity() {
     private var cachedAlbumId: Long = -1
     private var lastCoverW = 0; private var lastCoverH = 0
     private var lastLyricIdx = -1
+    private var lastTrackIdx = -1
     private var volumeOverlay: TextView? = null
     private var volumeHandler: android.os.Handler? = null
 
@@ -628,6 +629,12 @@ class VinylActivity : AppCompatActivity() {
                         }
                         trackInfoView?.text = "${idx + 1}/${tracks.size} \u2022 ${t.title} \u2014 ${t.artist}"
                         trackInfoView?.alpha = 0.8f
+                        // Track change pulse — flash title briefly
+                        if (idx != lastTrackIdx && lastTrackIdx >= 0) {
+                            titleView?.alpha = 0.4f
+                            titleView?.animate()?.alpha(1f)?.setDuration(600)?.start()
+                        }
+                        lastTrackIdx = idx
                     }
                 } else {
                     seekBarRef?.progress = (renderer.playProgress * 100).toInt()
