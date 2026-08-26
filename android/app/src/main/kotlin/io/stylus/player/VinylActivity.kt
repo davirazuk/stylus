@@ -64,6 +64,7 @@ class VinylActivity : AppCompatActivity() {
     private var cachedTracks: List<Library.Track>? = null
     private var cachedAlbumId: Long = -1
     private var lastCoverW = 0; private var lastCoverH = 0
+    private var lastLyricIdx = -1
 
     // UI refs
     private var titleView: TextView? = null
@@ -72,7 +73,6 @@ class VinylActivity : AppCompatActivity() {
     private var bottomBar: LinearLayout? = null
     private var progressBar: ProgressBar? = null
     private var seekBarRef: android.widget.SeekBar? = null
-    private var lyricView: TextView? = null
     private var lyricPanel: android.widget.ScrollView? = null
     private var lyricInner: LinearLayout? = null
     private var prevBtn: TextView? = null
@@ -554,31 +554,35 @@ class VinylActivity : AppCompatActivity() {
                         val t = tracks[idx]
                         val lys = Library.lyricsFor(t.uri, this@VinylActivity)
                         if (lys != null && lys.isNotEmpty()) {
-                            // Find current line index
                             var curIdx = 0
                             for (i in lys.indices) {
                                 if (lys[i].first <= p.currentPosition) curIdx = i
                             }
-                            // Show 3 context lines: prev, current, next
-                            lyricInner?.removeAllViews()
-                            val contextBefore = 2
-                            val contextAfter = 1
-                            val start = (curIdx - contextBefore).coerceAtLeast(0)
-                            val end = (curIdx + contextAfter + 1).coerceAtMost(lys.size)
-                            for (i in start until end) {
-                                val tv = TextView(this@VinylActivity).apply {
-                                    text = lys[i].second.ifBlank { "\u00B7" }
-                                    textSize = if (i == curIdx) 14f else 11f
-                                    setTextColor(if (i == curIdx) 0xFFF0F4FF.toInt() else 0xFF5A6580.toInt())
-                                    gravity = android.view.Gravity.CENTER
-                                    setPadding(dp(4), dp(3), dp(4), dp(3))
-                                    alpha = if (i == curIdx) 1f else 0.6f
-                                    if (i == curIdx) typeface = android.graphics.Typeface.DEFAULT_BOLD
+                            // Only rebuild view when line changes
+                            if (curIdx != lastLyricIdx) {
+                                lastLyricIdx = curIdx
+                                lyricInner?.removeAllViews()
+                                val contextBefore = 2
+                                val contextAfter = 1
+                                val start = (curIdx - contextBefore).coerceAtLeast(0)
+                                val end = (curIdx + contextAfter + 1).coerceAtMost(lys.size)
+                                for (i in start until end) {
+                                    val isCurrent = i == curIdx
+                                    val tv = TextView(this@VinylActivity).apply {
+                                        text = lys[i].second.ifBlank { "\u00B7" }
+                                        textSize = if (isCurrent) 14f else 11f
+                                        setTextColor(if (isCurrent) 0xFFF0F4FF.toInt() else 0xFF5A6580.toInt())
+                                        gravity = android.view.Gravity.CENTER
+                                        setPadding(dp(4), dp(3), dp(4), dp(3))
+                                        alpha = if (isCurrent) 1f else 0.5f
+                                        if (isCurrent) typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                    }
+                                    lyricInner?.addView(tv)
                                 }
-                                lyricInner?.addView(tv)
                             }
                             lyricPanel?.alpha = 1f
                         } else {
+                            lastLyricIdx = -1
                             lyricPanel?.alpha = 0f
                         }
                         trackInfoView?.text = "${idx + 1}/${tracks.size} \u2022 ${t.title} \u2014 ${t.artist}"
@@ -644,7 +648,8 @@ class VinylActivity : AppCompatActivity() {
             }
         }
 
-        // Gestures: tap = play/pause, swipe = prev/next, long press = back
+        // Gestures: tap = toggle controls + play/pause, swipe = prev/next, long press = back
+        var controlsVisible = true
         val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 togglePlayPause()
@@ -652,7 +657,12 @@ class VinylActivity : AppCompatActivity() {
             }
             override fun onLongPress(e: MotionEvent) { finish() }
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                showTrackListOverlay()
+                // Double tap toggles controls visibility
+                controlsVisible = !controlsVisible
+                val alpha = if (controlsVisible) 1f else 0f
+                bottomBar?.animate()?.alpha(alpha)?.setDuration(200)?.start()
+                titleView?.animate()?.alpha(alpha)?.setDuration(200)?.start()
+                trackInfoView?.animate()?.alpha(alpha)?.setDuration(200)?.start()
                 return true
             }
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
@@ -663,8 +673,16 @@ class VinylActivity : AppCompatActivity() {
                     if (dx > 0) skipToPrev() else skipToNext()
                     return true
                 }
-                // Vertical swipe = seek or volume
+                // Vertical swipe
                 if (Math.abs(dy) > 120 && Math.abs(dy) > Math.abs(dx)) {
+                    // Swipe down = exit to library
+                    if (dy > 0 && e1.y < resources.displayMetrics.heightPixels * 0.3f) {
+                        playing = false; player?.pause()
+                        if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                        VinylActivity.clearNowPlaying()
+                        finish()
+                        return true
+                    }
                     // Right half of screen = volume control
                     if (e1.x > resources.displayMetrics.widthPixels * 0.6f) {
                         val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager

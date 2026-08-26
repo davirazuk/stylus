@@ -632,6 +632,10 @@ class MainActivity : AppCompatActivity() {
         private val onLongClick: (Library.Album) -> Unit
     ) : RecyclerView.Adapter<VH>() {
 
+        private val coverCache = object : android.util.LruCache<Long, android.graphics.Bitmap>(40) {
+            override fun sizeOf(key: Long, value: android.graphics.Bitmap) = 1
+        }
+
         fun updateData(newItems: List<Library.Album>) {
             items.clear()
             items.addAll(newItems)
@@ -728,27 +732,25 @@ class MainActivity : AppCompatActivity() {
             holder.title.text = album.name
             holder.artist.text = album.artist
             holder.meta.text = album.durationString()
-            holder.cover.setImageBitmap(null)
-            holder.cover.setBackgroundColor(0xFF08090C.toInt())
-
-            // Square cover
-            holder.cover.post {
-                val params = holder.cover.layoutParams
-                params.height = min(holder.cover.width, dp2(holder.itemView.context, 200))
-                holder.cover.layoutParams = params
-            }
-
-            // Load cover async
-            try {
+            // Load cover async with LRU cache
+            val cachedBmp = coverCache.get(album.id)
+            if (cachedBmp != null) {
+                holder.cover.setImageBitmap(cachedBmp)
+            } else {
+                holder.cover.setImageBitmap(null)
+                holder.cover.setBackgroundColor(0xFF08090C.toInt())
                 Thread {
                     try {
                         resolver.openInputStream(album.coverUri())?.use { stream ->
                             val bmp = BitmapFactory.decodeStream(stream)
-                            if (bmp != null) holder.cover.post { holder.cover.setImageBitmap(bmp) }
+                            if (bmp != null) {
+                                coverCache.put(album.id, bmp)
+                                holder.cover.post { holder.cover.setImageBitmap(bmp) }
+                            }
                         }
                     } catch (_: Exception) {}
                 }.start()
-            } catch (_: Exception) {}
+            }
 
             // Recently played indicator + play count
             val lastPlayed = prefs.getLong("played_${album.id}", 0L)
