@@ -7,7 +7,11 @@
 set -uo pipefail
 
 # ── Só roda no KDE ─────────────────────────────────────────────────────
-[[ "$XDG_CURRENT_DESKTOP" == *"KDE"* ]] || exit 0
+# XDG_CURRENT_DESKTOP pode não estar setado no autostart. Checar plasmashell.
+if ! pgrep -x plasmashell >/dev/null 2>&1 && \
+   [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
+    exit 0
+fi
 
 # ── Garantir que kglobalaccel5 está rodando ─────────────────────────────
 # É isso que faz o Meta key funcionar. Sem ele, nada de atalhos.
