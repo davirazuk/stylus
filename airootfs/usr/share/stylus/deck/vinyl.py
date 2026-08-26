@@ -1236,7 +1236,7 @@ def sheen_gain(theta, light_angle, strength=1.0):
     d = (theta - light_angle + np.pi) % (2.0 * np.pi) - np.pi
     d2 = (theta - light_angle + np.pi / 2.0) % np.pi - np.pi / 2.0
     del d
-    return 1.0 + strength * np.exp(-(d2 ** 2) / 0.075)
+    return 1.0 + strength * np.exp(-(d2 ** 2) / 0.050)
 
 
 def disc_body(cx, cy, radius, iso, light_angle, n=320,
@@ -1335,7 +1335,9 @@ def groove_rings(cx, cy, radius, iso, side, envelope, tracks, light_angle,
         pts = _polar(cx, cy, r * radius, theta, iso)
         # sulco é fosco — só 15% do brilho do corpo, modulado por loud
         # (parede do sulco pega mais luz quando alto)
-        gain = sheen_gain(theta, light_angle, strength=0.18) * (0.85 + 0.15 * min(1.0, loud))
+        # Rotation-linked catch: grooves catch light as they pass under the source
+        light_catch = np.maximum(0.0, np.sin(theta * 2.0 - light_angle)) * 0.10
+        gain = sheen_gain(theta, light_angle, strength=0.22) * (0.85 + 0.15 * min(1.0, loud)) + light_catch
         cols = np.empty((n, 4), dtype=np.float32)
         cols[:, 0:3] = np.array(base, dtype=np.float32)[None, :] * (shade * gain)[:, None]
         cols[:, 3] = 1.0

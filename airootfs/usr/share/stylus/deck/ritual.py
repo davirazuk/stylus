@@ -32,12 +32,19 @@ void main(){ vcol=col; vedge=edge; gl_Position=vec4(pos,0,1); }
 VINYL_FS = """
 #version 330
 in vec4 vcol; in float vedge; out vec4 frag;
-// flat pencil for grooves, soft for disc body — not electron beam
 void main(){
     float d=abs(vedge);
     float a=1.0 - smoothstep(0.46,1.0,d);
     a *= 0.94 + 0.06*exp(-d*d*9.0);
-    frag=vec4(vcol.rgb*a, 1.0);
+    vec3 col=vcol.rgb*a;
+    float br=dot(col, vec3(0.299,0.587,0.114));
+    // Warm bloom — bright grooves glow amber, not just brighter grey
+    if(br>0.18){
+        float bloom=pow((br-0.18)/0.82, 1.3)*0.30;
+        bloom*=1.0-smoothstep(0.0,1.0,d)*0.45;
+        col+=vec3(bloom)*vec3(1.0,0.72,0.38);
+    }
+    frag=vec4(col, 1.0);
 }
 """
 PLINTH_FS = """

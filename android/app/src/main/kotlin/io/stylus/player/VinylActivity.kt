@@ -50,6 +50,9 @@ class VinylActivity : AppCompatActivity() {
     private var sleepTimerEnd = 0L
     private var pendingDrop = false
     private var dropAt = 0f  // nanoTime/1e9f when arm should drop
+    private var cachedTracks: List<Library.Track>? = null
+    private var cachedAlbumId: Long = -1
+    private var lastCoverW = 0; private var lastCoverH = 0
 
     // UI refs
     private var titleView: TextView? = null
@@ -60,6 +63,7 @@ class VinylActivity : AppCompatActivity() {
     private var lyricView: TextView? = null
     private var prevBtn: TextView? = null
     private var nextBtn: TextView? = null
+    private var mediaReceiver: android.content.BroadcastReceiver? = null
 
     private val frameCallback = object : Runnable {
         override fun run() {
@@ -99,14 +103,23 @@ class VinylActivity : AppCompatActivity() {
                 renderer.discCy = 0f
                 repositionBottomBar()
                 repositionTitle()
+                repositionCover()
             }
-            // Always reposition cover to track disc center
-            repositionCover()
+            // Reposition cover only when viewport changes (not every frame)
+            val vw = renderer.viewW; val vh = renderer.viewH
+            if (vw != lastCoverW || vh != lastCoverH) {
+                lastCoverW = vw; lastCoverH = vh
+                repositionCover()
+            }
 
             // Progress per SIDE
             if (albumIdField > 0) {
-                val tracks = Library.albumTracks(this@VinylActivity, albumIdField)
-                if (tracks.isNotEmpty()) {
+                if (cachedAlbumId != albumIdField) {
+                    cachedAlbumId = albumIdField
+                    cachedTracks = Library.albumTracks(this@VinylActivity, albumIdField)
+                }
+                val tracks = cachedTracks
+                if (tracks != null && tracks.isNotEmpty()) {
                     lastTracks = tracks
                     val posMs = when {
                         playing && player != null && player!!.duration > 0 -> {
@@ -177,6 +190,7 @@ class VinylActivity : AppCompatActivity() {
         deck = Deck()
         renderer = VinylRenderer()
         albumIdField = intent.getLongExtra("albumId", -1)
+        renderer.wearSeed = albumIdField.toInt()
 
         val timerMs = getSharedPreferences("stylus", MODE_PRIVATE).getLong("sleep_timer", 0)
         if (timerMs > 0) sleepTimerEnd = System.currentTimeMillis() + timerMs
@@ -382,7 +396,7 @@ class VinylActivity : AppCompatActivity() {
                     timeView?.text = String.format("%d:%02d  \u2014  -%d:%02d", cur / 60, cur % 60, rem / 60, rem % 60)
                     // Lyrics + track info
                     val idx = p.currentTrackIndex
-                    val tracks = if (albumIdField > 0) Library.albumTracks(this@VinylActivity, albumIdField) else emptyList<Library.Track>()
+                    val tracks = cachedTracks ?: emptyList()
                     if (idx in tracks.indices) {
                         val t = tracks[idx]
                         val lys = Library.lyricsFor(t.uri, this@VinylActivity)
@@ -470,7 +484,7 @@ class VinylActivity : AppCompatActivity() {
         }
 
         // Notification action receivers
-        val mediaReceiver = object : android.content.BroadcastReceiver() {
+        mediaReceiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 when (intent.action) {
                     "io.stylus.player.MEDIA_PREV" -> skipToPrev()
@@ -702,6 +716,7 @@ class VinylActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try { mediaReceiver?.let { unregisterReceiver(it) } } catch (_: Exception) {}
         player?.release()
     }
 }

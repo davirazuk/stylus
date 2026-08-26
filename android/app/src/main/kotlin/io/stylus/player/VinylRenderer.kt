@@ -58,6 +58,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     @Volatile var discCy = 0f
     @Volatile var viewW = 1080
     @Volatile var viewH = 1920
+    @Volatile var wearSeed = 42  // album-specific seed for unique wear marks
 
     private val PVA = atan2(
         (sin(Math.toRadians(38.0)) * 1.24 + 0.10).toFloat(),
@@ -70,6 +71,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
     private val wearA = FloatArray(WEAR_N)
     private val wearB = FloatArray(WEAR_N)
     private var wearInit = false
+    private var lastWearSeed = 0
 
     // Ambient dust
     private val DUST_N = 80
@@ -113,18 +115,15 @@ class VinylRenderer : GLSurfaceView.Renderer {
             a*=0.92+0.08*exp(-d*d*7.0);
             vec3 col=vC.rgb*a;
             float br=dot(col, vec3(0.299,0.587,0.114));
-            if(br>0.22){
-                float bloom=pow((br-0.22)/0.78, 1.3)*0.38;
-                bloom*=1.0-smoothstep(0.0,1.0,d)*0.50;
-                col+=vec3(bloom)*vec3(1.0,0.78,0.48);
+            // Warm bloom — bright areas glow amber into surroundings
+            if(br>0.15){
+                float bloom=pow((br-0.15)/0.85, 1.4)*0.42;
+                bloom*=1.0-smoothstep(0.0,1.0,d)*0.45;
+                col+=vec3(bloom)*vec3(1.0,0.72,0.38);
             }
-            // Subtle warm shift on high brightness
-            if(br>0.35){
-                float warm=(br-0.35)*0.15;
-                col.r+=warm*0.3; col.g+=warm*0.1;
-            }
+            // Film grain — adds texture to flat areas
             float n=fract(sin(dot(vPos*2.8+uT*0.012, vec2(12.9898,78.233)))*43758.5);
-            col+=(n-0.5)*0.006;
+            col+=(n-0.5)*0.005;
             f=vec4(col,1.0);
         }
     """.trimIndent()
@@ -212,6 +211,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
         vi = 0
         discBody()
         grooveRings()
+        boundaryRing()
         edgeRings()
         labelCircle()
         labelGlow()
@@ -319,6 +319,32 @@ class VinylRenderer : GLSurfaceView.Renderer {
         }
     }
 
+    private fun boundaryRing() {
+        if (armLift > 0.5f) return
+        val r = RPO + (RPI - RPO) * playProgress
+        val rot = deckRotation
+        val pulse = 0.80f + 0.20f * sin(time * 1.4f)
+        val arcN = 80
+        val w = 0.003f
+        for (j in 0 until arcN) {
+            val a0 = j.toFloat() / arcN * 2f * PI.toFloat()
+            val a1 = (j + 1).toFloat() / arcN * 2f * PI.toFloat()
+            val mask0 = max(0f, cos(a0 - rot * 2.1f))
+            val mask1 = max(0f, cos(a1 - rot * 2.1f))
+            val m0 = mask0.toDouble().pow(2.5).toFloat() * pulse
+            val m1 = mask1.toDouble().pow(2.5).toFloat() * pulse
+            if (m0 < 0.01f && m1 < 0.01f) continue
+            val c0 = sc(AMB, m0 * 0.28f)
+            val c1 = sc(AMB, m1 * 0.28f)
+            val o0x = cos(a0) * (r + w); val o0y = sin(a0) * (r + w)
+            val i0x = cos(a0) * (r - w); val i0y = sin(a0) * (r - w)
+            val o1x = cos(a1) * (r + w); val o1y = sin(a1) * (r + w)
+            val i1x = cos(a1) * (r - w); val i1y = sin(a1) * (r - w)
+            v(i0x, i0y, c0, -1f); v(i1x, i1y, c1, -1f); v(o0x, o0y, c0, 1f)
+            v(i1x, i1y, c1, -1f); v(o1x, o1y, c1, 1f); v(o0x, o0y, c0, 1f)
+        }
+    }
+
     private fun edgeRings() {
         val rot = deckRotation
         for ((r, hw) in arrayOf(RO to 1.8f, RL to 1.0f, RLA to 1.3f)) {
@@ -381,8 +407,9 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     private fun wearMarks() {
-        if (!wearInit) {
-            val rng = java.util.Random(42)
+        if (!wearInit || lastWearSeed != wearSeed) {
+            lastWearSeed = wearSeed
+            val rng = java.util.Random(wearSeed.toLong())
             for (i in 0 until WEAR_N) {
                 wearR[i] = RPI + rng.nextFloat() * (RPO - RPI)
                 wearA[i] = rng.nextFloat() * 2f * PI.toFloat()
