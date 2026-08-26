@@ -343,6 +343,41 @@ class VinylActivity : AppCompatActivity() {
         }
         controlsRow.addView(nextBtn)
 
+        // Shuffle button
+        var shuffleBtnRef: TextView? = null
+        val shuffleBtn = TextView(this).apply {
+            text = "\u21C4"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 14f
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            setOnClickListener {
+                val p = player ?: return@setOnClickListener
+                p.toggleShuffle()
+                setTextColor(if (p.shuffleMode) 0xFFE8ECF5.toInt() else 0xFF4A5570.toInt())
+            }
+            shuffleBtnRef = this
+        }
+        controlsRow.addView(shuffleBtn)
+
+        // Repeat button
+        val repeatBtn = TextView(this).apply {
+            text = "\u27F3"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 14f
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            setOnClickListener {
+                val p = player ?: return@setOnClickListener
+                p.toggleRepeat()
+                text = when (p.repeatMode) {
+                    1 -> "\u27F3\u2081"  // repeat one
+                    2 -> "\u27F3"        // repeat all
+                    else -> "\u27F3"
+                }
+                setTextColor(if (p.repeatMode != 0) 0xFFE8ECF5.toInt() else 0xFF4A5570.toInt())
+            }
+        }
+        controlsRow.addView(repeatBtn)
+
         // Sleep timer button
         val sleepBtn = TextView(this).apply {
             text = "\u23F0"

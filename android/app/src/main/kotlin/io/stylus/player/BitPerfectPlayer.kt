@@ -126,6 +126,23 @@ class BitPerfectPlayer(private val ctx: Context) {
     fun skipToNext() { if (exo.currentMediaItemIndex < exo.mediaItemCount - 1) exo.seekToNext() }
     fun skipToPrev() { if (exo.currentMediaItemIndex > 0) exo.seekToPrevious() }
 
+    var shuffleMode = false
+    var repeatMode = Player.REPEAT_MODE_OFF  // OFF=0, ONE=1, ALL=2
+
+    fun toggleShuffle() {
+        shuffleMode = !shuffleMode
+        exo.shuffleModeEnabled = shuffleMode
+    }
+
+    fun toggleRepeat() {
+        repeatMode = when (repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+            else -> Player.REPEAT_MODE_OFF
+        }
+        exo.repeatMode = repeatMode
+    }
+
     fun initSession() {
         if (session != null) return
         session = MediaSession(ctx, "STYLUS").apply {
