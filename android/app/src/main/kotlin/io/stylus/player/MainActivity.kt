@@ -327,24 +327,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadAlbums() {
-        var list = Library.albums(this)
-        try {
-            val roots = listOf(
-                java.io.File("/sdcard/Music"), java.io.File("/sdcard/Musicas"),
-                java.io.File("/storage/emulated/0/Music"), java.io.File("/storage/emulated/0/Musicas"),
-                java.io.File(getExternalFilesDir(null)?.path ?: "")
-            ).filter { it.isDirectory }
-            val folderAlbums = Library.shelfByFolders(roots)
-            if (list.isEmpty() && folderAlbums.isNotEmpty()) {
-                list = folderAlbums.mapIndexed { idx, f ->
-                    Library.Album(id = 900000L + idx, name = f.name,
-                        artist = f.parentFile?.name ?: "Desconhecido",
-                        trackCount = Library.tracksFromFolder(f).size, artUri = null)
+        Thread {
+            var list = Library.albums(this@MainActivity)
+            try {
+                val roots = listOf(
+                    java.io.File("/sdcard/Music"), java.io.File("/sdcard/Musicas"),
+                    java.io.File("/storage/emulated/0/Music"), java.io.File("/storage/emulated/0/Musicas"),
+                    java.io.File(getExternalFilesDir(null)?.path ?: "")
+                ).filter { it.isDirectory }
+                val folderAlbums = Library.shelfByFolders(roots)
+                if (list.isEmpty() && folderAlbums.isNotEmpty()) {
+                    list = folderAlbums.mapIndexed { idx, f ->
+                        Library.Album(id = 900000L + idx, name = f.name,
+                            artist = f.parentFile?.name ?: "Desconhecido",
+                            trackCount = Library.tracksFromFolder(f).size, artUri = null)
+                    }
                 }
+            } catch (_: Exception) {}
+            runOnUiThread {
+                allAlbums = list
+                applyFilter()
             }
-        } catch (_: Exception) {}
-        allAlbums = list
-        applyFilter()
+        }.start()
     }
 
     private fun applyFilter() {
