@@ -16,7 +16,7 @@ object VinylConst {
     const val SPINUP_T = 1.1f
     const val CUE_T = 1.05f
     const val DROP_T = 0.55f
-    const val LIFT_T = 1.0f
+    const val LIFT_T = 1.3f
     const val RETURN_T = 1.4f
     const val N_RINGS = 96
 }
@@ -58,7 +58,8 @@ class Deck {
      *
      * During CUE the arm swings IN from rest (1→0).
      * During RETURN the arm swings OUT to rest (0→1).
-     * During DROP/PLAY/LIFT the arm stays over the record (0).
+     * During DROP/PLAY the arm stays over the record (0).
+     * During LIFT the arm starts over the record, drifts outward slightly.
      */
     fun armSwing(now: Float): Float {
         val e = elapsed(now)
@@ -70,12 +71,18 @@ class Deck {
                 val swingT = (e / VinylConst.CUE_T - 0.4f).coerceIn(0f, 0.6f) / 0.6f
                 1.0f - smootherstep(swingT)
             }
-            Phase.DROP, Phase.PLAY, Phase.LIFT -> 0.0f  // over the record
-            Phase.BREAK -> 0.0f  // still over record, about to lift
+            Phase.DROP, Phase.PLAY -> 0.0f  // over the record
+            Phase.LIFT -> {
+                // During lift: arm starts to drift outward slightly (0 → 0.25)
+                // This makes the lift feel like the arm is both lifting AND beginning to swing away
+                val liftT = (e / VinylConst.LIFT_T).coerceIn(0f, 1f)
+                smootherstep(liftT) * 0.25f
+            }
+            Phase.BREAK -> 0.25f  // partially drifted outward
             Phase.RETURN -> {
-                // Swings from record back to rest after lift
+                // Continues outward from 0.25 to 1.0
                 val swingT = (e / VinylConst.RETURN_T).coerceIn(0f, 1f)
-                smootherstep(swingT)
+                0.25f + smootherstep(swingT) * 0.75f
             }
             Phase.STOP -> 1.0f  // at rest
         }
