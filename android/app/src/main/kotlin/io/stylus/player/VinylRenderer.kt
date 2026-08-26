@@ -51,7 +51,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
 
     @Volatile var deckRotation = 0f
     @Volatile var armLift = 1f
-    @Volatile var armSwing = 0f    // 0 = over record, 1 = at rest
+    @Volatile var armSwing = 1f    // 0 = over record, 1 = at rest (start at rest)
     @Volatile var playProgress = 0f
     @Volatile var crackle = 0f
     @Volatile var gapFracs: FloatArray? = null
@@ -149,14 +149,31 @@ class VinylRenderer : GLSurfaceView.Renderer {
             vec2 p=vU*2.0-1.0;
             vec2 dc=vec2(uCx, uCy);
             float dd=length(p-dc);
-            // Deep void — dark center, slightly lighter edges
+            // Deep void
             vec3 col=mix(vec3(0.010,0.011,0.018), vec3(0.004,0.004,0.006),
                          smoothstep(0.0,1.2,dd));
+            // Dark surface under disc — subtle matte round shape
+            float surface=smoothstep(0.92,0.60,dd)*0.12;
+            col+=vec3(0.015,0.013,0.018)*surface;
+            // Surface edge ring — very faint outline
+            float edgeRing=smoothstep(0.03,0.0,abs(dd-0.78))*0.06;
+            col+=vec3(0.04,0.035,0.05)*edgeRing;
             // Warm halo — breathes with audio
             float breathe=0.85+0.15*sin(uT*0.4);
             float audioBloom=uAudio*0.18;
             col+=vec3(0.30,0.18,0.08)*exp(-dd*dd*3.2)*0.20*breathe*(1.0+audioBloom);
             col+=vec3(0.15,0.09,0.04)*exp(-dd*dd*1.0)*0.08*breathe*(1.0+audioBloom*0.6);
+            // Ambient dust particles — slow drift
+            for(int i=0;i<5;i++){
+                float fi=float(i);
+                vec2 offs=vec2(
+                    sin(uT*0.07+fi*2.1)*0.4+dc.x*0.3,
+                    cos(uT*0.05+fi*3.7)*0.3+dc.y*0.3
+                );
+                float dust=exp(-length(p-offs)*80.0)*0.12;
+                float twinkle=0.5+0.5*sin(uT*1.3+fi*5.3);
+                col+=vec3(0.08,0.07,0.06)*dust*twinkle;
+            }
             // Vignette
             col*=1.0-dot(p,p)*0.32;
             // Film grain
@@ -219,6 +236,11 @@ class VinylRenderer : GLSurfaceView.Renderer {
         discShadow()
         flush(true)
 
+        // Disc ambient glow — warm light bleeding from the disc edge
+        vi = 0
+        discGlow()
+        flush(true)
+
         Matrix.rotateM(model, 0, Math.toDegrees(deckRotation.toDouble()).toFloat(), 0f, 0f, 1f)
         vi = 0
         discBody()
@@ -251,11 +273,31 @@ class VinylRenderer : GLSurfaceView.Renderer {
         for (j in 0 until n) {
             val a0 = j.toFloat() / n * 2f * PI.toFloat()
             val a1 = (j + 1).toFloat() / n * 2f * PI.toFloat()
-            val fade = 1f  // uniform dark
             val c = sc(floatArrayOf(0f, 0f, 0f), 0.12f)
             v(0f, 0f, c, 0f)
             v(cos(a0) * r, sin(a0) * r, c, -1f)
             v(cos(a1) * r, sin(a1) * r, c, -1f)
+        }
+    }
+
+    /** Soft warm glow ring around disc edge — light bleeding into the void */
+    private fun discGlow() {
+        val n = 48
+        val innerR = RO - 0.01f
+        val outerR = RO + 0.08f
+        val pulse = 0.85f + 0.15f * sin(time * 0.4f)
+        for (j in 0 until n) {
+            val a0 = j.toFloat() / n * 2f * PI.toFloat()
+            val a1 = (j + 1).toFloat() / n * 2f * PI.toFloat()
+            val c0 = sc(AMB, 0.04f * pulse)
+            val c1 = sc(AMB, 0.01f * pulse)
+            // Triangle fan from inner edge to outer edge
+            v(cos(a0) * innerR, sin(a0) * innerR, c0, -1f)
+            v(cos(a0) * outerR, sin(a0) * outerR, c1, -1f)
+            v(cos(a1) * outerR, sin(a1) * outerR, c1, -1f)
+            v(cos(a0) * innerR, sin(a0) * innerR, c0, -1f)
+            v(cos(a1) * outerR, sin(a1) * outerR, c1, -1f)
+            v(cos(a1) * innerR, sin(a1) * innerR, c0, -1f)
         }
     }
 

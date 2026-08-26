@@ -73,9 +73,51 @@ class VinylActivity : AppCompatActivity() {
     private var progressBar: ProgressBar? = null
     private var seekBarRef: android.widget.SeekBar? = null
     private var lyricView: TextView? = null
+    private var lyricPanel: android.widget.ScrollView? = null
+    private var lyricInner: LinearLayout? = null
     private var prevBtn: TextView? = null
     private var nextBtn: TextView? = null
     private var mediaReceiver: android.content.BroadcastReceiver? = null
+    private var scrubTrack: android.media.AudioTrack? = null
+
+    /** Synthesize a short vinyl scrub/scratch sound */
+    private fun playScrubSound() {
+        try {
+            val sr = 22050
+            val dur = 80  // ms
+            val samples = sr * dur / 1000
+            val buf = ShortArray(samples)
+            val now = System.nanoTime()
+            for (i in 0 until samples) {
+                val t = i.toFloat() / sr
+                // Filtered noise + crackle-like transients
+                val noise = (Math.random() * 2.0 - 1.0).toFloat()
+                val freq = 200f + 1200f * Math.sin((now + i * 47000.0).toDouble() / sr).toFloat()
+                val tone = Math.sin(2.0 * Math.PI * freq * t).toFloat() * 0.3f
+                // Envelope: sharp attack, fast decay
+                val env = (1.0f - t * sr / samples.toFloat()).coerceIn(0f, 1f)
+                val mix = (noise * 0.5f + tone) * env * 0.6f
+                buf[i] = (mix * Short.MAX_VALUE).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            }
+            scrubTrack?.release()
+            scrubTrack = android.media.AudioTrack.Builder()
+                .setAudioAttributes(android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build())
+                .setAudioFormat(android.media.AudioFormat.Builder()
+                    .setSampleRate(sr)
+                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                    .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                    .build())
+                .setBufferSizeInBytes(samples * 2)
+                .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                .build()
+            scrubTrack?.write(buf, 0, samples)
+            scrubTrack?.setVolume(0.25f)
+            scrubTrack?.play()
+        } catch (_: Exception) {}
+    }
 
     private val frameCallback = object : Runnable {
         override fun run() {
@@ -461,25 +503,27 @@ class VinylActivity : AppCompatActivity() {
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL))
         bottomBar = bottomCol
 
-        // Lyrics
-        lyricView = TextView(this).apply {
-            setTextColor(0xFFF0F4FF.toInt())
-            textSize = 13f
-            gravity = android.view.Gravity.CENTER
-            setPadding(dp(16), dp(10), dp(16), dp(10))
+        // Lyrics panel — scrollable, shows current line + context
+        lyricPanel = android.widget.ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
             alpha = 0f
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(16), dp(8), dp(16), dp(8))
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xAA0A0C14.toInt())
-                cornerRadius = dp(20).toFloat()
+                setColor(0xCC0A0C14.toInt())
+                cornerRadius = dp(16).toFloat()
             }
         }
-        root.addView(lyricView, FrameLayout.LayoutParams(
-            (dm.widthPixels * 0.82f).toInt(),
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+        lyricInner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+        }
+        lyricPanel?.addView(lyricInner)
+        root.addView(lyricPanel, FrameLayout.LayoutParams(
+            (dm.widthPixels * 0.88f).toInt(),
+            dp(160),
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(100)
+            bottomMargin = dp(90)
         })
 
         // Progress updater
@@ -509,8 +553,34 @@ class VinylActivity : AppCompatActivity() {
                     if (idx in tracks.indices) {
                         val t = tracks[idx]
                         val lys = Library.lyricsFor(t.uri, this@VinylActivity)
-                        val line = if (lys != null) Library.lyricAt(lys, p.currentPosition) else null
-                        if (line != null) { lyricView?.text = line; lyricView?.alpha = 1f } else lyricView?.alpha = 0f
+                        if (lys != null && lys.isNotEmpty()) {
+                            // Find current line index
+                            var curIdx = 0
+                            for (i in lys.indices) {
+                                if (lys[i].first <= p.currentPosition) curIdx = i
+                            }
+                            // Show 3 context lines: prev, current, next
+                            lyricInner?.removeAllViews()
+                            val contextBefore = 2
+                            val contextAfter = 1
+                            val start = (curIdx - contextBefore).coerceAtLeast(0)
+                            val end = (curIdx + contextAfter + 1).coerceAtMost(lys.size)
+                            for (i in start until end) {
+                                val tv = TextView(this@VinylActivity).apply {
+                                    text = lys[i].second.ifBlank { "\u00B7" }
+                                    textSize = if (i == curIdx) 14f else 11f
+                                    setTextColor(if (i == curIdx) 0xFFF0F4FF.toInt() else 0xFF5A6580.toInt())
+                                    gravity = android.view.Gravity.CENTER
+                                    setPadding(dp(4), dp(3), dp(4), dp(3))
+                                    alpha = if (i == curIdx) 1f else 0.6f
+                                    if (i == curIdx) typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                }
+                                lyricInner?.addView(tv)
+                            }
+                            lyricPanel?.alpha = 1f
+                        } else {
+                            lyricPanel?.alpha = 0f
+                        }
                         trackInfoView?.text = "${idx + 1}/${tracks.size} \u2022 ${t.title} \u2014 ${t.artist}"
                         trackInfoView?.alpha = 0.8f
                     }
@@ -527,13 +597,14 @@ class VinylActivity : AppCompatActivity() {
         val mode = intent.getStringExtra("mode") ?: "view"
 
         if (mode == "view") {
-            deck.go(Phase.PLAY, System.nanoTime() / 1e9f)
-            deck.speed = VinylConst.REV_PER_SEC
-            renderer.armLift = 0f
+            // Start with arm at rest, let it swing in naturally
+            deck.go(Phase.SPINUP, System.nanoTime() / 1e9f)
+            renderer.armSwing = 1f
+            renderer.armLift = 1f
             playing = true
         } else {
-            deck.go(Phase.BREAK, System.nanoTime() / 1e9f)
-            deck.speed = VinylConst.REV_PER_SEC
+            deck.go(Phase.SPINUP, System.nanoTime() / 1e9f)
+            renderer.armSwing = 1f
             renderer.armLift = 1f
             renderer.playProgress = 0f
             playing = false
@@ -610,6 +681,7 @@ class VinylActivity : AppCompatActivity() {
                         val seekMs = if (dy < 0) (p.currentPosition + 10000).coerceAtMost(p.duration)
                         else (p.currentPosition - 10000).coerceAtLeast(0)
                         p.exo.seekTo(seekMs)
+                        playScrubSound()
                     }
                     return true
                 }
@@ -675,6 +747,7 @@ class VinylActivity : AppCompatActivity() {
     private fun skipToNext() {
         val p = player ?: return
         if (p.currentTrackIndex < p.trackCount - 1) {
+            playScrubSound()
             p.skipToNext()
             if (deck.phase == Phase.PLAY || deck.phase == Phase.DROP) {
                 deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
@@ -687,6 +760,7 @@ class VinylActivity : AppCompatActivity() {
     private fun skipToPrev() {
         val p = player ?: return
         if (p.currentTrackIndex > 0) {
+            playScrubSound()
             p.skipToPrev()
             if (deck.phase == Phase.PLAY || deck.phase == Phase.DROP) {
                 deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
@@ -930,6 +1004,7 @@ class VinylActivity : AppCompatActivity() {
         super.onDestroy()
         clearNowPlaying()
         try { mediaReceiver?.let { unregisterReceiver(it) } } catch (_: Exception) {}
+        try { scrubTrack?.release() } catch (_: Exception) {}
         player?.release()
     }
 }
