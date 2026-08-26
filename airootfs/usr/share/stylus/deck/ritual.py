@@ -51,22 +51,37 @@ PLINTH_FS = """
 #version 330
 in vec2 uv; out vec4 frag;
 uniform vec2 u_res;
+uniform float u_time;
 void main(){
     vec2 p = uv*2.0-1.0;
-    // plinth: warm walnut, subtle grain + soft vignette
+    // Dark surface — matte, round
     float g1 = sin(p.x*18.0 + p.y*2.0)*0.5+0.5;
     float g2 = sin(p.x*42.0 - p.y*7.0)*0.5+0.5;
-    float grain = mix(g1, g2, 0.35) * 0.018;
-    vec3 wood = vec3(0.11,0.065,0.038) + vec3(grain);
+    float grain = mix(g1, g2, 0.35) * 0.012;
+    vec3 surface = vec3(0.018,0.016,0.022) + vec3(grain);
+    // Subtle circular surface under disc
+    float surfDist = length(p - vec2(-0.08, -0.06));
+    surface *= 1.0 + smoothstep(0.9, 0.3, surfDist) * 0.08;
     float vig = 1.0 - dot(p,p)*0.16;
     vig = pow(vig, 0.92);
-    // warm highlight top-left (room light)
-    float hl = max(0.0, dot(normalize(vec2(-0.6,0.5)), p)) * 0.06;
+    // warm highlight top-left
+    float hl = max(0.0, dot(normalize(vec2(-0.6,0.5)), p)) * 0.04;
     hl *= (1.0 - length(p)*0.4);
-    vec3 col = wood*vig + vec3(hl*0.9, hl*0.7, hl*0.5);
-    // warm disc glow reflected on plinth
-    float disc = length(p - vec2(-0.16, -0.12));
+    vec3 col = surface*vig + vec3(hl*0.9, hl*0.7, hl*0.5);
+    // warm disc glow
+    float disc = length(p - vec2(-0.08, -0.06));
     col += vec3(0.12, 0.07, 0.03) * exp(-disc*disc*4.0) * 0.18;
+    // Floating dust particles
+    for(int i=0; i<6; i++){
+        float fi = float(i);
+        vec2 offs = vec2(
+            sin(u_time*0.06+fi*2.3)*0.5-0.08,
+            cos(u_time*0.04+fi*3.1)*0.4-0.06
+        );
+        float dust = exp(-length(p-offs)*120.0)*0.08;
+        float twinkle = 0.5+0.5*sin(u_time*1.1+fi*4.7);
+        col += vec3(0.06,0.055,0.05)*dust*twinkle;
+    }
     frag = vec4(col, 1.0);
 }
 """
@@ -378,6 +393,22 @@ class RitualScene:
         sh_pts = np.column_stack([sh_x, sh_y])
         sh_cols = np.full((n_sh, 3), [0.015, 0.01, 0.008], dtype=np.float32)
         strips.insert(0, build_strip(sh_pts, 0.025 * radius, W, H, sh_cols))
+        # Disc glow ring — warm light bleeding from edge
+        n_glow = 48
+        glow_thetas = np.linspace(0, 2 * np.pi, n_glow, endpoint=False)
+        glow_inner = radius * 0.98
+        glow_outer = radius * 1.08
+        glow_x_in = cx + np.cos(glow_thetas) * glow_inner
+        glow_y_in = cy + np.sin(glow_thetas) * glow_inner * iso[1]
+        glow_x_out = cx + np.cos(glow_thetas) * glow_outer
+        glow_y_out = cy + np.sin(glow_thetas) * glow_outer * iso[1]
+        glow_pts = np.column_stack([glow_x_in, glow_y_in])
+        glow_cols = np.column_stack([
+            np.full(n_glow, 0.96 * 0.04),
+            np.full(n_glow, 0.56 * 0.04),
+            np.full(n_glow, 0.13 * 0.04)
+        ]).astype(np.float32)
+        strips.insert(1, build_strip(glow_pts, 0.035 * radius, W, H, glow_cols))
         tris=[]
         wm=vinyl.wear_marks(cx,cy,radius,iso,rot,seed=al.seed,plays=al.plays,crackle=self.deck.crackle)
         if wm is not None and len(wm[0]): tris.append(build_segs(wm[0],1.2,W,H,wm[1]))
@@ -500,7 +531,10 @@ void main(){
         # ── draw forward, no phosphor decay ──
         glViewport(0,0,W,H); glClearColor(0.06,0.04,0.028,1); glClear(GL_COLOR_BUFFER_BIT)
         # plinth quad behind
-        glUseProgram(prog_plinth); glBindVertexArray(quad); glDrawArrays(GL_TRIANGLE_STRIP,0,4)
+        glUseProgram(prog_plinth)
+        glUniform1f(glGetUniformLocation(prog_plinth, "u_time"), elapsed)
+        glUniform2f(glGetUniformLocation(prog_plinth, "u_res"), float(W), float(H))
+        glBindVertexArray(quad); glDrawArrays(GL_TRIANGLE_STRIP,0,4)
         # vinyl strips + arm
         if strips:
             comb=np.concatenate(strips,axis=0) if strips else np.zeros((0,7),dtype=np.float32)
