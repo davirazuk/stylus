@@ -137,35 +137,90 @@ object CastManager {
         try {
             val reader = BufferedReader(InputStreamReader(client.getInputStream()))
             val requestLine = reader.readLine() ?: return
+            val method = requestLine.split(" ").firstOrNull() ?: ""
+            var rangeHeader: String? = null
             while (true) {
                 val line = reader.readLine() ?: break
                 if (line.isEmpty()) break
+                if (line.lowercase().startsWith("range:")) rangeHeader = line.substringAfter(":").trim()
             }
 
             val uri = currentContentUri
             val resolver = currentResolver
             if (uri == null || resolver == null) { sendHttp404(client); return }
 
-            // Determine mime type from URI
-            val mime = resolver.getType(uri) ?: "audio/*"
+            // Determine mime type and file size
+            val mime = resolver.getType(uri) ?: "audio/flac"
+            val fileSize = try {
+                val pfd = resolver.openFileDescriptor(uri, "r")
+                val size = pfd?.statSize ?: -1L
+                pfd?.close()
+                size
+            } catch (_: Exception) { -1L }
 
-            // Stream the content via ContentResolver
+            // Parse Range header (e.g. "bytes=0-" or "bytes=12345-")
+            var start = 0L
+            var end = if (fileSize > 0) fileSize - 1 else -1L
+            if (rangeHeader != null && fileSize > 0) {
+                val rangeMatch = Regex("bytes=(\\d*)-(\\d*)").find(rangeHeader)
+                if (rangeMatch != null) {
+                    val s = rangeMatch.groupValues[1].toLongOrNull()
+                    val e = rangeMatch.groupValues[2].toLongOrNull()
+                    start = s ?: 0L
+                    end = e ?: (fileSize - 1)
+                    if (start > end || start >= fileSize) {
+                        sendHttp416(client, fileSize)
+                        return
+                    }
+                }
+            }
+
+            val contentLen = end - start + 1
+            val os = client.getOutputStream()
+
+            if (rangeHeader != null && fileSize > 0) {
+                // Partial content response
+                val header = "HTTP/1.1 206 Partial Content\r\n" +
+                    "Content-Type: $mime\r\n" +
+                    "Content-Length: $contentLen\r\n" +
+                    "Content-Range: bytes $start-$end/$fileSize\r\n" +
+                    "Accept-Ranges: bytes\r\n" +
+                    "Connection: close\r\n" +
+                    "\r\n"
+                os.write(header.toByteArray())
+            } else {
+                val lenHeader = if (fileSize > 0) "Content-Length: $fileSize\r\n" else ""
+                val header = "HTTP/1.1 200 OK\r\n" +
+                    "Content-Type: $mime\r\n" +
+                    lenHeader +
+                    "Accept-Ranges: bytes\r\n" +
+                    "Connection: close\r\n" +
+                    "\r\n"
+                os.write(header.toByteArray())
+            }
+            os.flush()
+
+            // Stream the content
             val input = resolver.openInputStream(uri)
             if (input == null) { sendHttp404(client); return }
 
-            val os = client.getOutputStream()
-            val header = "HTTP/1.1 200 OK\r\n" +
-                "Content-Type: $mime\r\n" +
-                "Connection: close\r\n" +
-                "Accept-Ranges: none\r\n" +
-                "\r\n"
-            os.write(header.toByteArray())
-            os.flush()
+            // Skip to start position for range requests
+            if (start > 0) {
+                var skipped = 0L
+                while (skipped < start) {
+                    val toSkip = (start - skipped).coerceAtMost(8192L)
+                    val s = input.skip(toSkip)
+                    if (s <= 0) break
+                    skipped += s
+                }
+            }
 
             val buf = ByteArray(8192)
-            var read: Int
-            while (input.read(buf).also { read = it } != -1) {
+            var remaining = contentLen
+            var read = 0
+            while (remaining > 0 && input.read(buf, 0, (if (remaining < buf.size) remaining else buf.size.toLong()).toInt()).also { read = it } != -1) {
                 os.write(buf, 0, read)
+                remaining -= read
             }
             os.flush()
             input.close()
@@ -179,6 +234,14 @@ object CastManager {
     private fun sendHttp404(client: Socket) {
         try {
             val resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+            client.getOutputStream().write(resp.toByteArray())
+            client.close()
+        } catch (_: Exception) {}
+    }
+
+    private fun sendHttp416(client: Socket, totalSize: Long) {
+        try {
+            val resp = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */$totalSize\r\nContent-Length: 0\r\n\r\n"
             client.getOutputStream().write(resp.toByteArray())
             client.close()
         } catch (_: Exception) {}
