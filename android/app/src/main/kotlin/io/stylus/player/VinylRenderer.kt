@@ -227,9 +227,11 @@ class VinylRenderer : GLSurfaceView.Renderer {
         // ── Disc (rotates) ──
         GL.glUseProgram(prog)
         if (uTime >= 0) GL.glUniform1f(uTime, time)
+        // Subtle breathing: disc scales slightly with audio
+        val breathe = 1f + audioLevel * 0.004f
         Matrix.setIdentityM(model, 0)
         Matrix.translateM(model, 0, discCx, discCy, 0f)
-        Matrix.scaleM(model, 0, dScaleX, dScaleY, 1f)
+        Matrix.scaleM(model, 0, dScaleX * breathe, dScaleY * breathe, 1f)
 
         // Disc shadow — dark soft glow underneath for depth
         vi = 0
