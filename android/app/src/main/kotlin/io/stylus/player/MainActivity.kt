@@ -38,7 +38,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sortBtn: TextView
     private lateinit var dacIndicator: TextView
     private lateinit var nowPlayingBar: LinearLayout
-    private var npProgressRef: android.widget.ProgressBar? = null
     private lateinit var nowPlayingText: TextView
     private lateinit var prefs: SharedPreferences
     private var allAlbums = listOf<Library.Album>()
@@ -267,27 +266,24 @@ class MainActivity : AppCompatActivity() {
 
         // Now Playing bar — shows when returning from player
         nowPlayingBar = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF0D1018.toInt())
-            setPadding(dp(14), dp(10), dp(14), dp(6))
-            visibility = View.GONE
-            elevation = dp(6).toFloat()
-        }
-        val npRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF111620.toInt())
+            setPadding(dp(14), dp(8), dp(14), dp(8))
             gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            elevation = dp(4).toFloat()
         }
         nowPlayingText = TextView(this).apply {
-            setTextColor(0xFF9AA2B8.toInt())
-            textSize = 11f
+            setTextColor(0xFF8892B0.toInt())
+            textSize = 10f
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        npRow.addView(nowPlayingText)
+        nowPlayingBar.addView(nowPlayingText)
         val npGoBtn = TextView(this).apply {
             text = "\u25B6"
-            setTextColor(0xFFFFC107.toInt())
-            textSize = 16f
-            setPadding(dp(10), dp(2), dp(2), dp(2))
+            setTextColor(0xFFE8ECF5.toInt())
+            textSize = 14f
+            setPadding(dp(8), dp(2), dp(2), dp(2))
             setOnClickListener {
                 val np = VinylActivity
                 if (np.nowPlayingActive && np.nowPlayingAlbumId > 0) {
@@ -295,18 +291,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        npRow.addView(npGoBtn)
-        nowPlayingBar.addView(npRow)
-        // Thin amber progress line at bottom of bar
-        val npProgress = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)).apply {
-                topMargin = dp(6)
-            }
-            max = 100
-            progressDrawable = android.graphics.drawable.ColorDrawable(0xFFFFC107.toInt())
-        }
-        nowPlayingBar.addView(npProgress)
-        npProgressRef = npProgress
+        nowPlayingBar.addView(npGoBtn)
         root.addView(nowPlayingBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM

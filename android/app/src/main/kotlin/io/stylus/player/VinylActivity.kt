@@ -515,25 +515,23 @@ class VinylActivity : AppCompatActivity() {
         lyricPanel = android.widget.ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             alpha = 0f
-            setPadding(dp(20), dp(12), dp(20), dp(12))
+            setPadding(dp(16), dp(8), dp(16), dp(8))
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xDD080A12.toInt())
-                cornerRadius = dp(20).toFloat()
+                setColor(0xCC0A0C14.toInt())
+                cornerRadius = dp(16).toFloat()
             }
-            isVerticalFadingEdgeEnabled = true
-            overScrollMode = android.view.View.OVER_SCROLL_NEVER
         }
         lyricInner = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
             gravity = android.view.Gravity.CENTER_HORIZONTAL
         }
         lyricPanel?.addView(lyricInner)
         root.addView(lyricPanel, FrameLayout.LayoutParams(
-            (dm.widthPixels * 0.90f).toInt(),
-            dp(180),
+            (dm.widthPixels * 0.88f).toInt(),
+            dp(160),
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(100)
+            bottomMargin = dp(90)
         })
 
         // Volume overlay — appears when adjusting volume
@@ -597,29 +595,16 @@ class VinylActivity : AppCompatActivity() {
                                 val end = (curIdx + contextAfter + 1).coerceAtMost(lys.size)
                                 for (i in start until end) {
                                     val isCurrent = i == curIdx
-                                    val distFromCur = Math.abs(i - curIdx)
-                                    val fade = if (isCurrent) 1f else (0.35f - distFromCur * 0.08f).coerceAtLeast(0.12f)
                                     val tv = TextView(this@VinylActivity).apply {
                                         text = lys[i].second.ifBlank { "\u00B7" }
-                                        textSize = if (isCurrent) 15f else 12f
-                                        setTextColor(if (isCurrent) 0xFFE8ECF4.toInt() else 0xFF6878A0.toInt())
+                                        textSize = if (isCurrent) 14f else 11f
+                                        setTextColor(if (isCurrent) 0xFFF0F4FF.toInt() else 0xFF5A6580.toInt())
                                         gravity = android.view.Gravity.CENTER
-                                        setPadding(dp(8), dp(4), dp(8), dp(4))
-                                        alpha = fade
-                                        if (isCurrent) {
-                                            typeface = android.graphics.Typeface.DEFAULT_BOLD
-                                            letterSpacing = 0.03f
-                                        }
+                                        setPadding(dp(4), dp(3), dp(4), dp(3))
+                                        alpha = if (isCurrent) 1f else 0.5f
+                                        if (isCurrent) typeface = android.graphics.Typeface.DEFAULT_BOLD
                                     }
                                     lyricInner?.addView(tv)
-                                }
-                                // Auto-scroll so current line is centered in the panel
-                                lyricPanel?.post {
-                                    val curChild = lyricInner?.getChildAt((curIdx - start).coerceIn(0, lyricInner!!.childCount - 1))
-                                    if (curChild != null) {
-                                        val scrollY = (curChild.top + curChild.height / 2 - (lyricPanel!!.height / 2))
-                                        lyricPanel?.smoothScrollTo(0, scrollY.coerceAtLeast(0))
-                                    }
                                 }
                             }
                             lyricPanel?.alpha = 1f
@@ -953,8 +938,9 @@ class VinylActivity : AppCompatActivity() {
                     textSize = 12f
                 }
                 val t = tracks[i]
-                tv.text = "${i + 1}. ${t.title}"
-                tv.setTextColor(if (i == currentIdx) 0xFFE8ECF5.toInt() else 0xFF8892B0.toInt())
+                val prefix = if (i == currentIdx) "\u25B6 " else "${i + 1}. "
+                tv.text = "$prefix${t.title}"
+                tv.setTextColor(if (i == currentIdx) 0xFFFFC107.toInt() else 0xFF8892B0.toInt())
                 return tv
             }
         }
