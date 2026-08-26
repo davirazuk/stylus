@@ -43,7 +43,7 @@ class BitPerfectService : Service() {
         return START_STICKY
     }
 
-    fun showNotification(token: MediaSession.Token, title: String, artist: String, album: String, playing: Boolean) {
+    fun showNotification(token: MediaSession.Token, title: String, artist: String, album: String, playing: Boolean, albumUri: android.net.Uri? = null) {
         ensureChannel()
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
@@ -57,7 +57,7 @@ class BitPerfectService : Service() {
         val nextPi = PendingIntent.getBroadcast(this, 3,
             Intent("io.stylus.player.MEDIA_NEXT"), PendingIntent.FLAG_IMMUTABLE)
 
-        val n = Notification.Builder(this, CH)
+        val builder = Notification.Builder(this, CH)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title.ifEmpty { "STYLUS" })
             .setContentText(artist)
@@ -74,8 +74,24 @@ class BitPerfectService : Service() {
                     .setMediaSession(token)
                     .setShowActionsInCompactView(0, 1, 2)
             )
-            .build()
-        startForeground(NOTIF_ID, n)
+
+        // Album art in notification
+        if (albumUri != null && android.os.Build.VERSION.SDK_INT >= 23) {
+            try {
+                val bmp = android.graphics.BitmapFactory.decodeStream(contentResolver.openInputStream(albumUri))
+                if (bmp != null) {
+                    val circBmp = android.graphics.Bitmap.createBitmap(bmp.width, bmp.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(circBmp)
+                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                    canvas.drawCircle(bmp.width / 2f, bmp.height / 2f, bmp.width / 2f, paint)
+                    paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_IN)
+                    canvas.drawBitmap(bmp, 0f, 0f, paint)
+                    builder.setLargeIcon(circBmp)
+                }
+            } catch (_: Exception) {}
+        }
+
+        startForeground(NOTIF_ID, builder.build())
     }
 
     private fun ensureChannel() {

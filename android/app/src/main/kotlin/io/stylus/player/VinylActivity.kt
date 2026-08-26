@@ -539,7 +539,9 @@ class VinylActivity : AppCompatActivity() {
                         startForegroundService(svcIntent)
                         player!!.onMetadataChanged = { token, title, artist, album, playing ->
                             runOnUiThread {
-                                BitPerfectService.instance?.showNotification(token, title, artist, album, playing)
+                                val artUri = if (albumIdField > 0)
+                                    android.net.Uri.parse("content://media/external/audio/albumart/$albumIdField") else null
+                                BitPerfectService.instance?.showNotification(token, title, artist, album, playing, artUri)
                             }
                         }
                     } catch (_: Exception) {}
