@@ -51,6 +51,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
 
     @Volatile var deckRotation = 0f
     @Volatile var armLift = 1f
+    @Volatile var armSwing = 0f    // 0 = over record, 1 = at rest
     @Volatile var playProgress = 0f
     @Volatile var crackle = 0f
     @Volatile var gapFracs: FloatArray? = null
@@ -678,19 +679,38 @@ class VinylRenderer : GLSurfaceView.Renderer {
     // ═══════════════════════════════════════════════════════════════════════
     private fun armLine() {
         val playR = RPO + (RPI - RPO) * playProgress
-        val r = if (armLift > 0.5f) ARR_REST else playR
         val lift = armLift
-        val ang = Math.toRadians(38.0).toFloat()
+        val swing = armSwing  // 0 = over record, 1 = at rest
+
+        // Pivot position — fixed
         val pvR = 1.24f
+        val ang = Math.toRadians(38.0).toFloat()
         val pivotX = cos(ang) * pvR + 0.06f
         val pivotY = sin(ang) * pvR + 0.10f
+
+        // Direction from pivot to disc center
         val toCenterX = -pivotX; val toCenterY = -pivotY
         val toCenterLen = sqrt(toCenterX * toCenterX + toCenterY * toCenterY).coerceAtLeast(1e-6f)
-        val dirX = toCenterX / toCenterLen; val dirY = toCenterY / toCenterLen
+        var dirX = toCenterX / toCenterLen; var dirY = toCenterY / toCenterLen
         val perpX = -dirY; val perpY = dirX
+
+        // Swing: rotate direction outward (away from center) by up to 15 degrees
+        val swingAngle = swing * Math.toRadians(15.0).toFloat()
+        val cosS = cos(swingAngle); val sinS = sin(swingAngle)
+        val newDirX = dirX * cosS + perpX * sinS
+        val newDirY = dirY * cosS + perpY * sinS
+        dirX = newDirX; dirY = newDirY
+
+        // Target radius: interpolate between rest and groove
+        val restR = ARR_REST
+        val r = restR * swing + playR * (1f - swing)
+
+        // Tip position: from pivot toward the (rotated) center direction, at distance (toCenterLen - r)
         var tipX = pivotX + dirX * (toCenterLen - r)
         var tipY = pivotY + dirY * (toCenterLen - r)
-        if (lift < 0.5f) {
+
+        // Vibration when stylus is on record
+        if (lift < 0.5f && swing < 0.1f) {
             val vib = 0.0004f * crackle
             tipX += sin(time * 35.0f) * vib
             tipY += cos(time * 27.0f) * vib * 0.6f

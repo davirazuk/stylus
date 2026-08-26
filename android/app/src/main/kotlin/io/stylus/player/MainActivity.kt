@@ -248,7 +248,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(10), dp(4), dp(10), dp(4))
             setOnClickListener {
                 if (filteredAlbums.isNotEmpty()) {
-                    prefs.edit().putLong("played_${filteredAlbums[0].id}", System.currentTimeMillis()).apply()
+                    recordPlay(filteredAlbums[0].id)
                     startActivity(VinylActivity.ceremonyIntent(this@MainActivity, filteredAlbums[0].id))
                 }
             }
@@ -404,7 +404,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 card.addView(name)
                 card.setOnClickListener {
-                    prefs.edit().putLong("played_${album.id}", System.currentTimeMillis()).apply()
+                    recordPlay(album.id)
                     startActivity(VinylActivity.ceremonyIntent(this, album.id))
                 }
                 recentRow.addView(card)
@@ -431,7 +431,7 @@ class MainActivity : AppCompatActivity() {
             emptyView.visibility = View.GONE
             recycler.adapter = AlbumAdapter(filteredAlbums, contentResolver, prefs,
                 onClick = { album ->
-                    prefs.edit().putLong("played_${album.id}", System.currentTimeMillis()).apply()
+                    recordPlay(album.id)
                     startActivity(VinylActivity.ceremonyIntent(this, album.id))
                 },
                 onLongClick = { album -> showTrackList(album) }
@@ -602,6 +602,13 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun recordPlay(albumId: Long) {
+        prefs.edit()
+            .putLong("played_$albumId", System.currentTimeMillis())
+            .putInt("playcount_$albumId", prefs.getInt("playcount_$albumId", 0) + 1)
+            .apply()
+    }
+
     private fun List<Library.Album>.recentlyPlayed(prefs: SharedPreferences): List<Library.Album> {
         return sortedByDescending { prefs.getLong("played_${it.id}", 0L) }
     }
@@ -728,12 +735,18 @@ class MainActivity : AppCompatActivity() {
                 }.start()
             } catch (_: Exception) {}
 
-            // Recently played indicator
+            // Recently played indicator + play count
             val lastPlayed = prefs.getLong("played_${album.id}", 0L)
+            val playCount = prefs.getInt("playcount_${album.id}", 0)
             if (lastPlayed > 0 && System.currentTimeMillis() - lastPlayed < 7 * 24 * 60 * 60 * 1000) {
                 holder.artist.setTextColor(0xFF5A8A5A.toInt())
             } else {
                 holder.artist.setTextColor(0xFF4A5570.toInt())
+            }
+            if (playCount > 0) {
+                holder.meta.text = "${album.durationString()}  \u2022  ${playCount}x"
+            } else {
+                holder.meta.text = album.durationString()
             }
 
             // Favorite state + click

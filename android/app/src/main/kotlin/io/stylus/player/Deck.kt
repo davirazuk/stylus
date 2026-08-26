@@ -39,16 +39,46 @@ class Deck {
     fun spinning() = phase != Phase.STOP
     fun stylusDown() = phase == Phase.PLAY
 
-    /** 0.0 = tonearm fully up, 1.0 = fully down (on record) */
+    /** 0.0 = tonearm fully up (off record), 1.0 = fully down (on record) */
     fun armLift(now: Float): Float {
         val e = elapsed(now)
         val raw = when (phase) {
-            Phase.SPINUP, Phase.CUE, Phase.BREAK, Phase.RETURN, Phase.STOP -> 1.0f
+            Phase.SPINUP, Phase.CUE -> 1.0f
+            Phase.BREAK, Phase.RETURN, Phase.STOP -> 1.0f
             Phase.DROP -> 1.0f - smootherstep((e / VinylConst.DROP_T).coerceIn(0f, 1f))
             Phase.LIFT -> smootherstep((e / VinylConst.LIFT_T).coerceIn(0f, 1f))
             Phase.PLAY -> 0.0f
         }
         return max(raw, cueRamp)
+    }
+
+    /**
+     * 0.0 = arm swung over the record (at outer groove radius)
+     * 1.0 = arm at rest position (off to the side)
+     *
+     * During CUE the arm swings IN from rest (1→0).
+     * During RETURN the arm swings OUT to rest (0→1).
+     * During DROP/PLAY/LIFT the arm stays over the record (0).
+     */
+    fun armSwing(now: Float): Float {
+        val e = elapsed(now)
+        return when (phase) {
+            Phase.SPINUP -> 1.0f  // still at rest
+            Phase.CUE -> {
+                // Swings from rest to over the record during CUE
+                // Starts swinging after 40% of CUE time (first part is spin-up settling)
+                val swingT = (e / VinylConst.CUE_T - 0.4f).coerceIn(0f, 0.6f) / 0.6f
+                1.0f - smootherstep(swingT)
+            }
+            Phase.DROP, Phase.PLAY, Phase.LIFT -> 0.0f  // over the record
+            Phase.BREAK -> 0.0f  // still over record, about to lift
+            Phase.RETURN -> {
+                // Swings from record back to rest after lift
+                val swingT = (e / VinylConst.RETURN_T).coerceIn(0f, 1f)
+                smootherstep(swingT)
+            }
+            Phase.STOP -> 1.0f  // at rest
+        }
     }
 
     fun update(dt: Float, now: Float, playing: Boolean): Phase {
