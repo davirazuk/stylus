@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Stylus Session
-Exec=/usr/local/bin/stylus-kde-setup
+Name=Stylus KDE
+Exec=/usr/local/bin/stylus-kde-shortcuts
 Hidden=false
 NoDisplay=true
-X-GNOME-Autostart-enabled=true
 X-KDE-autostart-after-desktop=true
+OnlyShowIn=KDE;

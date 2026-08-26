@@ -24,7 +24,7 @@ ok "Usuário: $REAL_USER ($USER_HOME)"
 # ── 1. Pacotes ─────────────────────────────────────────────────────────
 info "Instalando KDE..."
 pacman -S --needed --noconfirm \
-    plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil \
+    plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil khotkeys \
     kde-gtk-config kvantum sddm konsole dolphin gwenview kate \
     xdg-desktop-portal-kde qt5ct qt6ct \
     adw-gtk-theme papirus-icon-theme \
@@ -175,14 +175,15 @@ EOF
 # Atalhos customizados via scripts shell
 mkdir -p "$C/autostart"
 
-cat > "$C/autostart/stylus-kde-shortcuts.desktop" <<'EOF'
+cat > "$C/autostart/stylus-kde.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=Stylus Shortcuts
+Name=Stylus KDE
 Exec=/usr/local/bin/stylus-kde-shortcuts
 Hidden=false
 NoDisplay=true
 X-KDE-autostart-after-desktop=true
+OnlyShowIn=KDE;
 EOF
 
 ok "KDE configs escritas"

@@ -5,3 +5,4 @@ Exec=nm-applet --indicator
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
+OnlyShowIn=KDE;
