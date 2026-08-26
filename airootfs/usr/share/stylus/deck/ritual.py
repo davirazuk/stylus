@@ -448,6 +448,18 @@ class RitualScene:
             beam_segs2 = np.array([[sx, sy], [bx, by]], dtype=np.float32)
             beam_cols2 = np.array([[*hot, 1.0], [*hot, 1.0]], dtype=np.float32)
             tris.append(build_segs(beam_segs2, 0.08, W, H, beam_cols2))
+            # Sparks — flickering dots at the impact point
+            impact_fade = beam_fade
+            now_t = time.time()
+            for sk in range(4):
+                t = now_t * 7.0 + sk * 1.7
+                spark_x = bx + math.sin(t * 3.1) * 0.012 * radius * impact_fade
+                spark_y = by + math.cos(t * 2.7) * 0.012 * radius * impact_fade
+                spark_bright = impact_fade * (0.3 + 0.3 * math.sin(t * 5.0 + sk))
+                spark_col = [1.0 * spark_bright, 0.8 * spark_bright, 0.35 * spark_bright, 1.0]
+                sp = np.array([[spark_x, spark_y]], dtype=np.float32)
+                sc = np.array([spark_col], dtype=np.float32)
+                tris.append(build_segs(sp, 0.018, W, H, sc))
         arm=np.concatenate(tris,axis=0) if tris else None
         return strips, arm
     def banner(self):
