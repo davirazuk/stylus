@@ -201,12 +201,13 @@ class MainActivity : AppCompatActivity() {
 
         // Empty
         emptyView = TextView(this).apply {
-            text = "\u25CE\nNenhuma musica encontrada\n\nConecte um USB com musicas\nou configure o WebDAV"
-            setTextColor(0xFF3A4560.toInt())
-            textSize = 14f
+            text = "\u266B\n\nNenhuma musica encontrada\n\nConecte um USB com musicas\nou configure o WebDAV"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 15f
             visibility = View.GONE
             gravity = Gravity.CENTER
-            setLineSpacing(0f, 1.4f)
+            setLineSpacing(0f, 1.5f)
+            letterSpacing = 0.02f
         }
         root.addView(emptyView, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -674,7 +675,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val cover = ImageView(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp2(ctx, 140))
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp2(ctx, 145))
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(0xFF08090C.toInt())
                 adjustViewBounds = true
@@ -682,28 +683,28 @@ class MainActivity : AppCompatActivity() {
                 clipToOutline = true
                 outlineProvider = object : android.view.ViewOutlineProvider() {
                     override fun getOutline(v: View, outline: android.graphics.Outline) {
-                        outline.setRoundRect(0, 0, v.width, v.height, dp2(ctx, 6).toFloat())
+                        outline.setRoundRect(0, 0, v.width, v.height, dp2(ctx, 8).toFloat())
                     }
                 }
             }
             card.addView(cover)
 
             val title = TextView(ctx).apply {
-                setTextColor(0xFFC0C8DD.toInt())
-                textSize = 11f
+                setTextColor(0xFFC8D0E4.toInt())
+                textSize = 11.5f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp2(ctx, 6), dp2(ctx, 5), dp2(ctx, 6), 0)
+                setPadding(dp2(ctx, 7), dp2(ctx, 6), dp2(ctx, 7), 0)
                 id = View.generateViewId()
             }
             card.addView(title)
 
             val artist = TextView(ctx).apply {
-                setTextColor(0xFF4A5570.toInt())
-                textSize = 9f
+                setTextColor(0xFF506078.toInt())
+                textSize = 9.5f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp2(ctx, 6), dp2(ctx, 1), dp2(ctx, 6), dp2(ctx, 5))
+                setPadding(dp2(ctx, 7), dp2(ctx, 1), dp2(ctx, 7), dp2(ctx, 5))
                 id = View.generateViewId()
             }
             card.addView(artist)
