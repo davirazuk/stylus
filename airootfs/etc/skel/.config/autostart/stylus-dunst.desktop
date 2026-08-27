@@ -5,4 +5,4 @@ Exec=dunst
 Hidden=false
 NoDisplay=true
 X-KDE-autostart-after-desktop=true
-OnlyShowIn=KDE;
+NotShowIn=KDE;

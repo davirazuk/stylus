@@ -164,6 +164,12 @@ general=@Variant(\0\0\0@\0\0\0\x12Noto Sans\0\0\0\n\0\0\0\0\x28\x7f\0\0\x14)
 EOF
 done
 
+mkdir -p "$C/Kvantum"
+cat > "$C/Kvantum/kvantum.kvconfig" <<'EOF'
+[General]
+theme=Stylus
+EOF
+
 mkdir -p "$C/konsole"
 cat > "$C/konsole/Stylus.profile" <<'EOF'
 [General]

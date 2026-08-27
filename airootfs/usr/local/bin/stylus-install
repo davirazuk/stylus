@@ -655,7 +655,7 @@ case $DESKTOP_CHOICE in
         DESKTOP_SESSION="plasma.desktop"
         DESKTOP_PKGS=(
             plasma-desktop plasma-workspace sddm
-            konsole dolphin ark gwenview
+            konsole dolphin ark gwenview kate
             plasma-nm plasma-pa powerdevil
             kde-gtk-config kvantum
             xdg-desktop-portal-kde
@@ -1308,6 +1308,7 @@ EOF
         cat > "$KDE_CONF/$ver/$ver.conf" <<EOF
 [Appearance]
 custom_palette=true
+color_scheme_path=/usr/share/$ver/colors/stylus.conf
 icon_theme=Papirus-Dark
 style=Fusion
 
