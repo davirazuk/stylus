@@ -11,7 +11,7 @@
     padding = 12
     horizontal_padding = 12
     frame_width = 2
-    frame_color = "#5bcefa"
+    frame_color = "#f0a030"
     font = JetBrainsMono Nerd Font 10
     format = "<b>%s</b>\n%b"
     corner_radius = 8

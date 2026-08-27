@@ -24,7 +24,7 @@
 window {
     background-color:   @base;
     border:             2px;
-    border-color:       @blue;
+    border-color:       @mauve;
     border-radius:      12px;
     width:              620px;
     padding:            0;
@@ -44,7 +44,7 @@ inputbar {
 }
 
 prompt {
-    text-color:         @blue;
+    text-color:         @mauve;
     vertical-align:     0.5;
 }
 
@@ -71,7 +71,7 @@ element {
 element normal.normal   { text-color: @text; }
 element alternate.normal { text-color: @text; }
 element selected.normal {
-    background-color:   @blue;
+    background-color:   @mauve;
     text-color:         @base;
 }
 element urgent.normal   { text-color: @red; }
@@ -85,7 +85,7 @@ element-text {
     vertical-align:     0.5;
     /* A literal colour: rofi's grammar for `highlight` takes a colour, not a
        property reference, so `bold @mauve` fails to parse. Same hex as @mauve. */
-    highlight:          bold #5bcefa;
+    highlight:          bold #f0a030;
 }
 
 message {

@@ -1698,17 +1698,21 @@ class GamesScreen(Screen):
     name = "JOGOS"
     icon = "󰊴"
 
-    # (name, command, binary_or_path, icon)
+    # (name, command, binary_or_path, icon, kind)
+    # kind: "keyboard" = arrow keys, "mouse" = mouse, "controller" = gamepad
     ACOES = [
-        ("Clone Hero", ["clonehero"], "clonehero", "󰝰"),
+        ("Clone Hero", ["clonehero"], "clonehero", "󰝰", "controller"),
         ("Keyboard Warriors", [os.path.expanduser(
             "~/Documentos/coiso/keyboardwarrior/keyboardwarrior")],
-            "keyboardwarrior", "󰌑"),
-        ("osu!", ["osu"], "osu", "󰝰"),
-        ("YARG", ["yarg"], "yarg", "󰝰"),
-        ("Steam", ["steam", "-bigpicture"], "steam", "󰓓"),
-        ("Lutris", ["lutris"], "lutris", "󰓓"),
-        ("Heroic", ["heroic"], "heroic", "󰓓"),
+            "keyboardwarrior", "󰌑", "keyboard"),
+        ("StepMania", ["stepmania"], "stepmania", "󰝰", "keyboard"),
+        ("Etterna", ["etterna"], "etterna", "󰝰", "keyboard"),
+        ("YARG", ["yarg"], "yarg", "󰝰", "controller"),
+        ("osu!", ["osu"], "osu", "󰝰", "mouse"),
+        ("Audica", ["audica"], "audica", "󰝰", "controller"),
+        ("Steam", ["steam", "-bigpicture"], "steam", "󰓓", "controller"),
+        ("Lutris", ["lutris"], "lutris", "󰓓", "controller"),
+        ("Heroic", ["heroic"], "heroic", "󰓓", "controller"),
     ]
 
     def __init__(self, app):
@@ -1802,7 +1806,7 @@ class GamesScreen(Screen):
             self.sel = (self.sel - 1) % total
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if self.sel < n_games:
-                nome, cmd, binario, _icon = self.ACOES[self.sel]
+                nome, cmd, binario, _icon, _kind = self.ACOES[self.sel]
                 if self._is_installed(binario) or os.path.isfile(cmd[0]):
                     self.app.toast(f"abrindo {nome}…")
                     spawn(cmd)
@@ -1928,7 +1932,7 @@ class GamesScreen(Screen):
         # games grid: 4 per row
         cols = min(4, n_games)
         cw, gap = 220, 20
-        for i, (nome, _cmd, binario, icon) in enumerate(self.ACOES):
+        for i, (nome, _cmd, binario, icon, kind) in enumerate(self.ACOES):
             col = i % cols
             row = i // cols
             bx = pygame.Rect(x + col * (cw + gap), y + row * 120, cw, 100)
@@ -1940,6 +1944,14 @@ class GamesScreen(Screen):
                     border=T.AMBER if sel else T.LINE)
             T.text(s, f"{icon}  {nome}", bx.center, 22,
                    T.TEXT if tem else T.TEXT_FAINT, bold=sel, anchor="center")
+            # kind badge
+            kind_icons = {"keyboard": "󰌌", "mouse": "󰍽", "controller": "󰣌"}
+            kind_colors = {"keyboard": T.CYAN, "mouse": T.LAV, "controller": T.AMBER}
+            ki = kind_icons.get(kind, "")
+            kc = kind_colors.get(kind, T.TEXT_DIM)
+            if ki:
+                T.text(s, ki, (bx.right - 14, bx.y + 10), 16, kc,
+                       anchor="topright")
             if not tem:
                 T.text(s, "não encontrado", (bx.centerx, bx.centery + 28),
                        15, T.TEXT_FAINT, anchor="center")
