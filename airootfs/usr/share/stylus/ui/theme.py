@@ -2,17 +2,19 @@
 
 POR QUE ELA É ASSIM
 -------------------
-Preto esmagado, azul frio, e os acentos em rosa/azul/lavanda saturados por
-cima. Não é uma escolha de estilo genérica: é a mesma direção do resto do
-sistema — a capa do disco é a única coisa colorida na tela, e todo o resto
-recua para trás dela. Uma interface de música que compete com a arte da capa
-está fazendo a coisa errada.
+Preto esmagado, âmbar como a ÚNICA cor viva. Tudo o mais recua — o disco
+é quem tem cor, a interface é quem dá palco. Quando não tem disco tocando,
+o âmbar é o fio que mantém a tela viva. Quando tem, o âmbar desaparece
+e deixa a capa falar.
 
-Os acentos ficam em saturação cheia de propósito, para lerem como néon sobre
-preto e não como pastel sobre pastel.
+A filosofia: âmbar é fogo, é luz, é calor. Azul é informação. Lavanda é
+especial. Verde é ok. Vermelho é alerta. Mas âmbar é a alma — ele aparece
+onde a pessoa olha primeiro, onde o sistema está dizendo "estou aqui".
 """
 import glob
+import math
 import os
+import time
 
 import pygame
 
@@ -25,12 +27,20 @@ TEXT       = (232, 236, 245)     # principal — branco limpo
 TEXT_DIM   = (138, 149, 170)     # secundário — legível
 TEXT_FAINT = (118, 128, 148)     # terciário — WCAG 4.5:1, não invisível
 
-BLUE       = (91, 206, 250)      # o acento principal
-PINK       = (245, 169, 184)
-LAV        = (183, 160, 255)
-GREEN      = (126, 217, 158)
-AMBER      = (240, 189, 118)
-RED        = (238, 122, 130)
+# âmbar: a alma do sistema. ÚNICA cor viva.
+AMBER      = (240, 160, 48)      # quente, vivo, o fio que prende o olhar
+AMBER_DIM  = (192, 128, 32)      # âmbar abafado para segundos planos
+AMBER_GLOW = (255, 200, 80)      # âmbar brilhante para brilhos e glows
+
+# cores de informação — secundárias, nunca competem com o âmbar
+BLUE       = (91, 206, 250)      # informação, links, dados
+LAV        = (183, 160, 255)     # especial, destaque suave
+GREEN      = (126, 217, 158)     # ok, sucesso, conectado
+RED        = (238, 122, 130)     # erro, alerta, desconectado
+PINK       = (245, 169, 184)     # rare — used sparingly
+
+# aliases para compatibilidade com código existente
+BLUE_LEGACY = BLUE
 
 # ── tipos ──────────────────────────────────────────────────────────────────
 _FONT_DIRS = ("/usr/share/fonts/TTF", "/usr/share/fonts/truetype",
@@ -147,3 +157,60 @@ def shadow_card(surf, rect, radius=12):
         pygame.draw.rect(s, (0, 0, 0, alpha), s.get_rect(),
                          border_radius=radius + i)
         surf.blit(s, (rect.x - i, rect.y - i + 3))
+
+
+# ── partículas atmosféricas ────────────────────────────────────────────────
+# Poeira virtual que flutua no fundo — dá profundidade sem chamar atenção.
+# Cada partícula é um ponto âmbar que nasce, flutua, e morre.
+class Particles:
+    """Poeira atmosférica — pontos âmbar que flutuam no fundo."""
+
+    def __init__(self, w, h, n=24):
+        import random
+        self.w, self.h = w, h
+        self.particles = []
+        for _ in range(n):
+            self.particles.append({
+                "x": random.uniform(0, w),
+                "y": random.uniform(0, h),
+                "vx": random.uniform(-0.15, 0.15),
+                "vy": random.uniform(-0.08, -0.02),
+                "r": random.uniform(1, 3),
+                "alpha": random.uniform(8, 25),
+                "life": random.uniform(0, 1),
+            })
+
+    def update(self, dt):
+        """Move as partículas. dt em segundos."""
+        for p in self.particles:
+            p["x"] += p["vx"] * dt * 60
+            p["y"] += p["vy"] * dt * 60
+            p["life"] += dt * 0.15
+            if p["life"] > 1.0:
+                p["life"] = 0.0
+                import random
+                p["x"] = random.uniform(0, self.w)
+                p["y"] = self.h + 10
+            # wrap horizontal
+            if p["x"] < -10:
+                p["x"] = self.w + 10
+            elif p["x"] > self.w + 10:
+                p["x"] = -10
+
+    def draw(self, surf):
+        """Desenha as partículas. Alpha varia com o ciclo de vida."""
+        for p in self.particles:
+            # fade in/out
+            life = p["life"]
+            if life < 0.1:
+                a = int(p["alpha"] * (life / 0.1))
+            elif life > 0.8:
+                a = int(p["alpha"] * ((1.0 - life) / 0.2))
+            else:
+                a = int(p["alpha"])
+            if a <= 0:
+                continue
+            s = pygame.Surface((int(p["r"] * 4), int(p["r"] * 4)), pygame.SRCALPHA)
+            pygame.draw.circle(s, (*AMBER_GLOW, a),
+                               (int(p["r"] * 2), int(p["r"] * 2)), int(p["r"]))
+            surf.blit(s, (int(p["x"] - p["r"]), int(p["y"] - p["r"])))

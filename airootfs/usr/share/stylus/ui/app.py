@@ -208,6 +208,17 @@ class NowScreen(Screen):
         cr = pygame.Rect(r.x + (r.w - total) // 2, r.y + (r.h - size) // 2,
                          size, size)
         T.shadow_card(s, cr, radius=14)
+
+        # ── brilho reativo ao áudio: a capa "respira" com a música ──────────
+        level = self.app.audio_level()
+        if level > 0.01:
+            glow_r = int(size * 0.58)
+            glow = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
+            alpha = int(18 + level * 45)
+            pygame.draw.circle(glow, (*T.AMBER, alpha),
+                               (glow_r, glow_r), glow_r, 0)
+            s.blit(glow, (cr.centerx - glow_r, cr.centery - glow_r))
+
         if cov:
             # sem smoothscale se já do tamanho certo — mais nítido
             if cov.get_width() != size or cov.get_height() != size:
@@ -234,7 +245,10 @@ class NowScreen(Screen):
             resta = max(0.0, side["end"] - t_abs)
             ultimo = side is al.sides[-1]
             rotulo = side["label"].replace("SIDE", "LADO")
-            T.text(s, rotulo, (x, y), 30, T.BLUE, bold=True)
+            # cor do lado respira com o áudio
+            side_alpha = int(180 + level * 75) if level > 0.01 else 180
+            side_cor = T.lerp(T.AMBER, (255, 255, 255), (side_alpha - 180) / 75)
+            T.text(s, rotulo, (x, y), 30, side_cor, bold=True)
             T.text(s, ("acaba em " if ultimo else "vira em ") + humano(resta),
                    (x + 150, y + 5), 22, T.TEXT_DIM)
             self._groove(s, pygame.Rect(x, y + 48, w, 14), frac)
@@ -281,11 +295,11 @@ class NowScreen(Screen):
         """Barra de progresso como sulco — começo na borda, fim no centro."""
         pygame.draw.rect(s, T.LINE, rect, border_radius=6)
         f = pygame.Rect(rect.x, rect.y, int(rect.w * frac), rect.h)
-        pygame.draw.rect(s, T.BLUE, f, border_radius=6)
+        pygame.draw.rect(s, T.AMBER, f, border_radius=6)
         # ponta luminosa na posição atual
         if frac > 0.01:
             glow = pygame.Surface((18, rect.h + 6), pygame.SRCALPHA)
-            pygame.draw.circle(glow, (*T.BLUE, 60), (9, rect.h // 2 + 3), 8)
+            pygame.draw.circle(glow, (*T.AMBER_GLOW, 60), (9, rect.h // 2 + 3), 8)
             s.blit(glow, (f.right - 9, rect.y - 3))
             pygame.draw.circle(s, T.TEXT, (f.right, rect.centery), 6)
 
@@ -460,7 +474,7 @@ class ShelfScreen(Screen):
             return
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
-                   (r.x + pad, r.y + 16), 24, T.BLUE)
+                   (r.x + pad, r.y + 16), 24, T.AMBER)
         else:
             rotulo = f"{len(its)} discos"
             if self.artist:
@@ -556,7 +570,7 @@ class ShelfScreen(Screen):
             # O disco selecionado LEVANTA: maior e com sombra mais funda.
             rect = rect.inflate(10, 10)
             glow = rect.inflate(12, 12)
-            pygame.draw.rect(s, T.lerp(T.INK, T.BLUE, 0.30), glow,
+            pygame.draw.rect(s, T.lerp(T.INK, T.AMBER, 0.25), glow,
                              border_radius=10)
             T.shadow_card(s, rect, radius=8)
         else:
@@ -650,7 +664,7 @@ class StackScreen(Screen):
             else:
                 T.panel(s, cr, T.INK_LIFT, radius=4)
             T.text(s, f"{i + 1}", (row.x - 18, row.y + 30), 22,
-                   T.BLUE if sel else T.TEXT_FAINT, anchor="topright")
+                   T.AMBER if sel else T.TEXT_FAINT, anchor="topright")
             T.text(s, it["name"], (cr.right + 20, row.y + 14), 24,
                    T.TEXT if sel else T.TEXT_DIM, maxw=row.w - 140)
             T.text(s, it["artist"], (cr.right + 20, row.y + 46), 18,
@@ -956,7 +970,7 @@ class DiaryScreen(Screen):
             alt = int((rect.h - 18) * v / maxi)
             col = pygame.Rect(int(rect.x + h * largura) + 1, rect.bottom - 18 - alt,
                               max(2, int(largura) - 3), max(1, alt))
-            pygame.draw.rect(s, T.BLUE if h == pico else T.lerp(T.INK_LIFT, T.BLUE, 0.5),
+            pygame.draw.rect(s, T.AMBER if h == pico else T.lerp(T.INK_LIFT, T.AMBER, 0.4),
                              col, border_radius=2)
         for h in (0, 6, 12, 18):
             T.text(s, f"{h}h", (int(rect.x + h * largura), rect.bottom - 16),
@@ -1004,9 +1018,9 @@ class DiaryScreen(Screen):
         meio = r.x + r.w // 2
         col_w = r.w // 2 - 70
 
-        T.text(s, "EM QUE DIA", (x, y), 16, T.BLUE, bold=True)
+        T.text(s, "EM QUE DIA", (x, y), 16, T.AMBER, bold=True)
         self._barras(s, pygame.Rect(x, y + 26, col_w, 190),
-                     self.by_wd, self.DIAS, T.BLUE)
+                     self.by_wd, self.DIAS, T.AMBER)
 
         T.text(s, "QUEM VOCÊ MAIS PÕE", (meio + 20, y), 16, T.PINK, bold=True)
         top = sorted(self.by_artist.items(), key=lambda kv: -kv[1])[:6]
@@ -1068,7 +1082,7 @@ class DiaryScreen(Screen):
             x = rect.x + wk * (cell + gap)
             y = rect.y + wd * (cell + gap)
             if n:
-                c = T.lerp(T.lerp(T.INK_LIFT, T.BLUE, 0.45), T.PINK,
+                c = T.lerp(T.lerp(T.INK_LIFT, T.AMBER, 0.4), T.PINK,
                            min(1.0, (n - 1) / max(1, maxi - 1)))
             else:
                 c = T.INK_SOFT
@@ -1495,7 +1509,7 @@ class QobuzScreen(Screen):
 
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
-                   (r.x + pad, r.y + 16), 24, T.BLUE)
+                   (r.x + pad, r.y + 16), 24, T.AMBER)
         else:
             T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
 
@@ -1606,7 +1620,7 @@ class GamesScreen(Screen):
             box = pygame.Rect(x + i * (cw + gap), y + 96, cw, 150)
             sel = i == self.sel
             T.panel(s, box, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
-                    border=T.BLUE if sel else T.LINE)
+                    border=T.AMBER if sel else T.LINE)
             tem = bool(_sh.which(binario))
             T.text(s, nome, box.center, 26, T.TEXT if tem else T.TEXT_FAINT,
                    bold=True, anchor="center")
@@ -1665,7 +1679,7 @@ class SettingsScreen(Screen):
                    20, T.TEXT if sel else (T.TEXT_DIM if cmd else T.TEXT_FAINT),
                    maxw=box.w - 30)
             y += 50
-        T.text(s, "STYLUS", (x, r.bottom - 150), 40, T.BLUE, bold=True)
+        T.text(s, "STYLUS", (x, r.bottom - 150), 40, T.AMBER, bold=True)
         T.text(s, "a agulha é o único ponto em que um objeto vira som.",
                (x, r.bottom - 100), 19, T.TEXT_DIM)
         T.text(s, "tudo aqui existe para deixar esse ponto o mais curto e o "
@@ -1757,7 +1771,7 @@ class InstallScreen(Screen):
             sel = i == self.sel
             box = pygame.Rect(x, y, min(r.w - 90, 720), 74)
             T.panel(s, box, T.INK_LIFT if sel else T.INK_SOFT, radius=12,
-                    border=T.BLUE if sel else T.LINE)
+                    border=T.AMBER if sel else T.LINE)
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 20, box.y + 14),
                    23, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 40)
             T.text(s, sub, (box.x + 34, box.y + 44), 17, T.TEXT_FAINT,
@@ -1867,6 +1881,8 @@ class App:
         # Miniaturas já no tamanho do bloco TOCANDO do trilho: escalar 320px
         # para 46 a cada quadro é trabalho de GPU queimado em nada.
         self._rail_thumb = {}
+        # Partículas atmosféricas — poeira âmbar no fundo
+        self._particles = T.Particles(self.W, self.H, n=18)
         # O borrão de fundo da AGORA, um por capa e no tamanho da tela: gerar
         # por quadro seria smoothscale duplo a 60fps para desenhar a mesma
         # imagem. Guarda as últimas — voltar ao disco de ontem não regenera.
@@ -2127,6 +2143,20 @@ class App:
         except Exception:                 # noqa: BLE001
             return "?"
 
+    @staticmethod
+    def audio_level():
+        """Nível de áudio atual (0.0 a 1.0) para efeitos visuais reativos."""
+        try:
+            r = subprocess.run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
+                               capture_output=True, text=True, timeout=1)
+            # "Volume: 0.35" → 0.35
+            parts = r.stdout.strip().split()
+            if len(parts) >= 2:
+                return float(parts[1])
+        except Exception:                 # noqa: BLE001
+            pass
+        return 0.0
+
     # ── desenho comum ──────────────────────────────────────────────────────
     def hint(self, s, r, txt):
         T.text(s, txt, (r.x + 44, r.bottom - 34), 17, T.TEXT_FAINT,
@@ -2159,7 +2189,7 @@ class App:
     def _draw_rail(self, s, w):
         pygame.draw.rect(s, T.INK_SOFT, (0, 0, w, self.H))
         pygame.draw.line(s, T.LINE, (w, 0), (w, self.H))
-        T.text(s, "STYLUS", (24, 34), 26, T.BLUE, bold=True)
+        T.text(s, "STYLUS", (24, 34), 26, T.AMBER, bold=True)
         y = 110
         for i, sc in enumerate(self.screens + [_DESKTOP_ITEM]):
             atual = i == self.cur
@@ -2168,7 +2198,7 @@ class App:
             if foco:
                 T.panel(s, box, T.INK_LIFT, radius=10)
             if atual:
-                pygame.draw.rect(s, T.BLUE, (12, y - 5, 3, 38), border_radius=2)
+                pygame.draw.rect(s, T.AMBER, (12, y - 5, 3, 38), border_radius=2)
             cor = T.TEXT if (atual or foco) else T.TEXT_DIM
             T.text(s, T.icon(sc.icon), (32, y + 2), 22, cor)
             T.text(s, sc.name, (66, y + 6), 18, cor)
@@ -2205,7 +2235,7 @@ class App:
                    maxw=w - tx - 24)
             bar = pygame.Rect(24, ty + 68, w - 48, 4)
             pygame.draw.rect(s, T.LINE, bar, border_radius=3)
-            pygame.draw.rect(s, T.BLUE,
+            pygame.draw.rect(s, T.AMBER,
                              (bar.x, bar.y, int(bar.w * frac), bar.h),
                              border_radius=3)
 
@@ -2279,7 +2309,7 @@ class App:
                                (cx, cy), 120 + k * 34, 1)
 
         T.text(camada, antes, (cx, cy - 96), 26, T.TEXT_DIM, anchor="center")
-        T.text(camada, "ACABOU", (cx, cy - 44), 68, T.BLUE,
+        T.text(camada, "ACABOU", (cx, cy - 44), 68, T.AMBER,
                bold=True, anchor="center")
         T.text(camada, ("vire o disco para o " if ultimo else "agora é o ") + agora,
                (cx, cy + 34), 30, T.TEXT, anchor="center")
@@ -2419,6 +2449,10 @@ class App:
                             pygame.KEYDOWN, key=mapa[ev.button], unicode="",
                             mod=0))
             self.surf.fill(T.INK)
+            # Partículas atmosféricas — poeira âmbar no fundo
+            dt = self.clock.get_time() / 1000.0
+            self._particles.update(dt)
+            self._particles.draw(self.surf)
             body = pygame.Rect(rail_w, 0, self.W - rail_w, self.H)
             self._idle_deck()
             try:
