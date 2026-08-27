@@ -355,3 +355,4 @@ qemu-guest-agent
 open-vm-tools
 virtualbox-guest-utils-nox
 hyperv
+keyd
