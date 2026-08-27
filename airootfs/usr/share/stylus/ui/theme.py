@@ -214,3 +214,24 @@ class Particles:
             pygame.draw.circle(s, (*AMBER_GLOW, a),
                                (int(p["r"] * 2), int(p["r"] * 2)), int(p["r"]))
             surf.blit(s, (int(p["x"] - p["r"]), int(p["y"] - p["r"])))
+
+
+# ── vinheta ────────────────────────────────────────────────────────────────
+# Escurecimento suave nas bordas — dá profundidade sem chamá-la.
+_vignette_cache = {}
+
+def vignette(surf):
+    """Aplica vinheta suave na superfície. Cacheada por tamanho."""
+    w, h = surf.get_size()
+    key = (w, h)
+    if key not in _vignette_cache:
+        s = pygame.Surface((w, h), pygame.SRCALPHA)
+        # gradiente radial suave
+        cx, cy = w // 2, h // 2
+        max_r = (cx * cx + cy * cy) ** 0.5
+        for i in range(8):
+            r = max_r * (0.6 + i * 0.05)
+            alpha = int(8 + i * 6)
+            pygame.draw.circle(s, (0, 0, 0, alpha), (cx, cy), int(r))
+        _vignette_cache[key] = s
+    surf.blit(_vignette_cache[key], (0, 0), special_flags=pygame.BLEND_RGBA_SUB)

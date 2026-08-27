@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
         }
         val header = TextView(this).apply {
             text = "STYLUS"
-            setTextColor(0xFF6A7590.toInt())
+            setTextColor(0xFFF0A030.toInt())  // amber — the soul of the palette
             textSize = 10f
             letterSpacing = 0.22f
             typeface = Typeface.DEFAULT_BOLD
@@ -230,7 +230,7 @@ class MainActivity : AppCompatActivity() {
 
         val shuffleBtn = TextView(this).apply {
             text = "\u21C4"
-            setTextColor(0xFF4A5570.toInt())
+            setTextColor(0xFFF0A030.toInt())  // amber
             textSize = 16f
             setPadding(dp(10), dp(4), dp(10), dp(4))
             setOnClickListener {
@@ -245,7 +245,7 @@ class MainActivity : AppCompatActivity() {
 
         val playBtn = TextView(this).apply {
             text = "\u25B6"
-            setTextColor(0xFFB0B8D0.toInt())
+            setTextColor(0xFFF0A030.toInt())  // amber
             textSize = 16f
             setPadding(dp(10), dp(4), dp(10), dp(4))
             setOnClickListener {
@@ -274,14 +274,14 @@ class MainActivity : AppCompatActivity() {
             elevation = dp(4).toFloat()
         }
         nowPlayingText = TextView(this).apply {
-            setTextColor(0xFF8892B0.toInt())
+            setTextColor(0xFFD0D8E8.toInt())
             textSize = 10f
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         nowPlayingBar.addView(nowPlayingText)
         val npGoBtn = TextView(this).apply {
             text = "\u25B6"
-            setTextColor(0xFFE8ECF5.toInt())
+            setTextColor(0xFFF0A030.toInt())  // amber — soul of the palette
             textSize = 14f
             setPadding(dp(8), dp(2), dp(2), dp(2))
             setOnClickListener {
@@ -761,9 +761,9 @@ class MainActivity : AppCompatActivity() {
             val lastPlayed = prefs.getLong("played_${album.id}", 0L)
             val playCount = prefs.getInt("playcount_${album.id}", 0)
             if (lastPlayed > 0 && System.currentTimeMillis() - lastPlayed < 7 * 24 * 60 * 60 * 1000) {
-                holder.artist.setTextColor(0xFF5A8A5A.toInt())
+                holder.artist.setTextColor(0xFFF0A030.toInt())  // amber — recently played
             } else {
-                holder.artist.setTextColor(0xFF4A5570.toInt())
+                holder.artist.setTextColor(0xFF506078.toInt())
             }
             if (playCount > 0) {
                 holder.meta.text = "${album.durationString()}  \u2022  ${playCount}x"

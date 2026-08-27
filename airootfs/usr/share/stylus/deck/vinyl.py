@@ -105,6 +105,7 @@ ENV_HZ = 8
 STATE_DIR = os.path.expanduser("~/.local/share/stylus")
 CACHE_DIR = os.path.expanduser("~/.cache/stylus/envelopes")
 SOCKET_PATH = os.path.join(STATE_DIR, "deck.sock")
+SESSION_FILE = os.path.join(STATE_DIR, "session-memory.json")
 _USER_LIBRARY_CONF = os.path.expanduser("~/.config/stylus/library")
 _SYSTEM_LIBRARY_CONF = "/etc/stylus/library"
 _FALLBACK_ROOTS = ("~/Music", "~/Músicas", "~/Musica", "~/Musique", "/srv/music")
@@ -328,6 +329,55 @@ class _MpvIPC:
         return self.command("set_property", "pause", bool(paused))
 
 
+# ── memória de sessão ────────────────────────────────────────────────────
+# Salva o estado de reprodução para restaurar após reinício.
+# Guarda: disco, faixa, posição, timestamp. Não guarda estado de pause —
+# se o sistema reiniciou, assume que quer continuar de onde parou.
+
+def save_session(path, title, artist, album, position, duration, track_index):
+    """Salva o estado atual de reprodução."""
+    try:
+        os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
+        data = {
+            "path": path,
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "position": position,
+            "duration": duration,
+            "track_index": track_index,
+            "timestamp": time.time(),
+        }
+        with open(SESSION_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass
+
+
+def restore_session(max_age=3600 * 4):
+    """Restaura o estado de reprodução. Retorna dict ou None.
+
+    max_age: máxima idade em segundos — depois disso, não restaura.
+    """
+    try:
+        with open(SESSION_FILE) as f:
+            data = json.load(f)
+        age = time.time() - data.get("timestamp", 0)
+        if age > max_age:
+            return None
+        return data
+    except (OSError, json.JSONDecodeError, KeyError):
+        return None
+
+
+def clear_session():
+    """Limpa a memória de sessão."""
+    try:
+        os.unlink(SESSION_FILE)
+    except OSError:
+        pass
+
+
 class Session:
     """Polls "what is playing and where are we" on a background thread.
 
@@ -396,10 +446,49 @@ class Session:
 
     # -- polling -----------------------------------------------------------
     def _run(self, interval):
+        save_counter = 0
         while not self._stop:
             if not self._poll_mpv():
                 self._poll_mpris()
+            # Salva a cada 10 segundos — o bastante para restaurar,
+            # pouco para não matar SSD
+            save_counter += 1
+            if save_counter >= 20:  # 20 * 0.5s = 10s
+                save_counter = 0
+                self._save_state()
             time.sleep(interval)
+
+    def _save_state(self):
+        """Salva o estado para restauração futura."""
+        with self._lock:
+            if not self.path or self.paused:
+                return
+            pos, dur = self._track_pos, self._track_dur
+            if not self.paused and self._stamp:
+                pos += max(0.0, time.monotonic() - self._stamp)
+            save_session(
+                self.path, self.title, self.artist, self.album,
+                min(pos, dur) if dur else pos, dur, self.track_index,
+            )
+
+    def restore(self):
+        """Restaura o último estado salvo. Retorna True se restaurou."""
+        data = restore_session()
+        if not data or not data.get("path"):
+            return False
+        # Tenta retomar via mpv
+        if self.mpv.connect():
+            path = data["path"]
+            self.mpv.command("loadfile", path)
+            pos = data.get("position", 0)
+            if pos > 0:
+                self.mpv.command("seek", str(pos), "absolute")
+            return True
+        return False
+
+    def clear(self):
+        """Limpa a memória de sessão."""
+        clear_session()
 
     def _poll_mpv(self):
         if not self.mpv.connect():
@@ -869,7 +958,8 @@ def last_played():
 
 
 def draw_record(candidates=None, exclude=(), rng=None):
-    """Sorteia um disco puxando para o que faz mais tempo que não toca.
+    """Sorteia um disco puxando para o que faz mais tempo que não toca,
+    com um toque de consciência temporal — a manhã pede uma coisa, a noite outra.
 
     Não é "o mais esquecido de todos", é sorteio COM PESO: um disco novo na
     estante tem que ter chance de sair, e um que você ouviu ontem também — só
@@ -884,11 +974,38 @@ def draw_record(candidates=None, exclude=(), rng=None):
         return None
     vistos = last_played()
     agora = time.time()
+    hora = time.localtime(agora).tm_hour
+
+    # Peso base do esquecimento: quadrático
     pesos = []
     for d in cands:
         quando = vistos.get(os.path.normpath(d))
         dias = 400.0 if quando is None else max(0.0, (agora - quando) / 86400.0)
-        pesos.append(1.0 + dias * dias)     # quadrático: o esquecimento pesa
+        peso = 1.0 + dias * dias
+
+        # Ajuste temporal suave: manhã (6-12) favorece energético,
+        # tarde (12-18) favorece variado, noite (18-24) favorece suave,
+        # madrugada (0-6) favorece experimental/silencioso.
+        # Isso é intencionalmente sutil — 15% de variação, não ditadura.
+        try:
+            alb = Album(d, envelope=False)
+            total = alb.total if alb.total else 2400
+            avg_track = total / max(1, len(alb.tracks))
+            # manhã: médias rápidas ganham leve bonus
+            # noite: médias longas ganham leve bonus
+            if 6 <= hora < 12:
+                if avg_track < 300:
+                    peso *= 1.15
+            elif 18 <= hora < 24:
+                if avg_track > 360:
+                    peso *= 1.15
+            elif 0 <= hora < 6:
+                if total > 3600:
+                    peso *= 1.10
+        except Exception:
+            pass
+
+        pesos.append(peso)
     return (rng or random).choices(cands, weights=pesos, k=1)[0]
 
 

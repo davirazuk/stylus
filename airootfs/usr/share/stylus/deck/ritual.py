@@ -410,6 +410,29 @@ class RitualScene:
             np.ones(n_glow)
         ]).astype(np.float32)
         strips.insert(1, build_strip(glow_pts, 0.035 * radius, W, H, glow_cols))
+        # Void rings — faint concentric circles in the dark (matching phone)
+        import random as _rnd
+        _vrng = _rnd.Random(42)
+        for vr in range(3):
+            vr_r = radius * (1.15 + vr * 0.08)
+            vr_n = 64
+            vr_thetas = np.linspace(0, 2 * np.pi, vr_n, endpoint=False)
+            vr_x = cx + np.cos(vr_thetas) * vr_r
+            vr_y = cy + np.sin(vr_thetas) * vr_r * iso[1]
+            vr_pts = np.column_stack([vr_x, vr_y])
+            vr_a = 0.015 - vr * 0.004
+            vr_cols = np.full((vr_n, 4), [0.04, 0.035, 0.05, vr_a], dtype=np.float32)
+            strips.insert(2 + vr, build_strip(vr_pts, 0.008 * radius, W, H, vr_cols))
+        # Ambient dust — floating particles in the void (matching phone)
+        _dust_t = time.time()
+        for di in range(6):
+            dx = cx + math.sin(_dust_t * 0.07 + di * 2.1) * radius * 0.4
+            dy = cy + math.cos(_dust_t * 0.05 + di * 3.7) * radius * 0.3
+            dtwinkle = 0.5 + 0.5 * math.sin(_dust_t * 1.3 + di * 5.3)
+            da = 0.12 * dtwinkle
+            dp = np.array([[dx, dy]], dtype=np.float32)
+            dc = np.array([[0.08, 0.07, 0.06, da]], dtype=np.float32)
+            strips.append(build_strip(dp, 0.005 * radius, W, H, dc))
         tris=[]
         wm=vinyl.wear_marks(cx,cy,radius,iso,rot,seed=al.seed,plays=al.plays,crackle=self.deck.crackle)
         if wm is not None and len(wm[0]): tris.append(build_segs(wm[0],1.2,W,H,wm[1]))
@@ -503,17 +526,43 @@ def main():
 layout(location=0) in vec2 pos; out vec2 uv; void main(){ uv=pos*0.5+0.5; gl_Position=vec4(pos,0,1); }""",
 """#version 330
 in vec2 uv; out vec4 frag;
+uniform float u_time;
+uniform vec2 u_res;
+uniform float u_audio;
 void main(){
   vec2 p=uv*2.0-1.0;
-  float g1 = sin(p.x*18.0 + p.y*2.0)*0.5+0.5;
-  float g2 = sin(p.x*42.0 - p.y*7.0)*0.5+0.5;
-  float grain = mix(g1, g2, 0.35) * 0.018;
-  vec3 wood = vec3(0.11,0.065,0.038) + vec3(grain);
-  float vig = 1.0 - dot(p,p)*0.16;
-  vig = pow(vig, 0.92);
-  float hl = max(0.0, dot(normalize(vec2(-0.6,0.5)), p)) * 0.06;
-  hl *= (1.0 - length(p)*0.4);
-  frag=vec4(wood*vig + vec3(hl*0.9, hl*0.7, hl*0.5), 1.0);
+  float dd=length(p);
+  // Deep void — matching phone aesthetic
+  vec3 col=mix(vec3(0.010,0.011,0.018), vec3(0.004,0.004,0.006),
+               smoothstep(0.0,1.2,dd));
+  // Dark surface under disc
+  float surface=smoothstep(0.92,0.60,dd)*0.12;
+  col+=vec3(0.015,0.013,0.018)*surface;
+  // Surface edge ring
+  float edgeRing=smoothstep(0.03,0.0,abs(dd-0.78))*0.06;
+  col+=vec3(0.04,0.035,0.05)*edgeRing;
+  // Warm halo — breathes with audio (matching phone)
+  float breathe=0.85+0.15*sin(u_time*0.4);
+  float audioBloom=u_audio*0.18;
+  col+=vec3(0.30,0.18,0.08)*exp(-dd*dd*3.2)*0.20*breathe*(1.0+audioBloom);
+  col+=vec3(0.15,0.09,0.04)*exp(-dd*dd*1.0)*0.08*breathe*(1.0+audioBloom*0.6);
+  // Ambient dust particles (matching phone)
+  for(int i=0;i<5;i++){
+    float fi=float(i);
+    vec2 offs=vec2(
+      sin(u_time*0.07+fi*2.1)*0.4,
+      cos(u_time*0.05+fi*3.7)*0.3
+    );
+    float dust=exp(-length(p-offs)*80.0)*0.12;
+    float twinkle=0.5+0.5*sin(u_time*1.3+fi*5.3);
+    col+=vec3(0.08,0.07,0.06)*dust*twinkle;
+  }
+  // Vignette (matching phone)
+  col*=1.0-dot(p,p)*0.32;
+  // Film grain (matching phone)
+  float n=fract(sin(dot(uv*2.3+u_time*0.007, vec2(12.9898,78.233)))*43758.5);
+  col+=(n-0.5)*0.004;
+  frag=vec4(col,1.0);
 }""")
     quad=make_quad(); label=RecordLabel()
     # forward buffer, no bloom FBO
@@ -547,11 +596,19 @@ void main(){
         snap=ritual.update(dt); buf=cap.snapshot()
         strips,arm=ritual.build(snap,buf,W,H,ISO)
         # ── draw forward, no phosphor decay ──
-        glViewport(0,0,W,H); glClearColor(0.06,0.04,0.028,1); glClear(GL_COLOR_BUFFER_BIT)
-        # plinth quad behind
+        glViewport(0,0,W,H); glClearColor(0.003,0.003,0.006,1); glClear(GL_COLOR_BUFFER_BIT)
+        # plinth quad behind — deep void, matching phone aesthetic
         glUseProgram(prog_plinth)
         glUniform1f(glGetUniformLocation(prog_plinth, "u_time"), elapsed)
         glUniform2f(glGetUniformLocation(prog_plinth, "u_res"), float(W), float(H))
+        # audio level for reactive bloom
+        audio_level = 0.0
+        if cap is not None:
+            try:
+                audio_level = min(1.0, (cap.level_l + cap.level_r) * 0.5)
+            except Exception:
+                pass
+        glUniform1f(glGetUniformLocation(prog_plinth, "u_audio"), audio_level)
         glBindVertexArray(quad); glDrawArrays(GL_TRIANGLE_STRIP,0,4)
         # vinyl strips + arm
         if strips:

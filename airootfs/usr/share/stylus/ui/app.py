@@ -198,6 +198,8 @@ class NowScreen(Screen):
         fundo = self.app.backdrop(al, r.size)
         if fundo is not None:
             s.blit(fundo, r.topleft)
+            # vinheta suave nas bordas — profundidade
+            T.vignette(s)
 
         # ── a capa e a coluna de texto formam UM bloco, centrado junto ─────
         margem, gap, txt_teto = 64, 72, 620
@@ -1245,12 +1247,11 @@ class ToolsScreen(Screen):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# QOBUZ — como procurar na loja de discos
+# QOBUZ — procurar e ouvir
 #
-#  A filosofia aqui não é "pesquisar e baixar". É "entrar na loja, folhear
-#  as estantes, e sair com um disco debaixo do braço". Cada resultado é
-#  um disco na prateleira — com ano, faixas, qualidade. O atalho é enter,
-#  mas o ritmo é o de quem vira a página.
+#  Dois modos: abrir no navegador para ouvir, ou baixar para a estante.
+#  A busca funciona SEM a interface qobuz-dl — abre o site direto.
+#  Se a interface estiver no ar, o download também fica disponível.
 # ═══════════════════════════════════════════════════════════════════════════
 class QobuzScreen(Screen):
     name = "QOBUZ"
@@ -1258,6 +1259,7 @@ class QobuzScreen(Screen):
     COLS = 5
 
     API = "http://127.0.0.1:8765/api/search"
+    SEARCH_URL = "https://www.qobuz.com/search/album?q="
 
     def __init__(self, app):
         super().__init__(app)
@@ -1267,53 +1269,79 @@ class QobuzScreen(Screen):
         self.sel = 0
         self.scroll = 0.0
         self.target = 0.0
-        self.running = False
+        self.gui_up = False
         self.job = None
         self.error = None
-        self.examing = None     # álbum sendo examinado (overlay)
-        self.examing_t = 0      # tempo desde que abriu o overlay
+        self.examing = None
 
     def enter(self):
         self._check_gui()
 
     def _check_gui(self):
-        """Verifica se a interface Qobuz está no ar."""
         import urllib.request
         try:
             urllib.request.urlopen("http://127.0.0.1:8765/", timeout=2)
-            self.running = True
-            self.error = None
+            self.gui_up = True
         except Exception:
-            self.running = False
-            self.error = "interface não está no ar"
+            self.gui_up = False
 
     def _search(self):
-        """Busca álbuns no Qobuz — como perguntar ao balconista."""
-        import urllib.request
-        import urllib.parse
+        """Busca via API local se disponível, senão fica vazio (usa / no teclado)."""
+        import urllib.request, urllib.parse
         if not self.query.strip():
             return
-        q = urllib.parse.quote(self.query.strip())
-        url = f"{self.API}?q={q}&type=album&limit=25"
-        try:
-            r = urllib.request.urlopen(url, timeout=15)
-            data = json.loads(r.read())
-            self.results = data.get("results", [])
-            self.sel = 0
-            self.scroll = 0.0
-            self.target = 0.0
-            self.error = None
-        except Exception as e:
-            self.error = str(e)
-            self.results = []
+        if self.gui_up:
+            q = urllib.parse.quote(self.query.strip())
+            try:
+                r = urllib.request.urlopen(f"{self.API}?q={q}&type=album&limit=25", timeout=15)
+                data = json.loads(r.read())
+                self.results = data.get("results", [])
+                self.sel = 0
+                self.scroll = 0.0
+                self.target = 0.0
+                self.error = None
+                return
+            except Exception as e:
+                self.error = str(e)
+        # Sem API — abre o site no navegador
+        self._open_web()
 
-    def _examine(self, item):
-        """Abre o overlay de exame — como segurar o disco na mão."""
-        self.examing = item
-        self.examing_t = time.time()
+    def _open_web(self):
+        """Abre a busca no site do Qobuz."""
+        import urllib.parse, subprocess
+        q = urllib.parse.quote(self.query.strip())
+        url = self.SEARCH_URL + q
+        for nav in ["firefox", "chromium", "xdg-open"]:
+            try:
+                subprocess.Popen([nav, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.app.toast("abrindo qobuz.com…")
+                return
+            except FileNotFoundError:
+                continue
+        self.app.toast("nenhum navegador encontrado")
+
+    def _open_album(self, item):
+        """Abre o álbum no navegador para ouvir."""
+        import subprocess
+        url = item.get("url", "")
+        if not url:
+            self.app.toast("sem URL")
+            return
+        for nav in ["firefox", "chromium", "xdg-open"]:
+            try:
+                subprocess.Popen([nav, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.app.toast("abrindo no Qobuz…")
+                self.examing = None
+                return
+            except FileNotFoundError:
+                continue
+        self.app.toast("nenhum navegador encontrado")
 
     def _download(self, item):
-        """Baixa e arquiva — o disco vai pra estante."""
+        """Baixa e arquiva — só se a interface estiver no ar."""
+        if not self.gui_up:
+            self.app.toast("interface Qobuz não está no ar")
+            return
         if self.job and not self.job.done:
             self.app.toast("já tem download rodando")
             return
@@ -1335,14 +1363,17 @@ class QobuzScreen(Screen):
         self.app.toast(f"na fila: {artist} — {title}")
 
     def key(self, ev):
-        # ── overlay de exame — ESC ou enter fecha ──────────────────────────
+        # ── overlay de exame ────────────────────────────────────────────────
         if self.examing:
             if ev.key == pygame.K_ESCAPE:
                 self.examing = None
             elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self._open_album(self.examing)
+            elif ev.key == pygame.K_d:
                 self._download(self.examing)
+            elif ev.key == pygame.K_o:
+                self._open_album(self.examing)
             elif ev.key == pygame.K_i:
-                # copia a URL para o clipboard
                 import subprocess as _sp
                 url = self.examing.get("url", "")
                 if url:
@@ -1351,19 +1382,7 @@ class QobuzScreen(Screen):
                     self.app.toast("URL copiada")
             return True
 
-        # ── interface fora do ar ────────────────────────────────────────────
-        if not self.running:
-            if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                self.app.toast("ligando a loja…")
-                self.job = Job(["stylus-qobuz", "abrir"], "abrindo a loja")
-                threading.Timer(5.0, self._check_gui).start()
-            elif ev.key == pygame.K_r:
-                self._check_gui()
-            else:
-                return False
-            return True
-
-        # ── modo de busca — digitar ─────────────────────────────────────────
+        # ── modo de busca ───────────────────────────────────────────────────
         if self.searching:
             if ev.key == pygame.K_ESCAPE:
                 self.searching, self.query = False, ""
@@ -1379,7 +1398,9 @@ class QobuzScreen(Screen):
 
         # ── navegação nos resultados ────────────────────────────────────────
         n = len(self.results)
-        if ev.key in (pygame.K_DOWN, pygame.K_j):
+        if ev.key == pygame.K_SLASH:
+            self.searching, self.query = True, ""
+        elif ev.key in (pygame.K_DOWN, pygame.K_j):
             if n:
                 self.sel = (self.sel + 1) % n
         elif ev.key in (pygame.K_UP, pygame.K_k):
@@ -1401,8 +1422,6 @@ class QobuzScreen(Screen):
             self.sel = 0
         elif ev.key == pygame.K_END:
             self.sel = max(0, n - 1)
-        elif ev.key == pygame.K_SLASH:
-            self.searching, self.query = True, ""
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if n:
                 self._examine(self.results[self.sel])
@@ -1508,7 +1527,7 @@ class QobuzScreen(Screen):
 
         # ações
         y = py + ph - 60
-        T.text(s, "enter baixa  ·  i copia URL  ·  esc volta",
+        T.text(s, "enter ouve  ·  d baixa  ·  i copia URL  ·  esc volta",
                (px + 32, y), 15, T.TEXT_FAINT)
 
     def draw(self, s, r):
@@ -1516,28 +1535,19 @@ class QobuzScreen(Screen):
         head = 58
 
         # ── header ──────────────────────────────────────────────────────────
-        if not self.running:
-            msg = self.error or "interface Qobuz não está no ar"
-            T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
-            T.text(s, msg, (r.x + pad, r.y + 58), 20, T.TEXT_DIM)
-            T.text(s, "enter abre a loja  ·  r atualiza",
-                   (r.x + pad, r.y + 90), 17, T.TEXT_FAINT)
-            if self.job:
-                self.app.job_panel(s, pygame.Rect(r.x + pad, r.y + 130,
-                                                  r.w - pad * 2, r.h - 180),
-                                   self.job)
-            return
+        status = "pronto" if self.gui_up else "só busca (interface off)"
+        T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
+        T.text(s, status, (r.right - pad, r.y + 24), 15,
+               T.GREEN if self.gui_up else T.TEXT_FAINT, anchor="topright")
 
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
-                   (r.x + pad, r.y + 16), 24, T.AMBER)
-        else:
-            T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
+                   (r.x + pad, r.y + 52), 24, T.AMBER)
 
         if not self.results and self.query:
             T.text(s, f'nenhum disco com "{self.query}"',
                    (r.centerx, r.centery), 22, T.TEXT_DIM, anchor="center")
-            T.text(s, "tenta outro nome",
+            T.text(s, "/ procura  ·  enter abre no site",
                    (r.centerx, r.centery + 30), 17, T.TEXT_FAINT, anchor="center")
             return
         if not self.results and not self.query:
@@ -1545,7 +1555,7 @@ class QobuzScreen(Screen):
                    (r.centerx, r.centery), 20, T.TEXT_FAINT, anchor="center")
             return
 
-        # ── resultados: como prateleiras ────────────────────────────────────
+        # ── resultados ──────────────────────────────────────────────────────
         cw = (r.w - pad * 2 - gap * (self.COLS - 1)) // self.COLS
         ch = cw + 58
         view_h = r.h - head - 96
@@ -1574,7 +1584,6 @@ class QobuzScreen(Screen):
             self._card(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
         s.set_clip(old)
 
-        # contagem
         n_found = len(self.results)
         T.text(s, f"{n_found} discos", (r.right - pad, r.y + 20), 16,
                T.TEXT_FAINT, anchor="topright")
@@ -1583,14 +1592,13 @@ class QobuzScreen(Screen):
             item = self.results[self.sel]
             hint = (f"{item.get('display_subtitle', '')} — "
                     f"{item.get('display_title', '')}   ·   "
-                    f"/ procura   enter examina   r atualiza")
+                    f"/ procura   enter ouve   d baixa")
             self.app.hint(s, r, hint)
 
         if self.job:
             self.app.job_panel(s, pygame.Rect(r.right - 380, r.y + head + 8,
                                               360, 160), self.job)
 
-        # overlay de exame por cima de tudo
         if self.examing:
             self._draw_examing(s, r)
 
@@ -2210,26 +2218,35 @@ class App:
     def _draw_rail(self, s, w):
         pygame.draw.rect(s, T.INK_SOFT, (0, 0, w, self.H))
         pygame.draw.line(s, T.LINE, (w, 0), (w, self.H))
-        T.text(s, "STYLUS", (24, 34), 26, T.AMBER, bold=True)
-        y = 110
+
+        # Título — âmbar, o fio que prende
+        T.text(s, "STYLUS", (28, 36), 26, T.AMBER, bold=True)
+        # linha fina abaixo do título
+        pygame.draw.line(s, T.AMBER_DIM, (28, 70), (w - 28, 70))
+
+        y = 100
         for i, sc in enumerate(self.screens + [_DESKTOP_ITEM]):
             atual = i == self.cur
             foco = self.rail and i == self.rail_sel
-            box = pygame.Rect(12, y - 8, w - 24, 44)
+            box = pygame.Rect(12, y - 6, w - 24, 46)
+
             if foco:
                 T.panel(s, box, T.INK_LIFT, radius=10)
             if atual:
-                pygame.draw.rect(s, T.AMBER, (12, y - 5, 3, 38), border_radius=2)
+                # barra lateral âmbar — indicador de posição
+                pygame.draw.rect(s, T.AMBER, (12, y - 3, 3, 42), border_radius=2)
+
             cor = T.TEXT if (atual or foco) else T.TEXT_DIM
-            T.text(s, T.icon(sc.icon), (32, y + 2), 22, cor)
-            T.text(s, sc.name, (66, y + 6), 18, cor)
+            # ícone + nome com mais espaço
+            T.text(s, T.icon(sc.icon), (34, y + 4), 22, cor)
+            T.text(s, sc.name, (68, y + 8), 18, cor, bold=atual)
             if i < len(self.screens):
-                T.text(s, str(i + 1), (w - 20, y + 8), 15, T.TEXT_FAINT,
+                T.text(s, str(i + 1), (w - 22, y + 10), 15, T.TEXT_FAINT,
                        anchor="topright")
-            y += 48
+            y += 50
             if i == len(self.screens) - 1:
-                pygame.draw.line(s, T.LINE, (20, y - 4), (w - 20, y - 4))
-                y += 12
+                pygame.draw.line(s, T.LINE, (24, y - 4), (w - 24, y - 4))
+                y += 16
         snap, al, track, side, _t, frac = self.playing.where()
         if al is not None:
             # Bloco TOCANDO com painel de fundo e progresso mais largo
