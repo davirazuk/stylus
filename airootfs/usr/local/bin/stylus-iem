@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""
+stylus-iem — monitor do botão do IEM EDX Pro 2.
+
+  clique        → play/pause
+  duplo clique  → next
+  triplo clique → prev
+  segurar       → abre a estante (shelf)
+
+O chip KTMicro manda KEY_MEDIA (164) para todos os cliques.
+A detecção é feita por timing entre presses.
+"""
+import subprocess, time, sys, os, struct, select, glob, re
+
+KEY_MEDIA = 164
+CLICK_WINDOW = 0.35
+HOLD_TIME = 0.60
+EVENT_SIZE = 24
+FORMAT = "qqHHi"
+VENDOR_PRODUCT = "31b2:1132"  # KTMicro
+
+def run(cmd):
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def find_device():
+    """Encontra o event device do headset KTMicro."""
+    for path in glob.glob("/proc/bus/input/devices"):
+        try:
+            content = open(path).read()
+            if VENDOR_PRODUCT in content:
+                # Extrair handler
+                m = re.search(r"H: Handlers=(\S+)", content)
+                if m:
+                    handlers = m.group(1)
+                    for h in handlers.split():
+                        if h.startswith("event"):
+                            return f"/dev/input/{h}"
+        except:
+            pass
+    return None
+
+def dispatch(clicks):
+    n = len(clicks)
+    if n == 0:
+        return
+    elif n == 1:
+        run(["playerctl", "play-pause"])
+    elif n == 2:
+        run(["playerctl", "next"])
+    else:
+        run(["playerctl", "previous"])
+
+def main():
+    device = find_device()
+    if not device:
+        print("headset KTMicro não encontrado", file=sys.stderr)
+        sys.exit(1)
+
+    clicks = []
+    press_time = 0
+    pressing = False
+
+    with open(device, "rb") as f:
+        while True:
+            r, _, _ = select.select([f], [], [], 0.1)
+            if not r:
+                now = time.monotonic()
+                if clicks and now - clicks[-1] > CLICK_WINDOW:
+                    dispatch(clicks)
+                    clicks.clear()
+                continue
+
+            data = f.read(EVENT_SIZE)
+            if not data or len(data) < EVENT_SIZE:
+                # device disconnected — tentar reconectar
+                f.close()
+                time.sleep(1)
+                new_dev = find_device()
+                if new_dev:
+                    f = open(new_dev, "rb")
+                    continue
+                else:
+                    time.sleep(2)
+                    new_dev = find_device()
+                    if new_dev:
+                        f = open(new_dev, "rb")
+                        continue
+                    else:
+                        break
+                continue
+            _, _, etype, code, value = struct.unpack(FORMAT, data)
+
+            if etype != 0x01 or code != KEY_MEDIA:
+                continue
+
+            now = time.monotonic()
+
+            if value == 1:
+                press_time = now
+                pressing = True
+
+            elif value == 0 and pressing:
+                pressing = False
+                duration = now - press_time
+
+                if duration >= HOLD_TIME:
+                    run(["stylus-shelf"])
+                    clicks.clear()
+                    continue
+
+                clicks.append(now)
+                clicks = [t for t in clicks if now - t <= CLICK_WINDOW]
+
+                if len(clicks) >= 3:
+                    run(["playerctl", "previous"])
+                    clicks.clear()
+                elif len(clicks) >= 2:
+                    pass
+                else:
+                    pass
+
+if __name__ == "__main__":
+    main()

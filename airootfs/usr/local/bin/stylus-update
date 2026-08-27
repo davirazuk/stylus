@@ -136,11 +136,6 @@ if [[ -d $REPO_DIR/airootfs/etc/systemd/system ]]; then
         $SUDO systemctl enable "$u" >/dev/null 2>&1 && ok "serviço novo ligado: $u"
     done < <(find "$REPO_DIR/airootfs/etc/systemd/system" -maxdepth 1 -type f -print0)
 fi
-# keyd: habilitar se instalado mas ainda não ligado
-if systemctl cat keyd.service &>/dev/null 2>&1; then
-    systemctl is-enabled --quiet keyd 2>/dev/null || \
-        $SUDO systemctl enable keyd >/dev/null 2>&1 && ok "keyd habilitado"
-fi
 
 echo
 ok "pronto. o STYLUS está no $NEW."
