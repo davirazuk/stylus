@@ -137,6 +137,12 @@ class NowScreen(Screen):
         if ev.key == pygame.K_n:
             spawn(["playerctl", "next"])
             return True
+        # r = sortear um disco aleatório (weighted random)
+        if ev.key == pygame.K_r:
+            d = vinyl.draw_record([i["folder"] for i in self.app.shelf.items])
+            if d:
+                self.app.put_on(d)
+            return True
         # Virar o lado. v e b no teclado, Y no controle (que chega como "/"):
         # os ombros já pulam FAIXA, e faltava a única coisa que este sistema
         # pede que você faça com as mãos.
@@ -306,21 +312,36 @@ class NowScreen(Screen):
     def _nothing(self, s, r):
         cx, cy = r.centerx, r.centery
         t = time.time()
-        # disco parado, girando devagar
+
+        # disco parado, girando devagar — mas com âmbar suave
         for i in range(8):
             rr = 50 + i * 28
-            alpha = 0.25 + i * 0.08
-            cor = T.lerp(T.INK_SOFT, T.LINE, alpha)
+            alpha = 0.20 + i * 0.06
+            cor = T.lerp(T.INK_SOFT, T.AMBER_DIM, alpha)
             pygame.draw.circle(s, cor, (cx, cy - 40), rr, 1)
-        ang = (t * 0.3) % (2 * math.pi)
+
         # agulha estática apontando para o centro
-        pygame.draw.line(s, T.LINE, (cx + math.cos(ang) * 160,
+        ang = (t * 0.3) % (2 * math.pi)
+        pygame.draw.line(s, T.AMBER_DIM, (cx + math.cos(ang) * 160,
                          cy - 40 + math.sin(ang) * 160),
                          (cx, cy - 40), 1)
+
+        # centro do disco — um ponto âmbar que pulsa suavemente
+        pulse = 0.7 + 0.3 * math.sin(t * 1.5)
+        center_r = int(6 + pulse * 3)
+        glow_s = pygame.Surface((center_r * 6, center_r * 6), pygame.SRCALPHA)
+        pygame.draw.circle(glow_s, (*T.AMBER_GLOW, int(20 * pulse)),
+                           (center_r * 3, center_r * 3), center_r * 3)
+        s.blit(glow_s, (cx - center_r * 3, cy - 40 - center_r * 3))
+        pygame.draw.circle(s, T.AMBER, (cx, cy - 40), center_r)
+
+        # texto convidativo
         T.text(s, "nada tocando", (cx, cy + 200), 32, T.TEXT_DIM,
                anchor="center")
         T.text(s, "vá para a ESTANTE e escolha um disco",
                (cx, cy + 240), 20, T.TEXT_FAINT, anchor="center")
+        T.text(s, "ou pressione r para sortear",
+               (cx, cy + 270), 17, T.TEXT_FAINT, anchor="center")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
