@@ -14,6 +14,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import kotlin.math.min
 
@@ -246,13 +247,35 @@ class VinylActivity : AppCompatActivity() {
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             )
 
+        // Back button: stop playback, dismiss service, then finish
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                playing = false
+                player?.pause()
+                if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                VinylActivity.clearNowPlaying()
+                // Save sleep timer as absolute end time for persistence
+                if (sleepTimerEnd > 0) {
+                    getSharedPreferences("stylus", MODE_PRIVATE)
+                        .edit().putLong("sleep_timer_end", sleepTimerEnd).apply()
+                }
+                finish()
+            }
+        })
+
         deck = Deck()
         renderer = VinylRenderer()
         albumIdField = intent.getLongExtra("albumId", -1)
         renderer.wearSeed = albumIdField.toInt()
 
-        val timerMs = getSharedPreferences("stylus", MODE_PRIVATE).getLong("sleep_timer", 0)
-        if (timerMs > 0) sleepTimerEnd = System.currentTimeMillis() + timerMs
+        // Restore sleep timer: prefer absolute end time, fallback to duration
+        val prefs = getSharedPreferences("stylus", MODE_PRIVATE)
+        val savedEnd = prefs.getLong("sleep_timer_end", 0)
+        val timerMs = prefs.getLong("sleep_timer", 0)
+        when {
+            savedEnd > 0 && System.currentTimeMillis() < savedEnd -> sleepTimerEnd = savedEnd
+            timerMs > 0 -> sleepTimerEnd = System.currentTimeMillis() + timerMs
+        }
 
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(3)
@@ -430,11 +453,14 @@ class VinylActivity : AppCompatActivity() {
                 androidx.appcompat.app.AlertDialog.Builder(this@VinylActivity)
                     .setTitle("Sleep Timer")
                     .setItems(options) { _, which ->
+                        val editor = getSharedPreferences("stylus", MODE_PRIVATE).edit()
                         if (values[which] > 0) {
                             sleepTimerEnd = System.currentTimeMillis() + values[which]
+                            editor.putLong("sleep_timer_end", sleepTimerEnd).apply()
                             android.widget.Toast.makeText(this@VinylActivity, options[which], android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             sleepTimerEnd = 0
+                            editor.remove("sleep_timer_end").apply()
                         }
                     }.show()
             }

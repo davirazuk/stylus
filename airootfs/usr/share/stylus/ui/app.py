@@ -407,7 +407,7 @@ class ShelfScreen(Screen):
     name = "ESTANTE"
     icon = "󰀥"
 
-    COLS = 6
+    COLS = 6  # default — recalculado no draw() conforme largura da tela
 
     def __init__(self, app):
         super().__init__(app)
@@ -534,6 +534,7 @@ class ShelfScreen(Screen):
         its = self.items()
         favs = _load_favorites()
         pad, gap = 30, 18
+        self.COLS = max(3, min(8, r.w // 230))
         cw = (r.w - pad * 2 - gap * (self.COLS - 1)) // self.COLS
         ch = cw + 62
         head = 58
@@ -1343,11 +1344,14 @@ class QobuzScreen(Screen):
         super().__init__(app)
         self.query = ""
         self.searching = False
+        self.loading = False
         self.results = []
         self.sel = 0
         self.scroll = 0.0
         self.target = 0.0
+        self.error = None
         self.gui_up = False
+        self.examing = None
         self.job = None
         self.error = None
         self.examing = None
@@ -1364,34 +1368,42 @@ class QobuzScreen(Screen):
             self.gui_up = False
 
     def _search(self):
-        """Busca via stylus-qobuz buscar (API direta, sem navegador)."""
+        """Busca via stylus-qobuz buscar (API direta, sem navegador).
+        Roda em thread para não congelar a UI."""
         if not self.query.strip():
             return
         self.searching = False
+        self.loading = True
         self.error = None
-        try:
-            r = subprocess.run(
-                ["stylus-qobuz", "buscar", self.query.strip()],
-                capture_output=True, text=True, timeout=20
-            )
-            out = r.stdout.strip()
-            if not out:
-                self.error = r.stderr.strip() or "resposta vazia"
-                return
-            data = json.loads(out)
-            if "error" in data:
-                self.error = data["error"]
-                return
-            self.results = data.get("results", [])
-            self.sel = 0
-            self.scroll = 0.0
-            self.target = 0.0
-        except subprocess.TimeoutExpired:
-            self.error = "busca demorou demais"
-        except json.JSONDecodeError as e:
-            self.error = f"resposta inválida: {e}"
-        except Exception as e:
-            self.error = str(e)
+
+        def _do():
+            try:
+                r = subprocess.run(
+                    ["stylus-qobuz", "buscar", self.query.strip()],
+                    capture_output=True, text=True, timeout=20
+                )
+                out = r.stdout.strip()
+                if not out:
+                    self.error = r.stderr.strip() or "resposta vazia"
+                    return
+                data = json.loads(out)
+                if "error" in data:
+                    self.error = data["error"]
+                    return
+                self.results = data.get("results", [])
+                self.sel = 0
+                self.scroll = 0.0
+                self.target = 0.0
+            except subprocess.TimeoutExpired:
+                self.error = "busca demorou demais"
+            except json.JSONDecodeError as e:
+                self.error = f"resposta inválida: {e}"
+            except Exception as e:
+                self.error = str(e)
+            finally:
+                self.loading = False
+
+        threading.Thread(target=_do, daemon=True).start()
 
     def _download(self, item):
         """Baixa e arquiva — precisa da interface qobuz-dl-gui no ar."""
@@ -1586,6 +1598,7 @@ class QobuzScreen(Screen):
     def draw(self, s, r):
         pad, gap = 30, 14
         head = 58
+        self.COLS = max(3, min(8, r.w // 200))
 
         # ── header ──────────────────────────────────────────────────────────
         status = "pronto" if self.gui_up else "busca direta (interface off)"
@@ -1596,6 +1609,11 @@ class QobuzScreen(Screen):
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
                    (r.x + pad, r.y + 52), 24, T.AMBER)
+
+        if self.loading:
+            T.text(s, "buscando…", (r.centerx, r.centery), 22,
+                   T.AMBER, anchor="center")
+            return
 
         if self.error:
             T.text(s, self.error, (r.centerx, r.centery - 20), 20,
@@ -1688,6 +1706,7 @@ class GamesScreen(Screen):
         self.downloaded_ids = set()
         self.syncing = False
         self.job = None
+        self._installed_cache = {}  # cache de shutil.which() por frame
         self._load_downloaded()
 
     def _load_downloaded(self):
@@ -1829,6 +1848,8 @@ class GamesScreen(Screen):
         for i, (nome, _c, binario) in enumerate(self.ACOES):
             box = pygame.Rect(x + i * (cw + gap), y, cw, 150)
             sel = i == self.sel
+            if sel:
+                T.shadow_card(s, box, radius=10)
             T.panel(s, box, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
                     border=T.AMBER if sel else T.LINE)
             tem = bool(_sh.which(binario))
@@ -1848,6 +1869,8 @@ class GamesScreen(Screen):
         for i, (label, icon) in enumerate(ch_actions):
             bx = pygame.Rect(x + i * (cw + gap), y2, cw, 60)
             sel = i + len(self.ACOES) == self.sel
+            if sel:
+                T.shadow_card(s, bx, radius=8)
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=10,
                     border=T.AMBER if sel else T.LINE)
             T.text(s, f"{icon}  {label}", bx.center, 20, T.TEXT if sel else T.TEXT_FAINT,
@@ -1878,29 +1901,33 @@ class GamesScreen(Screen):
                 sel = i == self.sel and not self.query_active
                 cid = str(c["chartId"])
                 downloaded = cid in self.downloaded_ids
-                marker = f"{c_g}✓ " if downloaded else "  "
                 name = c.get("name", "?")
                 artist = c.get("artist", "?")
                 charter = c.get("charter", "?")
-                line = f"{marker}{c_pink}{artist}{c_0} — {name}  {c_dim}({charter}){c_0}"
                 bg = T.INK_LIFT if sel else None
                 if bg:
                     T.panel(s, pygame.Rect(x - 8, y - 2, 700, 28), bg, radius=6)
-                T.text(s, line, (x, y), 18, T.TEXT if sel else T.TEXT_FAINT)
+                if downloaded:
+                    T.text(s, "✓", (x, y), 18, T.GREEN)
+                T.text(s, artist, (x + (22 if downloaded else 0), y), 18,
+                       T.AMBER if sel else T.PINK)
+                aw = T.font.size(artist + "  ")[0]
+                T.text(s, f"— {name}", (x + (22 if downloaded else 0) + aw, y), 18,
+                       T.TEXT if sel else T.TEXT_FAINT)
+                T.text(s, f"({charter})", (x + 500, y), 16, T.TEXT_DIM)
                 y += 30
         elif self.query and not self.query_active:
             T.text(s, "nenhum resultado", (x, y), 18, T.TEXT_FAINT)
 
-        T.text(s, f"{c_dim}enter: baixar · f: buscar · esc: voltar{c_0}",
+        T.text(s, "enter: baixar · f: buscar · esc: voltar",
                (x, r.bottom - 40), 16, T.TEXT_FAINT)
 
     def _draw_baixadas(self, s, r):
         x, y = r.x + 44, r.y + 90
-        T.text(s, f"baixadas  {c_dim}{len(self.downloaded)} charts{c_0}", (x, y), 24,
+        T.text(s, f"baixadas  {len(self.downloaded)} charts", (x, y), 24,
                T.TEXT, bold=True)
         y += 44
 
-        # Group by artist
         by_artist = {}
         for info in self.downloaded:
             artist = info.get("artist", "Unknown")
@@ -1915,14 +1942,13 @@ class GamesScreen(Screen):
         for i, (kind, name, info) in enumerate(flat[:20]):
             sel = i == self.sel
             if kind == "artist":
-                T.text(s, f"  {c_pink}{name}{c_0}", (x, y), 18, T.TEXT, bold=True)
+                T.text(s, name, (x + 8, y), 18, T.PINK, bold=True)
             else:
-                marker = "    — "
-                T.text(s, f"{marker}{name}", (x, y), 17,
+                T.text(s, f"— {name}", (x + 8, y), 17,
                        T.TEXT if sel else T.TEXT_FAINT)
             y += 26
 
-        T.text(s, f"{c_dim}esc: voltar{c_0}", (x, r.bottom - 40), 16, T.TEXT_FAINT)
+        T.text(s, "esc: voltar", (x, r.bottom - 40), 16, T.TEXT_FAINT)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2464,19 +2490,27 @@ class App:
         except Exception:                 # noqa: BLE001
             return "?"
 
-    @staticmethod
-    def audio_level():
-        """Nível de áudio atual (0.0 a 1.0) para efeitos visuais reativos."""
+    _audio_level_cache = (0.0, 0)
+    _audio_level_counter = 0
+
+    @classmethod
+    def audio_level(cls):
+        """Nível de áudio atual (0.0 a 1.0) para efeitos visuais reativos.
+        Throttled: só consulta wpctl a cada 5 chamadas (~83ms a 60fps)."""
+        cls._audio_level_counter += 1
+        if cls._audio_level_counter % 5 != 0:
+            return cls._audio_level_cache[0]
         try:
             r = subprocess.run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
                                capture_output=True, text=True, timeout=1)
-            # "Volume: 0.35" → 0.35
             parts = r.stdout.strip().split()
             if len(parts) >= 2:
-                return float(parts[1])
+                val = float(parts[1])
+                cls._audio_level_cache = (val, cls._audio_level_counter)
+                return val
         except Exception:                 # noqa: BLE001
             pass
-        return 0.0
+        return cls._audio_level_cache[0]
 
     # ── desenho comum ──────────────────────────────────────────────────────
     def hint(self, s, r, txt):
@@ -2745,7 +2779,7 @@ class App:
         self.screens[i].enter()
 
     def run(self):
-        rail_w = 260
+        rail_w = max(200, min(300, self.W // 7))
         while True:
             self._pad_poll()
             for ev in pygame.event.get():

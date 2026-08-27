@@ -208,7 +208,11 @@ def cmd_baixar(args):
     cache = _load_search_cache()
 
     for chart_id_str in args:
-        chart_id = int(chart_id_str)
+        try:
+            chart_id = int(chart_id_str)
+        except ValueError:
+            print(f"{c_r}✗{c_0} \"{chart_id_str}\" não é um ID válido. use {c_b}stylus-ch buscar{c_0} para pesquisar.")
+            continue
 
         if chart_id_str in db.get("downloaded", {}):
             info = db["downloaded"][chart_id_str]

@@ -283,7 +283,7 @@ def main():
 
         res = subprocess.run(
             [sys.executable, "integrate_album.py", folder, artist, album],
-            cwd=TOOLS, capture_output=True, text=True)
+            cwd=TOOLS, capture_output=True, text=True, timeout=120)
         out = (res.stdout or "") + (res.stderr or "")
         if "Integrated:" not in out:
             counts["fail"] += 1
@@ -307,7 +307,7 @@ def main():
                 break
         if dest:
             subprocess.run([sys.executable, "embed_metadata.py", "--apply", dest],
-                           cwd=TOOLS, capture_output=True, text=True)
+                           cwd=TOOLS, capture_output=True, text=True, timeout=60)
 
         counts["ok"] += 1
         quality = ""

@@ -14,6 +14,7 @@ onde a pessoa olha primeiro, onde o sistema está dizendo "estou aqui".
 import glob
 import math
 import os
+import random
 import time
 
 import pygame
@@ -94,14 +95,15 @@ def has_glyph(ch, size=22):
     `metrics()` devolve None na posição de um caractere sem glifo, e é a única
     forma honesta de perguntar isso antes de desenhar.
     """
-    if ch in _tem:
-        return _tem[ch]
+    key = (ch, size)
+    if key in _tem:
+        return _tem[key]
     try:
         m = font(size).metrics(ch)
         ok = bool(m) and m[0] is not None
     except Exception:                     # noqa: BLE001 — fonte estranha não derruba a tela
         ok = False
-    _tem[ch] = ok
+    _tem[key] = ok
     return ok
 
 
@@ -166,7 +168,6 @@ class Particles:
     """Poeira atmosférica — pontos âmbar que flutuam no fundo."""
 
     def __init__(self, w, h, n=24):
-        import random
         self.w, self.h = w, h
         self.particles = []
         for _ in range(n):
@@ -179,6 +180,14 @@ class Particles:
                 "alpha": random.uniform(8, 25),
                 "life": random.uniform(0, 1),
             })
+        # Pré-renderiza os 3 tamanhos possíveis (raio 1, 2, 3) — evita
+        # criar Surface por partícula por frame.
+        self._cache = {}
+        for r_int in (1, 2, 3):
+            sz = r_int * 4
+            s = pygame.Surface((sz, sz), pygame.SRCALPHA)
+            pygame.draw.circle(s, (*AMBER_GLOW, 255), (r_int * 2, r_int * 2), r_int)
+            self._cache[r_int] = s
 
     def update(self, dt):
         """Move as partículas. dt em segundos."""
@@ -188,10 +197,8 @@ class Particles:
             p["life"] += dt * 0.15
             if p["life"] > 1.0:
                 p["life"] = 0.0
-                import random
                 p["x"] = random.uniform(0, self.w)
                 p["y"] = self.h + 10
-            # wrap horizontal
             if p["x"] < -10:
                 p["x"] = self.w + 10
             elif p["x"] > self.w + 10:
@@ -200,7 +207,6 @@ class Particles:
     def draw(self, surf):
         """Desenha as partículas. Alpha varia com o ciclo de vida."""
         for p in self.particles:
-            # fade in/out
             life = p["life"]
             if life < 0.1:
                 a = int(p["alpha"] * (life / 0.1))
@@ -210,10 +216,10 @@ class Particles:
                 a = int(p["alpha"])
             if a <= 0:
                 continue
-            s = pygame.Surface((int(p["r"] * 4), int(p["r"] * 4)), pygame.SRCALPHA)
-            pygame.draw.circle(s, (*AMBER_GLOW, a),
-                               (int(p["r"] * 2), int(p["r"] * 2)), int(p["r"]))
-            surf.blit(s, (int(p["x"] - p["r"]), int(p["y"] - p["r"])))
+            r_int = max(1, min(3, int(p["r"])))
+            cached = self._cache[r_int]
+            cached.set_alpha(a)
+            surf.blit(cached, (int(p["x"] - p["r"]), int(p["y"] - p["r"])))
 
 
 # ── vinheta ────────────────────────────────────────────────────────────────
@@ -221,17 +227,18 @@ class Particles:
 _vignette_cache = {}
 
 def vignette(surf):
-    """Aplica vinheta suave na superfície. Cacheada por tamanho."""
+    """Aplica vinheta suave na superfície. Cacheada por tamanho.
+    Usa BLEND_RGBA_MULT: o centro é branco (inalterado), bordas pretas (escurecidas)."""
     w, h = surf.get_size()
     key = (w, h)
     if key not in _vignette_cache:
-        s = pygame.Surface((w, h), pygame.SRCALPHA)
-        # gradiente radial suave
+        s = pygame.Surface((w, h))
+        s.fill((255, 255, 255))
         cx, cy = w // 2, h // 2
         max_r = (cx * cx + cy * cy) ** 0.5
-        for i in range(8):
-            r = max_r * (0.6 + i * 0.05)
-            alpha = int(8 + i * 6)
-            pygame.draw.circle(s, (0, 0, 0, alpha), (cx, cy), int(r))
+        for i in range(16):
+            r = max_r * (0.55 + i * 0.03)
+            val = 255 - int(8 + i * 4)
+            pygame.draw.circle(s, (val, val, val), (cx, cy), int(r))
         _vignette_cache[key] = s
-    surf.blit(_vignette_cache[key], (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
+    surf.blit(_vignette_cache[key], (0, 0), special_flags=pygame.BLEND_RGBA_MULT)

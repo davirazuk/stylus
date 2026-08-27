@@ -129,7 +129,7 @@ class BitPerfectPlayer(private val ctx: Context) {
                 detectUsbDac()
             }
         }
-        ctx.registerReceiver(usbReceiver, filter)
+        ctx.registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
     }
 
     private fun disableSystemEffects(sessionId: Int) {
@@ -157,7 +157,7 @@ class BitPerfectPlayer(private val ctx: Context) {
         exo.prepare()
     }
 
-    fun play() { exo.playWhenReady = true; exo.play() }
+    fun play() { exo.playWhenReady = true }
     fun pause() { exo.playWhenReady = false; exo.pause() }
     fun togglePlayPause() { if (exo.isPlaying) pause() else play() }
 
@@ -168,7 +168,14 @@ class BitPerfectPlayer(private val ctx: Context) {
     val trackCount get() = exo.mediaItemCount
 
     fun skipToNext() { if (exo.currentMediaItemIndex < exo.mediaItemCount - 1) exo.seekToNext() }
-    fun skipToPrev() { if (exo.currentMediaItemIndex > 0) exo.seekToPrevious() }
+    fun skipToPrev() {
+        // Restart current track if >3s in, otherwise go to previous
+        if (exo.currentPosition > 3000) {
+            exo.seekTo(0)
+        } else if (exo.currentMediaItemIndex > 0) {
+            exo.seekToPrevious()
+        }
+    }
 
     var shuffleMode = false
     var repeatMode = Player.REPEAT_MODE_OFF  // OFF=0, ONE=1, ALL=2
@@ -245,20 +252,35 @@ class BitPerfectPlayer(private val ctx: Context) {
     var onMetadataChanged: ((token: android.media.session.MediaSession.Token, title: String, artist: String, album: String, playing: Boolean) -> Unit)? = null
 
     fun onUsbDacAttached(device: UsbDevice) {
+        var conn: android.hardware.usb.UsbDeviceConnection? = null
+        var claimedIntf: android.hardware.usb.UsbInterface? = null
         try {
             val usb = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
-            if (!usb.hasPermission(device)) return
-            val conn = usb.openDevice(device) ?: return
+            if (!usb.hasPermission(device)) {
+                // Request permission from user instead of silently returning
+                val pi = android.app.PendingIntent.getBroadcast(
+                    ctx, 0,
+                    android.content.Intent("usb.permission"),
+                    android.app.PendingIntent.FLAG_MUTABLE
+                )
+                usb.requestPermission(device, pi)
+                return
+            }
+            conn = usb.openDevice(device) ?: return
             for (i in 0 until device.interfaceCount) {
                 val intf = device.getInterface(i)
                 if (intf.interfaceClass == 1) {
                     conn.claimInterface(intf, true)
+                    claimedIntf = intf
                     break
                 }
             }
             Log.i("BitPerfect", "USB DAC attached: ${device.deviceName}")
         } catch (e: Exception) {
             Log.w("BitPerfect", "USB attach failed: $e")
+        } finally {
+            claimedIntf?.let { conn?.releaseInterface(it) }
+            conn?.close()
         }
     }
 
@@ -270,7 +292,7 @@ class BitPerfectPlayer(private val ctx: Context) {
     }
 
     fun release() {
-        usbReceiver?.let { ctx.unregisterReceiver(it) }
+        try { usbReceiver?.let { ctx.unregisterReceiver(it) } } catch (_: Exception) {}
         session?.release()
         exo.release()
     }

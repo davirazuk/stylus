@@ -669,8 +669,6 @@ case $DESKTOP_CHOICE in
         ;;
 esac
 
-(( ${#DESKTOP_PKGS[@]} )) && PACKAGES+=("${DESKTOP_PKGS[@]}")
-
 # ── Summary ──────────────────────────────────────────────────────────────────
 case $MODE in
   alongside) plan="Criar uma partição $FSTYPE de $(( (FREE_END-FREE_START)/1024 )) GiB no espaço livre do $DISK.
@@ -820,6 +818,7 @@ Ela está truncada ou corrompida. Nada foi alterado no disco."
 
 (( ${#HW_PKGS[@]} ))  && PACKAGES+=("${HW_PKGS[@]}")
 (( ${#GPU_PKGS[@]} )) && PACKAGES+=("${GPU_PKGS[@]}")
+(( ${#DESKTOP_PKGS[@]} )) && PACKAGES+=("${DESKTOP_PKGS[@]}")
 
 # Every name in that list, checked against the repositories that are actually
 # configured, with the disk still intact.

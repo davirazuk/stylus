@@ -55,6 +55,8 @@ cat <<EOF
     ${b}stylus get${o} ${d}URL|FILA${o}      baixa e arquiva na estante
     ${b}stylus qobuz${o} ${d}[...]${o}       a interface do qobuz-dl, e a fila que
                               baixa e arquiva disco por disco
+    ${b}stylus suggest${o}            playlists sugeridas pela sua escuta
+    ${b}stylus reindex${o}            limpa o cache da estante e recria
 
   ${a}as máquinas${o}
     ${b}stylus phone${o} ${d}[...]${o}       o celular: estado, sincronizar, playlists
@@ -70,6 +72,7 @@ cat <<EOF
     ${b}stylus atalhos${o}            a lista de atalhos de teclado
     ${b}stylus instalar${o}           instala o STYLUS no computador (medium ao vivo)
     ${b}stylus update${o}             atualiza o sistema
+    ${b}stylus backup${o}             salva configuração e memória da coleção
 
   ${d}sem argumento nenhum, responde a pergunta que se faz mais vezes.${o}
 

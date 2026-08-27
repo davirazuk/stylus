@@ -9,6 +9,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -43,6 +45,8 @@ class MainActivity : AppCompatActivity() {
     private var allAlbums = listOf<Library.Album>()
     private var filteredAlbums = listOf<Library.Album>()
     private var sortMode = 0
+    private val searchHandler = Handler(Looper.getMainLooper())
+    private var searchRunnable: Runnable? = null
     private val sortLabels = listOf("A-Z", "ARTISTA", "RECENTE", "FAVORITOS")
     private var albumAdapter: AlbumAdapter? = null
 
@@ -174,7 +178,11 @@ class MainActivity : AppCompatActivity() {
             }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { applyFilter() }
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    searchRunnable?.let { searchHandler.removeCallbacks(it) }
+                    searchRunnable = Runnable { applyFilter() }
+                    searchHandler.postDelayed(searchRunnable!!, 250)
+                }
                 override fun afterTextChanged(s: android.text.Editable?) {}
             })
         }
@@ -643,7 +651,8 @@ class MainActivity : AppCompatActivity() {
     ) : RecyclerView.Adapter<VH>() {
 
         private val coverCache = object : android.util.LruCache<Long, android.graphics.Bitmap>(40) {
-            override fun sizeOf(key: Long, value: android.graphics.Bitmap) = 1
+            override fun sizeOf(key: Long, value: android.graphics.Bitmap) =
+                (value.rowBytes * value.height) / 1024
         }
 
         fun updateData(newItems: List<Library.Album>) {
