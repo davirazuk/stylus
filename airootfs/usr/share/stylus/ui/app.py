@@ -1698,17 +1698,23 @@ class GamesScreen(Screen):
     name = "JOGOS"
     icon = "󰊴"
 
+    # (name, command, binary_or_path, icon)
     ACOES = [
-        ("Steam", ["steam", "-bigpicture"], "steam"),
-        ("Clone Hero", ["clonehero"], "clonehero"),
-        ("Lutris", ["lutris"], "lutris"),
-        ("Heroic", ["heroic"], "heroic"),
+        ("Clone Hero", ["clonehero"], "clonehero", "󰝰"),
+        ("Keyboard Warriors", [os.path.expanduser(
+            "~/Documentos/coiso/keyboardwarrior/keyboardwarrior")],
+            "keyboardwarrior", "󰌑"),
+        ("osu!", ["osu"], "osu", "󰝰"),
+        ("YARG", ["yarg"], "yarg", "󰝰"),
+        ("Steam", ["steam", "-bigpicture"], "steam", "󰓓"),
+        ("Lutris", ["lutris"], "lutris", "󰓓"),
+        ("Heroic", ["heroic"], "heroic", "󰓓"),
     ]
 
     def __init__(self, app):
         super().__init__(app)
         self.sel = 0
-        self.sub = "menu"  # menu | buscar | baixadas
+        self.sub = "menu"  # menu | buscar | baixadas | stats
         self.query = ""
         self.query_active = False
         self.results = []
@@ -1716,75 +1722,108 @@ class GamesScreen(Screen):
         self.downloaded_ids = set()
         self.syncing = False
         self.job = None
-        self._installed_cache = {}  # cache de shutil.which() por frame
+        self.page = 1
+        self.total_pages = 1
+        self._installed_cache = {}
         self._load_downloaded()
 
     def _load_downloaded(self):
-        import json as _json
         db_path = os.path.expanduser("~/.local/share/stylus/charts.json")
         try:
             with open(db_path) as f:
-                db = _json.load(f)
+                db = json.load(f)
             self.downloaded = list(db.get("downloaded", {}).values())
             self.downloaded_ids = set(db.get("downloaded", {}).keys())
-        except (FileNotFoundError, _json.JSONDecodeError):
+        except (FileNotFoundError, json.JSONDecodeError):
             self.downloaded = []
             self.downloaded_ids = set()
 
-    def _do_search(self):
+    def _do_search(self, page=1):
         import http.client as _http
         import ssl as _ssl
-        import json as _json
         try:
             ctx = _ssl.create_default_context()
             conn = _http.HTTPSConnection("api.enchor.us", timeout=30, context=ctx)
-            data = _json.dumps({"search": self.query, "page": 1}).encode()
+            data = json.dumps({"search": self.query, "page": page}).encode()
             conn.request("POST", "/search", body=data, headers={
                 "Content-Type": "application/json", "User-Agent": "stylus-ch/1.0"})
             resp = conn.getresponse()
             raw = resp.read()
             conn.close()
             if resp.status in (200, 201):
-                result = _json.loads(raw, strict=False)
-                self.results = result.get("data", [])[:20]
-        except Exception:
+                result = json.loads(raw, strict=False)
+                self.results = result.get("data", [])[:30]
+                total = result.get("totalPages", 1) or 1
+                self.total_pages = total
+                self.page = page
+            else:
+                self.app.toast(f"erro {resp.status} na busca", kind="erro")
+        except Exception as e:
+            self.app.toast(f"falha na busca: {type(e).__name__}", kind="erro")
             self.results = []
+
+    def _delete_chart(self, chart):
+        db_path = os.path.expanduser("~/.local/share/stylus/charts.json")
+        cid = str(chart.get("chartId", ""))
+        try:
+            with open(db_path) as f:
+                db = json.load(f)
+            if cid in db.get("downloaded", {}):
+                del db["downloaded"][cid]
+                with open(db_path, "w") as f:
+                    json.dump(db, f)
+            self._load_downloaded()
+            self.app.toast("chart removido", kind="ok")
+        except Exception as e:
+            self.app.toast(f"erro ao remover: {e}", kind="erro")
+
+    def _is_installed(self, binary):
+        if binary not in self._installed_cache:
+            import shutil as _sh
+            self._installed_cache[binary] = bool(_sh.which(binary))
+        return self._installed_cache[binary]
 
     def key(self, ev):
         if self.sub == "buscar":
             return self._key_buscar(ev)
         elif self.sub == "baixadas":
             return self._key_baixadas(ev)
+        elif self.sub == "stats":
+            return self._key_stats(ev)
         return self._key_menu(ev)
 
     def _key_menu(self, ev):
-        total = len(self.ACOES) + 3  # +3 for buscar, baixadas, sync
+        n_games = len(self.ACOES)
+        n_ch = 4  # buscar, baixadas, sync, stats
+        total = n_games + n_ch
         if ev.key in (pygame.K_RIGHT, pygame.K_l, pygame.K_DOWN, pygame.K_j):
             self.sel = (self.sel + 1) % total
         elif ev.key in (pygame.K_LEFT, pygame.K_h, pygame.K_UP, pygame.K_k):
             self.sel = (self.sel - 1) % total
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if self.sel < len(self.ACOES):
-                nome, cmd, binario = self.ACOES[self.sel]
-                import shutil as _sh
-                if _sh.which(binario):
+            if self.sel < n_games:
+                nome, cmd, binario, _icon = self.ACOES[self.sel]
+                if self._is_installed(binario) or os.path.isfile(cmd[0]):
                     self.app.toast(f"abrindo {nome}…")
                     spawn(cmd)
                 else:
-                    self.app.toast(f"{nome} não está instalado — "
-                                   f"`stylus app {binario}` resolve")
-            elif self.sel == len(self.ACOES):
+                    self.app.toast(f"{nome} não encontrado")
+            elif self.sel == n_games:  # buscar
                 self.sub = "buscar"
                 self.query_active = True
                 self.query = ""
-            elif self.sel == len(self.ACOES) + 1:
+                self.page = 1
+            elif self.sel == n_games + 1:  # baixadas
                 self._load_downloaded()
                 self.sub = "baixadas"
                 self.sel = 0
-            else:
+            elif self.sel == n_games + 2:  # sync
                 self.app.toast("sincronizando pro celular…")
                 self.syncing = True
                 self.job = Job(["stylus-ch", "sync"], "sync clone hero")
+            else:  # stats
+                self.sub = "stats"
+                self.sel = 0
         else:
             return False
         return True
@@ -1797,7 +1836,7 @@ class GamesScreen(Screen):
                 return True
             elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 if self.query.strip():
-                    self._do_search()
+                    self._do_search(1)
                 self.query_active = False
                 return True
             elif ev.key == pygame.K_BACKSPACE:
@@ -1818,12 +1857,24 @@ class GamesScreen(Screen):
                 chart = self.results[self.sel]
                 cid = str(chart["chartId"])
                 if cid not in self.downloaded_ids:
-                    self.app.toast(f"baixando {chart['artist']} — {chart['name']}…")
-                    self.job = Job(["stylus-ch", "baixar", cid], chart["name"])
+                    self.app.toast(
+                        f"baixando {chart['artist']} — {chart['name']}…")
+                    self.job = Job(["stylus-ch", "baixar", cid],
+                                   chart["name"])
+                    self.downloaded_ids.add(cid)
                 else:
-                    self.app.toast("já baixado")
+                    self.app.toast("já baixado", kind="ok")
             elif ev.key == pygame.K_f:
                 self.query_active = True
+            elif ev.key == pygame.K_RIGHT and self.page < self.total_pages:
+                self._do_search(self.page + 1)
+                self.sel = 0
+            elif ev.key == pygame.K_LEFT and self.page > 1:
+                self._do_search(self.page - 1)
+                self.sel = 0
+            elif ev.key == pygame.K_d and self.results:
+                chart = self.results[self.sel]
+                self._delete_chart(chart)
         return True
 
     def _key_baixadas(self, ev):
@@ -1831,13 +1882,30 @@ class GamesScreen(Screen):
             self.sub = "menu"
             return True
         elif ev.key in (pygame.K_DOWN, pygame.K_j):
-            self.sel = (self.sel + 1) % max(1, len(self.downloaded))
+            self.sel = (self.sel + 1) % max(1, len(self.downloaded) * 2)
         elif ev.key in (pygame.K_UP, pygame.K_k):
-            self.sel = (self.sel - 1) % max(1, len(self.downloaded))
+            self.sel = (self.sel - 1) % max(1, len(self.downloaded) * 2)
+        elif ev.key == pygame.K_d and self.downloaded:
+            # sel alternates between artist headers and songs
+            by_artist = {}
+            for info in self.downloaded:
+                by_artist.setdefault(info.get("artist", "?"), []).append(info)
+            flat = []
+            for artist in sorted(by_artist):
+                flat.append(("artist", artist, None))
+                for info in by_artist[artist]:
+                    flat.append(("song", info.get("name", "?"), info))
+            if self.sel < len(flat) and flat[self.sel][0] == "song":
+                self._delete_chart(flat[self.sel][2])
+        return True
+
+    def _key_stats(self, ev):
+        if ev.key == pygame.K_ESCAPE:
+            self.sub = "menu"
+            return True
         return True
 
     def draw(self, s, r):
-        import shutil as _sh
         x, y = r.x + 44, r.y + 40
         T.text(s, "jogos", (x, y), 30, T.TEXT, bold=True)
         T.text(s, "porque nem tudo é disco", (x, y + 40), 18, T.TEXT_FAINT)
@@ -1846,45 +1914,54 @@ class GamesScreen(Screen):
             self._draw_buscar(s, r)
         elif self.sub == "baixadas":
             self._draw_baixadas(s, r)
+        elif self.sub == "stats":
+            self._draw_stats(s, r)
         else:
-            self._draw_menu(s, r, _sh)
+            self._draw_menu(s, r)
 
         self.app.job_panel(s, pygame.Rect(r.right - 340, r.bottom - 120,
                                           300, 80), self.job)
 
-    def _draw_menu(self, s, r, _sh):
+    def _draw_menu(self, s, r):
         x, y = r.x + 44, r.y + 96
-        cw, gap = 240, 24
-        for i, (nome, _c, binario) in enumerate(self.ACOES):
-            box = pygame.Rect(x + i * (cw + gap), y, cw, 150)
+        n_games = len(self.ACOES)
+        # games grid: 4 per row
+        cols = min(4, n_games)
+        cw, gap = 220, 20
+        for i, (nome, _cmd, binario, icon) in enumerate(self.ACOES):
+            col = i % cols
+            row = i // cols
+            bx = pygame.Rect(x + col * (cw + gap), y + row * 120, cw, 100)
             sel = i == self.sel
+            tem = self._is_installed(binario)
             if sel:
-                T.shadow_card(s, box, radius=10)
-            T.panel(s, box, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
+                T.shadow_card(s, bx, radius=10)
+            T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
                     border=T.AMBER if sel else T.LINE)
-            tem = bool(_sh.which(binario))
-            T.text(s, nome, box.center, 26, T.TEXT if tem else T.TEXT_FAINT,
-                   bold=True, anchor="center")
+            T.text(s, f"{icon}  {nome}", bx.center, 22,
+                   T.TEXT if tem else T.TEXT_FAINT, bold=sel, anchor="center")
             if not tem:
-                T.text(s, "não instalado", (box.centerx, box.centery + 34), 16,
-                       T.TEXT_FAINT, anchor="center")
+                T.text(s, "não encontrado", (bx.centerx, bx.centery + 28),
+                       15, T.TEXT_FAINT, anchor="center")
 
         # CH songs row
-        y2 = y + 190
+        y2 = y + (n_games // cols + 1) * 120 + 10
         ch_actions = [
-            ("buscar músicas", "󰍉"),
-            (f"baixadas ({len(self.downloaded)})", "󰀙"),
-            ("sincronizar pro celular", "󰢶"),
+            ("buscar músicas", "󰍉", "buscar"),
+            (f"baixadas ({len(self.downloaded)})", "󰀙", "baixadas"),
+            ("sincronizar pro celular", "󰢶", "sync"),
+            ("estatísticas", "󰎛", "stats"),
         ]
-        for i, (label, icon) in enumerate(ch_actions):
-            bx = pygame.Rect(x + i * (cw + gap), y2, cw, 60)
-            sel = i + len(self.ACOES) == self.sel
+        cw2 = min(220, (r.w - 88) // 4 - 10)
+        for i, (label, icon, _sub) in enumerate(ch_actions):
+            bx = pygame.Rect(x + i * (cw2 + gap), y2, cw2, 60)
+            sel = i + n_games == self.sel
             if sel:
                 T.shadow_card(s, bx, radius=8)
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=10,
                     border=T.AMBER if sel else T.LINE)
-            T.text(s, f"{icon}  {label}", bx.center, 20, T.TEXT if sel else T.TEXT_FAINT,
-                   bold=sel, anchor="center")
+            T.text(s, f"{icon}  {label}", bx.center, 18,
+                   T.TEXT if sel else T.TEXT_FAINT, bold=sel, anchor="center")
 
         self.app.hint(s, r, "enter abre · ← → navega")
 
@@ -1892,22 +1969,28 @@ class GamesScreen(Screen):
         x, y = r.x + 44, r.y + 90
 
         # Search bar
-        bar = pygame.Rect(x, y, 600, 44)
+        bar_w = min(600, r.w - 88)
+        bar = pygame.Rect(x, y, bar_w, 44)
         border = T.AMBER if self.query_active else T.LINE
         T.panel(s, bar, T.INK_LIFT, radius=10, border=border)
-        placeholder = "digite o nome da música…" if not self.query else self.query
+        placeholder = ("digite o nome da música…" if not self.query
+                       else self.query)
         T.text(s, f"󰍉  {placeholder}", (bar.x + 14, bar.y + 11), 20,
                T.TEXT if self.query else T.TEXT_FAINT)
         if self.query_active:
-            # cursor blink
             cw = T.font(20).size(self.query)[0]
             pygame.draw.line(s, T.AMBER, (bar.x + 14 + cw + 2, bar.y + 10),
                              (bar.x + 14 + cw + 2, bar.y + 32), 2)
 
+        # Page indicator
+        if self.total_pages > 1:
+            T.text(s, f"página {self.page}/{self.total_pages}",
+                   (x + bar_w + 20, y + 12), 16, T.TEXT_FAINT)
+
         # Results
         y += 64
         if self.results:
-            for i, c in enumerate(self.results[:15]):
+            for i, c in enumerate(self.results[:20]):
                 sel = i == self.sel and not self.query_active
                 cid = str(c["chartId"])
                 downloaded = cid in self.downloaded_ids
@@ -1916,21 +1999,39 @@ class GamesScreen(Screen):
                 charter = c.get("charter", "?")
                 bg = T.INK_LIFT if sel else None
                 if bg:
-                    T.panel(s, pygame.Rect(x - 8, y - 2, 700, 28), bg, radius=6)
+                    T.panel(s, pygame.Rect(x - 8, y - 2, bar_w + 80, 28),
+                            bg, radius=6)
                 if downloaded:
                     T.text(s, "✓", (x, y), 18, T.GREEN)
-                T.text(s, artist, (x + (22 if downloaded else 0), y), 18,
+                ox = 22 if downloaded else 0
+                T.text(s, artist, (x + ox, y), 18,
                        T.AMBER if sel else T.PINK)
-                aw = T.font.size(artist + "  ")[0]
-                T.text(s, f"— {name}", (x + (22 if downloaded else 0) + aw, y), 18,
+                aw = T.font(18).size(artist + "  ")[0]
+                T.text(s, f"— {name}", (x + ox + aw, y), 18,
                        T.TEXT if sel else T.TEXT_FAINT)
-                T.text(s, f"({charter})", (x + 500, y), 16, T.TEXT_DIM)
+                # difficulty badges
+                dx = x + ox + aw + T.font(18).size(f"— {name}  ")[0] + 10
+                for diff_key, diff_label in [("diff_guitar", "🎸"),
+                                              ("diff_bass", "🎸"),
+                                              ("diff_drums", "🥁"),
+                                              ("diff_vocals", "🎤")]:
+                    val = c.get(diff_key)
+                    if val is not None and val > 0:
+                        color = (T.GREEN if val <= 3
+                                 else T.AMBER if val <= 6
+                                 else T.RED)
+                        T.text(s, f"{diff_label}{val}", (dx, y + 2),
+                               14, color)
+                        dx += T.font(14).size(f"{diff_label}{val}")[0] + 6
+                # charter on right
+                T.text(s, charter, (r.right - 60, y), 14, T.TEXT_DIM,
+                       anchor="topright")
                 y += 30
         elif self.query and not self.query_active:
             T.text(s, "nenhum resultado", (x, y), 18, T.TEXT_FAINT)
 
-        T.text(s, "enter: baixar · f: buscar · esc: voltar",
-               (x, r.bottom - 40), 16, T.TEXT_FAINT)
+        hint = "enter: baixar · f: buscar · d: remover · ←→: página · esc: voltar"
+        T.text(s, hint, (x, r.bottom - 40), 16, T.TEXT_FAINT)
 
     def _draw_baixadas(self, s, r):
         x, y = r.x + 44, r.y + 90
@@ -1944,19 +2045,78 @@ class GamesScreen(Screen):
             by_artist.setdefault(artist, []).append(info)
 
         flat = []
-        for artist in sorted(by_artist.keys()):
+        for artist in sorted(by_artist):
             flat.append(("artist", artist, None))
             for info in by_artist[artist]:
                 flat.append(("song", info.get("name", "?"), info))
 
-        for i, (kind, name, info) in enumerate(flat[:20]):
+        view_h = r.h - 180
+        vis = max(3, view_h // 28)
+        self.sel = max(0, min(self.sel, len(flat) - 1))
+        ini = max(0, min(self.sel - vis // 2, len(flat) - vis))
+
+        for i in range(ini, min(len(flat), ini + vis)):
+            kind, name, info = flat[i]
             sel = i == self.sel
+            if sel:
+                T.panel(s, pygame.Rect(x - 8, y - 2, r.w - 88, 26),
+                        T.INK_LIFT, radius=6)
             if kind == "artist":
-                T.text(s, name, (x + 8, y), 18, T.PINK, bold=True)
+                count = len(by_artist[name])
+                T.text(s, f"{name}  ({count})", (x + 8, y), 18, T.PINK,
+                       bold=True)
             else:
-                T.text(s, f"— {name}", (x + 8, y), 17,
+                T.text(s, f"  — {name}", (x + 8, y), 17,
                        T.TEXT if sel else T.TEXT_FAINT)
-            y += 26
+                # show chartId for delete reference
+                cid = str(info.get("chartId", ""))
+                if sel:
+                    T.text(s, "d: remover", (r.right - 60, y + 2), 14,
+                           T.RED, anchor="topright")
+            y += 28
+
+        T.text(s, "d: remover · esc: voltar", (x, r.bottom - 40), 16,
+               T.TEXT_FAINT)
+
+    def _draw_stats(self, s, r):
+        x, y = r.x + 44, r.y + 90
+        T.text(s, "estatísticas", (x, y), 24, T.TEXT, bold=True)
+        y += 50
+
+        total = len(self.downloaded)
+        T.text(s, f"total de charts: {total}", (x, y), 20, T.TEXT)
+        y += 36
+
+        # by artist
+        by_artist = {}
+        for info in self.downloaded:
+            artist = info.get("artist", "Unknown")
+            by_artist.setdefault(artist, []).append(info)
+        artists_sorted = sorted(by_artist.items(), key=lambda x: -len(x[1]))
+
+        T.text(s, "por artista:", (x, y), 18, T.TEXT_FAINT)
+        y += 30
+        for artist, songs in artists_sorted[:15]:
+            bar_w = int((len(songs) / max(1, total)) * 400)
+            T.panel(s, pygame.Rect(x + 200, y, max(bar_w, 4), 18),
+                    T.AMBER, radius=4)
+            T.text(s, f"{artist}", (x + 195, y), 16, T.PINK,
+                   anchor="topright")
+            T.text(s, str(len(songs)), (x + 200 + bar_w + 8, y), 16,
+                   T.TEXT_FAINT)
+            y += 24
+
+        if len(artists_sorted) > 15:
+            T.text(s, f"+ {len(artists_sorted) - 15} outros", (x, y), 16,
+                   T.TEXT_DIM)
+            y += 24
+
+        # total size
+        total_size = sum(info.get("size", 0) for info in self.downloaded)
+        if total_size > 0:
+            y += 10
+            mb = total_size / (1024 * 1024)
+            T.text(s, f"espaço total: {mb:.1f} MB", (x, y), 18, T.TEXT_FAINT)
 
         T.text(s, "esc: voltar", (x, r.bottom - 40), 16, T.TEXT_FAINT)
 
