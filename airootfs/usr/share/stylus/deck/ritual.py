@@ -367,7 +367,7 @@ class RitualScene:
         self._was_paused=paused; phase=self.deck.update(dt,playing=not paused)
         if not self.view and snap.get("source")=="mpv":
             down=(phase==vinyl.PLAY and self.deck.arm_lift()<0.12)
-            if down and paused: self.session.pause(False)
+            if down and paused and self._last_phase==vinyl.DROP: self.session.pause(False)
             elif not down and not paused and phase in (vinyl.SPINUP,vinyl.CUE,vinyl.DROP,vinyl.LIFT,vinyl.BREAK,vinyl.STOP,vinyl.RETURN):
                 self.session.pause(True)
         if phase==vinyl.PLAY and self._last_phase==vinyl.DROP:
