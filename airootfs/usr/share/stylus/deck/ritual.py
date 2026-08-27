@@ -486,6 +486,64 @@ class RitualScene:
                 sc = np.array(spark_col, dtype=np.float32)
                 tris.append(build_segs(sp, 0.018, W, H, sc))
         arm=np.concatenate(tris,axis=0) if tris else None
+        # ── progress ring — thin amber arc around disc showing side progress ──
+        n_arc = 64
+        arc_start = -math.pi / 2  # top of disc
+        arc_end = arc_start + 2 * math.pi * frac
+        arc_thetas = np.linspace(arc_start, arc_end, n_arc, endpoint=False)
+        arc_r_inner = radius * 1.06
+        arc_r_outer = radius * 1.08
+        # inner points
+        arc_x_in = cx + np.cos(arc_thetas) * arc_r_inner
+        arc_y_in = cy + np.sin(arc_thetas) * arc_r_inner * iso[1]
+        # outer points
+        arc_x_out = cx + np.cos(arc_thetas) * arc_r_outer
+        arc_y_out = cy + np.sin(arc_thetas) * arc_r_outer * iso[1]
+        # interleave inner/outer for triangle strip
+        arc_pts = np.zeros((n_arc * 2, 2), dtype=np.float32)
+        arc_pts[0::2] = np.column_stack([arc_x_in, arc_y_in])
+        arc_pts[1::2] = np.column_stack([arc_x_out, arc_y_out])
+        # amber color, fading at the tail
+        arc_cols = np.zeros((n_arc * 2, 4), dtype=np.float32)
+        for ai in range(n_arc):
+            fade = 1.0 - ai / n_arc
+            bright = 0.7 + 0.3 * fade
+            arc_cols[ai * 2] = [0.96 * bright, 0.56 * bright, 0.13 * bright, 0.9 * fade]
+            arc_cols[ai * 2 + 1] = [0.96 * bright, 0.56 * bright, 0.13 * bright, 0.9 * fade]
+        strips.append(build_strip(arc_pts, 0.004 * radius, W, H, arc_cols))
+        # ── dim remainder ring (full circle, faint) ──
+        rem_start = arc_end
+        rem_end = arc_start + 2 * math.pi
+        if rem_end > rem_start + 0.01:
+            rem_n = max(16, n_arc - int(frac * n_arc))
+            rem_thetas = np.linspace(rem_start, rem_end, rem_n, endpoint=False)
+            rem_x_in = cx + np.cos(rem_thetas) * arc_r_inner
+            rem_y_in = cy + np.sin(rem_thetas) * arc_r_inner * iso[1]
+            rem_x_out = cx + np.cos(rem_thetas) * arc_r_outer
+            rem_y_out = cy + np.sin(rem_thetas) * arc_r_outer * iso[1]
+            rem_pts = np.zeros((rem_n * 2, 2), dtype=np.float32)
+            rem_pts[0::2] = np.column_stack([rem_x_in, rem_y_in])
+            rem_pts[1::2] = np.column_stack([rem_x_out, rem_y_out])
+            rem_cols = np.full((rem_n * 2, 4), [0.04, 0.035, 0.03, 0.15], dtype=np.float32)
+            strips.append(build_strip(rem_pts, 0.003 * radius, W, H, rem_cols))
+        # ── power LED — small amber dot on plinth ──
+        led_x = cx - radius * 1.35
+        led_y = cy + radius * 0.85 * iso[1]
+        led_pulse = 0.7 + 0.3 * math.sin(time.time() * 2.0)
+        led_pts = np.array([[led_x, led_y]], dtype=np.float32)
+        led_col = np.array([[0.96 * led_pulse, 0.56 * led_pulse, 0.13 * led_pulse, 0.9]], dtype=np.float32)
+        strips.append(build_strip(led_pts, 0.012 * radius, W, H, led_col))
+        # ── side label glow — faint "LADO A/B" position marker ──
+        # small dot at the start of the current side's time range
+        side_start_frac = 0.0
+        if side:
+            side_start_frac = (side["start"] / al.total) if al.total else 0
+        marker_angle = arc_start + 2 * math.pi * side_start_frac
+        mk_x = cx + math.cos(marker_angle) * radius * 1.03
+        mk_y = cy + math.sin(marker_angle) * radius * 1.03 * iso[1]
+        mk_pts = np.array([[mk_x, mk_y]], dtype=np.float32)
+        mk_col = np.array([[0.96, 0.56, 0.13, 0.35]], dtype=np.float32)
+        strips.append(build_strip(mk_pts, 0.008 * radius, W, H, mk_col))
         return strips, arm
     def banner(self):
         if self._banner and time.monotonic()<self._banner_until: return self._banner

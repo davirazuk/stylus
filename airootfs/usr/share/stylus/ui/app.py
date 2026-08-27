@@ -27,7 +27,6 @@ cheia de música é poder usá-la do outro lado do quarto.
 import math
 import json
 import os
-import struct
 import subprocess
 import sys
 import threading
@@ -65,26 +64,38 @@ def spawn(cmd):
 
 # ── favoritos ──────────────────────────────────────────────────────────────
 _FAV_FILE = os.path.join(vinyl.STATE_DIR, "favorites.json")
+_fav_cache = None
 
 def _load_favorites():
+    global _fav_cache
+    if _fav_cache is not None:
+        return _fav_cache
     try:
         with open(_FAV_FILE) as f:
-            return set(json.load(f))
+            _fav_cache = set(json.load(f))
     except (OSError, json.JSONDecodeError):
-        return set()
+        _fav_cache = set()
+    return _fav_cache
 
 def _save_favorites(favs):
+    global _fav_cache
     os.makedirs(os.path.dirname(_FAV_FILE), exist_ok=True)
-    with open(_FAV_FILE, "w") as f:
-        json.dump(sorted(favs), f)
+    try:
+        with open(_FAV_FILE, "w") as f:
+            json.dump(sorted(favs), f)
+        _fav_cache = set(favs)
+    except OSError:
+        pass
 
 def _toggle_favorite(folder):
+    global _fav_cache
     favs = _load_favorites()
     key = os.path.normpath(folder)
     if key in favs:
         favs.discard(key)
     else:
         favs.add(key)
+    _fav_cache = favs
     _save_favorites(favs)
     return key in favs
 
@@ -164,6 +175,10 @@ class NowScreen(Screen):
         if ev.key == pygame.K_n:
             spawn(["playerctl", "next"])
             return True
+        # Repeat toggle: R (shift+r) — checked BEFORE unshifted r
+        if ev.key == pygame.K_r and (ev.mod & pygame.KMOD_SHIFT):
+            self.app.toggle_repeat()
+            return True
         # r = sortear um disco aleatório (weighted random)
         if ev.key == pygame.K_r:
             d = vinyl.draw_record([i["folder"] for i in self.app.shelf.items])
@@ -192,10 +207,6 @@ class NowScreen(Screen):
         if ev.key == pygame.K_s:
             self.app.toggle_shuffle()
             return True
-        # Repeat toggle: R (shift+r)
-        if ev.key == pygame.K_r and (ev.mod & pygame.KMOD_SHIFT):
-            self.app.toggle_repeat()
-            return True
         # Busca e volume do sofá: no modo música esta tela é o controle
         # remoto. ←/→ puxam a agulha dez segundos, +/- tocam o volume — as
         # duas coisas que a pessoa quer sem levantar, e que antes só existiam
@@ -221,7 +232,7 @@ class NowScreen(Screen):
         # saiu do sofá quer. É uma escolha da noite, e fica guardada.
         if ev.key == pygame.K_d:
             self.app.auto_deck = not self.app.auto_deck
-            _save_prefs({"auto_deck": self.app.auto_deck})
+            self.app._save_player_prefs()
             self.app.toast("deck sozinho: LIGADO" if self.app.auto_deck
                            else "deck sozinho: DESLIGADO (fica na AGORA)")
             return True
@@ -1338,8 +1349,6 @@ class QobuzScreen(Screen):
     icon = "󰝡"
     COLS = 5
 
-    API = "http://127.0.0.1:8765/api/search"
-
     def __init__(self, app):
         super().__init__(app)
         self.query = ""
@@ -1353,19 +1362,20 @@ class QobuzScreen(Screen):
         self.gui_up = False
         self.examing = None
         self.job = None
-        self.error = None
-        self.examing = None
 
     def enter(self):
-        self._check_gui()
+        self._check_gui_threaded()
 
-    def _check_gui(self):
+    def _check_gui_threaded(self):
         import urllib.request
-        try:
-            urllib.request.urlopen("http://127.0.0.1:8765/", timeout=2)
-            self.gui_up = True
-        except Exception:
-            self.gui_up = False
+        import threading
+        def _probe():
+            try:
+                urllib.request.urlopen("http://127.0.0.1:8765/", timeout=2)
+                self.gui_up = True
+            except Exception:
+                self.gui_up = False
+        threading.Thread(target=_probe, daemon=True).start()
 
     def _search(self):
         """Busca via stylus-qobuz buscar (API direta, sem navegador).
@@ -1890,7 +1900,7 @@ class GamesScreen(Screen):
                T.TEXT if self.query else T.TEXT_FAINT)
         if self.query_active:
             # cursor blink
-            cw = T.font.size(self.query)[0]
+            cw = T.font(20).size(self.query)[0]
             pygame.draw.line(s, T.AMBER, (bar.x + 14 + cw + 2, bar.y + 10),
                              (bar.x + 14 + cw + 2, bar.y + 32), 2)
 
@@ -2237,9 +2247,10 @@ class App:
         # Sleep timer: minutes remaining, 0 = off
         self._sleep_minutes = 0
         self._sleep_end = 0.0
-        # Shuffle/repeat state
-        self.shuffle = False
-        self.repeat = 0  # 0=off, 1=repeat side, 2=repeat album
+        # Shuffle/repeat state — persisted across restarts
+        _prefs = _load_prefs()
+        self.shuffle = bool(_prefs.get("shuffle", False))
+        self.repeat = int(_prefs.get("repeat", 0))  # 0=off, 1=repeat side, 2=repeat album
         # O lado em que o disco está, para saber quando ele VIRA. Ver
         # _watch_side: no modo música esta tela é a sessão inteira, e a tese
         # do sistema acontecendo num balãozinho de canto seria pouco.
@@ -2516,12 +2527,18 @@ class App:
 
     def toggle_shuffle(self):
         self.shuffle = not self.shuffle
+        self._save_player_prefs()
         self.toast("embaralhar: " + ("ligado" if self.shuffle else "desligado"))
 
     def toggle_repeat(self):
         labels = ["desligado", "repetir lado", "repetir álbum"]
         self.repeat = (self.repeat + 1) % 3
+        self._save_player_prefs()
         self.toast("repetir: " + labels[self.repeat])
+
+    def _save_player_prefs(self):
+        _save_prefs({"auto_deck": self.auto_deck,
+                     "shuffle": self.shuffle, "repeat": self.repeat})
 
     @staticmethod
     _volume_cache = (0, 0)
