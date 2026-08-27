@@ -25,8 +25,9 @@ NAVEGAÇÃO POR CONTROLE É REQUISITO, NÃO ENFEITE: metade do valor de uma tela
 cheia de música é poder usá-la do outro lado do quarto.
 """
 import math
+import json
 import os
-import subprocess
+import struct
 import sys
 import threading
 import time
@@ -1209,6 +1210,357 @@ class ToolsScreen(Screen):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# QOBUZ — como procurar na loja de discos
+#
+#  A filosofia aqui não é "pesquisar e baixar". É "entrar na loja, folhear
+#  as estantes, e sair com um disco debaixo do braço". Cada resultado é
+#  um disco na prateleira — com ano, faixas, qualidade. O atalho é enter,
+#  mas o ritmo é o de quem vira a página.
+# ═══════════════════════════════════════════════════════════════════════════
+class QobuzScreen(Screen):
+    name = "QOBUZ"
+    icon = "󰝡"
+    COLS = 5
+
+    API = "http://127.0.0.1:8765/api/search"
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.query = ""
+        self.searching = False
+        self.results = []
+        self.sel = 0
+        self.scroll = 0.0
+        self.target = 0.0
+        self.running = False
+        self.job = None
+        self.error = None
+        self.examing = None     # álbum sendo examinado (overlay)
+        self.examing_t = 0      # tempo desde que abriu o overlay
+
+    def enter(self):
+        self._check_gui()
+
+    def _check_gui(self):
+        """Verifica se a interface Qobuz está no ar."""
+        import urllib.request
+        try:
+            urllib.request.urlopen("http://127.0.0.1:8765/", timeout=2)
+            self.running = True
+            self.error = None
+        except Exception:
+            self.running = False
+            self.error = "interface não está no ar"
+
+    def _search(self):
+        """Busca álbuns no Qobuz — como perguntar ao balconista."""
+        import urllib.request
+        import urllib.parse
+        if not self.query.strip():
+            return
+        q = urllib.parse.quote(self.query.strip())
+        url = f"{self.API}?q={q}&type=album&limit=25"
+        try:
+            r = urllib.request.urlopen(url, timeout=15)
+            data = json.loads(r.read())
+            self.results = data.get("results", [])
+            self.sel = 0
+            self.scroll = 0.0
+            self.target = 0.0
+            self.error = None
+        except Exception as e:
+            self.error = str(e)
+            self.results = []
+
+    def _examine(self, item):
+        """Abre o overlay de exame — como segurar o disco na mão."""
+        self.examing = item
+        self.examing_t = time.time()
+
+    def _download(self, item):
+        """Baixa e arquiva — o disco vai pra estante."""
+        if self.job and not self.job.done:
+            self.app.toast("já tem download rodando")
+            return
+        url = item.get("url", "")
+        artist = item.get("display_subtitle", "")
+        title = item.get("display_title", "")
+        if not url:
+            self.app.toast("sem URL para baixar")
+            return
+        queue_file = os.path.expanduser("~/.local/share/stylus/qobuz-queue.txt")
+        os.makedirs(os.path.dirname(queue_file), exist_ok=True)
+        with open(queue_file, "w") as f:
+            f.write(f"{url}|{artist}|{title}\n")
+        self.job = Job(
+            ["stylus-qobuz", "fila", queue_file],
+            f"baixando: {artist} — {title}"
+        )
+        self.examing = None
+        self.app.toast(f"na fila: {artist} — {title}")
+
+    def key(self, ev):
+        # ── overlay de exame — ESC ou enter fecha ──────────────────────────
+        if self.examing:
+            if ev.key == pygame.K_ESCAPE:
+                self.examing = None
+            elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self._download(self.examing)
+            elif ev.key == pygame.K_i:
+                # copia a URL para o clipboard
+                import subprocess as _sp
+                url = self.examing.get("url", "")
+                if url:
+                    _sp.run(["xclip", "-selection", "clipboard"],
+                            input=url.encode(), timeout=3)
+                    self.app.toast("URL copiada")
+            return True
+
+        # ── interface fora do ar ────────────────────────────────────────────
+        if not self.running:
+            if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self.app.toast("ligando a loja…")
+                self.job = Job(["stylus-qobuz", "abrir"], "abrindo a loja")
+                threading.Timer(5.0, self._check_gui).start()
+            elif ev.key == pygame.K_r:
+                self._check_gui()
+            else:
+                return False
+            return True
+
+        # ── modo de busca — digitar ─────────────────────────────────────────
+        if self.searching:
+            if ev.key == pygame.K_ESCAPE:
+                self.searching, self.query = False, ""
+            elif ev.key == pygame.K_RETURN:
+                self.searching = False
+                self._search()
+            elif ev.key == pygame.K_BACKSPACE:
+                self.query = self.query[:-1]
+            elif ev.unicode and ev.unicode.isprintable():
+                self.query += ev.unicode
+            self.sel = 0
+            return True
+
+        # ── navegação nos resultados ────────────────────────────────────────
+        n = len(self.results)
+        if ev.key in (pygame.K_DOWN, pygame.K_j):
+            if n:
+                self.sel = (self.sel + 1) % n
+        elif ev.key in (pygame.K_UP, pygame.K_k):
+            if n:
+                self.sel = (self.sel - 1) % n
+        elif ev.key in (pygame.K_RIGHT, pygame.K_l):
+            if n:
+                self.sel = min(n - 1, self.sel + self.COLS)
+        elif ev.key in (pygame.K_LEFT, pygame.K_h):
+            if n:
+                self.sel = max(0, self.sel - self.COLS)
+        elif ev.key == pygame.K_PAGEDOWN:
+            if n:
+                self.sel = min(n - 1, self.sel + self.COLS * 3)
+        elif ev.key == pygame.K_PAGEUP:
+            if n:
+                self.sel = max(0, self.sel - self.COLS * 3)
+        elif ev.key == pygame.K_HOME:
+            self.sel = 0
+        elif ev.key == pygame.K_END:
+            self.sel = max(0, n - 1)
+        elif ev.key == pygame.K_SLASH:
+            self.searching, self.query = True, ""
+        elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if n:
+                self._examine(self.results[self.sel])
+        elif ev.key == pygame.K_r:
+            self._check_gui()
+            if self.query:
+                self._search()
+        else:
+            return False
+        return True
+
+    # ── desenho ─────────────────────────────────────────────────────────────
+
+    def _card(self, s, rect, item, sel):
+        """Um disco na prateleira."""
+        if sel:
+            T.panel(s, rect, T.INK_LIFT, radius=10, border=T.LINE)
+        else:
+            T.panel(s, rect, T.INK_SOFT, radius=10, border=T.LINE)
+
+        # capa: silhouette de disco
+        T.text(s, "󰝡", (rect.centerx, rect.centery - 4), 38,
+               T.AMBER if sel else T.TEXT_FAINT, anchor="center")
+
+        # qualidade: se hi-res, um brilho
+        quality = item.get("quality", "")
+        if quality and "hi" in quality.lower():
+            T.text(s, "◆", (rect.right - 10, rect.y + 10), 11,
+                   T.AMBER, anchor="topright")
+
+        # informações abaixo
+        ty = rect.bottom + 8
+        title = item.get("display_title", "?")
+        artist = item.get("display_subtitle", "?")
+        year = item.get("release_year", "")
+        tracks = item.get("tracks", 0)
+
+        T.text(s, title, (rect.x, ty), 15,
+               T.TEXT if sel else T.TEXT_DIM, maxw=rect.w)
+        T.text(s, artist, (rect.x, ty + 20), 13, T.TEXT_FAINT, maxw=rect.w)
+
+        # linha de info: ano · faixas · qualidade
+        info_parts = []
+        if year:
+            info_parts.append(str(year))
+        if tracks:
+            info_parts.append(f"{tracks}faixas")
+        if quality:
+            info_parts.append(quality)
+        info = "  ·  ".join(info_parts)
+        if info:
+            T.text(s, info, (rect.x, ty + 36), 12, T.TEXT_FAINT, maxw=rect.w)
+
+    def _draw_examing(self, s, r):
+        """Overlay de exame — segurar o disco na mão."""
+        item = self.examing
+        if not item:
+            return
+
+        # fundo escurecido
+        dim = pygame.Surface(r.size)
+        dim.fill(T.INK)
+        dim.set_alpha(220)
+        s.blit(dim, r.topleft)
+
+        # painel central
+        pw, ph = 520, 380
+        px = r.x + (r.w - pw) // 2
+        py = r.y + (r.h - ph) // 2
+        T.panel(s, pygame.Rect(px, py, pw, ph), T.INK_LIFT, radius=16,
+                border=T.LINE)
+
+        # disco grande no centro
+        T.text(s, "󰝡", (px + pw // 2, py + 80), 72, T.AMBER, anchor="center")
+
+        # informações
+        title = item.get("display_title", "?")
+        artist = item.get("display_subtitle", "?")
+        year = item.get("release_year", "")
+        tracks = item.get("tracks", 0)
+        quality = item.get("quality", "")
+        url = item.get("url", "")
+
+        T.text(s, title, (px + 32, py + 140), 24, T.TEXT, bold=True, maxw=pw - 64)
+        T.text(s, artist, (px + 32, py + 175), 20, T.AMBER, maxw=pw - 64)
+
+        # detalhes
+        y = py + 215
+        detail_parts = []
+        if year:
+            detail_parts.append(f"lançamento: {year}")
+        if tracks:
+            detail_parts.append(f"{tracks} faixas")
+        if quality:
+            detail_parts.append(f"qualidade: {quality}")
+        detail = "  ·  ".join(detail_parts)
+        if detail:
+            T.text(s, detail, (px + 32, y), 16, T.TEXT_DIM, maxw=pw - 64)
+            y += 28
+
+        if url:
+            T.text(s, url, (px + 32, y), 14, T.TEXT_FAINT, maxw=pw - 64)
+
+        # ações
+        y = py + ph - 60
+        T.text(s, "enter baixa  ·  i copia URL  ·  esc volta",
+               (px + 32, y), 15, T.TEXT_FAINT)
+
+    def draw(self, s, r):
+        pad, gap = 30, 14
+        head = 58
+
+        # ── header ──────────────────────────────────────────────────────────
+        if not self.running:
+            msg = self.error or "interface Qobuz não está no ar"
+            T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
+            T.text(s, msg, (r.x + pad, r.y + 58), 20, T.TEXT_DIM)
+            T.text(s, "enter abre a loja  ·  r atualiza",
+                   (r.x + pad, r.y + 90), 17, T.TEXT_FAINT)
+            if self.job:
+                self.app.job_panel(s, pygame.Rect(r.x + pad, r.y + 130,
+                                                  r.w - pad * 2, r.h - 180),
+                                   self.job)
+            return
+
+        if self.searching or self.query:
+            T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
+                   (r.x + pad, r.y + 16), 24, T.BLUE)
+        else:
+            T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
+
+        if not self.results and self.query:
+            T.text(s, f'nenhum disco com "{self.query}"',
+                   (r.centerx, r.centery), 22, T.TEXT_DIM, anchor="center")
+            T.text(s, "tenta outro nome",
+                   (r.centerx, r.centery + 30), 17, T.TEXT_FAINT, anchor="center")
+            return
+        if not self.results and not self.query:
+            T.text(s, "/ procura  ·  r atualiza",
+                   (r.centerx, r.centery), 20, T.TEXT_FAINT, anchor="center")
+            return
+
+        # ── resultados: como prateleiras ────────────────────────────────────
+        cw = (r.w - pad * 2 - gap * (self.COLS - 1)) // self.COLS
+        ch = cw + 58
+        view_h = r.h - head - 96
+        rows_vis = max(1, view_h // ch)
+
+        row = self.sel // self.COLS
+        if row * ch < self.target:
+            self.target = row * ch
+        elif (row + 1) * ch > self.target + rows_vis * ch:
+            self.target = (row + 1 - rows_vis) * ch
+        self.target = max(0, min(self.target,
+                                 max(0, (len(self.results) + self.COLS - 1)
+                                     // self.COLS - rows_vis) * ch))
+        dt = self.app.clock.get_time() / 1000.0
+        alpha = 1.0 - pow(2.718281828, -dt * 12.0) if dt > 0 else 0.28
+        self.scroll += (self.target - self.scroll) * alpha
+
+        clip = pygame.Rect(r.x, r.y + head, r.w, view_h)
+        old = s.get_clip()
+        s.set_clip(clip)
+        for i, item in enumerate(self.results):
+            cx = r.x + pad + (i % self.COLS) * (cw + gap)
+            cy = r.y + head + (i // self.COLS) * ch - int(self.scroll)
+            if cy > clip.bottom or cy + ch < clip.top:
+                continue
+            self._card(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
+        s.set_clip(old)
+
+        # contagem
+        n_found = len(self.results)
+        T.text(s, f"{n_found} discos", (r.right - pad, r.y + 20), 16,
+               T.TEXT_FAINT, anchor="topright")
+
+        if self.results:
+            item = self.results[self.sel]
+            hint = (f"{item.get('display_subtitle', '')} — "
+                    f"{item.get('display_title', '')}   ·   "
+                    f"/ procura   enter examina   r atualiza")
+            self.app.hint(s, r, hint)
+
+        if self.job:
+            self.app.job_panel(s, pygame.Rect(r.right - 380, r.y + head + 8,
+                                              360, 160), self.job)
+
+        # overlay de exame por cima de tudo
+        if self.examing:
+            self._draw_examing(s, r)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # JOGOS
 # ═══════════════════════════════════════════════════════════════════════════
 class GamesScreen(Screen):
@@ -1485,7 +1837,8 @@ class App:
 
         self.screens = [NowScreen(self), ShelfScreen(self), StackScreen(self),
                         DiaryScreen(self), SignalScreen(self), PhoneScreen(self),
-                        ToolsScreen(self), GamesScreen(self), SettingsScreen(self)]
+                        ToolsScreen(self), QobuzScreen(self), GamesScreen(self),
+                        SettingsScreen(self)]
         self.cur = 1                      # abre na ESTANTE, que é o assunto
         # No pendrive, INSTALAR vem primeiro e é onde a interface abre. A
         # estante de um medium ao vivo está vazia — abrir nela é a pior
@@ -2059,7 +2412,8 @@ class App:
                     # trilho — os mesmos lugares que todo mundo já conhece.
                     mapa = {0: pygame.K_RETURN, 1: pygame.K_ESCAPE,
                             2: pygame.K_s, 3: pygame.K_SLASH,
-                            6: pygame.K_TAB, 7: pygame.K_TAB}
+                            6: pygame.K_TAB, 7: pygame.K_TAB,
+                            8: pygame.K_2}  # L3 → estante
                     if ev.button in mapa:
                         pygame.event.post(pygame.event.Event(
                             pygame.KEYDOWN, key=mapa[ev.button], unicode="",

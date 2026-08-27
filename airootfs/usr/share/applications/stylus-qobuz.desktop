@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Stylus Qobuz
+Comment=Search and download from Qobuz
+Exec=/usr/local/bin/stylus-qobuz abrir
+Icon=audio-x-generic
+Terminal=false
+Type=Application
+Categories=Audio;Music;

@@ -2,8 +2,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  stylus-kde-shortcuts — roda no login do KDE
 # ═══════════════════════════════════════════════════════════════════════════
-#  Stock KDE + atalho Mod+M para a estante. NÃO mata nenhum processo KDE.
-#  Só aplica wallpaper e registra o atalho (que entra no próximo login).
+#  Stock KDE + atalhos Stylus. NÃO mata nenhum processo KDE.
+#  Só aplica wallpaper e registra atalhos (que entram no próximo login).
+#  Os atalhos Stylus usam seções próprias no kglobalshortcutsrc — não
+#  sobrescrevem nada do KDE.
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -16,17 +18,43 @@ fi
 # ── Numlock ────────────────────────────────────────────────────────────
 command -v numlockx &>/dev/null && numlockx on 2>/dev/null
 
-# ── Atalho: Mod+M → estante ──────────────────────────────────────────
-# Só registra se não existe. NÃO mata kglobalaccel5 — deixar o KDE
-# gerenciar o lifecycle. O atalho entra no próximo login.
+# ── Atalhos Stylus ────────────────────────────────────────────────────
+# Cada atalho tem sua PRÓPRIA seção no kglobalshortcutsrc — nunca mexe
+# nas seções do KDE (kwin, plasmashell, etc).
 KGSC="$HOME/.config/kglobalshortcutsrc"
-SHELF_ID="stylus-shelf"
 mkdir -p "$(dirname "$KGSC")"
-if ! grep -q "\[$SHELF_ID\]" "$KGSC" 2>/dev/null; then
+
+add_shortcut() {
+    local id="$1" name="$2" keys="$3"
+    grep -q "\[$id\]" "$KGSC" 2>/dev/null && return
     {
         echo ""
-        echo "[$SHELF_ID]"
-        echo "_k_friendly_name=Stylus Shelf"
-        echo "$SHELF_ID=Meta+M,none,Abrir estante"
+        echo "[$id]"
+        echo "_k_friendly_name=$name"
+        echo "$id=$keys,none,$name"
     } >> "$KGSC"
+}
+
+# Mod+M → estante (shelf)
+add_shortcut "stylus-shelf" "Stylus Shelf" "Meta+M"
+# Mod+D → deck (vinyl visualizer)
+add_shortcut "stylus-deck" "Stylus Deck" "Meta+D"
+# Mod+Q → qobuz search
+add_shortcut "stylus-qobuz" "Stylus Qobuz" "Meta+Q"
+# Mod+T → terminal (konsole)
+add_shortcut "stylus-term" "Stylus Terminal" "Meta+T"
+# Mod+P → phone sync
+add_shortcut "stylus-phone" "Stylus Phone" "Meta+P"
+# Mod+S → shelf (duplicate for convenience)
+add_shortcut "stylus-shelf2" "Stylus Shelf Alt" "Meta+S"
+
+# ── Dunst (notificações) ──────────────────────────────────────────────
+# Garantir que dunst roda no KDE — ele é o sistema de notificações do
+# Stylus e funciona tanto no i3 quanto no KDE.
+if command -v dunst &>/dev/null && ! pgrep -x dunst >/dev/null 2>&1; then
+    dunst &
 fi
+
+# ── Rofi (app launcher) ───────────────────────────────────────────────
+# O rofi funciona no KDE sem problemas — só precisa estar no PATH.
+# Não substitui o kickoff do KDE, só fica disponível para quem quiser.

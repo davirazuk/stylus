@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Stylus Notifications
+Exec=dunst
+Hidden=false
+NoDisplay=true
+X-KDE-autostart-after-desktop=true
+OnlyShowIn=KDE;

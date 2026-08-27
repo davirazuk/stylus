@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Stylus Deck
+Comment=Vinyl record visualizer
+Exec=/usr/local/bin/stylus-deck
+Icon=audio-x-generic
+Terminal=false
+Type=Application
+Categories=Audio;Music;

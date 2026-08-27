@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Stylus Shelf
+Comment=Browse your music collection
+Exec=/usr/local/bin/stylus-shelf
+Icon=audio-x-generic
+Terminal=false
+Type=Application
+Categories=Audio;Music;
