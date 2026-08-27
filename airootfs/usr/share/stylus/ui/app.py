@@ -28,6 +28,7 @@ import math
 import json
 import os
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -1326,11 +1327,10 @@ class ToolsScreen(Screen):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# QOBUZ — procurar e ouvir
+# QOBUZ — procurar e baixar
 #
-#  Dois modos: abrir no navegador para ouvir, ou baixar para a estante.
-#  A busca funciona SEM a interface qobuz-dl — abre o site direto.
-#  Se a interface estiver no ar, o download também fica disponível.
+#  Busca direto pela API do Qobuz (via stylus-qobuz buscar), sem navegador.
+#  Download precisa da interface qobuz-dl-gui no ar (servir antes).
 # ═══════════════════════════════════════════════════════════════════════════
 class QobuzScreen(Screen):
     name = "QOBUZ"
@@ -1338,7 +1338,6 @@ class QobuzScreen(Screen):
     COLS = 5
 
     API = "http://127.0.0.1:8765/api/search"
-    SEARCH_URL = "https://www.qobuz.com/search/album?q="
 
     def __init__(self, app):
         super().__init__(app)
@@ -1365,61 +1364,39 @@ class QobuzScreen(Screen):
             self.gui_up = False
 
     def _search(self):
-        """Busca via API local se disponível, senão fica vazio (usa / no teclado)."""
-        import urllib.request, urllib.parse
+        """Busca via stylus-qobuz buscar (API direta, sem navegador)."""
         if not self.query.strip():
             return
-        if self.gui_up:
-            q = urllib.parse.quote(self.query.strip())
-            try:
-                r = urllib.request.urlopen(f"{self.API}?q={q}&type=album&limit=25", timeout=15)
-                data = json.loads(r.read())
-                self.results = data.get("results", [])
-                self.sel = 0
-                self.scroll = 0.0
-                self.target = 0.0
-                self.error = None
+        self.searching = False
+        self.error = None
+        try:
+            r = subprocess.run(
+                ["stylus-qobuz", "buscar", self.query.strip()],
+                capture_output=True, text=True, timeout=20
+            )
+            out = r.stdout.strip()
+            if not out:
+                self.error = r.stderr.strip() or "resposta vazia"
                 return
-            except Exception as e:
-                self.error = str(e)
-        # Sem API — abre o site no navegador
-        self._open_web()
-
-    def _open_web(self):
-        """Abre a busca no site do Qobuz."""
-        import urllib.parse, subprocess
-        q = urllib.parse.quote(self.query.strip())
-        url = self.SEARCH_URL + q
-        for nav in ["firefox", "chromium", "xdg-open"]:
-            try:
-                subprocess.Popen([nav, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.app.toast("abrindo qobuz.com…")
+            data = json.loads(out)
+            if "error" in data:
+                self.error = data["error"]
                 return
-            except FileNotFoundError:
-                continue
-        self.app.toast("nenhum navegador encontrado")
-
-    def _open_album(self, item):
-        """Abre o álbum no navegador para ouvir."""
-        import subprocess
-        url = item.get("url", "")
-        if not url:
-            self.app.toast("sem URL")
-            return
-        for nav in ["firefox", "chromium", "xdg-open"]:
-            try:
-                subprocess.Popen([nav, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.app.toast("abrindo no Qobuz…")
-                self.examing = None
-                return
-            except FileNotFoundError:
-                continue
-        self.app.toast("nenhum navegador encontrado")
+            self.results = data.get("results", [])
+            self.sel = 0
+            self.scroll = 0.0
+            self.target = 0.0
+        except subprocess.TimeoutExpired:
+            self.error = "busca demorou demais"
+        except json.JSONDecodeError as e:
+            self.error = f"resposta inválida: {e}"
+        except Exception as e:
+            self.error = str(e)
 
     def _download(self, item):
-        """Baixa e arquiva — só se a interface estiver no ar."""
+        """Baixa e arquiva — precisa da interface qobuz-dl-gui no ar."""
         if not self.gui_up:
-            self.app.toast("interface Qobuz não está no ar")
+            self.app.toast("interface Qobuz não está no ar — stylus qobuz servir")
             return
         if self.job and not self.job.done:
             self.app.toast("já tem download rodando")
@@ -1446,18 +1423,13 @@ class QobuzScreen(Screen):
         if self.examing:
             if ev.key == pygame.K_ESCAPE:
                 self.examing = None
-            elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                self._open_album(self.examing)
             elif ev.key == pygame.K_d:
                 self._download(self.examing)
-            elif ev.key == pygame.K_o:
-                self._open_album(self.examing)
             elif ev.key == pygame.K_i:
-                import subprocess as _sp
                 url = self.examing.get("url", "")
                 if url:
-                    _sp.run(["xclip", "-selection", "clipboard"],
-                            input=url.encode(), timeout=3)
+                    subprocess.run(["xclip", "-selection", "clipboard"],
+                                   input=url.encode(), timeout=3)
                     self.app.toast("URL copiada")
             return True
 
@@ -1466,7 +1438,6 @@ class QobuzScreen(Screen):
             if ev.key == pygame.K_ESCAPE:
                 self.searching, self.query = False, ""
             elif ev.key == pygame.K_RETURN:
-                self.searching = False
                 self._search()
             elif ev.key == pygame.K_BACKSPACE:
                 self.query = self.query[:-1]
@@ -1503,7 +1474,7 @@ class QobuzScreen(Screen):
             self.sel = max(0, n - 1)
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if n:
-                self._examine(self.results[self.sel])
+                self.examing = self.results[self.sel]
         elif ev.key == pygame.K_r:
             self._check_gui()
             if self.query:
@@ -1567,14 +1538,14 @@ class QobuzScreen(Screen):
         s.blit(dim, r.topleft)
 
         # painel central
-        pw, ph = 520, 380
+        pw, ph = 520, 360
         px = r.x + (r.w - pw) // 2
         py = r.y + (r.h - ph) // 2
         T.panel(s, pygame.Rect(px, py, pw, ph), T.INK_LIFT, radius=16,
                 border=T.LINE)
 
         # disco grande no centro
-        T.text(s, "󰝡", (px + pw // 2, py + 80), 72, T.AMBER, anchor="center")
+        T.text(s, "󰝡", (px + pw // 2, py + 70), 72, T.AMBER, anchor="center")
 
         # informações
         title = item.get("display_title", "?")
@@ -1582,13 +1553,12 @@ class QobuzScreen(Screen):
         year = item.get("release_year", "")
         tracks = item.get("tracks", 0)
         quality = item.get("quality", "")
-        url = item.get("url", "")
 
-        T.text(s, title, (px + 32, py + 140), 24, T.TEXT, bold=True, maxw=pw - 64)
-        T.text(s, artist, (px + 32, py + 175), 20, T.AMBER, maxw=pw - 64)
+        T.text(s, title, (px + 32, py + 130), 24, T.TEXT, bold=True, maxw=pw - 64)
+        T.text(s, artist, (px + 32, py + 165), 20, T.AMBER, maxw=pw - 64)
 
         # detalhes
-        y = py + 215
+        y = py + 205
         detail_parts = []
         if year:
             detail_parts.append(f"lançamento: {year}")
@@ -1599,14 +1569,18 @@ class QobuzScreen(Screen):
         detail = "  ·  ".join(detail_parts)
         if detail:
             T.text(s, detail, (px + 32, y), 16, T.TEXT_DIM, maxw=pw - 64)
-            y += 28
 
-        if url:
-            T.text(s, url, (px + 32, y), 14, T.TEXT_FAINT, maxw=pw - 64)
+        # status do download
+        y = py + 250
+        if self.gui_up:
+            T.text(s, "d baixa para a estante", (px + 32, y), 16, T.GREEN)
+        else:
+            T.text(s, "interface off — stylus qobuz servir para baixar",
+                   (px + 32, y), 14, T.TEXT_FAINT)
 
         # ações
-        y = py + ph - 60
-        T.text(s, "enter ouve  ·  d baixa  ·  i copia URL  ·  esc volta",
+        y = py + ph - 50
+        T.text(s, "d baixa  ·  i copia URL  ·  esc volta",
                (px + 32, y), 15, T.TEXT_FAINT)
 
     def draw(self, s, r):
@@ -1614,7 +1588,7 @@ class QobuzScreen(Screen):
         head = 58
 
         # ── header ──────────────────────────────────────────────────────────
-        status = "pronto" if self.gui_up else "só busca (interface off)"
+        status = "pronto" if self.gui_up else "busca direta (interface off)"
         T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
         T.text(s, status, (r.right - pad, r.y + 24), 15,
                T.GREEN if self.gui_up else T.TEXT_FAINT, anchor="topright")
@@ -1623,10 +1597,17 @@ class QobuzScreen(Screen):
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
                    (r.x + pad, r.y + 52), 24, T.AMBER)
 
+        if self.error:
+            T.text(s, self.error, (r.centerx, r.centery - 20), 20,
+                   T.RED, anchor="center")
+            T.text(s, "/ procura de novo", (r.centerx, r.centery + 15),
+                   17, T.TEXT_FAINT, anchor="center")
+            return
+
         if not self.results and self.query:
             T.text(s, f'nenhum disco com "{self.query}"',
                    (r.centerx, r.centery), 22, T.TEXT_DIM, anchor="center")
-            T.text(s, "/ procura  ·  enter abre no site",
+            T.text(s, "/ procura de novo",
                    (r.centerx, r.centery + 30), 17, T.TEXT_FAINT, anchor="center")
             return
         if not self.results and not self.query:
@@ -1671,7 +1652,7 @@ class QobuzScreen(Screen):
             item = self.results[self.sel]
             hint = (f"{item.get('display_subtitle', '')} — "
                     f"{item.get('display_title', '')}   ·   "
-                    f"/ procura   enter ouve   d baixa")
+                    f"/ procura   enter examina   d baixa")
             self.app.hint(s, r, hint)
 
         if self.job:
@@ -1699,23 +1680,131 @@ class GamesScreen(Screen):
     def __init__(self, app):
         super().__init__(app)
         self.sel = 0
+        self.sub = "menu"  # menu | buscar | baixadas
+        self.query = ""
+        self.query_active = False
+        self.results = []
+        self.downloaded = []
+        self.downloaded_ids = set()
+        self.syncing = False
+        self.job = None
+        self._load_downloaded()
+
+    def _load_downloaded(self):
+        import json as _json
+        db_path = os.path.expanduser("~/.local/share/stylus/charts.json")
+        try:
+            with open(db_path) as f:
+                db = _json.load(f)
+            self.downloaded = list(db.get("downloaded", {}).values())
+            self.downloaded_ids = set(db.get("downloaded", {}).keys())
+        except (FileNotFoundError, _json.JSONDecodeError):
+            self.downloaded = []
+            self.downloaded_ids = set()
+
+    def _do_search(self):
+        import http.client as _http
+        import ssl as _ssl
+        import json as _json
+        try:
+            ctx = _ssl.create_default_context()
+            conn = _http.HTTPSConnection("api.enchor.us", timeout=30, context=ctx)
+            data = _json.dumps({"search": self.query, "page": 1}).encode()
+            conn.request("POST", "/search", body=data, headers={
+                "Content-Type": "application/json", "User-Agent": "stylus-ch/1.0"})
+            resp = conn.getresponse()
+            raw = resp.read()
+            conn.close()
+            if resp.status in (200, 201):
+                result = _json.loads(raw, strict=False)
+                self.results = result.get("data", [])[:20]
+        except Exception:
+            self.results = []
 
     def key(self, ev):
+        if self.sub == "buscar":
+            return self._key_buscar(ev)
+        elif self.sub == "baixadas":
+            return self._key_baixadas(ev)
+        return self._key_menu(ev)
+
+    def _key_menu(self, ev):
+        total = len(self.ACOES) + 3  # +3 for buscar, baixadas, sync
         if ev.key in (pygame.K_RIGHT, pygame.K_l, pygame.K_DOWN, pygame.K_j):
-            self.sel = (self.sel + 1) % len(self.ACOES)
+            self.sel = (self.sel + 1) % total
         elif ev.key in (pygame.K_LEFT, pygame.K_h, pygame.K_UP, pygame.K_k):
-            self.sel = (self.sel - 1) % len(self.ACOES)
+            self.sel = (self.sel - 1) % total
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            nome, cmd, binario = self.ACOES[self.sel]
-            import shutil as _sh
-            if _sh.which(binario):
-                self.app.toast(f"abrindo {nome}…")
-                spawn(cmd)
+            if self.sel < len(self.ACOES):
+                nome, cmd, binario = self.ACOES[self.sel]
+                import shutil as _sh
+                if _sh.which(binario):
+                    self.app.toast(f"abrindo {nome}…")
+                    spawn(cmd)
+                else:
+                    self.app.toast(f"{nome} não está instalado — "
+                                   f"`stylus app {binario}` resolve")
+            elif self.sel == len(self.ACOES):
+                self.sub = "buscar"
+                self.query_active = True
+                self.query = ""
+            elif self.sel == len(self.ACOES) + 1:
+                self._load_downloaded()
+                self.sub = "baixadas"
+                self.sel = 0
             else:
-                self.app.toast(f"{nome} não está instalado — "
-                               f"`stylus app {binario}` resolve")
+                self.app.toast("sincronizando pro celular…")
+                self.syncing = True
+                self.job = Job(["stylus-ch", "sync"], "sync clone hero")
         else:
             return False
+        return True
+
+    def _key_buscar(self, ev):
+        if self.query_active:
+            if ev.key == pygame.K_ESCAPE:
+                self.sub = "menu"
+                self.query_active = False
+                return True
+            elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                if self.query.strip():
+                    self._do_search()
+                self.query_active = False
+                return True
+            elif ev.key == pygame.K_BACKSPACE:
+                self.query = self.query[:-1]
+                return True
+            elif ev.unicode and ev.unicode.isprintable():
+                self.query += ev.unicode
+                return True
+        else:
+            if ev.key == pygame.K_ESCAPE:
+                self.sub = "menu"
+                return True
+            elif ev.key in (pygame.K_DOWN, pygame.K_j):
+                self.sel = (self.sel + 1) % max(1, len(self.results))
+            elif ev.key in (pygame.K_UP, pygame.K_k):
+                self.sel = (self.sel - 1) % max(1, len(self.results))
+            elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and self.results:
+                chart = self.results[self.sel]
+                cid = str(chart["chartId"])
+                if cid not in self.downloaded_ids:
+                    self.app.toast(f"baixando {chart['artist']} — {chart['name']}…")
+                    self.job = Job(["stylus-ch", "baixar", cid], chart["name"])
+                else:
+                    self.app.toast("já baixado")
+            elif ev.key == pygame.K_f:
+                self.query_active = True
+        return True
+
+    def _key_baixadas(self, ev):
+        if ev.key == pygame.K_ESCAPE:
+            self.sub = "menu"
+            return True
+        elif ev.key in (pygame.K_DOWN, pygame.K_j):
+            self.sel = (self.sel + 1) % max(1, len(self.downloaded))
+        elif ev.key in (pygame.K_UP, pygame.K_k):
+            self.sel = (self.sel - 1) % max(1, len(self.downloaded))
         return True
 
     def draw(self, s, r):
@@ -1723,9 +1812,22 @@ class GamesScreen(Screen):
         x, y = r.x + 44, r.y + 40
         T.text(s, "jogos", (x, y), 30, T.TEXT, bold=True)
         T.text(s, "porque nem tudo é disco", (x, y + 40), 18, T.TEXT_FAINT)
+
+        if self.sub == "buscar":
+            self._draw_buscar(s, r)
+        elif self.sub == "baixadas":
+            self._draw_baixadas(s, r)
+        else:
+            self._draw_menu(s, r, _sh)
+
+        self.app.job_panel(s, pygame.Rect(r.right - 340, r.bottom - 120,
+                                          300, 80), self.job)
+
+    def _draw_menu(self, s, r, _sh):
+        x, y = r.x + 44, r.y + 96
         cw, gap = 240, 24
         for i, (nome, _c, binario) in enumerate(self.ACOES):
-            box = pygame.Rect(x + i * (cw + gap), y + 96, cw, 150)
+            box = pygame.Rect(x + i * (cw + gap), y, cw, 150)
             sel = i == self.sel
             T.panel(s, box, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
                     border=T.AMBER if sel else T.LINE)
@@ -1735,7 +1837,92 @@ class GamesScreen(Screen):
             if not tem:
                 T.text(s, "não instalado", (box.centerx, box.centery + 34), 16,
                        T.TEXT_FAINT, anchor="center")
-        self.app.hint(s, r, "enter abre")
+
+        # CH songs row
+        y2 = y + 190
+        ch_actions = [
+            ("buscar músicas", "󰍉"),
+            (f"baixadas ({len(self.downloaded)})", "󰀙"),
+            ("sincronizar pro celular", "󰢶"),
+        ]
+        for i, (label, icon) in enumerate(ch_actions):
+            bx = pygame.Rect(x + i * (cw + gap), y2, cw, 60)
+            sel = i + len(self.ACOES) == self.sel
+            T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=10,
+                    border=T.AMBER if sel else T.LINE)
+            T.text(s, f"{icon}  {label}", bx.center, 20, T.TEXT if sel else T.TEXT_FAINT,
+                   bold=sel, anchor="center")
+
+        self.app.hint(s, r, "enter abre · ← → navega")
+
+    def _draw_buscar(self, s, r):
+        x, y = r.x + 44, r.y + 90
+
+        # Search bar
+        bar = pygame.Rect(x, y, 600, 44)
+        border = T.AMBER if self.query_active else T.LINE
+        T.panel(s, bar, T.INK_LIFT, radius=10, border=border)
+        placeholder = "digite o nome da música…" if not self.query else self.query
+        T.text(s, f"󰍉  {placeholder}", (bar.x + 14, bar.y + 11), 20,
+               T.TEXT if self.query else T.TEXT_FAINT)
+        if self.query_active:
+            # cursor blink
+            cw = T.font.size(self.query)[0]
+            pygame.draw.line(s, T.AMBER, (bar.x + 14 + cw + 2, bar.y + 10),
+                             (bar.x + 14 + cw + 2, bar.y + 32), 2)
+
+        # Results
+        y += 64
+        if self.results:
+            for i, c in enumerate(self.results[:15]):
+                sel = i == self.sel and not self.query_active
+                cid = str(c["chartId"])
+                downloaded = cid in self.downloaded_ids
+                marker = f"{c_g}✓ " if downloaded else "  "
+                name = c.get("name", "?")
+                artist = c.get("artist", "?")
+                charter = c.get("charter", "?")
+                line = f"{marker}{c_pink}{artist}{c_0} — {name}  {c_dim}({charter}){c_0}"
+                bg = T.INK_LIFT if sel else None
+                if bg:
+                    T.panel(s, pygame.Rect(x - 8, y - 2, 700, 28), bg, radius=6)
+                T.text(s, line, (x, y), 18, T.TEXT if sel else T.TEXT_FAINT)
+                y += 30
+        elif self.query and not self.query_active:
+            T.text(s, "nenhum resultado", (x, y), 18, T.TEXT_FAINT)
+
+        T.text(s, f"{c_dim}enter: baixar · f: buscar · esc: voltar{c_0}",
+               (x, r.bottom - 40), 16, T.TEXT_FAINT)
+
+    def _draw_baixadas(self, s, r):
+        x, y = r.x + 44, r.y + 90
+        T.text(s, f"baixadas  {c_dim}{len(self.downloaded)} charts{c_0}", (x, y), 24,
+               T.TEXT, bold=True)
+        y += 44
+
+        # Group by artist
+        by_artist = {}
+        for info in self.downloaded:
+            artist = info.get("artist", "Unknown")
+            by_artist.setdefault(artist, []).append(info)
+
+        flat = []
+        for artist in sorted(by_artist.keys()):
+            flat.append(("artist", artist, None))
+            for info in by_artist[artist]:
+                flat.append(("song", info.get("name", "?"), info))
+
+        for i, (kind, name, info) in enumerate(flat[:20]):
+            sel = i == self.sel
+            if kind == "artist":
+                T.text(s, f"  {c_pink}{name}{c_0}", (x, y), 18, T.TEXT, bold=True)
+            else:
+                marker = "    — "
+                T.text(s, f"{marker}{name}", (x, y), 17,
+                       T.TEXT if sel else T.TEXT_FAINT)
+            y += 26
+
+        T.text(s, f"{c_dim}esc: voltar{c_0}", (x, r.bottom - 40), 16, T.TEXT_FAINT)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

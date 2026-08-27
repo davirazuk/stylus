@@ -61,6 +61,7 @@ cat <<EOF
     ${b}stylus webdav${o} ${d}[...]${o}      põe a coleção do celular na estante, sem copiar
     ${b}stylus audio${o}              o caminho do sinal, medido, não prometido
     ${b}stylus apps${o} ${d}[NOME]${o}       instala o que não vem em pacote
+    ${b}stylus ch${o} ${d}[...]${o}          Clone Hero: buscar, baixar e sincronizar songs
     ${b}stylus gpu${o}                driver de vídeo
     ${b}stylus fontes${o}             por que apareceu caixinha no lugar do ícone
     ${b}stylus mode${o} ${d}[música|área]${o} troca entre a tela cheia e a área de trabalho
@@ -155,6 +156,7 @@ case "$cmd" in
     # para quem já o usava, sem nada dizer o que tinha acontecido. Um alias
     # custa uma linha; quebrar o dedo de quem já digitava custa mais.
     app|apps|software|loja) exec stylus-app "$@" ;;
+    ch|clonehero-ch) exec stylus-ch "$@" ;;
     gpu)         exec stylus-gpu "$@" ;;
     # Caixinha vazia na tela não diz nada sobre a causa, e as causas são quatro.
     fontes|fonts|glifos) exec stylus-fontes "$@" ;;

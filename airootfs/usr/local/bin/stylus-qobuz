@@ -188,6 +188,90 @@ case "${1:-}" in
         export PYTHONPATH="$TOOLS:$SHARE/deck${PYTHONPATH:+:$PYTHONPATH}"
         exec "$PY" "$TOOLS/run_queue_api.py" "$arq" "$@"
         ;;
+    buscar|search)
+        query="${2:-}"
+        [[ -n $query ]] || die "uso: stylus qobuz buscar TERMOS"
+        "$PY" - "$query" <<'PYEOF'
+import json, sys, os
+
+try:
+    from qobuz_dl.qopy import Client
+except ImportError:
+    print(json.dumps({"error": "qobuz-dl não instalado: pip install qobuz-dl"}))
+    sys.exit(1)
+
+cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
+if not os.path.isfile(cfg):
+    print(json.dumps({"error": "qobuz-dl não configurado: rode `qobuz-dl` uma vez para criar ~/.config/qobuz-dl/config.ini"}))
+    sys.exit(1)
+
+import configparser
+c = configparser.ConfigParser()
+c.read(cfg)
+app_id = c.get("DEFAULT", "app_id", fallback="")
+secrets = c.get("DEFAULT", "secrets", fallback="")
+token = c.get("DEFAULT", "user_auth_token", fallback="")
+user_id = c.get("DEFAULT", "user_id", fallback="")
+
+if not app_id or not token:
+    print(json.dumps({"error": "qobuz-dl sem credenciais"}))
+    sys.exit(1)
+
+secrets_list = [s.strip() for s in secrets.split(",") if s.strip()]
+try:
+    client = Client(
+        email="", pwd="",
+        app_id=app_id,
+        secrets=secrets_list,
+        skip_auth=True,
+    )
+    client.auth_with_token(user_id, token)
+except Exception as e:
+    print(json.dumps({"error": f"autenticação falhou: {e}"}))
+    sys.exit(1)
+
+query = sys.argv[1]
+try:
+    data = client.search_albums(query, limit=25)
+except Exception as e:
+    print(json.dumps({"error": f"busca falhou: {e}"}))
+    sys.exit(1)
+
+items = data.get("albums", {})
+if isinstance(items, dict):
+    items = items.get("items", [])
+if not isinstance(items, list):
+    items = []
+
+results = []
+for item in items:
+    artist_name = "?"
+    artist_data = item.get("artist", {})
+    if isinstance(artist_data, dict):
+        artist_name = artist_data.get("name", "?")
+    elif isinstance(artist_data, str):
+        artist_name = artist_data
+
+    depth = item.get("maximum_bit_depth", 16)
+    rate = item.get("maximum_sampling_rate", 44100)
+    if depth and depth > 16:
+        quality = "hi-res"
+    else:
+        quality = f"{depth}bit/{rate/1000:.1f}kHz"
+
+    results.append({
+        "id": item.get("id", ""),
+        "display_title": item.get("title", "?"),
+        "display_subtitle": artist_name,
+        "release_year": str(item.get("release_date_original", item.get("release_date_stream", "")))[:4],
+        "tracks": item.get("tracks_count", 0),
+        "quality": quality,
+        "url": f"https://www.qobuz.com/album/{item.get('id', '')}",
+    })
+
+print(json.dumps({"results": results}))
+PYEOF
+        ;;
     -h|--help|help) sed -n '11,22p' "$0" | sed 's/^# \?//' ;;
     *) die "não conheço \"$1\". \`stylus qobuz --help\`" ;;
 esac
