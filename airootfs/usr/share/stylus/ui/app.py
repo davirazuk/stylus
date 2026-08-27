@@ -1963,10 +1963,15 @@ class SettingsScreen(Screen):
         self.sel = 0
         self.job = None
         self._disk = None
+        self._lib_root = None
+
+    def enter(self):
+        self._lib_root = vinyl.library_root()
+        self._disk = None  # refresh disk info
 
     def opcoes(self):
         return [
-            (f"estante: {vinyl.library_root()}", None),
+            (f"estante: {self._lib_root or '?'}", None),
             ("procurar outra pasta de música", ["stylus-pickfolder"]),
             ("conferir o caminho do áudio", ["stylus-audio"]),
             ("driver de vídeo", ["stylus-gpu", "--status"]),
@@ -1978,7 +1983,7 @@ class SettingsScreen(Screen):
         if self._disk is not None:
             return self._disk
         try:
-            st = os.statvfs(vinyl.library_root())
+            st = os.statvfs(self._lib_root or "/")
             total = st.f_blocks * st.f_frsize
             free = st.f_bavail * st.f_frsize
             self._disk = (total, free)
@@ -2013,9 +2018,10 @@ class SettingsScreen(Screen):
         x, y = r.x + 44, r.y + 34
         T.text(s, "ajustes", (x, y), 30, T.TEXT, bold=True)
         y += 70
+        opt_w = min(560, r.w - 88)
         for i, (rotulo, cmd) in enumerate(self.opcoes()):
             sel = i == self.sel
-            box = pygame.Rect(x, y, 560, 44)
+            box = pygame.Rect(x, y, opt_w, 44)
             if sel:
                 T.panel(s, box, T.INK_LIFT, radius=9)
             T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 11),
@@ -2038,9 +2044,13 @@ class SettingsScreen(Screen):
 
         T.text(s, "a agulha é o único ponto em que um objeto vira som.",
                (x, r.bottom - 82), 19, T.TEXT_DIM)
-        self.app.job_panel(s, pygame.Rect(x + 600, r.y + 100,
-                                          r.right - x - 644, r.h - 200),
-                           self.job)
+        # job panel: right side if wide enough, otherwise below options
+        jp_w = min(340, r.w - opt_w - 120)
+        if jp_w > 120:
+            jp = pygame.Rect(x + opt_w + 40, r.y + 100, jp_w, r.h - 200)
+        else:
+            jp = pygame.Rect(x, y + 20, opt_w, r.bottom - y - 100)
+        self.app.job_panel(s, jp, self.job)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2646,12 +2656,15 @@ class App:
             # elapsed / remaining
             elapsed_s = int(self.playing.time_pos())
             total_s = al.duration
-            if total_s > 0:
+            if total_s and total_s > 0:
                 rem_s = max(0, total_s - elapsed_s)
                 T.text(s, f"{elapsed_s // 60}:{elapsed_s % 60:02d}",
                        (24, ty + 74), 12, T.TEXT_FAINT)
                 T.text(s, f"-{rem_s // 60}:{rem_s % 60:02d}",
                        (w - 24, ty + 74), 12, T.TEXT_FAINT, anchor="topright")
+            else:
+                T.text(s, f"{elapsed_s // 60}:{elapsed_s % 60:02d} / ?",
+                       (24, ty + 74), 12, T.TEXT_FAINT)
 
     # ── virar o lado ───────────────────────────────────────────────────────
     FLIP_DUR = 7.0

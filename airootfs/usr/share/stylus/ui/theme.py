@@ -40,9 +40,6 @@ GREEN      = (126, 217, 158)     # ok, sucesso, conectado
 RED        = (238, 122, 130)     # erro, alerta, desconectado
 PINK       = (245, 169, 184)     # rare — used sparingly
 
-# aliases para compatibilidade com código existente
-BLUE_LEGACY = BLUE
-
 # ── tipos ──────────────────────────────────────────────────────────────────
 _FONT_DIRS = ("/usr/share/fonts/TTF", "/usr/share/fonts/truetype",
               "/usr/share/fonts", os.path.expanduser("~/.local/share/fonts"))
@@ -151,13 +148,24 @@ def lerp(a, b, t):
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
+_shadow_cache = {}
+
 def shadow_card(surf, rect, radius=12):
-    """Sombra sob a capa — POUSADA, não colada. Blur escalado para não ser escada."""
-    # 4 camadas escalonadas com alpha mais forte — visível sobre INK mesmo
-    for i, alpha in ((10, 22), (6, 36), (3, 52), (1, 70)):
-        s = pygame.Surface((rect.w + i * 2, rect.h + i * 2), pygame.SRCALPHA)
-        pygame.draw.rect(s, (0, 0, 0, alpha), s.get_rect(),
-                         border_radius=radius + i)
+    """Sombra sob a capa — POUSADA, não colada. Cacheada por tamanho."""
+    key = (rect.w, rect.h, radius)
+    layers = _shadow_cache.get(key)
+    if layers is None:
+        layers = []
+        for i, alpha in ((10, 22), (6, 36), (3, 52), (1, 70)):
+            s = pygame.Surface((rect.w + i * 2, rect.h + i * 2), pygame.SRCALPHA)
+            pygame.draw.rect(s, (0, 0, 0, alpha), s.get_rect(),
+                             border_radius=radius + i)
+            layers.append((i, s))
+        # cap cache at 32 entries to avoid unbounded growth
+        if len(_shadow_cache) > 32:
+            _shadow_cache.clear()
+        _shadow_cache[key] = layers
+    for i, s in layers:
         surf.blit(s, (rect.x - i, rect.y - i + 3))
 
 
