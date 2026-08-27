@@ -609,22 +609,20 @@ class VinylActivity : AppCompatActivity() {
                                     lyricInner?.addView(tv)
                                 }
                                 // Safe smooth scroll after layout
-                                lyricPanel?.post {
+                                val lpSnapshot = lyricPanel
+                                lpSnapshot?.post {
                                     val inner = lyricInner ?: return@post
                                     if (inner.childCount == 0) return@post
                                     val childIdx = (curIdx - start).coerceIn(0, inner.childCount - 1)
                                     val curChild = inner.getChildAt(childIdx) ?: return@post
-                                    // The lyricPanel is a View, not ScrollView, so use the View's scroll
-                                    if (lyricPanel is android.widget.ScrollView) {
-                                        val scrollView = lyricPanel as android.widget.ScrollView
-                                        val targetY = (curChild.top + curChild.height / 2 - scrollView.height / 2)
+                                    if (lpSnapshot is android.widget.ScrollView) {
+                                        val targetY = (curChild.top + curChild.height / 2 - lpSnapshot.height / 2)
                                             .coerceAtLeast(0)
                                         if (targetY > 0) {
-                                            scrollView.smoothScrollTo(0, targetY)
+                                            lpSnapshot.smoothScrollTo(0, targetY)
                                         }
                                     } else {
-                                        // Fallback: just post invalidate
-                                        lyricPanel.invalidate()
+                                        lpSnapshot.invalidate()
                                     }
                                 }
                             }

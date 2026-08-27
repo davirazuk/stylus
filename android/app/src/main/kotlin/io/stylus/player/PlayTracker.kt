@@ -2,20 +2,15 @@ package io.stylus.player
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.os.Environment
-import java.io.File
 
 /**
- * Play history tracker — writes plays.tsv matching the PC format.
- * Format: timestamp\tartist\talbum\tpath
- *
- * Enables cross-platform shuffle forgetfulness and diary stats.
- * The sync agent (stylus-phone scrobbles) reads from /sdcard/stylus-scrobbles.tsv.
+ * Local play history tracker — SharedPreferences only.
+ * Scrobbling is handled externally by Pano Scrobbler via MediaSession,
+ * so this class does NOT write to /sdcard/stylus-scrobbles.tsv.
  */
 object PlayTracker {
 
     private const val COOLDOWN_MS = 30_000L  // 30s cooldown, same as PC
-    private const val PLAYS_FILE = "stylus-scrobbles.tsv"
 
     private var lastPlayedKey: String = ""
     private var lastPlayedAt: Long = 0L
@@ -43,13 +38,6 @@ object PlayTracker {
             .putLong("played_${album.id}", now)
             .putInt("playcount_${album.id}", (prefs.getInt("playcount_${album.id}", 0)) + 1)
             .apply()
-
-        // Write to /sdcard/stylus-scrobbles.tsv for cross-platform sync
-        try {
-            val file = File(Environment.getExternalStorageDirectory(), PLAYS_FILE)
-            val ts = (now / 1000).toInt()
-            file.appendText("$ts\t${album.artist}\t${album.name}\tandroid:${album.id}\n")
-        } catch (_: Exception) {}
     }
 
     fun playCount(albumId: Long, prefs: SharedPreferences): Int =

@@ -1,8 +1,12 @@
 package io.stylus.player
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
@@ -84,8 +88,48 @@ class BitPerfectPlayer(private val ctx: Context) {
         }
 
     init {
-        // Session must be created IMMEDIATELY so Pano Scrobbler can see it
         initSession()
+        detectUsbDac()
+        registerUsbReceiver()
+    }
+
+    // ── USB DAC detection ──────────────────────────────────────────────
+
+    private var usbDeviceId: Int = -1
+    private var usbReceiver: BroadcastReceiver? = null
+
+    private fun findUsbDac(): AudioDeviceInfo? {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+        }
+    }
+
+    private fun detectUsbDac() {
+        val usb = findUsbDac()
+        if (usb != null) {
+            val rates = usb.sampleRates?.toList()?.filter { it > 0 }?.sortedDescending()
+            Log.i("BitPerfect", "USB DAC: ${usb.productName} — rates=${rates?.joinToString()}Hz, id=${usb.id}")
+            usbDeviceId = usb.id
+        } else {
+            val gone = usbDeviceId
+            usbDeviceId = -1
+            if (gone != -1) Log.i("BitPerfect", "USB DAC disconnected — back to default sink")
+        }
+    }
+
+    private fun registerUsbReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        usbReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                detectUsbDac()
+            }
+        }
+        ctx.registerReceiver(usbReceiver, filter)
     }
 
     private fun disableSystemEffects(sessionId: Int) {
@@ -226,6 +270,7 @@ class BitPerfectPlayer(private val ctx: Context) {
     }
 
     fun release() {
+        usbReceiver?.let { ctx.unregisterReceiver(it) }
         session?.release()
         exo.release()
     }

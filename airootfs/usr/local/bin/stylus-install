@@ -638,6 +638,39 @@ case $GPU_CHOICE in
         GPU_PKGS=() ;;
 esac
 
+# ── Desktop environment ──────────────────────────────────────────────────────
+# i3 is the default: a listening machine should get out of the way. KDE is
+# offered for people who want a full desktop environment — it coexists with
+# Stylus sessions and is safe to install alongside.
+DESKTOP_CHOICE=i3
+DESKTOP_PKGS=()
+DESKTOP_SESSION="stylus.desktop"
+
+DESKTOP_CHOICE=$(ask_menu "Ambiente de desktop" \
+    i3    "i3wm — leve, minimalista, feito para música (recomendado)" \
+    kde   "KDE Plasma — ambiente completo, para quem quer um desktop de verdade") || exit 1
+
+case $DESKTOP_CHOICE in
+    kde)
+        DESKTOP_SESSION="plasma.desktop"
+        DESKTOP_PKGS=(
+            plasma-desktop plasma-workspace sddm
+            konsole dolphin ark gwenview
+            plasma-nm plasma-pa powerdevil
+            kde-gtk-config kvantum
+            xdg-desktop-portal-kde
+            ffmpegthumbnailer
+        )
+        info "KDE Plasma será instalado junto com o i3. O SDDM oferece os dois na tela de login."
+        ;;
+    i3)
+        DESKTOP_SESSION="stylus.desktop"
+        DESKTOP_PKGS=()
+        ;;
+esac
+
+(( ${#DESKTOP_PKGS[@]} )) && PACKAGES+=("${DESKTOP_PKGS[@]}")
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 case $MODE in
   alongside) plan="Criar uma partição $FSTYPE de $(( (FREE_END-FREE_START)/1024 )) GiB no espaço livre do $DISK.
@@ -659,6 +692,7 @@ ${c_b}  O STYLUS será instalado com estas configurações${c_reset}
     Sist. arquivos $FSTYPE
     Arquivo swap   $SWAP_MIB MiB
     Vídeo          $( (( ${#GPU_PKGS[@]} )) && echo "${GPU_PKGS[*]}" || echo 'nenhum (instale depois pelo stylus-app)' )
+    Desktop        ${DESKTOP_CHOICE} $( [[ $DESKTOP_CHOICE == kde ]] && echo '+ i3 (dual session)' || echo '' )
     Hardware       ${HW_PKGS[*]}
     Firmware       $FIRMWARE
     Nome da máquina $HOSTNAME
@@ -983,6 +1017,8 @@ XKB_MODEL=pc105
     printf 'STYLUS_DISK=%q\n'       "$DISK"
     printf 'STYLUS_MULTILIB=%q\n'   "$ENABLE_MULTILIB"
     printf 'STYLUS_NVIDIA=%q\n'     "$( [[ $GPU_CHOICE == nvidia ]] && echo 1 || echo 0 )"
+    printf 'STYLUS_DESKTOP=%q\n'    "$DESKTOP_CHOICE"
+    printf 'STYLUS_SESSION=%q\n'    "$DESKTOP_SESSION"
 } > "$MNT/root/.stylus-answers"
 chmod 600 "$MNT/root/.stylus-answers"
 
@@ -1226,10 +1262,105 @@ echo music > "/home/${STYLUS_USERNAME}/.config/stylus/mode"
 # nothing said, the greeter picks whichever sorts first - `stylus-desktop`,
 # the one that is not the point of the machine. This is where SDDM keeps that
 # answer, and seeding it is what makes the FIRST login land in music mode.
+# When KDE is installed, plasma.desktop becomes the default session.
 install -d -m 0755 /var/lib/sddm
+if [ "${STYLUS_DESKTOP:-i3}" = "kde" ]; then
+    # KDE: ensure plasma.desktop exists (plasma-desktop provides it, but guard)
+    if [ ! -f /usr/share/xsessions/plasma.desktop ]; then
+        mkdir -p /usr/share/xsessions
+        cat > /usr/share/xsessions/plasma.desktop <<'PLASMA'
+[Desktop Entry]
+Name=Plasma
+Comment=KDE Plasma Desktop
+Exec=/usr/bin/startplasma-x11
+Type=Application
+DesktopNames=KDE
+PLASMA
+    fi
+    SESSION_FILE="/usr/share/xsessions/plasma.desktop"
+
+    # KDE-specific user config: Breeze Dark, GTK theme, konsole profile
+    KDE_CONF="/home/${STYLUS_USERNAME}/.config"
+    mkdir -p "$KDE_CONF/plasmarc" "$KDE_CONF/gtk-3.0" "$KDE_CONF/gtk-4.0" \
+             "$KDE_CONF/konsole" "$KDE_CONF/autostart"
+
+    cat > "$KDE_CONF/plasmarc" <<'EOF'
+[Theme]
+name=Breeze Dark
+EOF
+
+    cat > "$KDE_CONF/gtk-3.0/settings.ini" <<'EOF'
+[Settings]
+gtk-theme-name=adw-gtk3-dark
+gtk-icon-theme-name=Papirus-Dark
+gtk-cursor-theme-name=Adwaita
+gtk-font-name=Noto Sans 11
+EOF
+    cp "$KDE_CONF/gtk-3.0/settings.ini" "$KDE_CONF/gtk-4.0/settings.ini"
+
+    for ver in qt5ct qt6ct; do
+        mkdir -p "$KDE_CONF/$ver"
+        cat > "$KDE_CONF/$ver/$ver.conf" <<EOF
+[Appearance]
+custom_palette=true
+icon_theme=Papirus-Dark
+style=Fusion
+
+[Fonts]
+general=@Variant(\0\0\0@\0\0\0\x12Noto Sans\0\0\0\n\0\0\0\0\x28\x7f\0\0\x14)
+EOF
+    done
+
+    cat > "$KDE_CONF/konsole/Stylus.profile" <<'EOF'
+[General]
+Name=Stylus
+Parent=FALLBACK/
+
+[Appearance]
+ColorScheme=Stylus
+Font=JetBrainsMono Nerd Font,12,-1,5,50,0,0,0,0,0
+UseCustomFont=true
+
+[Scrolling]
+HistoryMode=2
+EOF
+
+    cat > "$KDE_CONF/konsole/Stylus.colorscheme" <<'EOF'
+[Background]
+Color=7,8,11
+[Foreground]
+Color=204,208,224
+[General]
+Description=Stylus Dark
+Opacity=0.95
+Blur=true
+EOF
+
+    cat > "$KDE_CONF/autostart/stylus-kde.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Stylus KDE
+Exec=/usr/local/bin/stylus-kde-shortcuts
+Hidden=false
+NoDisplay=true
+X-KDE-autostart-after-desktop=true
+OnlyShowIn=KDE;
+EOF
+
+    # Sudoers: let stylus-mode toggle between KDE and i3 without password
+    cat > /etc/sudoers.d/stylus-mode <<SUDOERS
+${STYLUS_USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session plasma.desktop, /usr/local/bin/stylus-set-session stylus.desktop
+SUDOERS
+    chmod 0440 /etc/sudoers.d/stylus-mode
+
+    ok "KDE Plasma configurado como sessão padrão"
+else
+    SESSION_FILE="/usr/share/xsessions/stylus.desktop"
+fi
+
 cat > /var/lib/sddm/state.conf <<SDDMSTATE
 [Last]
-Session=/usr/share/xsessions/stylus.desktop
+Session=${SESSION_FILE}
 User=${STYLUS_USERNAME}
 SDDMSTATE
 chown -R sddm:sddm /var/lib/sddm 2>/dev/null || true
@@ -1261,6 +1392,9 @@ ${c_grn}  O STYLUS está instalado.${c_reset}
     ${c_b}Mod+Shift+A${c_reset} para o catálogo de programas, e instale navegador,
     jogos, drivers e o que mais quiser.
 
+$( [[ $DESKTOP_CHOICE == kde ]] && echo "    KDE Plasma é a sessão padrão. Para alternar para i3, use
+    ${c_b}stylus-mode toggle${c_reset} ou escolha na tela de login do SDDM.
+" )
     Para mudar ou consertar o próprio sistema, ${c_b}stylus claude${c_reset} (ou
     ${c_b}Mod+C${c_reset}) abre a fonte dele com o Claude Code, aqui na máquina.
 
