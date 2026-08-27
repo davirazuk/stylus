@@ -62,6 +62,32 @@ def spawn(cmd):
         return False
 
 
+# ── favoritos ──────────────────────────────────────────────────────────────
+_FAV_FILE = os.path.join(vinyl.STATE_DIR, "favorites.json")
+
+def _load_favorites():
+    try:
+        with open(_FAV_FILE) as f:
+            return set(json.load(f))
+    except (OSError, json.JSONDecodeError):
+        return set()
+
+def _save_favorites(favs):
+    os.makedirs(os.path.dirname(_FAV_FILE), exist_ok=True)
+    with open(_FAV_FILE, "w") as f:
+        json.dump(sorted(favs), f)
+
+def _toggle_favorite(folder):
+    favs = _load_favorites()
+    key = os.path.normpath(folder)
+    if key in favs:
+        favs.discard(key)
+    else:
+        favs.add(key)
+    _save_favorites(favs)
+    return key in favs
+
+
 class Job:
     """Um comando cuja saída aparece na tela enquanto ele roda.
 
@@ -156,6 +182,18 @@ class NowScreen(Screen):
             return True
         if ev.key == pygame.K_p:
             spawn(["playerctl", "previous"])
+            return True
+        # Sleep timer: t cicla 30m → 60m → 90m → off
+        if ev.key == pygame.K_t:
+            self.app.toggle_sleep()
+            return True
+        # Shuffle toggle: s
+        if ev.key == pygame.K_s:
+            self.app.toggle_shuffle()
+            return True
+        # Repeat toggle: R (shift+r)
+        if ev.key == pygame.K_r and (ev.mod & pygame.KMOD_SHIFT):
+            self.app.toggle_repeat()
             return True
         # Busca e volume do sofá: no modo música esta tela é o controle
         # remoto. ←/→ puxam a agulha dez segundos, +/- tocam o volume — as
@@ -294,6 +332,21 @@ class NowScreen(Screen):
                 else:
                     yl += 12
 
+        # Shuffle/repeat state icons
+        icons = []
+        if self.app.shuffle:
+            icons.append("🔀")
+        if self.app.repeat == 1:
+            icons.append("🔂")
+        elif self.app.repeat == 2:
+            icons.append("🔁")
+        if self.app._sleep_minutes > 0:
+            remaining = max(0, int((self.app._sleep_end - time.time()) / 60))
+            icons.append(f"⏰{remaining}m")
+        if icons:
+            T.text(s, "  ".join(icons), (r.right - 20, r.bottom - 50), 20,
+                   T.AMBER, anchor="bottomright")
+
         self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
                             "n/p faixa   ←/→ busca   v/b lado   +/- volume   "
                             + ("D deck sozinho: ligado" if self.app.auto_deck
@@ -379,7 +432,10 @@ class ShelfScreen(Screen):
             q = self.query.lower()
             its = [i for i in its
                    if q in i["artist"].lower() or q in i["name"].lower()]
-        if self.order == "esquecidos":
+        if self.order == "favoritos":
+            favs = _load_favorites()
+            its = [i for i in its if os.path.normpath(i["folder"]) in favs]
+        elif self.order == "esquecidos":
             its = sorted(its, key=lambda i: i["last"])
         elif self.order == "mais postos":
             its = sorted(its, key=lambda i: -i["plays"])
@@ -435,7 +491,7 @@ class ShelfScreen(Screen):
             self.searching, self.query = True, ""
             return True
         if ev.key == pygame.K_o:
-            ordens = ["artista", "esquecidos", "mais postos"]
+            ordens = ["artista", "esquecidos", "mais postos", "favoritos"]
             self.order = ordens[(ordens.index(self.order) + 1) % len(ordens)]
             self.sel = 0
             return True
@@ -465,12 +521,17 @@ class ShelfScreen(Screen):
             d = vinyl.draw_record([i["folder"] for i in its])
             if d:
                 self.app.put_on(d)
+        elif ev.key == pygame.K_f:
+            folder = its[self.sel]["folder"]
+            is_fav = _toggle_favorite(folder)
+            self.app.toast("favorito" if is_fav else "removido dos favoritos")
         else:
             return False
         return True
 
     def draw(self, s, r):
         its = self.items()
+        favs = _load_favorites()
         pad, gap = 30, 18
         cw = (r.w - pad * 2 - gap * (self.COLS - 1)) // self.COLS
         ch = cw + 62
@@ -531,6 +592,9 @@ class ShelfScreen(Screen):
             if cy > clip.bottom or cy + ch < clip.top:
                 continue
             self._card(s, pygame.Rect(cx, cy, cw, cw), it, i == self.sel)
+            # favorito: estrela âmbar no canto superior direito
+            if os.path.normpath(it["folder"]) in favs:
+                T.text(s, "★", (cx + cw - 8, cy + 4), 18, T.AMBER, anchor="topright")
             # 14 e não 8: o disco selecionado levanta 6px para cada lado, e
             # com a legenda colada nela mesma ela encostava na capa levantada.
             ty = cy + cw + 14
@@ -538,6 +602,21 @@ class ShelfScreen(Screen):
                    T.TEXT if i == self.sel else T.TEXT_DIM, maxw=cw)
             T.text(s, it["artist"], (cx, ty + 22), 15, T.TEXT_FAINT, maxw=cw)
         s.set_clip(old)
+
+        # Now-playing bar — thin amber strip at the bottom if music is playing
+        snap = self.app.playing.session.snapshot()
+        if snap.get("path") or snap.get("source") != "none":
+            bar_h = 36
+            bar = pygame.Rect(r.x, r.bottom - bar_h - 48, r.w, bar_h)
+            pygame.draw.rect(s, T.INK_LIFT, bar, border_radius=8)
+            pygame.draw.rect(s, T.AMBER_DIM, bar, 1, border_radius=8)
+            np_title = snap.get("title", "") or ""
+            np_artist = snap.get("artist", "") or ""
+            if np_title:
+                label = f"▶ {np_artist} — {np_title}" if np_artist else f"▶ {np_title}"
+                T.text(s, label, (bar.x + 14, bar.centery - 9), 16, T.AMBER, maxw=bar.w - 100)
+            T.text(s, "enter = ver o disco", (bar.right - 14, bar.centery - 9), 14,
+                   T.TEXT_FAINT, anchor="topright")
 
         sel = its[self.sel]
         self.app.hint(
@@ -1899,6 +1978,12 @@ class App:
         # Transição entre seções: fade rápido ao trocar de tela.
         self._trans_alpha = 0.0
         self._trans_target = 0.0
+        # Sleep timer: minutes remaining, 0 = off
+        self._sleep_minutes = 0
+        self._sleep_end = 0.0
+        # Shuffle/repeat state
+        self.shuffle = False
+        self.repeat = 0  # 0=off, 1=repeat side, 2=repeat album
         # O lado em que o disco está, para saber quando ele VIRA. Ver
         # _watch_side: no modo música esta tela é a sessão inteira, e a tese
         # do sistema acontecendo num balãozinho de canto seria pouco.
@@ -2160,6 +2245,26 @@ class App:
     def toast(self, msg, secs=3.0):
         self._toast, self._toast_until = msg, time.time() + secs
         self._toast_t = time.time()
+
+    def toggle_sleep(self):
+        """Cicla o sleep timer: off → 30m → 60m → 90m → off."""
+        cycle = [0, 30, 60, 90]
+        idx = cycle.index(self._sleep_minutes) if self._sleep_minutes in cycle else 0
+        self._sleep_minutes = cycle[(idx + 1) % len(cycle)]
+        if self._sleep_minutes > 0:
+            self._sleep_end = time.time() + self._sleep_minutes * 60
+            self.toast(f"sleep timer: {self._sleep_minutes} minutos")
+        else:
+            self.toast("sleep timer desligado")
+
+    def toggle_shuffle(self):
+        self.shuffle = not self.shuffle
+        self.toast("embaralhar: " + ("ligado" if self.shuffle else "desligado"))
+
+    def toggle_repeat(self):
+        labels = ["desligado", "repetir lado", "repetir álbum"]
+        self.repeat = (self.repeat + 1) % 3
+        self.toast("repetir: " + labels[self.repeat])
 
     @staticmethod
     def volume_pct():
@@ -2523,6 +2628,11 @@ class App:
                 v.set_alpha(int(255 * (1.0 - ease)))
                 self.surf.blit(v, (0, 0))
             pygame.display.flip()
+            # Sleep timer: pause when time runs out
+            if self._sleep_minutes > 0 and time.time() >= self._sleep_end:
+                spawn(["playerctl", "pause"])
+                self.toast(f"pause — timer de {self._sleep_minutes}m expirou")
+                self._sleep_minutes = 0
             self.clock.tick(FPS)
 
     def _idle_deck(self):

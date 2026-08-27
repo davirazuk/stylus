@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("stylus", MODE_PRIVATE)
+        PlayTracker.init(this)
         sortMode = prefs.getInt("sort_mode", 0)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -66,6 +67,12 @@ class MainActivity : AppCompatActivity() {
         window.navigationBarColor = 0xFF050608.toInt()
 
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF050608.toInt()) }
+
+        // Ambient particles — floating amber dust behind everything
+        val particles = AmbientParticles(this)
+        root.addView(particles, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
 
         // Grid FIRST — it's behind everything
         recycler = RecyclerView(this).apply {
@@ -616,14 +623,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun recordPlay(albumId: Long) {
-        prefs.edit()
-            .putLong("played_$albumId", System.currentTimeMillis())
-            .putInt("playcount_$albumId", prefs.getInt("playcount_$albumId", 0) + 1)
-            .apply()
+        val album = filteredAlbums.find { it.id == albumId } ?: allAlbums.find { it.id == albumId } ?: return
+        PlayTracker.record(album, prefs)
     }
 
     private fun List<Library.Album>.recentlyPlayed(prefs: SharedPreferences): List<Library.Album> {
-        return sortedByDescending { prefs.getLong("played_${it.id}", 0L) }
+        return sortedByDescending { PlayTracker.lastPlayed(it.id, prefs) }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -758,9 +763,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Recently played indicator + play count
-            val lastPlayed = prefs.getLong("played_${album.id}", 0L)
-            val playCount = prefs.getInt("playcount_${album.id}", 0)
-            if (lastPlayed > 0 && System.currentTimeMillis() - lastPlayed < 7 * 24 * 60 * 60 * 1000) {
+            val playCount = PlayTracker.playCount(album.id, prefs)
+            if (PlayTracker.wasRecent(album.id, prefs)) {
                 holder.artist.setTextColor(0xFFF0A030.toInt())  // amber — recently played
             } else {
                 holder.artist.setTextColor(0xFF506078.toInt())
