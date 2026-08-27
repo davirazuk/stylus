@@ -2,10 +2,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  stylus-kde-shortcuts — roda no login do KDE
 # ═══════════════════════════════════════════════════════════════════════════
-#  Stock KDE + atalhos Stylus. NÃO mata nenhum processo KDE.
-#  Só aplica wallpaper e registra atalhos (que entram no próximo login).
-#  Os atalhos Stylus usam seções próprias no kglobalshortcutsrc — não
-#  sobrescrevem nada do KDE.
+#  Stock KDE + atalhos Stylus + configs visuais. NÃO mata nenhum processo
+#  KDE. Os atalhos Stylus usam seções próprias no kglobalshortcutsrc —
+#  não sobrescrevem nada do KDE.
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -18,9 +17,13 @@ fi
 # ── Numlock ────────────────────────────────────────────────────────────
 command -v numlockx &>/dev/null && numlockx on 2>/dev/null
 
+# ── Tema Kvantum ──────────────────────────────────────────────────────
+# Aplica o tema Stylus no Kvantum (se instalado)
+if command -v kvantummanager &>/dev/null && [[ -d /usr/share/Kvantum/Stylus ]]; then
+    kvantummanager -x Stylus 2>/dev/null || true
+fi
+
 # ── Atalhos Stylus ────────────────────────────────────────────────────
-# Cada atalho tem sua PRÓPRIA seção no kglobalshortcutsrc — nunca mexe
-# nas seções do KDE (kwin, plasmashell, etc).
 KGSC="$HOME/.config/kglobalshortcutsrc"
 mkdir -p "$(dirname "$KGSC")"
 
@@ -35,26 +38,53 @@ add_shortcut() {
     } >> "$KGSC"
 }
 
-# Mod+M → estante (shelf)
+# Música
 add_shortcut "stylus-shelf" "Stylus Shelf" "Meta+M"
-# Mod+D → deck (vinyl visualizer)
 add_shortcut "stylus-deck" "Stylus Deck" "Meta+D"
-# Mod+Q → qobuz search
 add_shortcut "stylus-qobuz" "Stylus Qobuz" "Meta+Q"
-# Mod+T → terminal (konsole)
-add_shortcut "stylus-term" "Stylus Terminal" "Meta+T"
-# Mod+P → phone sync
 add_shortcut "stylus-phone" "Stylus Phone" "Meta+P"
-# Mod+S → shelf (duplicate for convenience)
-add_shortcut "stylus-shelf2" "Stylus Shelf Alt" "Meta+S"
+
+# Sistema
+add_shortcut "stylus-term" "Stylus Terminal" "Meta+T"
+add_shortcut "stylus-mode" "Stylus Toggle Mode" "Meta+Escape"
+
+# ── Dolphin config ────────────────────────────────────────────────────
+# Detalhes, fundo escuro, colunas úteis
+DOLPHIN_RC="$HOME/.config/dolphinrc"
+if [[ -f "$DOLPHIN_RC" ]]; then
+    # Mostrar barra de localização (path bar)
+    sed -i 's/ShowLocationBarInNewTabs=.*/ShowLocationBarInNewTabs=true/' "$DOLPHIN_RC" 2>/dev/null
+    sed -i 's/ShowFullPath=.*/ShowFullPath=false/' "$DOLPHIN_RC" 2>/dev/null
+else
+    mkdir -p "$(dirname "$DOLPHIN_RC")"
+    cat > "$DOLPHIN_RC" <<'EOF'
+[General]
+ShowLocationBarInNewTabs=true
+ShowFullPath=false
+ShowStatusBar=true
+ShowSortButton=true
+ShowZoomButton=true
+
+[Settings]
+ShowPreviewForFolders=true
+EOF
+fi
+
+# ── Konsole — perfil Stylus como padrão ───────────────────────────────
+KONSOLE_PROF="$HOME/.config/konsolerc"
+if [[ -f "$KONSOLE_PROF" ]]; then
+    # Tornar o perfil Stylus o padrão para novos terminais
+    if grep -q 'Stylus' "$KONSOLE_PROF" 2>/dev/null; then
+        sed -i 's/DefaultProfile=.*/DefaultProfile=Stylus.profile/' "$KONSOLE_PROF" 2>/dev/null
+    fi
+fi
 
 # ── Dunst (notificações) ──────────────────────────────────────────────
-# Garantir que dunst roda no KDE — ele é o sistema de notificações do
-# Stylus e funciona tanto no i3 quanto no KDE.
 if command -v dunst &>/dev/null && ! pgrep -x dunst >/dev/null 2>&1; then
     dunst &
 fi
 
-# ── Rofi (app launcher) ───────────────────────────────────────────────
-# O rofi funciona no KDE sem problemas — só precisa estar no PATH.
-# Não substitui o kickoff do KDE, só fica disponível para quem quiser.
+# ── KWin — desabilitar compostor se lento ──────────────────────────────
+# O KWin tem um compositor que pode causar input lag em jogos.
+# Se o usuário tem GPU dedicada, vale manter; se é integrada, desligar
+# ajuda. Aqui só documentamos — quem quiser desliga com Alt+Shift+F12.

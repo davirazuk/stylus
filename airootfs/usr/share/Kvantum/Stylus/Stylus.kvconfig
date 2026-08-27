@@ -1,0 +1,59 @@
+[Stylus]
+Author=davirazuk
+Description=Stylus dark theme for Kvantum — amber soul, crushed black
+License=MIT
+Type=Dark
+
+# Core
+normal=all
+focus=all
+separator=1
+tab=true
+tabbar=false
+
+# Colors
+# base: #07080b, highlight: #1a1c28, text: #e2e7f0
+# accent: #f0a030 (amber), link: #5bcefa (cyan)
+base_color=#07080b
+highlight_color=#1a1c28
+text_color=#e2e7f0
+focus_color=#f0a030
+accent_color=#f0a030
+
+# Translucency
+translucent_windows=true
+translucent_backgrounds=true
+
+# Button
+button=true
+button_presentation=0
+splitter_button=true
+
+# Scrollbar
+scrollbar=scrollbar
+scrollbar_width=10
+scrollbar_in_view=true
+
+# Menu
+menu=true
+menuitem=true
+menubar=true
+toolbar=false
+
+# Tree/ListView
+treeview=true
+listview=true
+
+# Dialog
+dialog=true
+tooltip=true
+
+# Frame
+frame=false
+groupbox=false
+
+# Slider
+slider=false
+
+# Progress
+progressbar=true

@@ -167,7 +167,10 @@ def shadow_card(surf, rect, radius=12):
 class Particles:
     """Poeira atmosférica — pontos âmbar que flutuam no fundo."""
 
-    def __init__(self, w, h, n=24):
+    def __init__(self, w, h, n=0):
+        # scale particle count to screen area (baseline: 24 at 1280x720)
+        if n <= 0:
+            n = max(8, min(40, int(w * h / 38400)))
         self.w, self.h = w, h
         self.particles = []
         for _ in range(n):

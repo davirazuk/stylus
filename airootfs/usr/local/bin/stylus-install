@@ -1278,14 +1278,20 @@ PLASMA
     fi
     SESSION_FILE="/usr/share/xsessions/plasma.desktop"
 
-    # KDE-specific user config: Breeze Dark, GTK theme, konsole profile
+    # KDE-specific user config: Breeze Dark, GTK theme, konsole profile, Kvantum
     KDE_CONF="/home/${STYLUS_USERNAME}/.config"
     mkdir -p "$KDE_CONF/plasmarc" "$KDE_CONF/gtk-3.0" "$KDE_CONF/gtk-4.0" \
-             "$KDE_CONF/konsole" "$KDE_CONF/autostart"
+             "$KDE_CONF/konsole" "$KDE_CONF/autostart" "$KDE_CONF/Kvantum"
 
     cat > "$KDE_CONF/plasmarc" <<'EOF'
 [Theme]
 name=Breeze Dark
+EOF
+
+    # Kvantum Stylus theme
+    cat > "$KDE_CONF/Kvantum/kvantum.kvconfig" <<'EOF'
+[General]
+theme=Stylus
 EOF
 
     cat > "$KDE_CONF/gtk-3.0/settings.ini" <<'EOF'

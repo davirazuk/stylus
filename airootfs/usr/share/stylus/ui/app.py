@@ -333,17 +333,17 @@ class NowScreen(Screen):
                 else:
                     yl += 12
 
-        # Shuffle/repeat state icons
+        # Shuffle/repeat state icons — Nerd Font glyphs for consistency
         icons = []
         if self.app.shuffle:
-            icons.append("🔀")
+            icons.append(T.icon("󰒟"))  # nf-md-shuffle
         if self.app.repeat == 1:
-            icons.append("🔂")
+            icons.append(T.icon("󰑙"))  # nf-md-repeat_once
         elif self.app.repeat == 2:
-            icons.append("🔁")
+            icons.append(T.icon("󰑖"))  # nf-md-repeat
         if self.app._sleep_minutes > 0:
             remaining = max(0, int((self.app._sleep_end - time.time()) / 60))
-            icons.append(f"⏰{remaining}m")
+            icons.append(f"{T.icon('󰅐')}{remaining}m")  # nf-md-timer
         if icons:
             T.text(s, "  ".join(icons), (r.right - 20, r.bottom - 50), 20,
                    T.AMBER, anchor="bottomright")
@@ -1962,6 +1962,7 @@ class SettingsScreen(Screen):
         super().__init__(app)
         self.sel = 0
         self.job = None
+        self._disk = None
 
     def opcoes(self):
         return [
@@ -1972,6 +1973,27 @@ class SettingsScreen(Screen):
             ("atualizar o STYLUS", ["stylus-update"]),
             ("sobre", None),
         ]
+
+    def _disk_info(self):
+        if self._disk is not None:
+            return self._disk
+        try:
+            st = os.statvfs(vinyl.library_root())
+            total = st.f_blocks * st.f_frsize
+            free = st.f_bavail * st.f_frsize
+            self._disk = (total, free)
+        except Exception:                 # noqa: BLE001
+            self._disk = (0, 0)
+        return self._disk
+
+    def _stylus_version(self):
+        try:
+            r = subprocess.run(["git", "-C", "/var/lib/stylus/repo", "log",
+                                "-1", "--format=%h %s"],
+                               capture_output=True, text=True, timeout=3)
+            return r.stdout.strip() or "?"
+        except Exception:                 # noqa: BLE001
+            return "?"
 
     def key(self, ev):
         ops = self.opcoes()
@@ -2000,12 +2022,22 @@ class SettingsScreen(Screen):
                    20, T.TEXT if sel else (T.TEXT_DIM if cmd else T.TEXT_FAINT),
                    maxw=box.w - 30)
             y += 50
-        T.text(s, "STYLUS", (x, r.bottom - 150), 40, T.AMBER, bold=True)
-        T.text(s, "a agulha é o único ponto em que um objeto vira som.",
-               (x, r.bottom - 100), 19, T.TEXT_DIM)
-        T.text(s, "tudo aqui existe para deixar esse ponto o mais curto e o "
-                  "mais deliberado possível.", (x, r.bottom - 74), 19,
+
+        # version + disk info
+        y_info = r.bottom - 160
+        T.text(s, "STYLUS", (x, y_info), 40, T.AMBER, bold=True)
+        T.text(s, f"build: {self._stylus_version()}", (x, y_info + 46), 16,
                T.TEXT_FAINT)
+        total, free = self._disk_info()
+        if total > 0:
+            used_gb = (total - free) / (1024 ** 3)
+            total_gb = total / (1024 ** 3)
+            pct = int((total - free) / total * 100)
+            disk_txt = f"disco: {used_gb:.1f}/{total_gb:.1f} GB ({pct}%)"
+            T.text(s, disk_txt, (x, y_info + 68), 16, T.TEXT_FAINT)
+
+        T.text(s, "a agulha é o único ponto em que um objeto vira som.",
+               (x, r.bottom - 82), 19, T.TEXT_DIM)
         self.app.job_panel(s, pygame.Rect(x + 600, r.y + 100,
                                           r.right - x - 644, r.h - 200),
                            self.job)
@@ -2187,6 +2219,7 @@ class App:
         self.stack = self._stack_load()
         self._toast = ""
         self._toast_until = 0.0
+        self._toast_kind = "info"
         self._toast_t = 0.0       # momento em que o toast apareceu
         # Transição entre seções: fade rápido ao trocar de tela.
         self._trans_alpha = 0.0
@@ -2455,9 +2488,10 @@ class App:
         self._backdrops[al.cover] = blur
         return blur
 
-    def toast(self, msg, secs=3.0):
+    def toast(self, msg, secs=3.0, kind="info"):
         self._toast, self._toast_until = msg, time.time() + secs
         self._toast_t = time.time()
+        self._toast_kind = kind
 
     def toggle_sleep(self):
         """Cicla o sleep timer: off → 30m → 60m → 90m → off."""
@@ -2480,15 +2514,22 @@ class App:
         self.toast("repetir: " + labels[self.repeat])
 
     @staticmethod
-    def volume_pct():
-        """O volume DEPOIS do pamixer ter mexido, lido de novo — mostrar o
-        número que ficou, não o que se pediu, é o que faz o balão valer."""
+    _volume_cache = (0, 0)
+
+    @classmethod
+    def volume_pct(cls):
+        """Volume atual (0-100). Throttled: 1 consulta/frame no máximo."""
+        cls._audio_level_counter += 1
+        if cls._audio_level_counter % 5 != 0:
+            return cls._volume_cache[0]
         try:
             r = subprocess.run(["pamixer", "--get-volume"],
                                capture_output=True, text=True, timeout=2)
-            return int(r.stdout.strip() or 0)
+            val = int(r.stdout.strip() or 0)
+            cls._volume_cache = (val, cls._audio_level_counter)
+            return val
         except Exception:                 # noqa: BLE001
-            return "?"
+            return cls._volume_cache[0]
 
     _audio_level_cache = (0.0, 0)
     _audio_level_counter = 0
@@ -2602,6 +2643,15 @@ class App:
             pygame.draw.rect(s, T.AMBER,
                              (bar.x, bar.y, int(bar.w * frac), bar.h),
                              border_radius=3)
+            # elapsed / remaining
+            elapsed_s = int(self.playing.time_pos())
+            total_s = al.duration
+            if total_s > 0:
+                rem_s = max(0, total_s - elapsed_s)
+                T.text(s, f"{elapsed_s // 60}:{elapsed_s % 60:02d}",
+                       (24, ty + 74), 12, T.TEXT_FAINT)
+                T.text(s, f"-{rem_s // 60}:{rem_s % 60:02d}",
+                       (w - 24, ty + 74), 12, T.TEXT_FAINT, anchor="topright")
 
     # ── virar o lado ───────────────────────────────────────────────────────
     FLIP_DUR = 7.0
@@ -2702,7 +2752,9 @@ class App:
         panel_s = pygame.Surface((box.w, box.h), pygame.SRCALPHA)
         pygame.draw.rect(panel_s, (*T.INK_LIFT, alpha), panel_s.get_rect(),
                          border_radius=23)
-        pygame.draw.rect(panel_s, (*T.LINE, alpha), panel_s.get_rect(),
+        # borda: cor do kind (ok=green, erro=red, info=default)
+        border_cor = {"ok": T.GREEN, "erro": T.RED}.get(self._toast_kind, T.LINE)
+        pygame.draw.rect(panel_s, (*border_cor, alpha), panel_s.get_rect(),
                          width=1, border_radius=23)
         s.blit(panel_s, box.topleft)
         txt_img = f.render(self._toast, True, T.TEXT)
