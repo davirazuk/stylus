@@ -2,18 +2,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  stylus-kde-shortcuts — roda no login do KDE
 # ═══════════════════════════════════════════════════════════════════════════
-#  Stock KDE + atalho Mod+M para a estante. Não mexe no kglobalshortcutsrc,
-#  não mexe no kwinrc — o KDE cuida disso. Só adiciona o atalho do Stylus
-#  e aplica wallpaper.
+#  Stock KDE + atalho Mod+M para a estante. NÃO mata nenhum processo KDE.
+#  Só aplica wallpaper e registra o atalho (que entra no próximo login).
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
-
-# ── Detectar KDE ───────────────────────────────────────────────────────
-if ! pgrep -x plasmashell >/dev/null 2>&1 && \
-   ! pgrep -x kwin_x11 >/dev/null 2>&1 && \
-   ! pgrep -x kwin_wayland >/dev/null 2>&1; then
-    exit 0
-fi
 
 # ── Wallpaper ──────────────────────────────────────────────────────────
 WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
@@ -25,19 +17,16 @@ fi
 command -v numlockx &>/dev/null && numlockx on 2>/dev/null
 
 # ── Atalho: Mod+M → estante ──────────────────────────────────────────
+# Só registra se não existe. NÃO mata kglobalaccel5 — deixar o KDE
+# gerenciar o lifecycle. O atalho entra no próximo login.
 KGSC="$HOME/.config/kglobalshortcutsrc"
 SHELF_ID="stylus-shelf"
 mkdir -p "$(dirname "$KGSC")"
 if ! grep -q "\[$SHELF_ID\]" "$KGSC" 2>/dev/null; then
-    # Para kglobalaccel e espera sair — sem isso ele sobrescreve o arquivo
-    killall -w kglobalaccel5 2>/dev/null
-    sleep 0.3
     {
         echo ""
         echo "[$SHELF_ID]"
         echo "_k_friendly_name=Stylus Shelf"
         echo "$SHELF_ID=Meta+M,none,Abrir estante"
     } >> "$KGSC"
-    kglobalaccel5 &>/dev/null &
-    sleep 1
 fi
