@@ -391,7 +391,7 @@ class RitualScene:
         sh_x = cx + np.cos(sh_thetas) * radius * 1.04
         sh_y = cy + np.sin(sh_thetas) * radius * 1.04 * iso[1]
         sh_pts = np.column_stack([sh_x, sh_y])
-        sh_cols = np.full((n_sh, 3), [0.015, 0.01, 0.008], dtype=np.float32)
+        sh_cols = np.full((n_sh, 4), [0.015, 0.01, 0.008, 1.0], dtype=np.float32)
         strips.insert(0, build_strip(sh_pts, 0.025 * radius, W, H, sh_cols))
         # Disc glow ring — warm light bleeding from edge
         n_glow = 48
@@ -406,7 +406,8 @@ class RitualScene:
         glow_cols = np.column_stack([
             np.full(n_glow, 0.96 * 0.04),
             np.full(n_glow, 0.56 * 0.04),
-            np.full(n_glow, 0.13 * 0.04)
+            np.full(n_glow, 0.13 * 0.04),
+            np.ones(n_glow)
         ]).astype(np.float32)
         strips.insert(1, build_strip(glow_pts, 0.035 * radius, W, H, glow_cols))
         tris=[]
@@ -443,10 +444,10 @@ class RitualScene:
             amber = (0.96 * beam_pulse, 0.56 * beam_pulse, 0.13 * beam_pulse)
             hot = (1.0 * beam_pulse, 0.92 * beam_pulse, 0.65 * beam_pulse)
             beam_segs = np.array([[sx, sy], [bx, by]], dtype=np.float32)
-            beam_cols = np.array([[*amber, 1.0], [*amber, 1.0]], dtype=np.float32)
+            beam_cols = np.array([[*amber, 1.0]], dtype=np.float32)
             tris.append(build_segs(beam_segs, 0.3, W, H, beam_cols))
             beam_segs2 = np.array([[sx, sy], [bx, by]], dtype=np.float32)
-            beam_cols2 = np.array([[*hot, 1.0], [*hot, 1.0]], dtype=np.float32)
+            beam_cols2 = np.array([[*hot, 1.0]], dtype=np.float32)
             tris.append(build_segs(beam_segs2, 0.08, W, H, beam_cols2))
             # Sparks — flickering dots at the impact point
             impact_fade = beam_fade
@@ -456,9 +457,10 @@ class RitualScene:
                 spark_x = bx + math.sin(t * 3.1) * 0.012 * radius * impact_fade
                 spark_y = by + math.cos(t * 2.7) * 0.012 * radius * impact_fade
                 spark_bright = impact_fade * (0.3 + 0.3 * math.sin(t * 5.0 + sk))
-                spark_col = [1.0 * spark_bright, 0.8 * spark_bright, 0.35 * spark_bright, 1.0]
-                sp = np.array([[spark_x, spark_y]], dtype=np.float32)
-                sc = np.array([spark_col], dtype=np.float32)
+                spark_col = [[1.0 * spark_bright, 0.8 * spark_bright, 0.35 * spark_bright, 1.0]]
+                # build_segs needs pairs of points; duplicate to make a tiny segment
+                sp = np.array([[spark_x, spark_y], [spark_x, spark_y]], dtype=np.float32)
+                sc = np.array(spark_col, dtype=np.float32)
                 tris.append(build_segs(sp, 0.018, W, H, sc))
         arm=np.concatenate(tris,axis=0) if tris else None
         return strips, arm
