@@ -3240,15 +3240,21 @@ class App:
         self._toast_kind = kind
 
     def toggle_sleep(self):
-        """Cicla o sleep timer: off → 30m → 60m → 90m → off."""
+        """Cicla o "parar sozinho": desligado → 30m → 60m → 90m → desligado.
+
+        Chamava-se "sleep timer" na tela, em inglês, e o celular dizia a
+        mesma coisa com outra caixa alta em dois arquivos diferentes. Texto
+        que o usuário lê é em português, e é o MESMO português dos dois
+        lados: a coleção é a mesma nos dois, o vocabulário também tem que ser.
+        """
         cycle = [0, 30, 60, 90]
         idx = cycle.index(self._sleep_minutes) if self._sleep_minutes in cycle else 0
         self._sleep_minutes = cycle[(idx + 1) % len(cycle)]
         if self._sleep_minutes > 0:
             self._sleep_end = time.time() + self._sleep_minutes * 60
-            self.toast(f"sleep timer: {self._sleep_minutes} minutos")
+            self.toast(f"para sozinho em {self._sleep_minutes} minutos")
         else:
-            self.toast("sleep timer desligado")
+            self.toast("não para mais sozinho")
 
     def toggle_shuffle(self):
         self.shuffle = not self.shuffle
@@ -3769,7 +3775,7 @@ class App:
             # Sleep timer: pause when time runs out
             if self._sleep_minutes > 0 and time.time() >= self._sleep_end:
                 spawn(["playerctl", "pause"])
-                self.toast(f"pause — timer de {self._sleep_minutes}m expirou")
+                self.toast(f"o disco para aqui — {self._sleep_minutes} min")
                 self._sleep_minutes = 0
             self.clock.tick(FPS)
 

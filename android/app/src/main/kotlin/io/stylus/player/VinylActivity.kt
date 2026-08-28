@@ -448,10 +448,10 @@ class VinylActivity : AppCompatActivity() {
             textSize = 14f
             setPadding(dp(20), dp(8), dp(20), dp(8))
             setOnClickListener {
-                val options = arrayOf("Sem timer", "15 min", "30 min", "60 min", "90 min")
+                val options = arrayOf("não parar", "15 min", "30 min", "60 min", "90 min")
                 val values = longArrayOf(0, 15*60000, 30*60000, 60*60000, 90*60000)
                 androidx.appcompat.app.AlertDialog.Builder(this@VinylActivity)
-                    .setTitle("Sleep Timer")
+                    .setTitle("Parar sozinho")
                     .setItems(options) { _, which ->
                         val editor = getSharedPreferences("stylus", MODE_PRIVATE).edit()
                         if (values[which] > 0) {
@@ -579,7 +579,7 @@ class VinylActivity : AppCompatActivity() {
                 if (sleepTimerEnd > 0 && System.currentTimeMillis() >= sleepTimerEnd) {
                     sleepTimerEnd = 0; playing = false; player?.pause()
                     if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
-                    android.widget.Toast.makeText(this@VinylActivity, "Sleep timer", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(this@VinylActivity, "o disco para aqui", android.widget.Toast.LENGTH_SHORT).show()
                 }
                 val p = player
                 if (p != null && p.duration > 0) {

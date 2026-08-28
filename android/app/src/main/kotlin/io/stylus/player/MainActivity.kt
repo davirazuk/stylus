@@ -339,7 +339,7 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(code, permissions, results)
         if (code == PERM_REQ && results.isNotEmpty() && results[0] == PackageManager.PERMISSION_GRANTED) loadAlbums()
-        else if (code == PERM_REQ) { emptyView.text = "Sem permissao"; emptyView.visibility = View.VISIBLE }
+        else if (code == PERM_REQ) { emptyView.text = "Sem permissão"; emptyView.visibility = View.VISIBLE }
     }
 
     private fun loadAlbums() {
@@ -385,7 +385,7 @@ class MainActivity : AppCompatActivity() {
         val totalH = totalMs / 3600000
         val totalM = (totalMs % 3600000) / 60000
         val statsText = when {
-            filteredAlbums.isEmpty() -> "Nenhum album"
+            filteredAlbums.isEmpty() -> "Nenhum álbum"
             query.isNotEmpty() -> "${filteredAlbums.size} resultado${if (filteredAlbums.size != 1) "s" else ""}"
             else -> "${filteredAlbums.size} albuns \u2022 ${totalTracks} faixas \u2022 ${totalH}h${totalM}m"
         }
@@ -531,14 +531,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showMenuDialog() {
-        val timerOptions = arrayOf("Sem timer", "15 min", "30 min", "60 min", "90 min")
+        val timerOptions = arrayOf("não parar", "15 min", "30 min", "60 min", "90 min")
         val timerValues = longArrayOf(0, 15*60000, 30*60000, 60*60000, 90*60000)
         val currentTimer = prefs.getLong("sleep_timer", 0)
         val timerIdx = timerValues.indexOf(currentTimer).coerceAtLeast(0)
 
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("STYLUS")
-            .setItems(arrayOf("WebDAV \u2022 Sleep Timer (atual: ${timerOptions[timerIdx]})", "Sobre")) { _, which ->
+            .setItems(arrayOf("WebDAV \u2022 Parar sozinho (agora: ${timerOptions[timerIdx]})", "Sobre")) { _, which ->
                 when (which) {
                     0 -> showWebdavDialog()
                     1 -> showAboutDialog()
@@ -560,20 +560,20 @@ class MainActivity : AppCompatActivity() {
         val pad = dp(20)
         val container = FrameLayout(this).apply { setPadding(pad, pad, pad, pad); addView(input) }
 
-        val timerOptions = arrayOf("Sem timer", "15 min", "30 min", "60 min", "90 min")
+        val timerOptions = arrayOf("não parar", "15 min", "30 min", "60 min", "90 min")
         val timerValues = longArrayOf(0, 15*60000, 30*60000, 60*60000, 90*60000)
 
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("WebDAV")
-            .setMessage("URL da colecao remota")
+            .setMessage("URL da coleção remota")
             .setView(container)
             .setPositiveButton("Salvar") { _, _ ->
                 prefs.edit().putString("webdav_url", input.text.toString().trim()).apply()
                 android.widget.Toast.makeText(this, "WebDAV salvo", android.widget.Toast.LENGTH_SHORT).show()
             }
-            .setNeutralButton("Sleep Timer") { _, _ ->
+            .setNeutralButton("Parar sozinho") { _, _ ->
                 androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Sleep Timer")
+                    .setTitle("Parar sozinho")
                     .setItems(timerOptions) { _, which ->
                         prefs.edit().putLong("sleep_timer", timerValues[which]).apply()
                         android.widget.Toast.makeText(this, timerOptions[which], android.widget.Toast.LENGTH_SHORT).show()
