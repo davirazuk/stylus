@@ -1092,10 +1092,17 @@ class SignalScreen(Screen):
         clean = bool(frate and graph and frate == graph)
         cor = T.GREEN if clean else (T.RED if frate else T.TEXT_FAINT)
 
+        # A coluna tem largura máxima (linha comprida demais não se lê a três
+        # metros) e por isso sobrava meia tela vazia à direita, com tudo
+        # grudado na borda esquerda. Centrada, o vazio fica dos dois lados e
+        # a tela passa a ter composição em vez de encosto.
+        bw = min(r.w - 88, 900)
+        bx = r.x + max(44, (r.w - bw) // 2)
+
         y = r.y + 60
-        T.text(s, "o caminho do sinal", (r.x + 44, y), 30, T.TEXT, bold=True)
+        T.text(s, "o caminho do sinal", (bx, y), 30, T.TEXT, bold=True)
         T.text(s, "medido agora, não prometido na caixa",
-               (r.x + 44, y + 40), 19, T.TEXT_FAINT)
+               (bx, y + 40), 19, T.TEXT_FAINT)
 
         elos = [
             ("O ARQUIVO", i.get("file", "—"),
@@ -1107,7 +1114,7 @@ class SignalScreen(Screen):
             ("O CONVERSOR", i.get("dev", "—"),
              "pode trocar de taxa" if i.get("multi") else "taxa travada"),
         ]
-        bx, by, bw = r.x + 44, y + 96, min(r.w - 88, 900)
+        by = y + 96
         for n, (titulo, nome, val) in enumerate(elos):
             box = pygame.Rect(bx, by + n * 132, bw, 104)
             T.panel(s, box, T.INK_SOFT, radius=12, border=T.LINE)
@@ -1534,11 +1541,12 @@ class ToolsScreen(Screen):
         ("procurar letras dos discos sem .lrc", ["stylus", "lyrics", "--all"]),
         ("arrumar tags e capa embutida", ["stylus", "tags"]),
         ("rasgar o CD da gaveta", ["stylus", "rip"]),
-        # As duas coisas novas que só existiam no terminal. Aqui é onde quem
-        # está no sofá vai procurá-las — e a tela cheia é o modo em que a
-        # máquina liga.
-        ("baixar do Qobuz e arquivar",
-         ["stylus-term", "Qobuz", "stylus-qobuz", "abrir"]),
+        # Havia aqui um "baixar do Qobuz e arquivar" que abria um terminal
+        # com a interface WEB do qobuz-dl. Saiu: a seção QOBUZ faz a mesma
+        # coisa sem navegador nenhum, procura, toca sem baixar e agora até
+        # entra na conta — e mandar alguém para um terminal e um navegador
+        # para fazer o que a tela ao lado faz melhor é o oposto do que esta
+        # interface existe para ser.
         ("o papel de parede vira o disco de agora",
          ["stylus-wallpaper"]),
         ("refazer o índice da estante", ["stylus", "reindex"]),
@@ -3047,7 +3055,14 @@ class SettingsScreen(Screen):
         try:
             r = subprocess.run(["git", "-c", "safe.directory=/var/lib/stylus/repo",
                                 "-C", "/var/lib/stylus/repo", "log",
-                                "-1", "--format=%h %s"],
+                                # %h %cs: a chave curta e a DATA. Era `%h %s`,
+                                # e o %s é o assunto do commit — a linha da
+                                # tela virava "build: f294f8e As ferramentas
+                                # paravam de falar inglês c…", cortada no
+                                # meio. Uma mensagem de commit é escrita para
+                                # quem lê o histórico, não para quem quer
+                                # saber de quando é a máquina.
+                                "-1", "--format=%h  %cs"],
                                capture_output=True, text=True, timeout=3)
             v = r.stdout.strip()
             if v:
