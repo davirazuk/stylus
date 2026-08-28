@@ -128,7 +128,17 @@ def main():
     except Exception as e:                               # noqa: BLE001
         nome = type(e).__name__
         if "Auth" in nome or "Credential" in nome:
-            responde(ok=False, erro="e-mail ou senha não conferem")
+            # 401 da API com app_id válido: Qobuz recusou O QUE FOI DIGITADO,
+            # e quase nunca é a digitação. Conta criada pelo Google/Apple ou
+            # pela loja de aplicativo NÃO TEM senha de site — não existe senha
+            # que "confira". O caminho que funciona para ESSAS contas é o
+            # navegador, que aceita o Google/Apple do jeito que a conta pede.
+            responde(ok=False, erro=(
+                "e-mail ou senha não conferem. Se esta conta foi criada pelo "
+                "Google, pela Apple ou pela loja de aplicativo, ela não tem "
+                "senha de site e este login nunca vai aceitar — rode "
+                "`stylus qobuz abrir` e entre pelo navegador uma vez: é o "
+                "mesmo resultado e guarda o token."))
         if "Ineligible" in nome:
             responde(ok=False,
                      erro="esta conta do Qobuz não tem assinatura de streaming")
