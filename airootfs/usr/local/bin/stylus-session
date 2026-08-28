@@ -2,6 +2,29 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  stylus-session — decide em qual dos dois modos a máquina liga
 # ═══════════════════════════════════════════════════════════════════════════
+#  Este arquivo é a única coisa entre o SDDM e uma máquina que não abre.
+#
+#  O que ele resolve, e que custou uma instalação inteira: o KWin — o
+#  gerenciador de janelas do Plasma — não abre sem OpenGL. Ele morre, o
+#  startplasma-x11 morre junto, a sessão acaba em três segundos, e o SDDM
+#  lança tudo de novo. Com autologin ligado isso não volta para tela de login
+#  nenhuma: fica preto, pisca, preto, para sempre. Quem está na frente vê uma
+#  máquina reiniciando sozinha e não tem onde ler o porquê.
+#
+#  E o modo música abre nessa mesma máquina, porque o pygame desenha em X11
+#  puro e nunca pede um contexto GL. Foi esse o sintoma: "às vezes entra no
+#  modo música, mas toda vez que eu tento o KDE ele reinicia".
+#
+#  Daí as três regras daqui para baixo:
+#
+#    1. perguntar ANTES se o Plasma tem como abrir (§ pre-voo)
+#    2. se ele abrir e morrer, a PRÓXIMA sessão não tenta de novo (§ trava)
+#    3. nunca terminar sem entregar uma sessão que funciona (§ desistir)
+#
+#  Nenhuma delas conserta a causa. As três juntas garantem que a máquina
+#  sempre abre em alguma coisa, e que existe um lugar dizendo o que houve:
+#  `stylus kde`.
+# ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
 MODE_FILE="$HOME/.config/stylus/mode"
@@ -10,6 +33,24 @@ mode=$(cat "$MODE_FILE" 2>/dev/null || echo music)
 [[ ${1:-} ]] && mode=$1
 
 export STYLUS_MODE="$mode"
+
+ESTADO="${XDG_DATA_HOME:-$HOME/.local/share}/stylus"
+mkdir -p "$ESTADO" 2>/dev/null || true
+LOG="$ESTADO/sessao.log"
+# Quantas vezes seguidas a área de trabalho subiu e morreu antes de firmar.
+FALHAS="$ESTADO/desktop-falhas"
+# Por que a última tentativa não deu certo, em português. É o que o
+# `stylus kde` lê e mostra — sem isto o usuário só vê "abriu no outro modo".
+MOTIVO="$ESTADO/desktop-motivo"
+
+anota() {
+    printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$LOG" 2>/dev/null || true
+}
+# Um registro que cresce para sempre enche a partição /home de quem só usa a
+# máquina para ouvir disco.
+[[ -f $LOG ]] && (( $(stat -c%s "$LOG" 2>/dev/null || echo 0) > 262144 )) && {
+    tail -n 400 "$LOG" >"$LOG.tmp" 2>/dev/null && mv -f "$LOG.tmp" "$LOG"
+}
 
 # ── UTF-8 ──────────────────────────────────────────────────────────────────
 case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
@@ -30,18 +71,104 @@ if [[ ! -s $HOME/.config/stylus/library ]]; then
     /usr/share/stylus/first-run.sh || true
 fi
 
+# ── as sessões que este arquivo sabe abrir ─────────────────────────────────
+musica()  { anota "abrindo: modo música (i3 + tela cheia)"
+            exec i3 -c /usr/share/stylus/i3-music.config; }
+i3_area() { anota "abrindo: área de trabalho do i3"
+            exec i3; }
+
+# Onde parar quando o Plasma está fora de questão. O i3 é uma área de
+# trabalho de verdade e é o que mais se parece com o que foi pedido; o modo
+# música só entra quando nem o i3 existe, porque uma máquina que abre no
+# lugar errado ainda é melhor do que uma que não abre.
+desistir() {  # desistir <motivo em português>
+    printf '%s\n' "$1" >"$MOTIVO" 2>/dev/null || true
+    anota "área de trabalho recusada: $1"
+    # De propósito, NÃO se mexe na sessão que o SDDM guarda. Se este script
+    # está rodando, o SDDM já lançou uma sessão do STYLUS, e ele vai lançar a
+    # mesma no próximo login — passando por este mesmo pré-voo. É isso que faz
+    # a máquina se consertar sozinha: instalar o mesa e entrar de novo devolve
+    # o KDE, sem ninguém precisar desfazer nada.
+    if command -v i3 >/dev/null 2>&1; then
+        i3_area
+    fi
+    echo music >"$MODE_FILE" 2>/dev/null || true
+    musica
+}
+
+area_de_trabalho() {
+    local falhas gl
+    falhas=$(cat "$FALHAS" 2>/dev/null || echo 0)
+    [[ $falhas =~ ^[0-9]+$ ]] || falhas=0
+
+    # ── a trava ────────────────────────────────────────────────────────────
+    # O contador é escrito ANTES do exec e apagado 30 segundos depois por um
+    # processo que fica para trás de propósito. Uma sessão que morre em três
+    # segundos leva esse processo junto — o logind mata o escopo inteiro — e
+    # o contador sobrevive no disco. É assim que o próximo login sabe que o
+    # anterior não firmou, mesmo quando o anterior terminou em reinício e não
+    # teve chance de escrever nada.
+    if (( falhas >= 2 )); then
+        desistir "O Plasma abriu e fechou sozinho nas duas últimas vezes.
+Enquanto isso não for resolvido, a máquina abre no i3 para não ficar
+piscando. Para ver o motivo e tentar de novo:  stylus kde"
+        return
+    fi
+
+    if ! command -v startplasma-x11 >/dev/null 2>&1; then
+        desistir "O Plasma não está instalado nesta máquina (falta o
+startplasma-x11). Para instalar:  sudo pacman -S plasma-desktop plasma-workspace"
+        return
+    fi
+
+    # ── o pré-voo ──────────────────────────────────────────────────────────
+    # Sem `|| echo nenhum`: o --opengl imprime a palavra E sai 1 quando não
+    # há OpenGL, e o `||` fazia a variável virar "nenhum" duas vezes — que
+    # não casa com o case abaixo. O pré-voo deixava passar exatamente a
+    # máquina que ele existe para segurar.
+    gl=$(stylus-gpu --opengl 2>/dev/null)
+    # Uma resposta só vale se for uma das três palavras que o --opengl sabe
+    # dizer. Um stylus-gpu mais velho não conhece essa opção: responde com o
+    # texto de uso e sai 2. Ler isso como "não tem OpenGL" recusava o KDE numa
+    # máquina perfeitamente boa — foi o que aconteceu na primeira vez que este
+    # pré-voo rodou. Não conseguir MEDIR não é o mesmo que medir zero, e na
+    # dúvida deixa passar: um engano para cá custa um login (a trava pega);
+    # um engano para lá custa a área de trabalho inteira, para sempre.
+    case "$gl" in hardware|software|nenhum) ;; *) gl=desconhecido ;; esac
+    case "$gl" in
+        nenhum)
+            desistir "Esta máquina não tem OpenGL, e o KWin não abre sem ele —
+é isso que faz a tela piscar sem parar em vez de abrir o KDE. Quase sempre é
+o driver livre que não foi instalado. Para resolver:  sudo pacman -S mesa"
+            return ;;
+        software)
+            # Sem aceleração o KWin ainda abre, pelo llvmpipe, e fica lento.
+            # Lento é uma queixa; preto piscando não tem nem como ser contado.
+            anota "sem aceleração de vídeo — Plasma vai abrir por software"
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export KWIN_COMPOSE=O2 ;;
+    esac
+
+    # ── o ambiente que o Plasma espera ─────────────────────────────────────
+    # Normalmente quem escreve estas três variáveis é o SDDM, a partir do
+    # DesktopNames= do arquivo de sessão. Como aqui quem lança o Plasma é
+    # este script, e o arquivo de sessão diz STYLUS, elas chegariam erradas:
+    # os portais xdg, o kde-gtk-config e todo autostart marcado OnlyShowIn=KDE
+    # — o nosso, inclusive — simplesmente não rodariam, sem erro nenhum.
+    export XDG_CURRENT_DESKTOP=KDE
+    export XDG_SESSION_DESKTOP=KDE
+    export DESKTOP_SESSION=plasma
+
+    printf '%s' "$(( falhas + 1 ))" >"$FALHAS" 2>/dev/null || true
+    # `&&`, nunca `;`: com ponto-e-vírgula, um sinal que mata só o sleep faz
+    # o subshell seguir para o rm e limpar o contador de uma sessão que não
+    # firmou — a trava passava a nunca fechar.
+    ( sleep 30 && rm -f "$FALHAS" "$MOTIVO" ) >/dev/null 2>&1 &
+    anota "abrindo: KDE Plasma (tentativa $(( falhas + 1 )), vídeo: $gl)"
+    exec startplasma-x11
+}
+
 case "$mode" in
-    desktop|kde)
-        # KDE funciona SOZINHO. startplasma-x11 é o script oficial do KDE
-        # que SDDM chama. Não precisa de dbus-launch, não precisa de nada.
-        # Só garantir que ele existe e executar.
-        if command -v startplasma-x11 >/dev/null 2>&1; then
-            exec startplasma-x11
-        fi
-        # Fallback: i3 se KDE não está instalado
-        exec i3
-        ;;
-    *)
-        exec i3 -c /usr/share/stylus/i3-music.config
-        ;;
+    desktop|kde) area_de_trabalho ;;
+    *)           musica ;;
 esac

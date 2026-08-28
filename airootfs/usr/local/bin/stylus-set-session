@@ -6,16 +6,25 @@
 #  pedido de um usuário comum, então o que chega aqui não é confiável.
 #
 #      stylus-set-session desktop      a área de trabalho (KDE, se houver)
-#      stylus-set-session music        a tela cheia (i3)
+#      stylus-set-session music        a tela cheia
 #
 #  Os nomes de arquivo continuam aceitos por compatibilidade.
 #
-#  Por que NOME e não arquivo: o Plasma 6 renomeou a sessão X11 para
-#  plasmax11.desktop, e plasma.desktop virou a do Wayland. Este comando só
-#  aceitava plasma.desktop — numa máquina com Plasma 6, trocar para a área de
-#  trabalho escrevia no SDDM o nome de uma sessão que não existe, e o login
-#  seguinte caía numa tela que morre na hora. Quem sabe o nome certo é a
-#  máquina; então é ela que responde.
+#  ── Por que ele NUNCA aponta o SDDM direto para o plasmax11.desktop ──
+#
+#  Porque aí nada do STYLUS roda no caminho. O SDDM lança o Plasma, o KWin
+#  não acha OpenGL, morre, e — com autologin — o SDDM lança de novo, para
+#  sempre, sem tela de login. Apontando para stylus-desktop.desktop, quem
+#  abre o Plasma é o stylus-session, que confere antes se ele tem como abrir
+#  e cai no i3 quando não tem. A sessão do Plasma continua instalada e
+#  escolhível na tela de login por quem quiser; o que muda é para onde a
+#  máquina vai SOZINHA.
+#
+#  (O Plasma 6 também renomeou a sessão X11 para plasmax11.desktop, e
+#  plasma.desktop virou a do Wayland. Este comando aceitava só plasma.desktop
+#  e, numa máquina com Plasma 6, gravava no SDDM o nome de uma sessão que não
+#  existe. Isso agora não importa mais aqui: quem procura o nome certo é o
+#  stylus-session, na hora.)
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -23,32 +32,52 @@ set -uo pipefail
 
 PEDIDO="${1:?uso: stylus-set-session <desktop|music>}"
 SDDM_CONF="/etc/sddm.conf.d/stylus.conf"
+ESTADO="/var/lib/sddm/state.conf"
 XS=/usr/share/xsessions
-
-sessao_da_area_de_trabalho() {
-    local c
-    for c in plasmax11 plasma-x11 plasma; do
-        [[ -f $XS/$c.desktop ]] && { echo "$c.desktop"; return 0; }
-    done
-    # Sem Plasma instalado, a área de trabalho é o i3 do STYLUS.
-    [[ -f $XS/stylus-desktop.desktop ]] && { echo stylus-desktop.desktop; return 0; }
-    echo stylus.desktop
-}
 
 case "$PEDIDO" in
     desktop|kde|plasma.desktop|plasmax11.desktop|plasma-x11.desktop)
-        SESSION=$(sessao_da_area_de_trabalho) ;;
-    music|musica|stylus.desktop)
-        SESSION=stylus.desktop ;;
+        SESSION=stylus-desktop.desktop ;;
+    music|musica|stylus.desktop|stylus-music.desktop)
+        SESSION=stylus-music.desktop ;;
     *)  echo "sessão desconhecida: $PEDIDO" >&2; exit 1 ;;
 esac
 
+# Um STYLUS antigo pode não ter os dois arquivos separados; ali o despachante
+# resolve, lendo ~/.config/stylus/mode — que o stylus-mode acabou de escrever.
+[[ -f $XS/$SESSION ]] || SESSION=stylus.desktop
 [[ -f $XS/$SESSION ]] || { echo "a sessão $SESSION não está instalada" >&2; exit 1; }
-[[ -f $SDDM_CONF ]]   || { echo "$SDDM_CONF não existe" >&2; exit 1; }
 
-if grep -q '^Session=' "$SDDM_CONF"; then
-    sed -i "s/^Session=.*/Session=$SESSION/" "$SDDM_CONF"
-else
-    printf '\n[Autologin]\nSession=%s\n' "$SESSION" >> "$SDDM_CONF"
+mudou=0
+
+# ── 1. o que o autologin abre sozinho ──────────────────────────────────────
+#  Só dentro de um [Autologin] que já exista. Acrescentar a seção quando ela
+#  não está lá criava um segundo [Autologin] no mesmo arquivo, com um
+#  Session= sem User= nenhum — que não liga autologin em máquina alguma e só
+#  deixava o arquivo confuso para quem fosse ler depois.
+if [[ -f $SDDM_CONF ]] && grep -q '^\[Autologin\]' "$SDDM_CONF"; then
+    if sed -n '/^\[Autologin\]/,/^\[/p' "$SDDM_CONF" | grep -q '^Session='; then
+        sed -i "/^\[Autologin\]/,/^\[/{s|^Session=.*|Session=$SESSION|}" "$SDDM_CONF"
+    else
+        sed -i "/^\[Autologin\]/a Session=$SESSION" "$SDDM_CONF"
+    fi
+    mudou=1
 fi
+
+# ── 2. o que a tela de login vem marcada ───────────────────────────────────
+#  Isto é o que o SDDM realmente relê para preselecionar a sessão, e nada
+#  mexia nele: trocar de modo mudava o autologin e deixava o greeter marcando
+#  a sessão antiga, então quem entrava digitando a senha voltava para o modo
+#  de onde tinha acabado de sair.
+if [[ -d /var/lib/sddm ]] || mkdir -p /var/lib/sddm 2>/dev/null; then
+    if [[ -f $ESTADO ]] && grep -q '^Session=' "$ESTADO"; then
+        sed -i "s|^Session=.*|Session=$XS/$SESSION|" "$ESTADO"
+    else
+        printf '[Last]\nSession=%s\n' "$XS/$SESSION" > "$ESTADO"
+    fi
+    chown -R sddm:sddm /var/lib/sddm 2>/dev/null || true
+    mudou=1
+fi
+
+(( mudou )) || { echo "não achei configuração do SDDM para mudar" >&2; exit 1; }
 echo "Sessão → $SESSION"

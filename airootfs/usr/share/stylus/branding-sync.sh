@@ -122,8 +122,18 @@ info "Configuração…"
 copiar etc/pipewire          # a tese do sistema: não reamostrar
 copiar etc/wireplumber       # o ALSA precisa dos DOIS para trocar de taxa
 copiar etc/sddm.conf.d/stylus.conf
-copiar etc/systemd/system/stylus-fontcache.service
-copiar etc/systemd/system/stylus-gpu-fallback.service
+# Por glob, e não por lista escrita à mão. Este arquivo já aprendeu isso uma
+# vez com as unidades de usuário, e caiu na mesma armadilha aqui embaixo: o
+# stylus-session-guard.service nasceu, o instalador passou a ligá-lo, e ele
+# não chegava ao disco — o `systemctl enable` avisava baixinho e a máquina
+# ficava sem justamente o serviço que impede um laço de login.
+for u in "$SRC"/etc/systemd/system/stylus-*.service; do
+    [[ -e $u ]] || continue
+    # Este é do medium ao vivo: mantém o console de resgate do archiso no tty1.
+    # Numa instalação não há console de resgate para manter.
+    [[ $(basename "$u") == stylus-keep-tty1.conf ]] && continue
+    copiar "etc/systemd/system/$(basename "$u")"
+done
 copiar etc/systemd/system/paccache.service.d/stylus-keep-one.conf
 copiar etc/systemd/journald.conf.d/stylus-limits.conf
 copiar etc/systemd/zram-generator.conf

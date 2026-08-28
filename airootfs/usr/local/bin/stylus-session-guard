@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-session-guard — impede que o SDDM entre num laço de login
+# ═══════════════════════════════════════════════════════════════════════════
+#  Roda como root, uma vez, antes da tela de login.
+#
+#  O stylus-session já protege tudo que passa por ele. Só que o autologin do
+#  SDDM pode apontar DIRETO para uma sessão do Plasma, e aí nada nosso roda:
+#  o SDDM lança o startplasma-x11, o KWin não acha OpenGL, morre, o SDDM
+#  lança de novo — e com Relogin=true isso não para nunca e não mostra tela de
+#  login nenhuma. A máquina fica piscando preto até alguém desligar na tomada.
+#  Não há como consertar de dentro: não existe sessão onde digitar nada.
+#
+#  Este arquivo é o único lugar que pega esse caso, porque é o único que roda
+#  ANTES de o SDDM lançar qualquer coisa. Ele pergunta três coisas sobre a
+#  sessão que o autologin vai abrir sozinho:
+#
+#      o arquivo .desktop existe?
+#      o programa que ele manda executar existe?
+#      se for Plasma: esta máquina tem OpenGL?
+#
+#  Qualquer "não" e ele escreve um resgate: um arquivo que sobrepõe só o
+#  Session=, mandando o autologin para a sessão do STYLUS — que abre sem
+#  aceleração nenhuma e tem um terminal dentro. O resgate é removido sozinho
+#  no boot em que a resposta voltar a ser sim, então instalar o mesa devolve
+#  o KDE sem ninguém desfazer nada.
+#
+#  Ele NÃO toca em máquina sem autologin: ali o laço não existe, porque a tela
+#  de login sempre volta e dá para escolher outra sessão na mão.
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+# Vazio no boot, que é o caso de verdade. Existe porque um arquivo cuja função
+# é impedir uma máquina de não abrir precisa poder ser testado sem que o teste
+# reescreva o /etc de quem está rodando o teste — e porque com ele o instalador
+# pode fazer a mesma conferência apontando para o sistema montado em /mnt.
+RAIZ=${STYLUS_GUARD_ROOT:-}
+
+XS="$RAIZ/usr/share/xsessions"
+CONFD="$RAIZ/etc/sddm.conf.d"
+RESGATE="$CONFD/zz-stylus-resgate.conf"
+NOTA="$RAIZ/var/lib/stylus/sessao-resgate"
+SEGURA=stylus.desktop
+
+[[ $EUID -eq 0 || -n $RAIZ ]] || { echo "stylus-session-guard: precisa ser root" >&2; exit 1; }
+
+# ── o que o autologin vai abrir, ignorando um resgate anterior ─────────────
+#  Ignorar o nosso próprio arquivo é o que impede o vaivém: lendo-o junto, a
+#  sessão configurada apareceria como a segura, os testes passariam, o resgate
+#  seria removido, e o boot seguinte cairia no mesmo laço de novo.
+valor() {  # valor <chave>  — última ocorrência vence, como no próprio SDDM
+    local chave=$1 f
+    for f in "$RAIZ/etc/sddm.conf" "$CONFD"/*.conf; do
+        [[ -f $f ]] || continue
+        [[ $f == "$RESGATE" ]] && continue
+        sed -n "s/^[[:space:]]*${chave}[[:space:]]*=[[:space:]]*//p" "$f"
+    done | grep -v '^$' | tail -1
+}
+
+USUARIO=$(valor User)
+SESSAO=$(valor Session)
+
+# Sem autologin não há laço: o greeter volta e a pessoa escolhe outra coisa.
+[[ -n $USUARIO && -n $SESSAO ]] || { rm -f "$RESGATE"; exit 0; }
+
+SESSAO=${SESSAO##*/}          # o SDDM aceita caminho ou só o nome
+ARQ="$XS/$SESSAO"
+
+problema=""
+
+if [[ ! -f $ARQ ]]; then
+    problema="a sessão $SESSAO não existe nesta máquina"
+else
+    # TryExec quando houver, senão a primeira palavra do Exec.
+    alvo=$(sed -n 's/^TryExec=//p' "$ARQ" | head -1)
+    [[ -n $alvo ]] || alvo=$(sed -n 's/^Exec=//p' "$ARQ" | head -1 | awk '{print $1}')
+    if [[ -n $alvo ]] && ! command -v "$alvo" >/dev/null 2>&1; then
+        problema="a sessão $SESSAO manda executar $alvo, que não existe"
+    elif grep -qi 'startplasma\|^DesktopNames=KDE' "$ARQ" 2>/dev/null; then
+        # O caso que trouxe este arquivo ao mundo.
+        # Sem `|| echo nenhum`: o --opengl IMPRIME "nenhum" e SAI 1 no caso
+        # sem OpenGL, então o `||` disparava junto e a variável ficava com a
+        # palavra duas vezes — que não casa com nada, e o único caso para o
+        # qual este arquivo existe passava batido.
+        gl=$(STYLUS_GPU_SYSROOT="$RAIZ" stylus-gpu --opengl 2>/dev/null)
+        # Só "nenhum" — a palavra exata — desvia o autologin. Um stylus-gpu
+        # velho, que não conhece o --opengl, responde com o texto de uso; ler
+        # isso como "não tem OpenGL" mandaria para o resgate uma máquina cujo
+        # KDE abre sem problema nenhum, e o resgate nunca sairia.
+        if [[ $gl == nenhum ]]; then
+            problema="o $SESSAO é do Plasma, e o KWin não abre sem OpenGL
+    nesta máquina (falta o mesa). Sem este desvio, a tela ficaria
+    piscando sem parar, sem tela de login para escolher outra coisa.
+    Para resolver de vez:  sudo pacman -S mesa"
+        fi
+    fi
+fi
+
+mkdir -p "$(dirname "$NOTA")" 2>/dev/null || true
+
+if [[ -z $problema ]]; then
+    # Voltou ao normal. Tirar o resgate é o que devolve o KDE sozinho.
+    if [[ -f $RESGATE ]]; then
+        rm -f "$RESGATE" "$NOTA"
+        echo "stylus-session-guard: $SESSAO abre de novo — resgate removido"
+    fi
+    exit 0
+fi
+
+[[ -f $XS/$SEGURA ]] || { echo "stylus-session-guard: $problema — e o $SEGURA também não existe; nada a fazer" >&2; exit 1; }
+
+mkdir -p "$CONFD"
+cat > "$RESGATE" <<CONF
+# Escrito pelo stylus-session-guard, sozinho, antes da tela de login.
+#
+# $problema
+#
+# Este arquivo sobrepõe SÓ o Session= do autologin, e some sozinho no boot em
+# que o problema acima deixar de existir. Não edite: ele é reescrito.
+[Autologin]
+Session=$SEGURA
+CONF
+printf '%s\n' "$problema" > "$NOTA"
+echo "stylus-session-guard: autologin desviado para $SEGURA — $problema"

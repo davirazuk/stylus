@@ -47,11 +47,46 @@ SYSTEM_PATHS=(
     etc/pipewire
     etc/wireplumber
     etc/udev/rules.d
-    etc/systemd/system
     etc/sysctl.d
     etc/modprobe.d
     etc/X11/xorg.conf.d
 )
+# ── as unidades do systemd, uma a uma ──────────────────────────────────────
+#  `etc/systemd/system` ESTAVA na lista acima, copiado inteiro. Só que essa
+#  pasta, dentro do airootfs, não é "as unidades do STYLUS": é o estado do
+#  systemd do MEDIUM AO VIVO inteiro. Dentro dela vão junto:
+#
+#      multi-user.target.wants/   com choose-mirror, pacman-init, livecd-talk,
+#                                 sshd, vboxservice, vmtoolsd, hv_*…
+#      sound.target.wants/        o livecd-alsa-unmuter, que desmuta a placa
+#                                 por cima da configuração de quem usa
+#      getty@tty1.service.d/      autologin de ROOT no tty1
+#      etc-pacman.d-gnupg.mount   um tmpfs por cima do chaveiro do pacman
+#
+#  Num `stylus-update` rodado numa máquina instalada — que é o caminho normal
+#  de receber um conserto — tudo isso desembarcava lá e passava a ligar no
+#  boot. O branding-sync.sh já tinha aprendido essa lição e usa lista de
+#  permissão desde sempre, com o motivo escrito no cabeçalho; aqui a lição
+#  não tinha chegado.
+#
+#  Nada disto precisava vir por aqui de qualquer forma: as unidades do archiso
+#  entram na ISO direto do airootfs, pelo mkarchiso. O sync.sh serve para
+#  atualizar um sistema que já existe, e ali o que é nosso são estas:
+info "Unidades do systemd…"
+mkdir -p "$DST/etc/systemd/system"
+for u in "$SRC"/etc/systemd/system/stylus-*.service; do
+    [[ -e $u ]] || continue
+    cp -a --no-preserve=ownership "$u" "$DST/etc/systemd/system/" || warn "falhou: $(basename "$u")"
+done
+# O nosso ajuste no paccache: guardar uma versão de cada pacote em vez de três.
+if [[ -f $SRC/etc/systemd/system/paccache.service.d/stylus-keep-one.conf ]]; then
+    mkdir -p "$DST/etc/systemd/system/paccache.service.d"
+    cp -a --no-preserve=ownership \
+       "$SRC/etc/systemd/system/paccache.service.d/stylus-keep-one.conf" \
+       "$DST/etc/systemd/system/paccache.service.d/" || warn "falhou: stylus-keep-one.conf"
+fi
+ok "$(find "$DST/etc/systemd/system" -maxdepth 1 -name 'stylus-*.service' 2>/dev/null | wc -l) unidades"
+
 info "Sistema…"
 for p in "${SYSTEM_PATHS[@]}"; do
     [[ -e $SRC/$p ]] || continue

@@ -768,9 +768,88 @@ ligar_multilib() {
 info "Acertando o relógio…"
 acertar_relogio
 
-info "Ordenando os espelhos de download…"
-reflector --latest 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist 2>/dev/null \
-    || warn "reflector falhou; mantendo a lista de espelhos atual."
+# ── Os espelhos de download ─────────────────────────────────────────────────
+#
+# **Sintoma:** a instalação passa vinte e cinco minutos baixando e morre em
+# "Operation too slow. Less than 1 bytes/sec transferred" num espelho alemão,
+# numa máquina no Brasil — com o disco já formatado.
+#
+# A causa é o `--latest 20` que estava aqui: ele pega os vinte espelhos DO
+# MUNDO que sincronizaram mais recentemente e só ENTÃO ordena esses vinte por
+# velocidade. Distância não entra na conta em momento nenhum. Rodando daqui,
+# os vinte "mais frescos" são Alemanha, China, Índia, Nova Zelândia, África
+# do Sul — e um único espelho brasileiro, por sorte.
+#
+# O país sai do fuso horário que a pessoa já escolheu lá em cima. O zone.tab
+# faz esse mapa (America/Sao_Paulo -> BR), offline, em qualquer máquina Arch:
+# nenhum serviço de geolocalização e nenhuma pergunta a mais.
+pais_do_fuso() {
+    awk -v tz="$1" '$3 == tz { print $1; exit }' /usr/share/zoneinfo/zone.tab 2>/dev/null
+}
+
+# Quantos espelhos a lista tem DE VERDADE. Um reflector que "deu certo" e
+# gravou só três linhas de comentário é a forma mais silenciosa de ficar sem
+# repositório nenhum — e o erro só aparece no pacstrap, depois de formatar.
+#
+# `grep -c` que não acha nada imprime 0 e SAI COM ERRO; escrito como
+# `grep -c ... || echo 0`, isso imprimia "0" duas vezes e o `(( ))` de quem
+# chama morria em "operand expected". Daí a variável no meio.
+contar_espelhos() {
+    local n
+    n=$(grep -c '^Server' "${1:-/etc/pacman.d/mirrorlist}" 2>/dev/null)
+    printf '%s' "${n:-0}"
+}
+
+# ordenar_espelhos [--amplo]
+#   sem argumento: o país da pessoa primeiro.
+#   --amplo:       ignora o país e mede um campo grande, excluindo os espelhos
+#                  que estão na lista atual — é o que se usa na segunda
+#                  tentativa, quando os de agora acabaram de falhar.
+#
+# Grava num temporário e só troca a lista boa por uma que tenha espelho
+# dentro: reflector que falha no meio não pode deixar a máquina sem nenhum.
+ordenar_espelhos() {
+    local amplo=0 pais tmp evitar=""
+    [[ ${1:-} == --amplo ]] && amplo=1
+    tmp=$(mktemp) || return 1
+
+    local base=(--protocol https --age 24 --threads 8
+                --connection-timeout 5 --download-timeout 10)
+
+    if (( amplo )); then
+        # Os que estão na lista agora acabaram de falhar; fora todos eles.
+        evitar=$(sed -n 's|^Server *= *https\?://\([^/]*\)/.*|\1|p' \
+                 /etc/pacman.d/mirrorlist 2>/dev/null | paste -sd '|')
+        [[ -n $evitar ]] && base+=(--exclude "$evitar")
+    else
+        pais=$(pais_do_fuso "$TIMEZONE")
+        if [[ -n $pais ]] &&
+           reflector "${base[@]}" --country "$pais" --sort rate --number 10 \
+                     --save "$tmp" 2>/dev/null &&
+           (( $(contar_espelhos "$tmp") >= 3 )); then
+            cat "$tmp" > /etc/pacman.d/mirrorlist; rm -f "$tmp"
+            ok "Espelhos: $(contar_espelhos) no país do seu fuso horário ($pais)"
+            return 0
+        fi
+    fi
+
+    # País sem espelho suficiente (a maioria dos países não tem três), ou
+    # segunda tentativa: mede cem de verdade em vez de confiar na data de
+    # sincronismo de vinte, e fica com os dez que responderam mais rápido.
+    if reflector "${base[@]}" --latest 100 --fastest 10 --save "$tmp" 2>/dev/null &&
+       (( $(contar_espelhos "$tmp") >= 3 )); then
+        cat "$tmp" > /etc/pacman.d/mirrorlist; rm -f "$tmp"
+        ok "Espelhos: $(contar_espelhos), os mais rápidos que responderam"
+        return 0
+    fi
+
+    rm -f "$tmp"
+    warn "Não deu para escolher espelhos; seguindo com a lista que veio no medium."
+    return 1
+}
+
+info "Escolhendo os espelhos de download mais próximos…"
+ordenar_espelhos
 
 if ligar_multilib; then
     ok "Repositório multilib disponível (programas de 32 bits, Steam, jogos)"
@@ -943,16 +1022,24 @@ info "Instalando o sistema base — esta é a parte demorada…"
 # root's cache, so the second run resumes instead of starting over, and picking
 # fresh mirrors first is what stops it from walking into the same dead one.
 if ! pacstrap -K "$MNT" "${PACKAGES[@]}"; then
-    warn "O download parou no meio. Escolhendo outros espelhos e tentando de novo…"
-    reflector --latest 20 --sort rate --protocol https --save /etc/pacman.d/mirrorlist 2>/dev/null || true
+    warn "O download parou no meio. Trocando de espelho e tentando de novo…"
+    # `--amplo` porque os espelhos da lista atual acabaram de falhar: sem
+    # excluí-los, a segunda escolha devolvia exatamente a mesma lista e a
+    # segunda tentativa morria no mesmo espelho que a primeira.
+    ordenar_espelhos --amplo || true
     pacstrap -K "$MNT" "${PACKAGES[@]}" || die "A instalação dos pacotes falhou duas vezes.
 
 A mensagem exata do pacman está no fim de $LOG — é ela que diz qual foi o
-problema. As duas causas comuns são a rede caindo no meio do download e o
-espaço em disco acabando.
+problema. As causas comuns são um espelho lento demais ('Operation too slow'),
+a rede caindo no meio do download, e o espaço em disco acabando.
 
-O disco já foi particionado e formatado; rodar o instalador de novo continua
-de onde parou, porque o que já foi baixado ficou no disco."
+Se foi espelho lento, escolha um à mão antes de tentar outra vez:
+
+    reflector --country BR --protocol https --sort rate --number 10 \\
+              --save /etc/pacman.d/mirrorlist
+
+O disco já foi particionado e formatado. Rodar o instalador de novo formata
+outra vez e baixa tudo de novo — não continua de onde parou."
 fi
 ok "Pacotes instalados"
 
@@ -990,8 +1077,8 @@ comandos, o deck, a tela cheia, a configuração de áudio — não chegou lá. 
 sistema assim não é o STYLUS, e por isso a instalação para aqui em vez de
 dizer que deu certo.
 
-As linhas acima dizem o que falhou. Rode o instalador de novo: o que já foi
-baixado continua no disco, então a segunda vez é rápida."
+As linhas acima dizem o que falhou. Rodar o instalador de novo formata o disco
+outra vez e baixa os pacotes de novo — não continua de onde parou."
 
 info "Configurando o sistema instalado…"
 
@@ -1090,7 +1177,54 @@ if [ "${STYLUS_NVIDIA:-0}" = 1 ] && [ -x /usr/local/bin/stylus-gpu ]; then
                      nvidia-resume.service 2>/dev/null || true
 fi
 
-mkinitcpio -P || echo "  ! mkinitcpio: alguns avisos (geralmente inofensivo)"
+# ── A imagem de arranque, e por que ela é conferida em vez de suposta ──────
+# O `mkinitcpio -P` já foi um `|| die` — e derrubava a instalação por avisos
+# que não impedem nada, com o disco formatado e antes do grub-install. Virou
+# um `|| echo "geralmente inofensivo"`, e aí ficou pior: quando ele falha DE
+# VERDADE, não sobra initramfs nenhum, o kernel entra em pânico antes de
+# montar a raiz, e a máquina reinicia em laço. A instalação termina dizendo
+# "concluída" e entrega um computador que não liga — e a linha tranquilizadora
+# passa despercebida no meio de mil outras.
+#
+# Aviso e falha não são a mesma coisa, e não dá para distinguir pelo código de
+# saída: o mkinitcpio sai diferente de zero por firmware que faltou tanto
+# quanto por imagem que não foi escrita. Então não se pergunta a ele — olha-se
+# o que ficou no /boot, que é o que o GRUB vai carregar.
+mkinitcpio -P || echo "  ! mkinitcpio terminou com erros — conferindo o que saiu"
+
+INIT_OK=0
+INIT_FALTA=""
+for _preset in /etc/mkinitcpio.d/*.preset; do
+    [ -f "$_preset" ] || continue
+    _k=$(basename "$_preset" .preset)
+    # 1 MiB é folgado de propósito: um initramfs de verdade passa de 10 MiB, e
+    # um arquivo truncado por disco cheio no meio da escrita fica bem abaixo.
+    if [ -s "/boot/initramfs-${_k}.img" ] &&
+       [ "$(stat -c%s "/boot/initramfs-${_k}.img" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+        INIT_OK=$((INIT_OK + 1))
+    else
+        INIT_FALTA="$INIT_FALTA $_k"
+    fi
+done
+
+if [ "$INIT_OK" -eq 0 ]; then
+    echo "  ✗ Nenhuma imagem de arranque foi gerada em /boot."
+    echo
+    echo "    Sem ela o kernel não monta a raiz: a máquina reiniciaria em laço,"
+    echo "    sem chegar a lugar nenhum. A instalação para aqui de propósito —"
+    echo "    é a única forma de você ficar sabendo agora, e não depois de"
+    echo "    desligar na tomada cinco vezes."
+    echo
+    echo "    Quase sempre é espaço em disco. As linhas do mkinitcpio acima"
+    echo "    dizem o que faltou."
+    exit 1
+elif [ -n "$INIT_FALTA" ]; then
+    echo "  ! sem imagem de arranque para:$INIT_FALTA"
+    echo "    A máquina liga pelos outros $INIT_OK kernel(s); escolha no menu do GRUB"
+    echo "    se o primeiro não subir."
+else
+    echo "  ✓ imagem de arranque gerada para $INIT_OK kernel(s)"
+fi
 
 # optical, because `stylus rip` reads the CD drive directly and cdparanoia
 # needs the device, not a mount. rfkill, because the wifi key on a laptop is a
@@ -1145,19 +1279,29 @@ opcionais() {           # a falta de um não justifica perder a instalação
 }
 
 essenciais NetworkManager.service sddm.service
-systemctl set-default graphical.target
+# O único systemctl deste arquivo que ficava fora das duas funções acima —
+# e, portanto, o único capaz de derrubar a configuração inteira sozinho.
+systemctl set-default graphical.target 2>/dev/null ||
+    printf '  ! não deu para deixar a máquina ligando na tela de login\n'
 
 opcionais bluetooth.service systemd-timesyncd.service fstrim.timer \
           ufw.service paccache.timer \
           power-profiles-daemon.service earlyoom.service \
           rtkit-daemon.service \
-          stylus-gpu-fallback.service stylus-fontcache.service
+          stylus-gpu-fallback.service stylus-fontcache.service \
+          stylus-session-guard.service
 #
 # O que cada um dos nossos faz, para quem for mexer nesta lista:
 #   stylus-gpu-fallback  confere, antes da tela de login, se algum driver
 #                        pegou a placa — e carrega o nouveau se nenhum pegou.
 #                        É o que impede um driver NVIDIA quebrado de virar uma
 #                        máquina sem área de trabalho para consertá-la.
+#   stylus-session-guard confere, antes da tela de login, se a sessão que o
+#                        autologin vai abrir sozinha TEM como abrir. Se não
+#                        tiver, desvia para a do STYLUS. Sem ele, um autologin
+#                        apontado para o Plasma numa máquina sem OpenGL vira
+#                        um laço: entra, o KWin morre, entra de novo, para
+#                        sempre — sem tela de login e sem jeito de sair.
 #   stylus-fontcache     o cache do fontconfig antes do greeter. Sem ele o
 #                        primeiro a pedir uma fonte paga a varredura inteira,
 #                        e o primeiro é o i3 — que trava no Pango tempo
@@ -1180,15 +1324,23 @@ else
     grub-install --target=i386-pc "${STYLUS_DISK}" || \
         echo "  ! grub-install (BIOS) encontrou problemas"
 fi
-sed -i 's/^#\?GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/' /etc/default/grub
-grep -q '^GRUB_DISABLE_OS_PROBER' /etc/default/grub || echo 'GRUB_DISABLE_OS_PROBER=false' >> /etc/default/grub
-sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet splash"/' /etc/default/grub
-sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="STYLUS"/' /etc/default/grub
-grep -q '^GRUB_DISTRIBUTOR' /etc/default/grub || echo 'GRUB_DISTRIBUTOR="STYLUS"' >> /etc/default/grub
+# O `grub-install` acima tolera falhar de propósito — mas a tolerância era
+# faz-de-conta: sem /etc/default/grub, o primeiro `sed -i` daqui não acha o
+# arquivo, sai com erro e o `set -e` derruba a configuração inteira dois
+# comandos depois de a gente ter decidido seguir em frente.
+if [ -f /etc/default/grub ]; then
+    sed -i 's/^#\?GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/' /etc/default/grub
+    grep -q '^GRUB_DISABLE_OS_PROBER' /etc/default/grub || echo 'GRUB_DISABLE_OS_PROBER=false' >> /etc/default/grub
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet splash"/' /etc/default/grub
+    sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="STYLUS"/' /etc/default/grub
+    grep -q '^GRUB_DISTRIBUTOR' /etc/default/grub || echo 'GRUB_DISTRIBUTOR="STYLUS"' >> /etc/default/grub
+else
+    echo "  ! /etc/default/grub não existe — o menu de boot fica no padrão"
+fi
 
 # The STYLUS boot menu. gfxterm is what makes a theme render at all; without an
 # explicit GFXMODE some firmware drops to 640x480 and the theme looks cramped.
-if [ -f /usr/share/grub/themes/stylus/theme.txt ]; then
+if [ -f /usr/share/grub/themes/stylus/theme.txt ] && [ -f /etc/default/grub ]; then
     sed -i '/^GRUB_THEME=/d; /^GRUB_GFXMODE=/d; /^GRUB_TERMINAL_OUTPUT=/d; /^GRUB_GFXPAYLOAD_LINUX=/d' /etc/default/grub
     {
         echo 'GRUB_THEME="/usr/share/grub/themes/stylus/theme.txt"'
@@ -1310,6 +1462,23 @@ PLASMA
     if [ "$SESSION_FILE" = "/usr/share/xsessions/stylus.desktop" ]; then
         echo "  ! KDE foi escolhido mas o Plasma não está instalado —"
         echo "    a sessão padrão continua sendo a do STYLUS."
+    else
+        # ── O SDDM abre a NOSSA sessão, que abre o Plasma ──────────────────
+        # Apontar o SDDM direto para o plasmax11.desktop é o caminho curto e
+        # é o que tranca a máquina. Se o Plasma não subir — e ele não sobe sem
+        # OpenGL — o SDDM lança de novo, e de novo, sem parar e sem mostrar
+        # tela de login. De fora parece uma máquina reiniciando sozinha, e não
+        # existe nenhum lugar de onde consertar.
+        #
+        # A stylus-desktop.desktop faz a mesma coisa passando pelo
+        # stylus-session, que confere antes se o Plasma tem como abrir e cai
+        # no i3 quando não tem. A sessão do Plasma continua instalada e
+        # escolhível na tela de login por quem quiser; o que muda é para onde
+        # a máquina vai SOZINHA.
+        PLASMA_SESSION_FILE="$SESSION_FILE"
+        SESSION_FILE="/usr/share/xsessions/stylus-desktop.desktop"
+        # Quem escolheu KDE liga na área de trabalho, não no modo música.
+        echo desktop > "/home/${STYLUS_USERNAME}/.config/stylus/mode"
     fi
 
     # ── Aparência do KDE ────────────────────────────────────────────────────
@@ -1551,9 +1720,26 @@ ${c_grn}  O STYLUS está instalado.${c_reset}
     ${c_b}Mod+Shift+A${c_reset} para o catálogo de programas, e instale navegador,
     jogos, drivers e o que mais quiser.
 
-$( [[ $DESKTOP_CHOICE == kde ]] && echo "    KDE Plasma é a sessão padrão. Para alternar para i3, use
+$( [[ $DESKTOP_CHOICE == kde ]] && {
+    # Não repetir a escolha: dizer o que o chroot REALMENTE gravou. Quando o
+    # Plasma não chega ao disco, o configure cai de volta para a sessão do
+    # STYLUS — e esta tela dizia "KDE é a sessão padrão" do mesmo jeito,
+    # contradizendo o aviso que tinha aparecido dois minutos antes.
+    # Procura pela sessão do STYLUS, não por "plasma": o state.conf agora
+    # aponta para stylus-desktop.desktop mesmo quando o KDE instalou direito
+    # (veja o comentário no chroot). Procurando "plasma" aqui, uma instalação
+    # de KDE perfeita passava a ser anunciada como "o Plasma não chegou".
+    if grep -q 'Session=.*stylus-desktop' "$MNT/var/lib/sddm/state.conf" 2>/dev/null; then
+        echo "    KDE Plasma é a sessão padrão. Para alternar para i3, use
     ${c_b}stylus-mode toggle${c_reset} ou escolha na tela de login do SDDM.
-" )
+"
+    else
+        echo "    ${c_yel}O KDE foi escolhido, mas o Plasma não chegou ao disco${c_reset} — a sessão
+    padrão continua sendo a do STYLUS. Dá para instalar depois com
+    ${c_b}sudo pacman -S plasma-desktop plasma-workspace${c_reset}.
+"
+    fi
+} )
     Para mudar ou consertar o próprio sistema, ${c_b}stylus claude${c_reset} (ou
     ${c_b}Mod+C${c_reset}) abre a fonte dele com o Claude Code, aqui na máquina.
 

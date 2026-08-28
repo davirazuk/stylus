@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=STYLUS — área de trabalho
-Comment=O i3 completo, com barra e terminal
+Comment=KDE Plasma se estiver instalado; o i3 completo se não estiver
 Exec=/usr/local/bin/stylus-session desktop
 TryExec=/usr/local/bin/stylus-session
 Type=Application

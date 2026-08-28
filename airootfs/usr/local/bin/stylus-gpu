@@ -1091,7 +1091,62 @@ fix() {
 
 # ── Entry points ─────────────────────────────────────────────────────────────
 
+# ── Existe OpenGL nesta máquina? ─────────────────────────────────────────────
+#  Pergunta estreita e com uma resposta de uma palavra, porque três programas
+#  precisam dela antes de a sessão gráfica subir: o stylus-session, o guarda de
+#  boot e o stylus-kde.
+#
+#  Ela existe por causa de um defeito concreto. O KWin — o gerenciador de
+#  janelas do Plasma — NÃO ABRE sem OpenGL: ele morre, o startplasma-x11 morre
+#  junto, o SDDM lança de novo, e a máquina fica piscando entre preto e preto
+#  para sempre. Quem olha jura que é a máquina reiniciando sozinha. O modo
+#  música não passa por isso porque o pygame desenha em X11 puro e nunca pede
+#  um contexto GL — então a MESMA máquina abre no modo música e "reinicia" no
+#  KDE, que é exatamente o sintoma que trouxe esta função ao mundo.
+#
+#  E o jeito mais fácil de chegar nesse estado não é placa exótica: é responder
+#  "não" no instalador para "instalar os drivers livres e as bibliotecas de 32
+#  bits para jogos?". Quem não joga responde não, e sai de lá sem o mesa — sem
+#  o mesa não existe OpenGL nenhum nesta máquina, nem por software.
+#
+#  Não usa o glxinfo de propósito: ele mora no mesa-utils, que pode não estar
+#  instalado, e ainda precisa de um DISPLAY que no boot ainda não existe. O que
+#  se olha é o que tem que estar lá para um contexto GL nascer.
+#
+#      hardware   a placa desenha. Plasma abre normal.
+#      software   tem mesa, não tem aceleração. Plasma abre lento (llvmpipe).
+#      nenhum     não há OpenGL nesta máquina. Plasma não abre de jeito nenhum.
+opengl_estado() {
+    local libdir vendor=0 dri=0 nodo=0
+
+    # A biblioteca que o loader do GLX carrega. Sem nenhuma delas não há GL.
+    # Pelo SYSROOT, não pelo caminho fixo: assim a mesma função responde sobre
+    # um sistema montado em /mnt (o instalador) e sobre este aqui.
+    for libdir in "$SYSROOT"/usr/lib "$SYSROOT"/usr/lib64 "$SYSROOT"/usr/lib/x86_64-linux-gnu; do
+        [[ -e $libdir/libGLX_mesa.so.0 || -e $libdir/libGLX_nvidia.so.0 ]] && vendor=1
+        # O mesa moderno põe os drivers em /usr/lib/dri. Um diretório vazio
+        # conta como ausente: o pacote mesa-utils cria a pasta sozinho.
+        [[ -n $(ls "$libdir"/dri/*_dri.so 2>/dev/null) ]] && dri=1
+    done
+
+    # Um nó de render é o driver de kernel já ligado à placa. Sem ele o mesa
+    # cai no llvmpipe mesmo estando inteiro. /dev não existe dentro de uma
+    # raiz só montada, e ali a resposta honesta é "não sei se acelera".
+    [[ -n $(ls "$SYSROOT"/dev/dri/renderD* 2>/dev/null) ]] && nodo=1
+
+    if (( vendor && nodo )); then
+        echo hardware; return 0
+    elif (( vendor || dri )); then
+        echo software; return 0
+    fi
+    echo nenhum; return 1
+}
+
 case ${1:-} in
+    # Uma palavra: hardware, software ou nenhum. Sai 1 só no "nenhum", para
+    # `stylus-gpu --opengl >/dev/null || ...` significar "não há OpenGL".
+    --opengl) opengl_estado; exit $? ;;
+
     --has-dgpu) has_dgpu && exit 0 || exit 1 ;;
     -h|--help)  sed -n '3,9p' "$0" | sed 's/^# \?//'; exit 0 ;;
 

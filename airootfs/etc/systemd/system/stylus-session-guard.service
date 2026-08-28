@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  stylus-session-guard — a última chance de evitar um laço de login
+#
+#  Tem que rodar ANTES do display-manager: depois que o SDDM lança um autologin
+#  para uma sessão que morre na hora, não existe mais nenhum lugar de onde
+#  rodar coisa alguma. A máquina fica piscando preto e a única saída é o botão
+#  de desligar. Este é o único ponto do boot em que ainda dá para desviar.
+#
+#  Vem depois do stylus-gpu-fallback de propósito: aquele carrega o nouveau
+#  quando o driver da NVIDIA não pegou a placa, e a pergunta daqui — "esta
+#  máquina tem OpenGL?" — só tem resposta certa depois que ele já agiu.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=Não deixar o SDDM entrar num laço de login
+After=stylus-gpu-fallback.service systemd-modules-load.service
+Before=display-manager.service graphical.target
+ConditionPathExists=/usr/local/bin/stylus-session-guard
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/stylus-session-guard
+# Nunca segurar um boot. Seja o que for que deu errado aqui, uma tela de login
+# que aparece é melhor do que uma que não aparece.
+TimeoutStartSec=20
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=graphical.target

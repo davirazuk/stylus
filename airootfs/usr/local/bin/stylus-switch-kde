@@ -42,14 +42,22 @@ fi
 
 ok "startplasma-x11 encontrado"
 
-# ── 2. Agora sim: remover i3 ──────────────────────────────────────────
-# rofi NÃO é removido: stylus-shelf e stylus-pickfolder dependem dele
-# dunst NÃO é removido: stylus-mouse e stylus-side-watch dependem dele
-# feh NÃO é removido: stylus-wallpaper depende dele
-I3_PKGS=(i3-wm i3lock xss-lock polybar picom arandr autorandr)
-
-info "Removendo i3..."
-pacman -Rns --noconfirm "${I3_PKGS[@]}" 2>/dev/null && ok "i3 removido" || warn "i3 não estava instalado"
+# ── 2. O i3 FICA ───────────────────────────────────────────────────────
+# Este bloco removia `i3-wm i3lock xss-lock polybar picom arandr autorandr`.
+# Três coisas quebravam de uma vez, e nenhuma delas aparecia aqui:
+#
+#   1. O modo música É o i3. `stylus-session` abre ele com
+#      `i3 -c i3-music.config`. Sem o pacote, a tela cheia — o motivo desta
+#      máquina existir — deixava de abrir para sempre.
+#   2. Este mesmo script termina imprimindo "Para alternar para i3:
+#      stylus-mode toggle", trinta linhas depois de apagar o i3.
+#   3. O i3 é para onde o stylus-session cai quando o Plasma não pode abrir.
+#      Sem ele, uma máquina sem OpenGL não tem para onde ir: preto e pronto.
+#
+# Instalar o KDE não é motivo para desinstalar o outro lado. Os dois convivem
+# — é disso que o `stylus-mode` trata — e o espaço em disco de um gerenciador
+# de janelas não paga nenhum dos três prejuízos acima.
+ok "i3 mantido (é o modo música, e é para onde a máquina cai se o KDE falhar)"
 
 # ── 3. Modo ────────────────────────────────────────────────────────────
 mkdir -p "$USER_HOME/.config/stylus"
@@ -95,6 +103,27 @@ fi
 [[ -n $KDE_SESSION ]] || { fail "nenhuma sessão do Plasma instalada — SDDM não foi tocado"; exit 1; }
 ok "sessão do KDE: $KDE_SESSION"
 
+# ── 4b. O autologin entra na sessão do STYLUS, nunca no Plasma direto ──
+# Aqui estava o defeito que deixava a máquina inutilizável, e ele merece ser
+# escrito por inteiro porque parece inofensivo:
+#
+#     [Autologin] User=<alguém>  Session=plasmax11.desktop  Relogin=true
+#
+# Com essas três linhas juntas, se o Plasma não abrir — e ele não abre sem
+# OpenGL — o SDDM entra sozinho, o KWin morre em três segundos, o Relogin
+# entra sozinho de novo, e isso não para NUNCA. Não aparece tela de login,
+# não dá para escolher outra sessão, não dá para abrir um terminal. De fora
+# parece a máquina reiniciando sem parar. A única saída é o botão de
+# desligar, e o boot seguinte faz tudo de novo.
+#
+# O autologin em si é certo: esta máquina é para usar do sofá, com controle,
+# e pedir senha a cada troca de modo é o oposto disso. O que estava errado
+# era o ALVO. Apontando para stylus.desktop, todo login passa pelo
+# stylus-session, que confere se o Plasma tem como abrir antes de tentar e
+# cai no i3 quando não tem. Mesma comodidade, sem o precipício.
+KDE_SESSION_REAL=$KDE_SESSION
+KDE_SESSION=stylus.desktop
+
 cat > /etc/sddm.conf.d/stylus.conf <<SDDM
 [General]
 DisplayServer=x11
@@ -107,6 +136,8 @@ CursorSize=24
 
 [Autologin]
 User=$REAL_USER
+# stylus.desktop, e não $KDE_SESSION_REAL: veja o comentário acima. Apontar
+# isto direto para o Plasma é o que trancava a máquina num laço de login.
 Session=$KDE_SESSION
 Relogin=true
 
@@ -116,7 +147,7 @@ MinimumVT=7
 [Users]
 HideShells=/usr/bin/nologin,/sbin/nologin
 SDDM
-ok "SDDM → plasma.desktop"
+ok "SDDM → stylus.desktop (que abre o $KDE_SESSION_REAL depois de conferir)"
 
 # ── 5. Garantir que xsessions/stylus.desktop existe para stylus-mode ────
 # O stylus-mode toggle precisa de um stylus.desktop para voltar ao i3.

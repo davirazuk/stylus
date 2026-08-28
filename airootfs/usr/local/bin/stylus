@@ -171,6 +171,10 @@ case "$cmd" in
     app|apps|software|loja) exec stylus-app "$@" ;;
     ch|clonehero-ch) exec stylus-ch "$@" ;;
     gpu)         exec stylus-gpu "$@" ;;
+    # Por que a área de trabalho não abriu. Quando o pré-voo do
+    # stylus-session recusa o Plasma, ele entrega o i3 e não diz nada na
+    # tela — este é o lugar onde o motivo fica escrito.
+    kde|area|área) exec stylus-kde "$@" ;;
     # Caixinha vazia na tela não diz nada sobre a causa, e as causas são quatro.
     fontes|fonts|glifos) exec stylus-fontes "$@" ;;
     update)      exec stylus-update "$@" ;;

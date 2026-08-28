@@ -40,16 +40,14 @@ pacman -S --needed --noconfirm "${I3_PKGS[@]}"
 ok "i3 reinstalado"
 
 # ── Sessão i3 ─────────────────────────────────────────────────────────────
-SDDM_CONF="/etc/sddm.conf.d/stylus.conf"
-if [[ -f "$SDDM_CONF" ]]; then
-    if grep -q "^Session=" "$SDDM_CONF"; then
-        sed -i 's/^Session=.*/Session=stylus.desktop/' "$SDDM_CONF"
-    else
-        echo "Session=stylus.desktop" >> "$SDDM_CONF"
-    fi
-    ok "SDDM configurado para i3"
+# Quem sabe escrever isto é o stylus-set-session, e escrever de novo aqui já
+# custou: o `echo Session=… >>` do fim ia parar DEPOIS do [Users], que é a
+# última seção do arquivo — a chave ficava dentro da seção errada e o SDDM a
+# ignorava em silêncio. Trocar a sessão passava a não fazer nada.
+if [[ -x /usr/local/bin/stylus-set-session ]]; then
+    /usr/local/bin/stylus-set-session music && ok "SDDM configurado para o modo música"
 else
-    warn "stylus.conf não existe — SDDM não configurado"
+    warn "stylus-set-session não existe — SDDM não configurado"
 fi
 
 # ── Sudoers: permitir stylus-mode trocar sessão sem senha ───────────────
