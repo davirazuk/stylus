@@ -446,6 +446,26 @@ def tecla_largura(letra, size=18):
     return f.size(letra.upper())[0] + max(7, (size - 2) // 2) * 2
 
 
+def frase_largura(texto, size=18):
+    """Quanto uma frase com `[X]` vai ocupar — contando o quadradinho.
+
+    A conta que o `frase_com_teclas` faz para desenhar, disponível para quem
+    precisa saber ANTES se a frase cabe. Havia um `largura(sem colchetes) +
+    18 por tecla` escrito à mão no rodapé da interface; 18 é um chute (o
+    quadradinho mede a letra em negrito de dois pontos a menos, mais 14 de
+    folga), e chute que erra para menos numa linha de rodapé é texto
+    desenhado fora da tela.
+    """
+    import re as _re
+    total = 0
+    for p in (q for q in _re.split(r"(\[[^\]]{1,6}\])", texto) if q):
+        if p.startswith("[") and p.endswith("]"):
+            total += tecla_largura(p[1:-1], size)
+        else:
+            total += largura(p, size)
+    return total
+
+
 # ── a capa como objeto ─────────────────────────────────────────────────────
 _sleeve_cache = {}
 

@@ -1122,16 +1122,39 @@ fi
 # chegaria do outro lado.
 sec "o pedido de root não engole o comando"
 if [[ -x airootfs/usr/local/bin/stylus-app ]]; then
-    falso=$(mktemp -d)
+    falso=$(mktemp -d); chmod 0755 "$falso"
     printf '#!/bin/bash\necho "SUDO: $*"\nexit 0\n' > "$falso/sudo"
-    chmod +x "$falso/sudo"
-    saida=$(PATH="$falso:$PATH" timeout 20 bash airootfs/usr/local/bin/stylus-app yay 2>&1)
-    rm -rf "$falso"
-    if grep -q 'SUDO:.* yay$' <<<"$saida"; then
-        ok "o \`stylus app NOME\` chega do outro lado do sudo com o NOME"
+    chmod 0755 "$falso/sudo"
+    # Esta conferência só existe se quem a roda NÃO for root. Como root o
+    # `precisa_root` volta na hora, o `app_yay` segue em frente, e o
+    # `pacman -S --needed --noconfirm git base-devel` acontece DE VERDADE na
+    # máquina de quem estava só conferindo — e o contêiner Arch da construção
+    # na nuvem roda como root. O sintoma era ela ficar vermelha dizendo que o
+    # argumento se perdia; o que aconteceu foi ela ter tentado instalar
+    # pacote, morrido no `USER: unbound variable` e nunca chegado ao sudo de
+    # mentira. Então baixamos para o `nobody` antes de executar.
+    corre=(env "PATH=$falso:$PATH" bash airootfs/usr/local/bin/stylus-app yay)
+    if [[ $EUID -eq 0 ]]; then
+        if command -v setpriv >/dev/null 2>&1; then
+            corre=(setpriv --reuid=65534 --regid=65534 --clear-groups "${corre[@]}")
+        elif command -v runuser >/dev/null 2>&1; then
+            corre=(runuser -u nobody -- "${corre[@]}")
+        else
+            corre=()
+        fi
+    fi
+    if [[ ${#corre[@]} -eq 0 ]]; then
+        rm -rf "$falso"
+        printf '  %s—%s como root e sem setpriv/runuser para baixar\n' "$y" "$z"
     else
-        bad "o \`stylus app yay\` perde o argumento ao pedir root"
-        head -3 <<<"$saida" | sed 's/^/      /'
+        saida=$(timeout 20 "${corre[@]}" 2>&1)
+        rm -rf "$falso"
+        if grep -q 'SUDO:.* yay$' <<<"$saida"; then
+            ok "o \`stylus app NOME\` chega do outro lado do sudo com o NOME"
+        else
+            bad "o \`stylus app yay\` perde o argumento ao pedir root"
+            head -3 <<<"$saida" | sed 's/^/      /'
+        fi
     fi
 else
     printf '  %s—%s sem o stylus-app\n' "$y" "$z"

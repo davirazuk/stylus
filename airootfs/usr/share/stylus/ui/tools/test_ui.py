@@ -667,7 +667,11 @@ def main():
         # de 104 px numa posição fixa: numa tela de 720 o calendário entrava
         # na lista, e nada disso aparece medindo só a resolução do
         # desenvolvedor. Da tela de notebook barato à de 4K.
-        for larg, alt in ((1280, 720), (1366, 768), (1920, 1080), (3840, 2160)):
+        # A de 1024 entrou depois: é a que a máquina virtual e o monitor
+        # velho dão, e foi nela que a quarta coluna dos JOGOS apareceu
+        # desenhada FORA da tela.
+        for larg, alt in ((1024, 768), (1280, 720), (1366, 768),
+                          (1920, 1080), (3840, 2160)):
             quadro = pygame.Rect(230, 0, larg - 230, alt)
             for i, tela in enumerate(app.screens):
                 app._goto(i)
@@ -685,9 +689,20 @@ def main():
                                            f"{sa[:26]!r} x {sb[:26]!r}")
                 # E nada pode ser desenhado fora da tela — que é como um
                 # layout apertado falha antes de chegar a se sobrepor.
+                #
+                # Os DOIS eixos. Isto conferia só o de cima e o de baixo, e
+                # foi pelo lado que a tela dos JOGOS falhou: a grade tinha
+                # quatro quadros de largura fixa, somando 940 px, num corpo
+                # de 794 — três jogos desenhados no vazio à direita da tela,
+                # com a seleção andando por eles. Passava verde: nenhum deles
+                # estava alto ou baixo demais.
                 for rr, ss in caixas:
                     if rr.bottom > alt + 2 or rr.y < -2:
-                        vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}")
+                        vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}"
+                                       " (embaixo)")
+                    if rr.right > larg + 2 or rr.right < quadro.x:
+                        vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}"
+                                       " (ao lado)")
         _T.text = original
         if batidas:
             bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))

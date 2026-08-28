@@ -27,6 +27,7 @@ cheia de música é poder usá-la do outro lado do quarto.
 import math
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -1226,19 +1227,27 @@ class SignalScreen(Screen):
                                              (mx + 7, box.bottom + 22),
                                              (mx, box.bottom + 30)])
 
+        # O veredito fica dentro da MESMA coluna dos três quadros — as três
+        # linhas daqui para baixo não tinham largura nenhuma, e a explicação
+        # do reamostrado ("algo mais está segurando o grafo nessa taxa…") tem
+        # 84 caracteres: numa tela de 1024 ela terminava fora do monitor,
+        # justo a frase que existe para dizer o que fazer quando o caminho do
+        # som está errado.
         vy = by + 3 * 132 + 12
         if not frate:
             T.text(s, "ponha um disco para medir o caminho inteiro",
-                   (bx, vy), 21, T.TEXT_FAINT)
+                   (bx, vy), 21, T.TEXT_FAINT, maxw=bw)
         elif clean:
             T.text(s, "▸ sem conversão: o arquivo chega como foi gravado",
-                   (bx, vy), 24, T.GREEN, bold=True)
+                   (bx, vy), 24, T.GREEN, bold=True, maxw=bw)
         else:
             T.text(s, f"▸ reamostrado {frate / 1000:g} → {graph / 1000:g} kHz",
-                   (bx, vy), 24, T.RED, bold=True)
-            T.text(s, "algo mais está segurando o grafo nessa taxa, ou o "
-                      "conversor ainda não soltou a anterior",
-                   (bx, vy + 34), 18, T.TEXT_FAINT)
+                   (bx, vy), 24, T.RED, bold=True, maxw=bw)
+            # Em parágrafo, não cortada: uma explicação com reticências no
+            # meio não explica nada.
+            T.paragrafo(s, "algo mais está segurando o grafo nessa taxa, ou o "
+                           "conversor ainda não soltou a anterior",
+                        (bx, vy + 34), 18, T.TEXT_FAINT, maxw=bw, limite=2)
         self.app.hint(s, r, "atualiza sozinho   ·   [enter] força agora")
 
 
@@ -3038,9 +3047,18 @@ class GamesScreen(Screen):
         # Começar a grade em 96 punha a primeira fileira em cima da frase.
         x, y = r.x + 44, r.y + 132
         n_games = len(self.ACOES)
-        # games grid: 4 per row
+        # A grade tem quatro colunas, e a LARGURA DELAS vem da tela.
+        #
+        # **Sintoma:** numa tela de 1024 px (máquina virtual, monitor velho,
+        # televisão de 720p ligada por VGA) a quarta coluna era desenhada
+        # FORA da tela: quatro quadros de 220 com 20 de folga somam 940 px, e
+        # o corpo ali tem 794. Três jogos e o quadro de "estatísticas" ficavam
+        # invisíveis — e como a seta continua andando por eles, a seleção
+        # sumia no nada. A fileira de baixo já se ajustava (o `cw2` logo
+        # adiante); metade desta tela era elástica e a outra metade não.
+        gap = 20
         cols = min(4, n_games)
-        cw, gap = 220, 20
+        cw = min(220, max(120, (r.w - 88 - gap * (cols - 1)) // cols))
         for i, (nome, _cmd, binario, icon, kind, de_onde) in enumerate(self.ACOES):
             col = i % cols
             row = i // cols
@@ -3073,14 +3091,19 @@ class GamesScreen(Screen):
                            15, T.TEXT_FAINT, anchor="center", maxw=bx.w - 24)
 
         # CH songs row
-        y2 = y + (n_games // cols + 1) * 120 + 10
+        # Divisão para CIMA: com `n_games // cols + 1` um número de jogos
+        # múltiplo de quatro (doze, um dia) abriria uma fileira inteira de
+        # vazio entre a grade e esta linha, e empurraria a linha para fora da
+        # tela de 768.
+        linhas = (n_games + cols - 1) // cols
+        y2 = y + linhas * 120 + 10
         ch_actions = [
             ("buscar músicas", "󰍉", "buscar"),
             (f"baixadas ({len(self.downloaded)})", "󰀙", "baixadas"),
             ("sincronizar pro celular", "󰢶", "sync"),
             ("estatísticas", "󰎛", "stats"),
         ]
-        cw2 = min(220, (r.w - 88) // 4 - 10)
+        cw2 = min(cw, (r.w - 88 - gap * 3) // 4)
         for i, (label, icon, _sub) in enumerate(ch_actions):
             bx = pygame.Rect(x + i * (cw2 + gap), y2, cw2, 60)
             sel = i + n_games == self.sel
@@ -3979,8 +4002,7 @@ class App:
             T.text(s, contexto, (x, y), 17, T.TEXT_FAINT, maxw=cabe)
             return
 
-        larg_teclas = (T.largura(teclas.replace("[", "").replace("]", ""), 17)
-                       + teclas.count("[") * 18)
+        larg_teclas = T.frase_largura(teclas, 17)
         if contexto:
             sobra = cabe - larg_teclas - 20
             if sobra > 80:
@@ -3989,12 +4011,52 @@ class App:
                 # texto, o corte por reticências a comeria junto e o nome do
                 # disco ficaria colado no primeiro quadradinho.
                 x = rc.right + 22
-            elif larg_teclas > cabe:
-                # Nem as teclas cabem: sem moldura elas ainda entram.
-                T.text(s, teclas.replace("[", "").replace("]", ""), (x, y), 17,
-                       T.TEXT_FAINT, maxw=cabe)
+                # `sobra > 80` já garante `cabe > larg_teclas + 100`: as
+                # teclas cabem inteiras no que restou.
+                T.frase_com_teclas(s, teclas, (x, y), 17, T.TEXT_FAINT)
                 return
-        T.frase_com_teclas(s, teclas, (x, y), 17, T.TEXT_FAINT)
+        # A linha é só das dicas — e ela precisa CABER.
+        #
+        # **Sintoma:** a AGORA anuncia sete atalhos, e numa tela de 1280 os
+        # dois últimos ("[+]/[-] volume", "[D] deck sozinho: desligado") eram
+        # desenhados FORA da tela. O corte por largura existia, mas só dentro
+        # do `if contexto:` — e a AGORA, a ESTANTE e a maioria das seções
+        # chamam isto sem contexto nenhum, ou seja, justamente por onde não
+        # havia conferência.
+        cabem = self._dicas_que_cabem(teclas, cabe)
+        if not cabem:
+            # Nem a primeira dica cabe: sem os quadradinhos ela ainda entra.
+            T.text(s, teclas.replace("[", "").replace("]", ""), (x, y), 17,
+                   T.TEXT_FAINT, maxw=cabe)
+            return
+        T.frase_com_teclas(s, cabem, (x, y), 17, T.TEXT_FAINT)
+
+    @staticmethod
+    def _dicas_que_cabem(teclas, cabe, size=17):
+        """As dicas que couberem, INTEIRAS, na largura dada.
+
+        Cortar esta linha por reticências deixaria "…[D] deck sozinho: desl…",
+        que não é um atalho, é um enigma. Uma dica ou aparece por completo ou
+        não aparece: as primeiras da frase são as que mais importam, e a
+        separação entre elas (dois ou mais espaços) já diz onde uma acaba.
+        """
+        partes = [p for p in re.split(r"\s{2,}", teclas.strip()) if p]
+        if not partes:
+            return ""
+        sep = T.largura("   ", size)
+        usado, saida = 0, []
+        for p in partes:
+            w = T.frase_largura(p, size) + (sep if saida else 0)
+            if usado + w > cabe:
+                break
+            saida.append(p)
+            usado += w
+        # O separador de algumas linhas é um "·" sozinho entre os espaços.
+        # Cortando no meio, ele sobraria pendurado no fim da frase apontando
+        # para o que não está mais ali.
+        while saida and not any(c.isalnum() for c in saida[-1]):
+            saida.pop()
+        return "   ".join(saida)
 
     def lista_com_saida(self, s, r, titulo, sub, acoes, sel, job, dica,
                         size=20):
