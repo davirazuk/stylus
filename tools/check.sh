@@ -1106,6 +1106,51 @@ else
     printf '  %s—%s sem config do i3 ou sem keybindings.txt\n' "$y" "$z"
 fi
 
+# ── o Python escondido dentro dos scripts de shell ────────────────────────
+# A conferência de sintaxe de python acima só olha arquivos .py. Metade da
+# lógica de `stylus-qobuz`, `stylus-spotify` e companhia mora em heredoc:
+#
+#     "$PY" - "$alvo" <<'QOBUZDL'
+#     ...cem linhas de python...
+#     QOBUZDL
+#
+# Nada nunca leu esse python. Um erro de sintaxe ali passa por TODAS as
+# conferências, passa pelo `bash -n` (que só vê um heredoc bem fechado), e
+# só aparece na máquina de alguém, no instante em que a pessoa aperta baixar.
+sec "o python que mora dentro dos scripts"
+py_heredoc=$(mktemp -d)
+trap 'rm -rf "$py_heredoc"' EXIT
+achados=0; quebrados=""
+while IFS= read -r -d '' f; do
+    head -c 200 "$f" | grep -qE '^#!.*(bash|sh)\b' || continue
+    # Só os heredocs entregues a um python: um <<'EOF' de `cat` não é código.
+    mapfile -t marcas < <(grep -vE '^[[:space:]]*#' "$f" |
+                          grep -oE '(python3?|\$PY|\$\{PY\})[^|>]*<<-?'"'"'?[A-Za-z_][A-Za-z0-9_]*' |
+                          grep -oE "[A-Za-z_][A-Za-z0-9_]*$")
+    for marca in "${marcas[@]}"; do
+        [[ -n $marca ]] || continue
+        awk -v m="$marca" '
+            $0 ~ /^[ \t]*#/ && !dentro { next }
+            $0 ~ ("<<'"'"'?" m "'"'"'?$") && !dentro { dentro=1; next }
+            dentro && $0 == m { dentro=0; next }
+            dentro { print }
+        ' "$f" > "$py_heredoc/t.py"
+        [[ -s $py_heredoc/t.py ]] || continue
+        achados=$((achados+1))
+        if ! python3 -c "import ast,io,sys;ast.parse(io.open(sys.argv[1],encoding='utf-8').read())" \
+                "$py_heredoc/t.py" 2>/dev/null; then
+            quebrados+=" ${f#./}:$marca"
+        fi
+    done
+done < <(find airootfs/usr/local/bin airootfs/usr/share/stylus tools -type f -print0 2>/dev/null)
+if [[ -n $quebrados ]]; then
+    bad "python embutido que não compila:$quebrados"
+elif (( achados )); then
+    ok "os $achados blocos de python dentro de scripts compilam"
+else
+    bad "nenhum heredoc de python encontrado — a busca parou de achar"
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

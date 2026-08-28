@@ -312,12 +312,20 @@ for item in items:
     elif isinstance(artist_data, str):
         artist_name = artist_data
 
-    depth = item.get("maximum_bit_depth", 16)
-    rate = item.get("maximum_sampling_rate", 44100)
-    if depth and depth > 16:
-        quality = "hi-res"
-    else:
-        quality = f"{depth}bit/{rate/1000:.1f}kHz"
+    # O maximum_sampling_rate do Qobuz JÁ VEM EM kHz (44.1, 96, 192), não em
+    # Hz. O `rate/1000` de antes transformava todo CD em "16bit/0.0kHz" — e
+    # como o ramo hi-res escondia a taxa por completo, a única taxa que a tela
+    # chegava a mostrar era a errada.
+    depth = item.get("maximum_bit_depth") or 16
+    rate = item.get("maximum_sampling_rate") or 44.1
+    try:
+        rate = float(rate)
+    except (TypeError, ValueError):
+        rate = 44.1
+    if rate > 1000:                       # se um dia mudarem de ideia
+        rate /= 1000.0
+    taxa = ("%g" % round(rate, 1)).replace(".", ",")
+    quality = f"{depth}bit/{taxa}kHz"
 
     results.append({
         "id": item.get("id", ""),
@@ -326,6 +334,11 @@ for item in items:
         "release_year": str(item.get("release_date_original", item.get("release_date_stream", "")))[:4],
         "tracks": item.get("tracks_count", 0),
         "quality": quality,
+        # Booleano em vez de "tem 'hi' no texto?": a tela marcava o disco de
+        # hi-res procurando a palavra dentro da string de qualidade, e no
+        # momento em que a string passou a dizer "24bit/96kHz" o losango
+        # dourado sumiu de todos os discos de uma vez.
+        "hires": bool(depth > 16 or rate > 48),
         "url": f"https://www.qobuz.com/album/{item.get('id', '')}",
     })
 
@@ -337,71 +350,243 @@ PYEOF
         [[ -n $alvo ]] || die "uso: stylus qobuz baixar ID|URL
        o id sai do \`stylus qobuz buscar TERMOS\`"
         "$PY" - "$alvo" <<'QOBUZDL'
-import json, os, re, sys
+import configparser, os, re, sys
+
+# ── O que o qobuz-dl escreve, e o que a pessoa lê ─────────────────────────
+# O qobuz-dl fala para uma interface web, não para gente. Ele cospe
+#
+#     [TRACK_START] 01|Spectre|https://…/cover.jpg|Radiohead|Spectre|199|0
+#     [TRACK_RESULT] 01|Spectre|downloaded|01 - Spectre.flac|-|/…|…|33932278|…
+#
+# e uma barra de progresso feita de \r — que num terminal se reescreve em
+# cima de si mesma e fica bonita, mas quando a saída é um cano vira UMA linha
+# de dez mil caracteres com o mesmo `.01.tmp` repetido. Isso importa mais do
+# que parece: o painel de tarefa da tela cheia mostra as últimas trinta linhas,
+# e as últimas trinta eram todas fragmento de caminho temporário. Baixar um
+# disco pelo sofá parecia um erro rolando.
+#
+# Então traduzimos: uma linha por faixa, em português, e o progresso de volta
+# ao \r quando há terminal de verdade do outro lado.
+class Tradutor:
+    """Filtra a tagarelice do qobuz-dl em linhas que se leem."""
+
+    def __init__(self, saida):
+        self.saida = saida
+        self.resto = ""
+        self.tty = saida.isatty()
+
+    def write(self, txt):
+        self.resto += txt
+        # \r e \n separam igual: a barra de progresso usa \r, e sem tratar
+        # os dois o pedaço todo chega aqui como um segmento só.
+        while True:
+            corte = min([i for i in (self.resto.find("\n"), self.resto.find("\r"))
+                         if i >= 0] or [-1])
+            if corte < 0:
+                break
+            seg, self.resto = self.resto[:corte], self.resto[corte + 1:]
+            self.linha(seg)
+
+    def linha(self, ln):
+        t = ln.strip()
+        if not t:
+            return
+        if t.startswith("[TRACK_START]"):
+            c = t[len("[TRACK_START]"):].strip().split("|")
+            if len(c) >= 2:
+                self.emitir("  ↓ %s  %s" % (c[0], c[1]), efemero=True)
+            return
+        if t.startswith("[TRACK_RESULT]"):
+            c = t[len("[TRACK_RESULT]"):].strip().split("|")
+            if len(c) >= 3:
+                marca = "✓" if c[2] == "downloaded" else "·"
+                fim = "" if c[2] == "downloaded" else "  (%s)" % c[2]
+                self.emitir("  %s %s  %s%s" % (marca, c[0], c[1], fim))
+            return
+        if " /// " in t:                       # a barra de progresso
+            feito, _, onde = t.partition(" /// ")
+            self.emitir("    %s  %s" % (feito.strip(), os.path.basename(onde)),
+                        efemero=True)
+            return
+        if t.startswith("Logging"):
+            self.emitir("entrando no Qobuz…", efemero=True); return
+        if t.startswith("Membership:"):
+            self.emitir("assinatura: %s" % t.split(":", 1)[1].strip()); return
+        if t.startswith("Set max quality:"):
+            # "27 - 24 bit, >96kHz" → só a parte que quer dizer alguma coisa
+            resto = t.split(":", 1)[1].strip()
+            _, _, humano = resto.partition(" - ")
+            self.emitir("teto: %s" % (humano or resto)); return
+        if t.startswith("Downloading:"):
+            self.emitir("disco: %s" % t.split(":", 1)[1].strip()); return
+        if t.startswith("Quality:"):
+            self.emitir("qualidade: %s" % t.split(":", 1)[1].strip()); return
+        if t.startswith("[+] Wrote"):
+            return                              # o encarte; não é notícia
+        if t == "Completed":
+            return                              # quem diz "pronto" somos nós
+        self.emitir(t)
+
+    def emitir(self, txt, efemero=False):
+        """efêmero = linha de progresso: some sozinha num terminal.
+
+        Sem terminal (o painel da tela cheia, um log) ela viraria centenas de
+        linhas iguais, então ali só passam os marcos.
+        """
+        if efemero and not self.tty:
+            return
+        fim = "\r" if (efemero and self.tty) else "\n"
+        pad = " " * max(0, 78 - len(txt)) if efemero and self.tty else ""
+        self.saida.write(txt + pad + fim)
+        self.saida.flush()
+
+    def flush(self):
+        self.saida.flush()
+
+    def isatty(self):
+        return self.tty
+
+
+
+# Instalado ANTES do import do qobuz_dl, e no STDERR — as duas coisas por
+# motivo. É no stderr que ele escreve tudo (a primeira versão disto filtrava o
+# stdout e não pegava uma linha sequer), e o logging dele guarda o objeto
+# sys.stderr no instante do import: trocar depois não troca nada.
+_ERRO_REAL = sys.stderr
+_TRADUTOR = Tradutor(_ERRO_REAL)
+sys.stderr = _TRADUTOR
 
 try:
     from qobuz_dl.core import QobuzDL
 except ImportError:
-    print("o qobuz-dl nao esta instalado. Rode:  stylus qobuz instalar", file=sys.stderr)
+    print("o qobuz-dl não está instalado. Rode:  stylus qobuz instalar",
+          file=sys.stderr)
     sys.exit(1)
 
-import configparser
 cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
 if not os.path.isfile(cfg):
-    print("o qobuz-dl nao esta configurado. Rode `qobuz-dl` uma vez para "
+    print("o qobuz-dl não está configurado. Rode `qobuz-dl` uma vez para "
           "criar ~/.config/qobuz-dl/config.ini", file=sys.stderr)
     sys.exit(1)
-c = configparser.ConfigParser(); c.read(cfg)
+c = configparser.ConfigParser()
+c.read(cfg, encoding="utf-8")
 
 
 def g(k):
-    return c.get("DEFAULT", k, fallback="")
+    return c.get("DEFAULT", k, fallback="").strip()
 
 
 def segredos():
     return [x.strip() for x in g("secrets").split(",") if x.strip()]
 
 
-# Baixar DIRETO na estante, no formato Artista/Album. E o mesmo desenho de
-# pasta que o vinyl.py le, entao o disco aparece na estante sem passo nenhum
-# de arquivamento -- que era onde a fila antiga precisava da interface web no
-# ar so para mover arquivo de lugar.
+# Baixar DIRETO na estante, no formato Artista/Álbum — o mesmo desenho de
+# pasta que o vinyl.py lê, então o disco aparece na estante sem passo nenhum
+# de arquivamento, que era onde a fila antiga precisava da interface web no ar
+# só para mover arquivo de lugar.
 sys.path.insert(0, "/usr/share/stylus/deck")
 try:
     import vinyl
     destino = vinyl.library_root()
 except Exception:                                        # noqa: BLE001
-    destino = os.path.expanduser("~/Musicas")
+    destino = os.path.expanduser("~/Músicas")
 
 alvo = sys.argv[1]
 # Aceita id puro ou URL colada do navegador.
 m = re.search(r"/album/(?:[^/]+/)?([A-Za-z0-9]+)/?$", alvo)
 item_id = m.group(1) if m else alvo
 
-q = QobuzDL(directory=destino, quality=6, embed_art=True,
+# 27 = 24 bit até 192 kHz, o melhor que a assinatura der. O padrão do
+# qobuz-dl é 6, que trava tudo em 16/44,1 — num sistema cuja tese inteira é
+# não reamostrar, baixar CD quando havia hi-res disponível é jogar fora
+# exatamente a coisa que o resto da máquina existe para preservar. O
+# quality_fallback do próprio qobuz-dl cuida de quem não tem hi-res.
+try:
+    qualidade = int(os.environ.get("STYLUS_QOBUZ_QUALITY", "27"))
+except ValueError:
+    qualidade = 27
+
+q = QobuzDL(directory=destino, quality=qualidade, embed_art=True,
             folder_format="{artist}/{album}",
             track_format="{tracknumber} - {tracktitle}")
-try:
-    q.get_tokens()
-    q.initialize_client_with_token(g("user_auth_token"), g("app_id"), segredos())
-except Exception:                                        # noqa: BLE001
-    # Versoes diferentes do qobuz-dl expoem inicializacoes diferentes.
-    try:
-        q.initialize_client(g("email"), g("password"), g("app_id"), segredos())
-    except Exception as e:                               # noqa: BLE001
-        print("nao deu para entrar no Qobuz: %s" % e, file=sys.stderr)
-        sys.exit(1)
 
-print("baixando para %s ..." % destino)
+
+def entrar():
+    """Autentica, e diz em português o que faltou quando não dá.
+
+    ── O defeito que isto conserta ───────────────────────────────────────────
+    A chamada era
+
+        q.initialize_client_with_token(token, app_id, secrets)
+
+    e a assinatura de verdade é
+
+        initialize_client_with_token(user_id, user_auth_token, app_id, secrets)
+
+    Quatro argumentos, e o user_id na frente. Faltando um, o Python levanta
+    TypeError ANTES de tocar na rede — e o `except Exception` logo abaixo
+    engolia isso e caía no login por e-mail e senha. Só que quem entra pela
+    interface (qobuz-dl-gui) autentica por TOKEN: e-mail e senha ficam vazios
+    no config.ini. Então o plano B tentava logar com string vazia e morria em
+    "credenciais inválidas".
+
+    O sintoma, de fora, era o mais confuso possível: a interface web baixava,
+    a linha de comando não, com as mesmas credenciais e o mesmo config.ini.
+    """
+    uid, uat = g("user_id"), g("user_auth_token")
+    app_id, secs = g("app_id"), segredos()
+
+    # O get_tokens() raspa o app_id e os segredos do player web do Qobuz. É
+    # rede, e rede falha. Só vale a pena quando o config.ini não os tem —
+    # antes ele rodava sempre, dentro do mesmo try do login, e uma raspagem
+    # falha derrubava um download que tinha credencial boa guardada em casa.
+    if not app_id or not secs:
+        try:
+            q.get_tokens()
+            app_id = app_id or q.app_id
+            secs = secs or q.secrets
+        except Exception as e:                           # noqa: BLE001
+            print("não deu para descobrir o app_id do Qobuz: %s" % e,
+                  file=sys.stderr)
+
+    if uid and uat and app_id and secs:
+        q.initialize_client_with_token(uid, uat, app_id, secs)
+        return
+
+    email, senha = g("email"), g("password")
+    if email and senha and app_id and secs:
+        q.initialize_client(email, senha, app_id, secs)
+        return
+
+    faltam = [n for n, v in (("user_id", uid), ("user_auth_token", uat),
+                             ("app_id", app_id), ("secrets", secs)) if not v]
+    print("o config.ini do qobuz-dl está incompleto: falta %s.\n"
+          "Entre uma vez pela interface (stylus qobuz abrir) ou rode "
+          "`qobuz-dl` no terminal — os dois escrevem o que falta."
+          % ", ".join(faltam), file=sys.stderr)
+    sys.exit(1)
+
+
+try:
+    entrar()
+except SystemExit:
+    raise
+except Exception as e:                                   # noqa: BLE001
+    print("não deu para entrar no Qobuz: %s" % e, file=sys.stderr)
+    sys.exit(1)
+
+print("baixando para %s …" % destino)
 try:
     if alvo.startswith("http"):
         q.handle_url(alvo)
     else:
         q.download_from_id(item_id, album=True)
 except Exception as e:                                   # noqa: BLE001
-    print("o download falhou: %s" % e, file=sys.stderr)
+    print("o download falhou: %s" % e, file=_ERRO_REAL)
     sys.exit(1)
-print("pronto. `stylus reindex` se a estante nao mostrar na hora.")
+if _TRADUTOR.tty:
+    _ERRO_REAL.write(" " * 78 + "\r")         # apaga a última barra
+print("pronto. `stylus reindex` se a estante não mostrar na hora.")
 QOBUZDL
         ;;
     -h|--help|help) sed -n '11,26p' "$0" | sed 's/^# \?//' ;;

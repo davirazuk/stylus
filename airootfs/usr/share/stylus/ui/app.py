@@ -1444,25 +1444,25 @@ class QobuzScreen(Screen):
         self.scroll = 0.0
         self.target = 0.0
         self.error = None
-        self.gui_up = False
         self.examing = None
         self.job = None
         self._montagem = None
 
     def enter(self):
-        self._check_gui_threaded()
+        self._olhar()
 
-    def _check_gui_threaded(self):
-        import urllib.request
-        import threading
-        def _probe():
-            try:
-                urllib.request.urlopen("http://127.0.0.1:8765/", timeout=2)
-                self.gui_up = True
-            except Exception:
-                self.gui_up = False
+    def _olhar(self):
+        """O que a tela precisa saber para trabalhar, fora do fio do desenho.
+
+        Não sonda mais a interface web. Ela sondava a porta 8765 fixa — uma
+        das cinco que o `stylus-qobuz` procura — e usava a resposta para
+        decidir se `d` podia baixar. Agora `d` baixa pela linha de comando,
+        que não precisa de interface nenhuma no ar, e a sonda virou uma
+        conexão de dois segundos cuja resposta ninguém lia.
+        """
+        def _ler():
             self._montagem = self._ler_montagem()
-        threading.Thread(target=_probe, daemon=True).start()
+        threading.Thread(target=_ler, daemon=True).start()
 
     def _ler_montagem(self):
         """O que falta para a loja funcionar: o qobuz-dl e a conta.
@@ -1470,6 +1470,14 @@ class QobuzScreen(Screen):
         Nenhum dos dois tem a ver com a interface web — ela é opcional e é o
         que se quer evitar num sofá. Ver o cabeçalho do draw.
         """
+        # Há DOIS jeitos de estar autenticado, e antes só um contava.
+        #
+        # Quem entra pela interface web (qobuz-dl-gui) — que é como quase
+        # todo mundo entra — autentica por token: o config.ini fica com
+        # user_id e user_auth_token preenchidos e e-mail e senha VAZIOS.
+        # Exigir e-mail e senha fazia esta tela dizer "a loja ainda não está
+        # ligada" para sempre numa máquina perfeitamente logada, com o cartão
+        # de instalação mandando fazer de novo o que já estava feito.
         cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
         cred = False
         if os.path.exists(cfg):
@@ -1478,8 +1486,10 @@ class QobuzScreen(Screen):
                 cp = configparser.ConfigParser()
                 cp.read(cfg, encoding="utf-8")
                 for sec in cp.sections() + ["DEFAULT"]:
-                    if (cp[sec].get("email", "").strip()
-                            and cp[sec].get("password", "").strip()):
+                    d = cp[sec]
+                    tem = (lambda k: bool(d.get(k, "").strip()))
+                    if ((tem("user_id") and tem("user_auth_token"))
+                            or (tem("email") and tem("password"))):
                         cred = True
                         break
             except Exception:             # noqa: BLE001
@@ -1535,29 +1545,31 @@ class QobuzScreen(Screen):
         threading.Thread(target=_do, daemon=True).start()
 
     def _download(self, item):
-        """Baixa e arquiva — precisa da interface qobuz-dl-gui no ar."""
-        if not self.gui_up:
-            self.app.toast("interface Qobuz não está no ar — stylus qobuz servir")
-            return
+        """Baixa direto para a estante. Sem navegador, sem interface no ar.
+
+        Antes esta função recusava o trabalho quando a interface web não
+        estava de pé — e a interface web é exatamente o que não se quer num
+        sofá, sem teclado, a três metros da tela. O caminho de linha de
+        comando (`stylus qobuz baixar ID`) não precisa de nada no ar e põe o
+        disco em Artista/Álbum, que é o desenho que a estante lê. Apertar `d`
+        e receber "a interface não está no ar" era a tela mandando abrir um
+        navegador para fazer o que ela já sabia fazer sozinha.
+        """
         if self.job and not self.job.done:
             self.app.toast("já tem download rodando")
             return
-        url = item.get("url", "")
+        ident = str(item.get("id") or "").strip() or item.get("url", "")
         artist = item.get("display_subtitle", "")
         title = item.get("display_title", "")
-        if not url:
-            self.app.toast("sem URL para baixar")
+        if not ident:
+            self.app.toast("esse disco veio sem id")
             return
-        queue_file = os.path.expanduser("~/.local/share/stylus/qobuz-queue.txt")
-        os.makedirs(os.path.dirname(queue_file), exist_ok=True)
-        with open(queue_file, "w") as f:
-            f.write(f"{url}|{artist}|{title}\n")
         self.job = Job(
-            ["stylus-qobuz", "fila", queue_file],
+            ["stylus-qobuz", "baixar", ident],
             f"baixando: {artist} — {title}"
         )
         self.examing = None
-        self.app.toast(f"na fila: {artist} — {title}")
+        self.app.toast(f"baixando: {artist} — {title}")
 
     def key(self, ev):
         # ── overlay de exame ────────────────────────────────────────────────
@@ -1616,8 +1628,14 @@ class QobuzScreen(Screen):
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if n:
                 self.examing = self.results[self.sel]
+        elif ev.key == pygame.K_d:
+            # `d` baixa aqui também. A linha de dicas prometia "[d] baixa" na
+            # grade inteira e só o overlay de exame respondia — apertar `d` em
+            # cima de um disco não fazia rigorosamente nada, sem recado.
+            if n:
+                self._download(self.results[self.sel])
         elif ev.key == pygame.K_r:
-            self._check_gui_threaded()
+            self._olhar()
             if self.query:
                 self._search()
         else:
@@ -1639,7 +1657,7 @@ class QobuzScreen(Screen):
 
         # qualidade: se hi-res, um brilho
         quality = item.get("quality", "")
-        if quality and "hi" in quality.lower():
+        if item.get("hires"):
             T.text(s, "◆", (rect.right - 10, rect.y + 10), 11,
                    T.AMBER, anchor="topright")
 
@@ -1713,11 +1731,13 @@ class QobuzScreen(Screen):
 
         # status do download
         y = py + 250
-        if self.gui_up:
-            T.text(s, "d baixa para a estante", (px + 32, y), 16, T.GREEN)
+        if self.job and not self.job.done:
+            T.text(s, "já tem um disco baixando", (px + 32, y), 16, T.AMBER)
+        elif item.get("hires"):
+            T.text(s, "d baixa para a estante — hi-res, sem reamostrar",
+                   (px + 32, y), 16, T.GREEN)
         else:
-            T.text(s, "interface off — stylus qobuz servir para baixar",
-                   (px + 32, y), 14, T.TEXT_FAINT)
+            T.text(s, "d baixa para a estante", (px + 32, y), 16, T.GREEN)
 
         # ações
         y = py + ph - 50
@@ -1816,8 +1836,10 @@ class QobuzScreen(Screen):
             self._card(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
         s.set_clip(old)
 
-        n_found = len(self.results)
-        T.text(s, f"{n_found} discos", (r.right - pad, r.y + 20), 16,
+        # Sob o estado, não em cima dele: os dois eram desenhados no mesmo
+        # canto superior direito, um em y+20 e o outro em y+24, e "pronto"
+        # saía escrito por dentro de "25 discos".
+        T.text(s, f"{len(self.results)} discos", (r.right - pad, r.y + 46), 15,
                T.TEXT_FAINT, anchor="topright")
 
         if self.results:
