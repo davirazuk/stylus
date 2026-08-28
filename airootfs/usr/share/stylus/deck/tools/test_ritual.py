@@ -333,6 +333,39 @@ def main():
     check("o cue percorre um arco que dá para ver",
           math.degrees(abs(ang_rest - ang_lead)) > 6.0)
 
+    # ── de quem é o disco quando ele está solto na raiz ───────────────────
+    case("um disco solto na raiz não é da banda 'Songs'")
+    import shutil as _shutil
+    import tempfile as _tf
+    _raiz = _tf.mkdtemp(prefix="stylus-raiz-")
+    try:
+        # O MUSIC_ROOTS é um _Roots, que RELÊ a configuração a cada iteração
+        # — atribuir a ele não muda nada. Quem manda é o STYLUS_LIBRARY, que
+        # é a primeira coisa que o _configured_roots olha.
+        _antes = os.environ.get("STYLUS_LIBRARY")
+        os.environ["STYLUS_LIBRARY"] = _raiz
+        for _n in ("1993-02-11 - Radiohead - Tel Aviv",
+                   "Radiohead - Lost Treasures", "subjectobjectnoun"):
+            os.makedirs(os.path.join(_raiz, _n), exist_ok=True)
+        os.makedirs(os.path.join(_raiz, "Alex G", "Rocket"), exist_ok=True)
+        _a, _d = vinyl.folder_names(os.path.join(_raiz, "1993-02-11 - Radiohead - Tel Aviv"))
+        check("a data na frente não vira artista", (_a, _d) == ("Radiohead", "Tel Aviv"))
+        _a, _d = vinyl.folder_names(os.path.join(_raiz, "Radiohead - Lost Treasures"))
+        check("'Artista - Álbum' solto na raiz se separa",
+              (_a, _d) == ("Radiohead", "Lost Treasures"))
+        _a, _d = vinyl.folder_names(os.path.join(_raiz, "subjectobjectnoun"))
+        check("sem artista no nome e sem arquivo, devolve vazio — não o nome da raiz",
+              _a == "" and _d == "subjectobjectnoun")
+        _a, _d = vinyl.folder_names(os.path.join(_raiz, "Alex G", "Rocket"))
+        check("e Artista/Álbum continua sendo lido como sempre",
+              (_a, _d) == ("Alex G", "Rocket"))
+    finally:
+        if _antes is None:
+            os.environ.pop("STYLUS_LIBRARY", None)
+        else:
+            os.environ["STYLUS_LIBRARY"] = _antes
+        _shutil.rmtree(_raiz, ignore_errors=True)
+
     # ── o empacotamento dos lados, com medidas exatas ─────────────────────
     case("os lados nunca passam do que cabe num lado")
 
@@ -383,7 +416,6 @@ def main():
     # única coisa que esta máquina faz e mais nenhuma faz, não acontecia para
     # quem estava ouvindo pela assinatura.
     import json as _json
-    import shutil as _shutil
     import tempfile as _tempfile
     _tmp = _tempfile.mkdtemp(prefix="stylus-stream-")
     try:

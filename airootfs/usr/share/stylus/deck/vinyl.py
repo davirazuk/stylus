@@ -886,10 +886,95 @@ def best_root(candidatos=None, profundidade=3):
     return melhor, melhor_n
 
 
+# "1993-02-11 - Radiohead - Tel Aviv" → data, artista, resto.
+# A data é opcional; o que importa é o " - " que separa artista de disco.
+_DATA_NA_FRENTE = re.compile(r"^\s*\d{4}(?:[-.]\d{2}){0,2}\s*[-–—]\s*")
+
+
 def folder_names(folder):
-    """(artista, disco) a partir do caminho — a mesma leitura que o Album faz."""
+    """(artista, disco) a partir do caminho — a mesma leitura que o Album faz.
+
+    O desenho normal da estante é `Artista/Álbum/faixa`, e aí a pasta de cima
+    É o artista. Mas um disco pode estar SOLTO na raiz da estante, e aí a
+    pasta de cima é a raiz.
+
+    **Sintoma:** oito discos desta coleção estão soltos em `~/Músicas/Songs`,
+    e a estante os mostrava como
+
+        Songs — 1993-02-11 - Radiohead - Signal Radio Session
+
+    com "Songs" — o nome da PASTA DA COLEÇÃO — no lugar do artista, em todos
+    eles. Na grade do `stylus shelf`, que ordena por artista, os oito ficavam
+    juntos no começo, todos assinados pela mesma banda inexistente. É a
+    primeira tela que se vê ao apertar Mod+M.
+
+    Quando a pasta de cima é uma raiz da estante, ela não é artista nenhum:
+    o nome do disco é lido do próprio nome da pasta, que quase sempre traz o
+    artista na frente ("Radiohead - Lost Treasures", "2002 - The Strokes -
+    MTV $2 Dollar Bill"). Não achando, devolve artista vazio — que é honesto
+    e melhor do que um nome errado.
+    """
     folder = folder.rstrip(os.sep)
-    return os.path.basename(os.path.dirname(folder)), os.path.basename(folder)
+    nome = os.path.basename(folder)
+    pai = os.path.dirname(folder)
+    if not _e_raiz(pai):
+        return os.path.basename(pai), nome
+    # Solto na raiz: o artista, se houver, está no próprio nome.
+    resto = _DATA_NA_FRENTE.sub("", nome)
+    partes = re.split(r"\s+[-–—]\s+", resto, maxsplit=1)
+    if len(partes) == 2 and partes[0].strip() and partes[1].strip():
+        return partes[0].strip(), partes[1].strip()
+    # O nome não diz quem é. Quem sabe são as ETIQUETAS do primeiro arquivo —
+    # e perguntar a elas custa uma leitura só, e só para os discos soltos que
+    # também não trazem o artista no nome. Melhor uma leitura de disco do que
+    # uma estante que não sabe de quem é a música.
+    return _artista_das_etiquetas(folder), nome
+
+
+_ARTISTA_CACHE = {}
+
+
+def _artista_das_etiquetas(folder):
+    if folder in _ARTISTA_CACHE:
+        return _ARTISTA_CACHE[folder]
+    artista = ""
+    try:
+        faixas = _collect_audio_recursive(folder)
+        if faixas:
+            from mutagen import File as _MFile
+            m = _MFile(faixas[0], easy=True)
+            if m:
+                for chave in ("albumartist", "artist", "performer"):
+                    v = m.get(chave)
+                    if v:
+                        artista = str(v[0]).strip()
+                        break
+    except Exception:                                    # noqa: BLE001
+        artista = ""
+    if len(_ARTISTA_CACHE) > 512:
+        _ARTISTA_CACHE.clear()
+    _ARTISTA_CACHE[folder] = artista
+    return artista
+
+
+def _e_raiz(caminho):
+    """Esta pasta é uma das raízes da estante?
+
+    Compara pelo caminho real: uma raiz montada por link (o `stylus webdav`
+    faz isso) e a mesma pasta escrita direto são a mesma coisa, e comparar as
+    strings diria que não.
+    """
+    try:
+        alvo = os.path.realpath(caminho)
+    except OSError:
+        alvo = caminho
+    for r in MUSIC_ROOTS:
+        try:
+            if os.path.realpath(r) == alvo:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def shelf(root=None, artist=None, min_tracks=SHELF_MIN_TRACKS):
