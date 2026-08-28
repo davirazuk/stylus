@@ -261,6 +261,27 @@ def main():
         # e desenhar com o formulário aberto não pode estourar
         loja.draw(app.surf, corpo)
         ok("desenha com o formulário aberto")
+
+        # O dígito, vindo pela rota DE VERDADE (o App._key global, não o
+        # key() da tela): era o atalho 1-9 de trocar de seção que comia o
+        # número antes do formulário ver. Com o formulário aberto, o 7 tem
+        # que cair no campo de senha e não mexer na seção.
+        loja.entrada = A.Formulario("t", [("a", "", False), ("b", "", True)],
+                                    ["x"], ao_terminar=lambda *_: None)
+        cur_antes = app.cur
+        app._key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_8, unicode="8", mod=0))
+        if app.cur != cur_antes:
+            bad("o dígito mudou de seção durante o formulário")
+        elif not loja.entrada.valores[loja.sel].endswith("8"):
+            bad("o dígito não chegou ao campo do formulário")
+        else:
+            ok("o dígito fica no formulário, não troca de seção")
+        app._key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE, unicode="", mod=0))
+        if loja.entrada is not None:
+            bad("o ESC não fechou o formulário")
+        else:
+            ok("o ESC fecha o formulário")
+
         loja.entrada = None
     except Exception:                                       # noqa: BLE001
         bad("formulário de conta", traceback.format_exc())

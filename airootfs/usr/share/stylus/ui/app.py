@@ -3944,9 +3944,13 @@ class App:
             pygame.draw.rect(s, T.AMBER,
                              (bar.x, bar.y, int(bar.w * frac), bar.h),
                              border_radius=3)
-            # elapsed / remaining
-            elapsed_s = int(self.playing.time_pos())
-            total_s = al.duration
+            # elapsed / remaining do ÁLBUM (não da faixa): o disco inteiro,
+            # igual à barra do ritual. O where() já trouxe o instante absoluto
+            # no álbum em `_t` e o Album de verdade chama o total de `.total`,
+            # não `.duration` — os dois nomes antigos não existiam e derrubavam
+            # a tela na primeira faixa tocando.
+            elapsed_s = int(_t)
+            total_s = int(al.total)
             if total_s and total_s > 0:
                 rem_s = max(0, total_s - elapsed_s)
                 T.text(s, f"{elapsed_s // 60}:{elapsed_s % 60:02d}",
@@ -4074,6 +4078,15 @@ class App:
         if self._flip:
             self._flip = None
             return None
+        # Formulário de conta ABERTO: é modal. O ESC fecha o formulário, e
+        # nenhum atalho global (trocar de tela, abrir o trilho) atravessa —
+        # quem está digitando no formulário tem que poder voltar e digitar.
+        em_formulario = bool(getattr(self.screens[self.cur], "entrada", None))
+        if em_formulario:
+            if ev.key == pygame.K_ESCAPE:
+                self.screens[self.cur].entrada = None
+                return None
+            return self.screens[self.cur].key(ev)
         if ev.key == pygame.K_ESCAPE:
             # VOLTAR, não SAIR. No modo música esta tela é a sessão inteira, e
             # o botão B (que chega aqui como ESC) tem que se comportar como o
@@ -4094,6 +4107,10 @@ class App:
             self.shelf.rescan()
             self.toast("relendo a estante…")
             return None
+        # Os dígitos 1–9 trocam de tela. (Num formulário de conta aberto —
+        # Qobuz/Spotify — o retorno cedo no topo deste método já repassou a
+        # tecla para o formulário, então um número digitado na senha nunca
+        # chega aqui para mudar de tela.)
         if pygame.K_1 <= ev.key <= pygame.K_9:
             i = ev.key - pygame.K_1
             if i < len(self.screens):
