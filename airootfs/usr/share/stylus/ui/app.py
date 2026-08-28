@@ -646,9 +646,14 @@ class NowScreen(Screen):
         # Sem ele o disco fica recortado no nada. Respira em contratempo com
         # o eixo (fases diferentes) para as duas pulsações não baterem juntas
         # e virarem um piscar só.
+        # A respiração vai no `forca`, ASSADA na superfície em cache, e não
+        # num `set_alpha` por quadro. Duas razões, as duas medidas:
+        # o set_alpha custa 4,2 ms contra 0,4 ms num halo de 938 px (um quarto
+        # do quadro para desenhar uma luz parada, nesta que é a tela que fica
+        # ligada a noite inteira); e ele mexia na superfície do CACHE, ou
+        # seja, na luz de todo mundo que pedisse o mesmo halo depois.
         folga = int(R * 0.30)
-        h = T.halo(R, folga)
-        h.set_alpha(int(170 + 60 * math.sin(t * 0.55)))
+        h = T.halo(R, folga, forca=int(190 + 65 * math.sin(t * 0.55)))
         s.blit(h, (cx - R - folga, cy - R - folga))
 
         d = T.disco(R)

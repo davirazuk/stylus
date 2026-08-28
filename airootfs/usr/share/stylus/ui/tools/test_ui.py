@@ -763,19 +763,36 @@ def main():
     secao("o custo de um quadro")
     try:
         import theme as _T
-        # 1. Superfície em cache com alfa-de-superfície 255 é o caminho lento
-        #    do SDL: ele multiplica o 255 em cada pixel em vez de pular.
-        #    Medido num halo de 1040 px: 1,09 ms contra 0,30 ms no mesmo blit.
-        #    É invisível na leitura e são três quartos do custo.
-        lentas = []
-        for nome, sup2 in (("halo", _T.halo(300, forca=192)),
-                           ("disco", _T.disco(300))):
-            if sup2.get_alpha() is not None:
-                lentas.append("%s (alpha=%s)" % (nome, sup2.get_alpha()))
-        if lentas:
-            bad("superfície em cache no caminho lento do SDL", ", ".join(lentas))
+        # 1. O halo e o disco são REDONDOS: o canto da superfície deles tem
+        #    que continuar transparente ao ser blitado.
+        #
+        #    **Sintoma:** havia aqui uma conferência que exigia o contrário —
+        #    `get_alpha() is None` nas duas — em nome de um blit 3,6x mais
+        #    rápido. O `set_alpha(None)` que ela cobrava APAGA o SRCALPHA da
+        #    superfície no pygame 2: o blit deixa de misturar e vira cópia
+        #    crua. Era rápido porque não desenhava luz nenhuma — pintava por
+        #    cima. Na tela, a AGORA ficava com um quadrado preto de meia tela
+        #    (o canto (0,0,0,0) do halo) e um disco de mostarda chapado
+        #    dentro dele, que é o "app de um dólar" que o CLAUDE.md §5.5
+        #    proíbe pelo nome. O teste passava verde em cima disso.
+        #
+        #    Então a pergunta não é qual é o alfa da superfície: é o que
+        #    acontece com o FUNDO quando ela é desenhada por cima.
+        fundo = (40, 90, 160)
+        chapados = []
+        for nome, sup2 in (("halo", _T.halo(120, forca=192)),
+                           ("disco", _T.disco(120))):
+            prova = pygame.Surface(sup2.get_size())
+            prova.fill(fundo)
+            prova.blit(sup2, (0, 0))
+            if prova.get_at((1, 1))[:3] != fundo:
+                chapados.append("%s (canto virou %s)"
+                                % (nome, prova.get_at((1, 1))[:3]))
+        if chapados:
+            bad("superfície em cache pinta por cima do fundo",
+                ", ".join(chapados))
         else:
-            ok("as superfícies em cache saem do caminho lento")
+            ok("o halo e o disco desenham redondos, sem quadrado por baixo")
 
         # 2. O cache do halo tem que caber os degraus de força. Se não couber,
         #    ele se limpa a cada respiração e cada quadro redesenha um halo do

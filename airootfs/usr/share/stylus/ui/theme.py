@@ -926,10 +926,33 @@ def halo(raio, folga=None, forca=255):
     e cada degrau é desenhado uma vez e reusado para sempre. Quatro e não
     dezesseis porque cada um destes é uma superfície de cinco megabytes.
 
-    E `set_alpha(None)` no fim, que parece não fazer nada e faz 3,6 vezes:
-    uma superfície SRCALPHA nasce com alfa-de-superfície 255, e o SDL trata
-    "255" como um valor a multiplicar em cada pixel, não como "não tem". Com
-    None ele some do caminho — 1,09 ms viram 0,30 ms no mesmo blit.
+    ── E NÃO, o `set_alpha(None)` no fim não era de graça ────────────────────
+    Havia aqui um `h.set_alpha(None)` com "1,09 ms viram 0,30 ms" ao lado. O
+    número era verdade e o que ele mediu não era um blit mais rápido: era o
+    blit DEIXANDO DE ACONTECER. No pygame 2, `set_alpha(None)` numa superfície
+    SRCALPHA **apaga o próprio SRCALPHA** e põe o modo de mistura em NONE —
+    o blit vira cópia crua, alfa por pixel e tudo. Medido aqui:
+
+        superfície SRCALPHA recém-criada    flags SRCALPHA=True
+        depois de set_alpha(None)           flags SRCALPHA=False
+
+    E na tela: o canto transparente do halo, que é (0,0,0,0), passava a
+    pintar PRETO (0,0,0) por cima do fundo desfocado da capa, e o âmbar do
+    brilho passava a ser desenhado opaco. Ou seja, a AGORA desenhava um
+    QUADRADO PRETO de meia tela com um disco de mostarda chapado dentro —
+    exatamente o "app de um dólar" que a §5.5 do CLAUDE.md proíbe pelo nome.
+    Rápido porque não desenhava luz nenhuma: pintava por cima.
+
+    A economia de verdade continua sendo a de cima (força assada, cache); o
+    alfa por pixel é o trabalho que esta superfície EXISTE para fazer. E ele
+    cabe: medido de novo, já sem o `set_alpha(None)`, o blit CORRETO custa
+
+        halo de 938 px (a tela parada)      0,85 ms
+        halo de 694 px (tocando)            0,45 ms
+
+    contra os 4,2 ms do `set_alpha` por quadro que a tela parada fazia. Ou
+    seja: o desenho certo é cinco vezes mais barato do que o errado que
+    estava lá, e a "otimização" que faltava era não desenhar nada.
     """
     raio = max(8, int(raio))
     folga = max(4, int(raio * 0.3 if folga is None else folga))
@@ -966,7 +989,6 @@ def halo(raio, folga=None, forca=255):
     # usa um raio por vez.
     if len(_halo_cache) > 10:
         _halo_cache.clear()
-    h.set_alpha(None)                 # ver a docstring: 1,09 ms → 0,30 ms
     _halo_cache[chave] = h
     return h
 
@@ -1062,9 +1084,10 @@ def disco(raio):
     d = pygame.transform.smoothscale(d, (raio * 2, raio * 2))
     if len(_disco_cache) > 6:
         _disco_cache.clear()
-    # O mesmo 3,6x do halo: uma superfície SRCALPHA nasce com alfa-de-
-    # superfície 255, e o SDL multiplica esse 255 em cada pixel em vez de
-    # pulá-lo. Ver a docstring do `halo`.
-    d.set_alpha(None)
+    # NÃO ponha `d.set_alpha(None)` aqui — havia um, copiado do halo com a
+    # mesma promessa de 3,6x. Ele apaga o SRCALPHA da superfície (ver a
+    # docstring do `halo`): o disco passava a ser blitado como CÓPIA, e o
+    # quadrado transparente em volta dele pintava preto por cima do fundo.
+    # O disco é redondo; o que existe fora dele tem que continuar existindo.
     _disco_cache[raio] = d
     return d
