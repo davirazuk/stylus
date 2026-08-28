@@ -20,6 +20,7 @@ import time
 import pygame
 
 # ── cores ──────────────────────────────────────────────────────────────────
+INK_DEEP   = (4, 6, 10)          # um degrau ABAIXO do fundo, para o rofi
 INK        = (7, 8, 11)          # o fundo. quase preto, levemente azul
 INK_SOFT   = (16, 18, 25)        # painéis — mais separação do fundo
 INK_LIFT   = (26, 30, 40)        # sob cursor — mais claro
@@ -35,6 +36,9 @@ AMBER_GLOW = (255, 200, 80)      # âmbar brilhante para brilhos e glows
 
 # cores de informação — secundárias, nunca competem com o âmbar
 BLUE       = (91, 206, 250)      # informação, links, dados
+BLUE_BRIGHT= (127, 215, 255)     # o azul do FOCO — a borda de "o teclado
+                                 # está aqui". Mesmo papel que o
+                                 # AMBER_GLOW faz para o âmbar.
 LAV        = (183, 160, 255)     # especial, destaque suave
 GREEN      = (126, 217, 158)     # ok, sucesso, conectado
 RED        = (238, 122, 130)     # erro, alerta, desconectado

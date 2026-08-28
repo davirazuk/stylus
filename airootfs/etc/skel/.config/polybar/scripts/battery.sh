@@ -35,7 +35,7 @@ case "$status" in
         fi
 
         if   [ "$cap" -le 10 ]; then colour="#f5a9b8"
-        elif [ "$cap" -le 25 ]; then colour="#f0bd76"
+        elif [ "$cap" -le 25 ]; then colour="#f0a030"   # AMBER
         fi
         ;;
 esac

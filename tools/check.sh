@@ -676,6 +676,38 @@ else
     printf '      %s\n' "${naodoc[@]}"
 fi
 
+# ── a paleta e o theme.py dizem a mesma coisa ─────────────────────────────
+# O cabeçalho do arquivo `palette` diz, com todas as letras, que a fonte da
+# verdade é o ui/theme.py. Nada conferia isso — e as duas já discordavam: o
+# INK_DEEP existia na paleta e não no theme.py. Um arquivo que se declara
+# cópia de outro e não é conferido volta a derivar, que é o defeito inteiro
+# que a paleta existe para não deixar acontecer.
+sec "a paleta é o theme.py"
+divergem=$(python3 - <<'DUOEOF'
+import re
+pal = {}
+for ln in open("airootfs/usr/share/stylus/palette", encoding="utf-8"):
+    m = re.match(r"^([A-Z_]+)=#([0-9a-fA-F]{6})\s*$", ln)
+    if m:
+        pal[m.group(1)] = m.group(2).lower()
+th = {}
+for ln in open("airootfs/usr/share/stylus/ui/theme.py", encoding="utf-8"):
+    m = re.match(r"^([A-Z_]+)\s*=\s*\((\d+),\s*(\d+),\s*(\d+)\)", ln)
+    if m:
+        th[m.group(1)] = "%02x%02x%02x" % tuple(int(m.group(i)) for i in (2, 3, 4))
+for k in sorted(set(pal) | set(th)):
+    a, b = pal.get(k), th.get(k)
+    if a != b:
+        print(f"{k}: palette=#{a or 'não tem'} theme.py=#{b or 'não tem'}")
+DUOEOF
+)
+if [[ -z $divergem ]]; then
+    ok "as duas listas de cor são a mesma lista"
+else
+    bad "a paleta e o theme.py discordam:"
+    printf '%s\n' "$divergem" | sed 's/^/      /'
+fi
+
 sec "a paleta não derivou"
 # **Sintoma:** nenhum. E é esse o problema.
 #

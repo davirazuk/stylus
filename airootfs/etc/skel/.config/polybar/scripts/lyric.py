@@ -46,7 +46,9 @@ MAX_CHARS = 32
 
 ACCENT = "#5bcefa"
 DIM = "#768094"
-TEXT = "#a8b0bc"
+# TEXT_DIM da paleta. Era #a8b0bc — um quarto cinza, entre o TEXT_DIM e o
+# TEXT, que não existe em lugar nenhum do resto do sistema.
+TEXT = "#8a95aa"
 
 # One call, all four fields, unit-separated - the same reason media.sh uses
 # 0x1F: a lyric library is full of titles with dashes, pipes and slashes in

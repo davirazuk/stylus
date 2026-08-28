@@ -254,5 +254,5 @@ scrollbar slider:active { background-color: @stylus_accent; }
 
 separator { background-color: @stylus_hover; }
 *:link, button.link { color: @stylus_accent2; }
-infobar.warning { background-color: #f0bd76; color: @stylus_deep; }
+infobar.warning { background-color: #f0a030; color: @stylus_deep; }
 infobar.error   { background-color: #f5a9b8; color: @stylus_deep; }

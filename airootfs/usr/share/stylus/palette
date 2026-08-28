@@ -34,6 +34,10 @@ AMBER=#f0a030
 AMBER_DIM=#c08020
 AMBER_GLOW=#ffc850
 BLUE=#5bcefa
+# O azul claro do FOCO: a borda de "é aqui que o teclado está" no GTK
+# e o cyan do terminal. Precisa saltar do BLUE sem virar outra cor —
+# é o mesmo papel que o AMBER_GLOW faz para o âmbar.
+BLUE_BRIGHT=#7fd7ff
 LAV=#b7a0ff
 GREEN=#7ed99e
 RED=#ee7a82

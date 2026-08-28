@@ -42,7 +42,7 @@ label() {
     if [[ $paused == true ]]; then
         # Yellow, and it stays on the bar with nothing behind it: silence is
         # a state worth seeing, not the absence of one.
-        printf '%%{F#f0bd76}%s%%{F#768094}' "$ICON_MUTED"
+        printf '%%{F#f0a030}%s%%{F#768094}' "$ICON_MUTED"
         (( count )) && printf ' %s' "$count"
         printf '\n'
         return
