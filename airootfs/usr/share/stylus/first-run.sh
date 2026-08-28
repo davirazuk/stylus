@@ -36,7 +36,39 @@ fi
 # Não achou nada. Cria o lugar padrão e diz onde é, em vez de deixar a
 # interface abrir vazia sem explicação — que é o pior primeiro contato
 # possível com um sistema cujo assunto inteiro é a coleção.
-alvo="${XDG_MUSIC_DIR:-$HOME/Music}"
+#
+# **Sintoma:** aqui estava `${XDG_MUSIC_DIR:-$HOME/Music}`, e o XDG_MUSIC_DIR
+# não é variável de ambiente — é uma LINHA dentro do ~/.config/user-dirs.dirs,
+# que só o `xdg-user-dir` sabe ler. Num sistema em português, onde a pasta se
+# chama "Músicas", a variável vinha vazia e o fallback criava um "~/Music" em
+# inglês. A pessoa abria o gerenciador de arquivos, via "Músicas", punha os
+# discos ali — e o STYLUS olhava para a outra pasta e ficava vazio para
+# sempre, sem nada explicando.
+#
+# Duas armadilhas do xdg-user-dirs, as duas medidas aqui antes de escrever
+# esta linha:
+#
+#   nunca rodar o `xdg-user-dirs-update` por cima de um user-dirs.dirs que já
+#   existe. Se as pastas localizadas ainda não foram criadas, ele REESCREVE a
+#   entrada como `XDG_MUSIC_DIR="$HOME/"` — e a estante passaria a ser a casa
+#   inteira. Só numa conta nova, onde o arquivo não existe, ele ajuda.
+#
+#   o `xdg-user-dir` devolve a própria casa quando não sabe, e devolve COM
+#   barra no fim: comparar com "$HOME" pelado não pega. Tira-se a barra.
+if [[ ! -f ${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs ]]; then
+    command -v xdg-user-dirs-update >/dev/null 2>&1 && \
+        xdg-user-dirs-update >/dev/null 2>&1 || true
+fi
+alvo=$(xdg-user-dir MUSIC 2>/dev/null || true)
+alvo=${alvo%/}
+if [[ -z $alvo || $alvo == "$HOME" ]]; then
+    # Sem resposta do xdg: o nome da pasta segue o idioma da máquina, que é
+    # o que a pessoa vai ver no gerenciador de arquivos.
+    case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in
+        pt*) alvo="$HOME/Músicas" ;;
+        *)   alvo="$HOME/Music" ;;
+    esac
+fi
 mkdir -p "$alvo"
 printf '%s\n' "$alvo" > "$CONF"
 command -v notify-send >/dev/null && notify-send --app-name=STYLUS \
