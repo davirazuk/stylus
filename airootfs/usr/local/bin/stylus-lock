@@ -61,8 +61,18 @@ if [[ ! -f $CACHE && -f $BG ]]; then
         convert "$BG" -resize "${geometry}^" -gravity center -extent "$geometry" \
                 -fill black -colorize 35% "$CACHE" 2>/dev/null
     elif command -v ffmpeg >/dev/null; then
+        # `colorchannelmixer` (multiplicativo), e NÃO `eq=brightness` — que
+        # no ffmpeg soma um deslocamento fixo à faixa inteira. O papel de
+        # parede do STYLUS já é escuro: brilho médio 17 de 255. Somar -0.25 é
+        # tirar 64, e o resultado media ZERO — preto liso. A tela de bloqueio
+        # renderizava, guardava em cache e mostrava um retângulo preto, que é
+        # indistinguível do caso "não deu para gerar".
+        #
+        # Os 0.65 são os mesmos 35% em direção ao preto do -colorize acima:
+        # os três caminhos têm que dar a MESMA tela, senão o bloqueio muda de
+        # cara conforme o que estiver instalado na máquina.
         ffmpeg -loglevel quiet -y -i "$BG" \
-               -vf "scale=${geometry/x/:}:force_original_aspect_ratio=increase,crop=${geometry/x/:},eq=brightness=-0.25" \
+               -vf "scale=${geometry/x/:}:force_original_aspect_ratio=increase,crop=${geometry/x/:},colorchannelmixer=rr=0.65:gg=0.65:bb=0.65" \
                "$CACHE" 2>/dev/null
     fi
 fi
