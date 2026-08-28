@@ -11,7 +11,12 @@
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-SHARE=/usr/share/stylus
+# O STYLUS_SHARE existe para poder rodar este despachante contra um CLONE sem
+# instalar nada — a mesma ideia do STYLUS_SOURCE do sync.sh e do
+# STYLUS_GUARD_ROOT do guarda de sessão. Sem ele, testar uma correção nas
+# ferramentas exigia sincronizar a máquina primeiro, e o que se testava era
+# sempre a versão velha que já estava instalada.
+SHARE=${STYLUS_SHARE:-/usr/share/stylus}
 DECK=$SHARE/deck
 TOOLS=$SHARE/tools
 PY="$DECK/venv/bin/python3"
@@ -87,6 +92,56 @@ need() { command -v "$1" >/dev/null || { echo "stylus: falta o $1" >&2; return 1
 
 cmd=${1:-}
 [[ -n $cmd ]] && shift || true
+
+# ── `stylus X --help` nunca pode FAZER o X ────────────────────────────────
+# **Sintoma:** o `--help` era repassado ao programa de baixo, e vários deles
+# não sabem o que é. `stylus backup --help` FAZIA UM BACKUP e deixava um
+# .tar.gz na casa da pessoa. `stylus reindex --help` relia a estante inteira.
+# `stylus aur --help` mexia no yay. `stylus app --help` e `stylus ch --help`
+# respondiam "não conheço --help" em vermelho, e `stylus ui --help` não dizia
+# nada. Ou seja: o gesto universal de "me explique antes de eu executar" era
+# justamente o que executava.
+#
+# Quem sabe se explicar está na lista abaixo, e foi CONFERIDO um por um — o
+# resto é respondido aqui. A lista é a exceção e não a regra de propósito:
+# um subcomando novo, ou um cujo programa mudou, cai no lado seguro sozinho.
+# O `shelf` NÃO está aqui: o `stylus-shelf --help` abre o rofi e tenta tomar
+# o teclado da sessão — conferido, ele desiste depois de 5001 tentativas. Um
+# `--help` que sequestra a tela é o pior caso desta lista, não o menor.
+SABEM_AJUDAR=" now deck play record library diary stats check gaps
+covers lyrics tags rip get qobuz suggest phone webdav audio gpu kde fontes
+mode parede wallpaper spotify instalar install update "
+
+if [[ ${1:-} == -h || ${1:-} == --help ]] && [[ -n $cmd ]]; then
+    if [[ $SABEM_AJUDAR != *" $cmd "* ]]; then
+        # A linha que o próprio `stylus` já escreve sobre este subcomando,
+        # sem os códigos de cor, mais as linhas de continuação (que vêm
+        # indentadas e sem "stylus" no começo).
+        linha_de() {            # linha_de <regex-do-nome>
+            usage | sed 's/\x1b\[[0-9;]*m//g' |
+                awk -v c="$1" '
+                    $0 ~ "^ +stylus " c "( |$)" { p=1; print; next }
+                    p && /^ +stylus / { exit }
+                    p && /^ *$/       { exit }
+                    p                 { print }
+                '
+        }
+        # Exato primeiro; depois com sufixo, porque vários subcomandos têm
+        # apelido e a lista escreve só um deles — o `stylus app` funciona mas
+        # está escrito como "stylus apps". Nesta ordem, e não numa expressão
+        # só, senão "ch" acharia a linha do "check".
+        texto=$(linha_de "$cmd")
+        [[ -z $texto ]] && texto=$(linha_de "$cmd[a-z]*")
+        if [[ -n $texto ]]; then
+            printf '%s\n' "$texto"
+        else
+            printf '\n  %sstylus %s%s não está na lista de ajuda.\n' \
+                   "$b" "$cmd" "$o"
+        fi
+        printf '\n  %sstylus --help%s mostra a lista inteira.\n\n' "$d" "$o"
+        exit 0
+    fi
+fi
 
 case "$cmd" in
     ""|now)

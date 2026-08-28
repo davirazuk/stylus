@@ -929,6 +929,46 @@ elif (( ! FAST )); then
     else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
+# ── `stylus X --help` não pode FAZER o X ──────────────────────────────────
+# **Sintoma:** o `--help` era repassado ao programa de baixo, e vários não
+# sabem o que é. `stylus backup --help` FAZIA UM BACKUP e largava um .tar.gz
+# na casa da pessoa; `stylus reindex --help` relia a estante inteira;
+# `stylus aur --help` mexia no yay. O gesto universal de "me explique antes
+# de eu executar" era exatamente o que executava.
+#
+# A casa é falsa e descartável: se um subcomando voltar a AGIR no --help, o
+# estrago cai no /tmp e a conferência flagra o arquivo que ele deixou lá —
+# em vez de a própria conferência sujar a casa de quem a roda.
+sec "nenhum --help faz o trabalho"
+CASA_FALSA=$(mktemp -d)
+agiram=""
+for c in $(sed 's/#.*//' airootfs/usr/local/bin/stylus |
+           grep -oE '^\s+[a-z][a-z|]*\)' | tr -d ' )' | tr '|' '\n' |
+           grep -vxE 'h|help' | sort -u); do
+    antes=$(find "$CASA_FALSA" -type f 2>/dev/null | wc -l)
+    saida=$(HOME="$CASA_FALSA" XDG_CONFIG_HOME="$CASA_FALSA/.config" \
+            XDG_DATA_HOME="$CASA_FALSA/.local/share" \
+            XDG_CACHE_HOME="$CASA_FALSA/.cache" \
+            STYLUS_SHARE="$PWD/airootfs/usr/share/stylus" \
+            timeout 10 bash airootfs/usr/local/bin/stylus "$c" --help 2>&1)
+    rc=$?
+    depois=$(find "$CASA_FALSA" -type f 2>/dev/null | wc -l)
+    if (( rc == 124 )); then
+        agiram+=" $c(travou)"
+    elif (( depois > antes )); then
+        agiram+=" $c(escreveu-arquivo)"
+    elif [[ -z ${saida// } ]]; then
+        agiram+=" $c(mudo)"
+    fi
+done
+rm -rf "$CASA_FALSA"
+if [[ -z $agiram ]]; then
+    ok "todo subcomando sabe se explicar sem executar nada"
+else
+    bad "--help executa ou emudece em:$agiram"
+fi
+
+
 # ── ler o clone do sistema sem esbarrar no dono ───────────────────────────
 # **Sintoma:** a tela de AJUSTES mostrava a data da ISO no lugar da versão
 # instalada. O /var/lib/stylus/repo é do root — o stylus-update roda com
