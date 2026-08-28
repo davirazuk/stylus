@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=STYLUS — vigias
+Comment=O aviso de virar o lado, o papel de parede que segue o disco, e os avisos de disco e vídeo
+Exec=/usr/local/bin/stylus-fundo
+Hidden=false
+NoDisplay=true
+X-KDE-autostart-after=panel
+OnlyShowIn=KDE;

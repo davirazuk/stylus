@@ -71,10 +71,33 @@ if [[ ! -s $HOME/.config/stylus/library ]]; then
     /usr/share/stylus/first-run.sh || true
 fi
 
+# ── os vigias, antes de qualquer área de trabalho ──────────────────────────
+# **Sintoma:** o `stylus-side-watch` — o aviso de que o lado acabou, que é a
+# tese do sistema — era ligado por uma linha `exec` dentro do config do i3.
+# Duas máquinas ficaram sem ele por motivos diferentes:
+#
+#   no KDE   a sessão do Plasma não lê config de i3, e nada mais o chamava;
+#   no i3    o `sync.sh` PRESERVA o ~/.config de propósito, então quem
+#            instalou antes da linha existir nunca a recebeu — e nunca vai
+#            receber, porque o arquivo é dele agora.
+#
+# Aqui é o único ponto por onde as duas passam, e este arquivo mora em
+# /usr/local/bin, que o sync.sh sobrescreve. Uma linha aqui alcança as
+# máquinas que já existem. O `stylus-fundo` não sobe o que já estiver de pé,
+# então as linhas `exec` do i3 continuam valendo sem subir nada duas vezes.
+vigias() {
+    command -v stylus-fundo >/dev/null 2>&1 || return 0
+    setsid stylus-fundo >/dev/null 2>&1 &
+}
+
 # ── as sessões que este arquivo sabe abrir ─────────────────────────────────
+# O modo música fica de fora: ali a tela cheia já anuncia a virada do lado
+# com a animação dela, e um balãozinho do dunst por cima seria o mesmo aviso
+# duas vezes — pior, o menos bonito dos dois tapando o outro.
 musica()  { anota "abrindo: modo música (i3 + tela cheia)"
             exec i3 -c /usr/share/stylus/i3-music.config; }
 i3_area() { anota "abrindo: área de trabalho do i3"
+            vigias
             exec i3; }
 
 # Onde parar quando o Plasma está fora de questão. O i3 é uma área de
@@ -202,6 +225,7 @@ o driver livre que não foi instalado. Para resolver:  sudo pacman -S mesa"
     # firmou — a trava passava a nunca fechar.
     ( sleep 30 && rm -f "$FALHAS" "$MOTIVO" ) >/dev/null 2>&1 &
     anota "abrindo: KDE Plasma (tentativa $(( falhas + 1 )), vídeo: $gl)"
+    vigias
     exec startplasma-x11
 }
 

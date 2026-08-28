@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-fundo — os vigias do STYLUS, em qualquer área de trabalho
+# ═══════════════════════════════════════════════════════════════════════════
+#  **Sintoma:** o `stylus-side-watch` — que o próprio cabeçalho dele chama de
+#  "a tese do sistema", o aviso de que o LADO acabou e é hora de levantar —
+#  era ligado numa linha `exec` do config do i3, e em lugar nenhum mais. Na
+#  sessão do KDE ele nunca subiu. Quem usa o Plasma tinha o sistema inteiro
+#  menos a única coisa que o torna diferente de uma playlist.
+#
+#  O mesmo valia para o papel de parede que segue o disco, para o aviso de
+#  disco cheio e para o de placa de vídeo caída.
+#
+#  Este script junta os quatro e é seguro rodar em qualquer lugar: cada um só
+#  sobe se ainda não estiver de pé. Assim o i3 pode continuar chamando o que
+#  chama nas linhas `exec` dele sem que nada suba duas vezes, e o KDE — que
+#  lê o ~/.config/autostart e não lê o config do i3 — passa a ter os mesmos
+#  vigias sem uma linha de configuração diferente para manter.
+#
+#      stylus-fundo            sobe o que faltar e sai
+#      stylus-fundo --listar   diz o que está de pé e o que não está
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+SCRIPTS="${XDG_CONFIG_HOME:-$HOME/.config}/i3/scripts"
+
+# Procurar por PEDAÇO DE LINHA DE COMANDO — o que o `pgrep -f` faz — não
+# serve aqui, e a primeira versão disto se enganou justamente assim: qualquer
+# shell que apenas MENCIONE "stylus-side-watch" (um `grep`, um editor aberto
+# no arquivo, este script sendo lido) casa com o padrão, o vigia é dado como
+# de pé e nunca sobe. É o parente do `pkill -f` que mata a própria sessão.
+#
+# Então compara-se argumento por argumento, pelo nome do arquivo: o processo
+# de verdade é `python3 /usr/local/bin/stylus-side-watch`, cujo argumento tem
+# basename "stylus-side-watch"; já o `bash -c '...stylus-side-watch...'`
+# guarda o texto inteiro num único argumento, cujo basename é aquele
+# calhamaço e não casa com nada. Só se PERGUNTA — nada aqui mata processo.
+de_pe() {
+    local alvo=$1 exige=${2:-} pid arg achou
+    for pid in /proc/[0-9]*; do
+        [[ ${pid#/proc/} == "$$" ]] && continue
+        achou=0
+        while IFS= read -r -d '' arg; do
+            [[ ${arg##*/} == "$alvo" ]] && achou=1
+            [[ -n $exige && $arg == "$exige" ]] && exige=""
+        # O 2>/dev/null vem ANTES do `<`: as redireções valem em ordem, e um
+        # processo que morre entre o `for` e a leitura — que é o normal num
+        # computador em uso — imprimiria "arquivo inexistente" a cada login.
+        # Com a ordem trocada a mensagem escapa; medido.
+        done 2>/dev/null <"$pid/cmdline"
+        (( achou )) && [[ -z $exige ]] && return 0
+        exige=${2:-}
+    done
+    return 1
+}
+
+# nome | nome do arquivo do processo | argumento exigido | o que rodar
+SERVICOS=(
+    "o aviso de virar o lado|stylus-side-watch||stylus-side-watch"
+    "o papel de parede que segue o disco|stylus-wallpaper|--se-ligado|stylus-wallpaper --se-ligado"
+    "o aviso de disco cheio|disk-watch.sh||$SCRIPTS/disk-watch.sh"
+    "o aviso de vídeo caído|gpu-watch.sh||$SCRIPTS/gpu-watch.sh"
+)
+
+if [[ ${1:-} == --listar ]]; then
+    for s in "${SERVICOS[@]}"; do
+        IFS='|' read -r nome alvo exige _cmd <<<"$s"
+        if de_pe "$alvo" "$exige"; then printf '  \033[1;32m✓\033[0m %s\n' "$nome"
+        else printf '  \033[2m—\033[0m %s (parado)\n' "$nome"; fi
+    done
+    exit 0
+fi
+
+for s in "${SERVICOS[@]}"; do
+    IFS='|' read -r _nome alvo exige cmd <<<"$s"
+    de_pe "$alvo" "$exige" && continue
+    # O primeiro pedaço tem que existir: chamar o que não está instalado
+    # deixaria um erro no journal a cada login, para sempre, sem consequência
+    # nenhuma além do ruído.
+    read -r bin _ <<<"$cmd"
+    [[ -x $bin || $(command -v "$bin" 2>/dev/null) ]] || continue
+    setsid $cmd >/dev/null 2>&1 &
+done
+exit 0
