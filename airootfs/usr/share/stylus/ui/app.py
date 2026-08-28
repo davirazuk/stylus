@@ -1711,6 +1711,46 @@ class QobuzScreen(Screen):
 
         threading.Thread(target=_do, daemon=True).start()
 
+    def _listas(self):
+        """As SUAS playlists do Qobuz, na mesma grade dos discos.
+
+        Uma assinatura é a coleção de discos e as playlists que você montou, e
+        a loja só sabia da metade: as três playlists desta conta — uma delas
+        com 853 faixas — não tinham caminho nenhum daqui. Elas entram como
+        item da grade, com o mosaico das quatro primeiras capas no lugar da
+        capa, e tocam por `playlist:ID`, que o qobuz_stream entende.
+        """
+        if self.loading:
+            return
+        self.loading, self.error = True, None
+
+        def _do():
+            try:
+                r = rodar(["stylus-qobuz", "listas"],
+                          capture_output=True, text=True, timeout=90)
+                itens = []
+                for ln in (r.stdout or "").splitlines():
+                    campos = ln.split("\t")
+                    if len(campos) != 4 or not campos[3].startswith("qobuz-lista:"):
+                        continue
+                    dono, nome, capa, alvo = campos
+                    ident = alvo.split(":", 1)[1]
+                    itens.append({
+                        "id": ident, "display_title": nome,
+                        "display_subtitle": dono, "release_year": "",
+                        "tracks": 0, "quality": "playlist", "hires": False,
+                        "cover": capa, "lista": True,
+                        "url": "https://play.qobuz.com/playlist/%s" % ident})
+                self.results, self.sel = itens, 0
+                if not itens:
+                    self.error = "nenhuma playlist nesta conta"
+            except Exception as e:                       # noqa: BLE001
+                self.error = str(e)
+            finally:
+                self.loading = False
+
+        threading.Thread(target=_do, daemon=True).start()
+
     def _entrar(self):
         """Abre o formulário de conta. Ver a classe Formulario."""
         def _pronto(deu, dado):
@@ -1860,6 +1900,11 @@ class QobuzScreen(Screen):
         if not ident:
             self.app.toast("esse disco veio sem id")
             return
+        # `playlist:` é o que separa os dois: um id cru não diz sozinho se é
+        # disco ou playlist, e pedir o disco de id 67931032 devolve "não achei
+        # esse disco" para uma playlist que existe.
+        if item.get("lista"):
+            ident = "playlist:%s" % ident
         artist = item.get("display_subtitle", "")
         title = item.get("display_title", "")
         # --deck: a cerimônia, igual à da estante. Um disco que veio pela
@@ -1917,16 +1962,25 @@ class QobuzScreen(Screen):
         n = len(self.results)
         if ev.key == pygame.K_SLASH:
             self.searching, self.query = True, ""
-        elif ev.key in (pygame.K_DOWN, pygame.K_j):
-            if n:
-                self.sel = (self.sel + 1) % n
-        elif ev.key in (pygame.K_UP, pygame.K_k):
-            if n:
-                self.sel = (self.sel - 1) % n
+        # Numa GRADE, para baixo é uma FILEIRA e para o lado é um disco. Estava
+        # trocado: ↓ andava um disco para a direita e → pulava cinco. Com o
+        # cursor no meio da grade, apertar → mandava o foco para a linha de
+        # baixo e apertar ↓ para o vizinho da direita — o olho segue a seta e
+        # a seleção vai para outro lugar, que é a definição de controle
+        # quebrado. E o par vim é h/l para o lado, j/k para cima e para baixo.
         elif ev.key in (pygame.K_RIGHT, pygame.K_l):
             if n:
-                self.sel = min(n - 1, self.sel + self.COLS)
+                self.sel = min(n - 1, self.sel + 1)
         elif ev.key in (pygame.K_LEFT, pygame.K_h):
+            if n:
+                self.sel = max(0, self.sel - 1)
+        elif ev.key in (pygame.K_DOWN, pygame.K_j):
+            if n:
+                # Da última fileira, ↓ vai para o fim: uma grade que tem 23
+                # discos e 5 colunas deixava os três últimos inalcançáveis
+                # pela seta, porque sel+5 passava de n-1 e o min() prendia.
+                self.sel = min(n - 1, self.sel + self.COLS)
+        elif ev.key in (pygame.K_UP, pygame.K_k):
             if n:
                 self.sel = max(0, self.sel - self.COLS)
         elif ev.key == pygame.K_PAGEDOWN:
@@ -1953,10 +2007,19 @@ class QobuzScreen(Screen):
                 self._download(self.results[self.sel])
         elif ev.key == pygame.K_c:
             self._entrar()
+        elif ev.key == pygame.K_l:
+            self._listas()
+        elif ev.key == pygame.K_f:
+            # De volta aos favoritos. Sem esta, quem apertasse [l] ficava
+            # preso nas playlists até reiniciar a tela.
+            self.query = ""
+            self._favoritos()
         elif ev.key == pygame.K_r:
             self._olhar()
             if self.query:
                 self._search()
+            elif any(i.get("lista") for i in self.results):
+                self._listas()
             else:
                 self._favoritos()
         else:
@@ -2163,6 +2226,7 @@ class QobuzScreen(Screen):
             T.vazio(s, r, T.fantasma_busca, "a loja", [
                 "[/] procura um disco",
                 "[p] toca agora  ·  [d] guarda na estante",
+                "[l] as suas playlists  ·  [f] os seus favoritos",
             ])
             return
 
@@ -2213,7 +2277,8 @@ class QobuzScreen(Screen):
         if self.results:
             item = self.results[self.sel]
             self.app.hint(
-                s, r, "[/] procura   [enter] examina   [p] toca   [d] baixa   [c] conta",
+                s, r, "[/] procura  [enter] examina  [p] toca  [d] baixa  "
+                      "[l] playlists  [f] favoritos  [c] conta",
                 contexto=f"{item.get('display_subtitle', '')} — "
                          f"{item.get('display_title', '')}")
 
@@ -2452,16 +2517,25 @@ class SpotifyScreen(Screen):
             self._entrar()
         elif ev.key == pygame.K_SLASH:
             self.searching, self.query = True, ""
-        elif ev.key in (pygame.K_DOWN, pygame.K_j):
-            if n:
-                self.sel = (self.sel + 1) % n
-        elif ev.key in (pygame.K_UP, pygame.K_k):
-            if n:
-                self.sel = (self.sel - 1) % n
+        # Numa GRADE, para baixo é uma FILEIRA e para o lado é um disco. Estava
+        # trocado: ↓ andava um disco para a direita e → pulava cinco. Com o
+        # cursor no meio da grade, apertar → mandava o foco para a linha de
+        # baixo e apertar ↓ para o vizinho da direita — o olho segue a seta e
+        # a seleção vai para outro lugar, que é a definição de controle
+        # quebrado. E o par vim é h/l para o lado, j/k para cima e para baixo.
         elif ev.key in (pygame.K_RIGHT, pygame.K_l):
             if n:
-                self.sel = min(n - 1, self.sel + self.COLS)
+                self.sel = min(n - 1, self.sel + 1)
         elif ev.key in (pygame.K_LEFT, pygame.K_h):
+            if n:
+                self.sel = max(0, self.sel - 1)
+        elif ev.key in (pygame.K_DOWN, pygame.K_j):
+            if n:
+                # Da última fileira, ↓ vai para o fim: uma grade que tem 23
+                # discos e 5 colunas deixava os três últimos inalcançáveis
+                # pela seta, porque sel+5 passava de n-1 e o min() prendia.
+                self.sel = min(n - 1, self.sel + self.COLS)
+        elif ev.key in (pygame.K_UP, pygame.K_k):
             if n:
                 self.sel = max(0, self.sel - self.COLS)
         elif ev.key == pygame.K_PAGEDOWN:

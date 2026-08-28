@@ -8,13 +8,14 @@ aparecendo onde você procura disco é a mesma coisa que não ter.
 
     qobuz_shelf.py favoritos [N]
     qobuz_shelf.py buscar TERMOS
+    qobuz_shelf.py listas
 
 Sai TSV no stdout, no MESMO formato do índice local da estante:
 
     artista <TAB> título <TAB> caminho da capa <TAB> qobuz:ID
 
-O quarto campo é o que separa os dois mundos: caminho de pasta toca da
-estante, `qobuz:` transmite. Erro vai para o stderr e o processo sai != 0 —
+O quarto campo é o que separa os mundos: caminho de pasta toca da estante,
+`qobuz:` transmite um disco, `qobuz-lista:` transmite uma playlist. Erro vai para o stderr e o processo sai != 0 —
 o stdout aqui alimenta um menu, e uma mensagem de erro no meio dele vira um
 disco com nome de erro.
 
@@ -77,6 +78,58 @@ def capa(item):
     return destino
 
 
+def mosaico(urls, destino):
+    """As quatro capas de uma playlist, numa imagem só.
+
+    Playlist não tem capa: o Qobuz manda as capas dos quatro primeiros discos
+    e o site monta o quadrado. Usar só a primeira faria a playlist parecer um
+    disco daquele artista na grade — e é o contrário do que ela é. Quatro
+    quadrantes leem como "coletânea" de longe, que é a informação certa.
+    """
+    if os.path.isfile(destino) and os.path.getsize(destino) > 0:
+        return destino
+    try:
+        from PIL import Image
+    except ImportError:
+        return ""
+    import io
+    import urllib.request
+    lado = 300
+    tela = Image.new("RGB", (lado, lado), (13, 15, 20))
+    postos = [(0, 0), (lado // 2, 0), (0, lado // 2), (lado // 2, lado // 2)]
+    postas = 0
+    for url, (x, y) in zip(urls[:4], postos):
+        try:
+            with urllib.request.urlopen(url, timeout=PRAZO) as r:
+                im = Image.open(io.BytesIO(r.read())).convert("RGB")
+        except Exception:                                # noqa: BLE001
+            continue
+        tela.paste(im.resize((lado // 2, lado // 2), Image.LANCZOS), (x, y))
+        postas += 1
+    if not postas:
+        return ""
+    tmp = destino + ".parcial"
+    try:
+        tela.save(tmp, "JPEG", quality=88)
+        os.replace(tmp, destino)
+    except OSError:
+        return ""
+    return destino
+
+
+def linha_de_lista(pl):
+    """Uma playlist do Qobuz, no mesmo TSV dos discos."""
+    ident = "".join(c for c in str(pl.get("id") or "") if c.isalnum())
+    if not ident:
+        return None
+    nome = (pl.get("name") or "playlist").replace("\t", " ")
+    dono = ((pl.get("owner") or {}).get("name") or "Qobuz").replace("\t", " ")
+    n = pl.get("tracks_count") or 0
+    urls = (pl.get("images300") or pl.get("images150") or pl.get("images") or [])
+    cap = mosaico(urls, os.path.join(CAPAS, "lista-%s.jpg" % ident)) if urls else ""
+    return "%s\t%s (%s faixas)\t%s\tqobuz-lista:%s" % (dono, nome, n, cap, ident)
+
+
 def linhas(itens):
     os.makedirs(CAPAS, exist_ok=True)
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -110,6 +163,20 @@ def main():
                                 offset=0, limit=quantos, sec=cl.sec)
         except Exception as e:                           # noqa: BLE001
             morre("não deu para ler os seus favoritos: %s" % e)
+    elif modo in ("listas", "playlists"):
+        os.makedirs(CAPAS, exist_ok=True)
+        try:
+            dados = cl.get_user_playlists(limit=100)
+        except Exception as e:                           # noqa: BLE001
+            morre("não deu para ler as suas playlists: %s" % e)
+        pls = (dados.get("playlists") or {}).get("items") or []
+        # Os mosaicos em paralelo: quatro capas cada, e em série cinco
+        # playlists já são vinte downloads seguidos.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for ln in pool.map(linha_de_lista, pls):
+                if ln:
+                    print(ln)
+        return
     elif modo in ("buscar", "search"):
         termo = " ".join(sys.argv[2:]).strip()
         if not termo:
@@ -119,7 +186,7 @@ def main():
         except Exception as e:                           # noqa: BLE001
             morre("a busca falhou: %s" % e)
     else:
-        morre("uso: qobuz_shelf.py favoritos [N] | buscar TERMOS")
+        morre("uso: qobuz_shelf.py favoritos [N] | buscar TERMOS | listas")
 
     itens = dados.get("albums", {})
     if isinstance(itens, dict):

@@ -1248,6 +1248,11 @@ class Album:
                 "duration": float(t.get("duration") or 0.0),
                 "start": 0.0,
             })
+        # Uma PLAYLIST não tem lado para virar. O sistema inteiro existe
+        # para dizer "acabou o lado, vira o disco", e isso é verdade sobre um
+        # disco; numa playlist de 274 faixas viraria um alarme a cada vinte
+        # minutos, e o aviso que é a tese do projeto viraria ruído.
+        self.continuo = bool(m.get("continuo"))
         self.artist = m.get("artist") or self.artist
         self.name = m.get("album") or self.name
         self.year = str(m.get("year") or "")
@@ -1315,6 +1320,10 @@ class Album:
         leaving B with two songs on it."""
         if not self.tracks or self.total <= 0:
             self.sides = []
+            return
+        if getattr(self, "continuo", False):
+            self.sides = [{"start": 0.0, "end": self.total,
+                           "tracks": list(range(len(self.tracks)))}]
             return
         n_sides = max(1, math.ceil(self.total / SIDE_MAX_SECONDS))
         target = self.total / n_sides

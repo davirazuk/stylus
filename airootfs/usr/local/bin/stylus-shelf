@@ -16,12 +16,15 @@
 #     Alt+q          procura no Qobuz
 #     Alt+b          baixa para a estante (disco do Qobuz)
 #     Alt+r          refaz o índice
+#
+# Na grade: sem marca é seu, ◆ é disco do Qobuz, ▤ é playlist do Qobuz.
 set -uo pipefail
 SHARE=${STYLUS_SHARE:-/usr/share/stylus}
 PY=$SHARE/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
 export PYTHONPATH=$SHARE/deck
 CACHE="$HOME/.cache/stylus/shelf.tsv"
 CACHE_Q="$HOME/.cache/stylus/shelf-qobuz.tsv"
+CACHE_L="$HOME/.cache/stylus/shelf-listas.tsv"
 mkdir -p "$(dirname "$CACHE")"
 TEMA=$SHARE/rofi-shelf.rasi
 
@@ -47,14 +50,22 @@ sair_com() { limpar; trap - EXIT; exec "$@"; }
 # qobuz-dl fora do ar, um `> $CACHE_Q` direto ESVAZIA o índice que já
 # funcionava — e a grade perde os discos do Qobuz justamente no dia em que a
 # rede caiu, que é quando ninguém vai desconfiar do arquivo de cache.
-indexar_qobuz() {
+_indexar() {   # _indexar ARQUIVO MODO [ARG]
+    local destino=$1 modo=$2 arg=${3:-} tmp="$1.novo"
     [[ -f $SHARE/qobuz_shelf.py ]] || return 1
-    local tmp="$CACHE_Q.novo"
-    if timeout 40 "$PYQ" "$SHARE/qobuz_shelf.py" favoritos 100 > "$tmp" 2>/dev/null \
+    if timeout 60 "$PYQ" "$SHARE/qobuz_shelf.py" "$modo" $arg > "$tmp" 2>/dev/null \
        && [[ -s $tmp ]]; then
-        mv -f "$tmp" "$CACHE_Q"; return 0
+        mv -f "$tmp" "$destino"; return 0
     fi
     rm -f "$tmp"; return 1
+}
+indexar_qobuz() {
+    local a=0
+    _indexar "$CACHE_Q" favoritos 100 && a=1
+    # As playlists são outra chamada e falham à parte: uma conta sem playlist
+    # nenhuma não pode fazer os favoritos sumirem da grade.
+    _indexar "$CACHE_L" listas || true
+    (( a ))
 }
 
 # ANTES de qualquer outra coisa. Esta é a cópia que o próprio script lança em
@@ -154,13 +165,18 @@ linhas_de() {
 
 MENU=$(mktemp) || exit 1
 LIXO+=("$MENU")
-montar() { { linhas_de "$CACHE"; linhas_de "$CACHE_Q" "◆ "; } > "$MENU"; }
+# ▤ para playlist, ◆ para disco do Qobuz, nada para o que é seu. Três coisas
+# que tocam de jeitos diferentes têm que se distinguir ANTES de apertar enter.
+montar() { { linhas_de "$CACHE"; linhas_de "$CACHE_Q" "◆ "
+             linhas_de "$CACHE_L" "▤ "; } > "$MENU"; }
 montar_qobuz() { linhas_de "$CACHE_Q" "◆ " > "$MENU"; }
 
 # O alvo de uma linha escolhida: caminho de pasta, ou `qobuz:ID`.
 alvo_de() {
     local q=$1
-    if [[ $q == "◆ "* ]]; then
+    if [[ $q == "▤ "* ]]; then
+        awk -F'\t' -v q="${q#▤ }" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE_L" 2>/dev/null
+    elif [[ $q == "◆ "* ]]; then
         awk -F'\t' -v q="${q#◆ }" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE_Q"
     else
         awk -F'\t' -v q="$q" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE" 2>/dev/null
@@ -213,6 +229,7 @@ while :; do
     # Alt+r: refaz os dois índices e volta para a grade.
     if (( rc == 13 )); then
         CACHE_Q="$HOME/.cache/stylus/shelf-qobuz.tsv"
+CACHE_L="$HOME/.cache/stylus/shelf-listas.tsv"
         indexar_local 1; indexar_qobuz || true
         montar; PROMPT=estante; continue
     fi
@@ -236,6 +253,19 @@ while :; do
     break
 done
 
+if [[ $alvo == qobuz-lista:* ]]; then
+    id=${alvo#qobuz-lista:}
+    if (( rc == 12 )); then
+        sair_com stylus-term "baixando a playlist" stylus qobuz baixar \
+                 "https://play.qobuz.com/playlist/$id"
+    fi
+    # Uma playlist leva mais que um disco para começar: são duzentos endereços
+    # assinados. Sem recado, o Enter parece não ter feito nada por meio minuto.
+    notify-send -a STYLUS -h string:x-dunst-stack-tag:stylus-qobuz \
+        "Qobuz" "montando a playlist… isso leva alguns segundos" 2>/dev/null
+    (( rc == 10 )) && sair_com stylus qobuz tocar --deck "playlist:$id"
+    sair_com stylus qobuz tocar "playlist:$id"
+fi
 if [[ $alvo == qobuz:* ]]; then
     id=${alvo#qobuz:}
     if (( rc == 12 )); then

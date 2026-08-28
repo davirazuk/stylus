@@ -13,8 +13,11 @@
 #      stylus qobuz entrar       entra na sua conta, sem navegador nenhum
 #      stylus qobuz buscar TERMO procura discos e mostra id, ano e qualidade
 #      stylus qobuz favoritos    os discos que você marcou lá, em JSON
+#      stylus qobuz listas       as suas playlists do Qobuz
+#      stylus qobuz conferir     por que não funciona — uma resposta por etapa
 #      stylus qobuz baixar ID    baixa direto para a estante, sem navegador
 #      stylus qobuz tocar ID     TOCA sem baixar — o disco vem pela rede
+#      stylus qobuz tocar playlist:ID   idem, uma playlist inteira
 #      stylus qobuz tocar --deck ID   idem, com a cerimônia e o disco girando
 #      stylus qobuz abrir        põe a interface web no ar e abre no navegador
 #      stylus qobuz servir       põe no ar e fica em segundo plano
@@ -223,10 +226,16 @@ estado() {
         elif grep -qE '^password *= *.+' "$cfg"; then
             ok "conta: entrada por e-mail e senha"
         else
-            warn "config.ini existe mas sem credencial — \`stylus qobuz abrir\`"
+            warn "config.ini existe mas sem credencial — \`stylus qobuz entrar\`"
         fi
+        # E o que este grep NÃO responde: se o Qobuz ainda aceita isso. Numa
+        # segunda máquina o token estava gravado, esta linha dizia "conta:
+        # entrada por token", e nenhuma busca funcionava — porque a chave do
+        # aplicativo tinha envelhecido. `conferir` pergunta de verdade.
+        printf '  %spergunte ao Qobuz de verdade: %sstylus qobuz conferir%s\n' \
+            "$c_d" "$c_0" "$c_0"
     else
-        warn "sem conta ainda — \`stylus qobuz abrir\` e entre uma vez"
+        warn "sem conta ainda — \`stylus qobuz entrar\`"
     fi
 
     # Onde cada caminho põe o disco. Eram DOIS destinos diferentes e a tela
@@ -284,6 +293,12 @@ case "${1:-}" in
         # mesmo mapeamento que os favoritos precisavam.
         exec "$PY" "$SHARE/qobuz_busca.py" buscar "$@"
         ;;
+    conferir|diagnostico|doctor)
+        shift
+        exec "$PY" "$SHARE/qobuz_estado.py" "$@" ;;
+    listas|playlists)
+        precisa_ser_voce
+        exec "$PY" "$SHARE/qobuz_shelf.py" listas ;;
     favoritos|favorites)
         exec "$PY" "$SHARE/qobuz_busca.py" favoritos "${2:-60}"
         ;;
@@ -566,8 +581,8 @@ QOBUZDL
         COM_DECK=0
         if [[ ${2:-} == --deck ]]; then COM_DECK=1; set -- "$1" "${@:3}"; fi
         alvo="${2:-}"
-        [[ -n $alvo ]] || die "uso: stylus qobuz tocar ID|URL
-       o id sai do \`stylus qobuz buscar TERMOS\`"
+        [[ -n $alvo ]] || die "uso: stylus qobuz tocar ID|URL|playlist:ID
+       o id sai do \`stylus qobuz buscar TERMOS\`; a playlist, do \`listas\`"
         precisa_ser_voce
         command -v mpv >/dev/null || die "o mpv não está instalado."
         LISTA=$("$PY" "$SHARE/qobuz_stream.py" "$alvo") || exit 1
