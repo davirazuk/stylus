@@ -58,15 +58,16 @@ atalho stylus-claude.desktop     "Meta+T"      "Terminal"
 # ── Konsole: o perfil Stylus como padrão ───────────────────────────────────
 # Antes isto só agia se o konsolerc JÁ falasse em Stylus — ou seja, nunca na
 # máquina onde faria diferença.
+# Só quando NÃO há perfil escolhido. Antes o sed reescrevia a linha a cada
+# login: quem trocasse o perfil do Konsole o via voltar para o Stylus na
+# próxima vez que ligasse a máquina.
 KRC="$CONF/konsolerc"
-if [[ -f $KRC ]]; then
-    if grep -q '^DefaultProfile=' "$KRC"; then
-        sed -i 's/^DefaultProfile=.*/DefaultProfile=Stylus.profile/' "$KRC" 2>/dev/null
-    else
+if ! grep -q '^DefaultProfile=' "$KRC" 2>/dev/null; then
+    if [[ -f $KRC ]]; then
         printf '\n[Desktop Entry]\nDefaultProfile=Stylus.profile\n' >> "$KRC"
+    else
+        printf '[Desktop Entry]\nDefaultProfile=Stylus.profile\n' > "$KRC"
     fi
-else
-    printf '[Desktop Entry]\nDefaultProfile=Stylus.profile\n' > "$KRC"
 fi
 
 # ── Dolphin ────────────────────────────────────────────────────────────────
@@ -90,9 +91,44 @@ fi
 # Daqui para baixo só faz sentido com uma sessão de pé.
 (( SEED )) && exit 0
 
-# ── Papel de parede ────────────────────────────────────────────────────────
+# ── "uma vez só" ───────────────────────────────────────────────────────────
+# Tudo daqui para baixo é GOSTO: papel de parede, paleta, tema de widget,
+# cursor, perfil do terminal. Este script roda a cada login, e mexer em gosto
+# a cada login significa desfazer a escolha da pessoa toda vez que ela liga o
+# computador — sem aviso e sem jeito de impedir. Não há defeito que faça
+# alguém trocar de distribuição mais depressa.
+#
+# Então cada ajuste tem carimbo próprio, e não um carimbo geral: assim um
+# ajuste NOVO ainda roda uma vez em quem já tem o sistema, sem reaplicar os
+# antigos por cima do que a pessoa escolheu desde então.
+CARIMBOS="${XDG_STATE_HOME:-$HOME/.local/state}/stylus/kde"
+
+primeira_vez() {                # primeira_vez <nome-do-ajuste>
+    [[ -e $CARIMBOS/$1 ]] && return 1
+    mkdir -p "$CARIMBOS" 2>/dev/null && : > "$CARIMBOS/$1"
+    return 0
+}
+
+# ── Papel de parede: UMA vez, e nunca por cima da escolha da pessoa ────────
+# **Sintoma:** isto rodava a cada login e reaplicava o fundo padrão sem
+# perguntar. Quem escolhesse o próprio papel de parede o perdia no login
+# seguinte, para sempre, sem nada explicando — e não há defeito que faça
+# alguém trocar de distribuição mais depressa do que a área de trabalho
+# desfazer a escolha dele toda vez.
+#
+# Duas condições agora, e as duas por bons motivos:
+#
+#   o carimbo   só na PRIMEIRA sessão. Depois disso o fundo é do usuário. É
+#               o mesmo cuidado que a paleta logo abaixo já tinha.
+#   o seguidor  se a pessoa ligou o papel de parede que acompanha o disco
+#               (`stylus wallpaper --sozinho`), quem manda no fundo é ele —
+#               os dois escrevendo por cima um do outro brigariam a cada
+#               troca de álbum.
 WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
-if [[ -f $WALLPAPER ]] && command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then
+if [[ -f $WALLPAPER ]] \
+   && [[ ! -f ${XDG_CONFIG_HOME:-$HOME/.config}/stylus/wallpaper ]] \
+   && command -v plasma-apply-wallpaperimage >/dev/null 2>&1 \
+   && primeira_vez papel-de-parede; then
     plasma-apply-wallpaperimage "$WALLPAPER" >/dev/null 2>&1
 fi
 
@@ -100,13 +136,17 @@ fi
 # O kdeglobals já nasce apontando para o StylusDark, mas quem instalou antes
 # desta versão não tem essa linha — e aplicar por fora conserta sem mexer no
 # que a pessoa escolheu depois.
+# O carimbo em vez do grep: o grep reaplicava o StylusDark toda vez que a
+# pessoa escolhesse OUTRA paleta, que é a definição de não deixar escolher.
 if command -v plasma-apply-colorscheme >/dev/null 2>&1 \
    && [[ -f /usr/share/color-schemes/StylusDark.colors ]] \
-   && ! grep -q '^ColorScheme=StylusDark' "$CONF/kdeglobals" 2>/dev/null; then
+   && ! grep -q '^ColorScheme=' "$CONF/kdeglobals" 2>/dev/null \
+   && primeira_vez paleta; then
     plasma-apply-colorscheme StylusDark >/dev/null 2>&1
 fi
 
-if command -v kvantummanager >/dev/null 2>&1 && [[ -d /usr/share/Kvantum/Stylus ]]; then
+if command -v kvantummanager >/dev/null 2>&1 && [[ -d /usr/share/Kvantum/Stylus ]] \
+   && primeira_vez kvantum; then
     kvantummanager --set Stylus >/dev/null 2>&1 || kvantummanager -x Stylus >/dev/null 2>&1
 fi
 
@@ -114,7 +154,8 @@ fi
 # O SDDM usa Adwaita (está no stylus.conf dele). Sem esta linha o Plasma
 # entrava com o Breeze e o cursor MUDAVA de desenho no meio do login — um
 # detalhe pequeno que faz o sistema parecer duas coisas coladas.
-if command -v plasma-apply-cursortheme >/dev/null 2>&1; then
+if command -v plasma-apply-cursortheme >/dev/null 2>&1 \
+   && primeira_vez cursor; then
     plasma-apply-cursortheme Adwaita >/dev/null 2>&1
 fi
 
