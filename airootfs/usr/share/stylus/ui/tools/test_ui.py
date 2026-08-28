@@ -437,6 +437,34 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("INSTALAR", traceback.format_exc())
 
+    secao("colchete em nome de disco não vira tecla")
+    # **Sintoma:** a linha de dicas monta "[enter] põe  [s] empilha…" e o
+    # `[X]` vira um quadradinho de tecla. A estante montava a linha inteira
+    # numa f-string, com o nome do disco junto — e disco baixado se chama
+    # "Radiohead - Live From The Basement [FLAC]". O [FLAC] do NOME DO
+    # ARQUIVO virava tecla no meio da frase.
+    #
+    # A regra que isto guarda: marcação só vale em texto que o repositório
+    # escreveu. Dado de usuário entra pelo `contexto=`, que nunca é lido.
+    try:
+        import theme as _T
+        original_tec = _T.tecla
+        teclas_vistas = []
+        _T.tecla = lambda surf, letra, pos, size=18, anchor="topleft", \
+            cor=None: (teclas_vistas.append(str(letra)),
+                       original_tec(surf, letra, pos, size, anchor, cor))[1]
+        teclas_vistas.clear()
+        app.hint(app.surf, corpo, "[enter] põe   [s] empilha",
+                 contexto="Radiohead - Live From The Basement [FLAC] [2008]")
+        _T.tecla = original_tec
+        intrusas = [t for t in teclas_vistas if t.lower() not in ("enter", "s")]
+        if intrusas:
+            bad("o nome do disco virou tecla", ", ".join(intrusas))
+        else:
+            ok(f"[FLAC] e [2008] ficaram texto; só {teclas_vistas} viraram tecla")
+    except Exception:                                       # noqa: BLE001
+        bad("colchete em nome de disco", traceback.format_exc())
+
     secao("nenhum rótulo de ação cortado")
     # As listas de ação da OFICINA e do CELULAR são frases curtas e fixas —
     # cabem, ou o layout está errado. **Sintoma:** a coluna tinha 470 px

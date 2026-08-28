@@ -710,9 +710,9 @@ class ShelfScreen(Screen):
         sel = its[self.sel]
         self.app.hint(
             s, r,
-            f"{sel['artist']} — {sel['name']}   ·   {ha_quanto(sel['last'])}"
-            f"   ·   [enter] põe   [s] empilha   [a] artista   [o] ordem   "
-            f"[/] procura")
+            "[enter] põe   [s] empilha   [a] artista   [o] ordem   [/] procura",
+            contexto=f"{sel['artist']} — {sel['name']}   ·   "
+                     f"{ha_quanto(sel['last'])}")
 
     def _picker(self, s, r):
         """A lista de quem está na coleção, para filtrar a estante.
@@ -1781,10 +1781,10 @@ class QobuzScreen(Screen):
 
         if self.results:
             item = self.results[self.sel]
-            hint = (f"{item.get('display_subtitle', '')} — "
-                    f"{item.get('display_title', '')}   ·   "
-                    f"[/] procura   [enter] examina   [d] baixa")
-            self.app.hint(s, r, hint)
+            self.app.hint(
+                s, r, "[/] procura   [enter] examina   [d] baixa",
+                contexto=f"{item.get('display_subtitle', '')} — "
+                         f"{item.get('display_title', '')}")
 
         if self.job:
             self.app.job_panel(s, pygame.Rect(r.right - 380, r.y + head + 8,
@@ -2154,10 +2154,9 @@ class SpotifyScreen(Screen):
 
         if self.results:
             item = self.results[self.sel]
-            hint = (f"{item.get('artist', '')} — "
-                    f"{item.get('name', '')}   ·   "
-                    f"[/] procura   [enter] toca   [space] pausa")
-            self.app.hint(s, r, hint)
+            self.app.hint(
+                s, r, "[/] procura   [enter] toca   [space] pausa",
+                contexto=f"{item.get('artist', '')} — {item.get('name', '')}")
 
         if self.job:
             self.app.job_panel(s, pygame.Rect(r.right - 380, r.y + head + 8,
@@ -3270,26 +3269,48 @@ class App:
         return cls._audio_level_cache[0]
 
     # ── desenho comum ──────────────────────────────────────────────────────
-    def hint(self, s, r, txt):
+    def hint(self, s, r, teclas, contexto=""):
         """A linha de dicas do rodapé, com as teclas desenhadas como teclas.
 
-        O `[X]` vira quadradinho (ver T.frase_com_teclas). Sem isso a linha
-        lê "s empilha  a artista  o ordem", que parece três palavras faltando
-        e não três teclas — o mesmo defeito que a tela da pilha tinha.
+        O `[X]` de `teclas` vira quadradinho (ver T.frase_com_teclas). Sem
+        isso a linha lê "s empilha  a artista  o ordem", que parece três
+        palavras faltando e não três teclas.
 
-        Se a frase com os quadradinhos não couber na largura, cai para texto
-        puro: dica cortada no meio é pior do que dica sem enfeite.
+        **O `contexto` é separado de propósito, e nunca passa pelo `[...]`.**
+        Sintoma: a estante montava a linha inteira numa `f"..."` — nome do
+        disco, quando foi posto, e os atalhos, tudo junto. E disco baixado se
+        chama "Radiohead - Live From The Basement [FLAC]". O `[FLAC]` do NOME
+        DO ARQUIVO virava um quadradinho de tecla no meio da frase. Marcação
+        só vale em texto que este repositório escreveu; dado de usuário entra
+        por outra porta.
+
+        E o contexto é o que CEDE quando falta espaço, nunca as teclas: na
+        coleção de verdade um nome comprido comia a linha e a dica terminava
+        em "ente…". Nome de disco cortado ainda diz qual disco é; atalho
+        cortado não faz nada.
         """
-        pos = (r.x + 44, r.bottom - 34)
-        if "[" in txt:
-            larg = T.largura(txt.replace("[", "").replace("]", ""), 17)
-            # cada tecla custa ~2 caracteres a mais de moldura
-            larg += txt.count("[") * 18
-            if larg <= r.w - 88:
-                T.frase_com_teclas(s, txt, pos, 17, T.TEXT_FAINT)
+        x, y = r.x + 44, r.bottom - 34
+        cabe = r.w - 88
+        if not teclas.strip():
+            T.text(s, contexto, (x, y), 17, T.TEXT_FAINT, maxw=cabe)
+            return
+
+        larg_teclas = (T.largura(teclas.replace("[", "").replace("]", ""), 17)
+                       + teclas.count("[") * 18)
+        if contexto:
+            sobra = cabe - larg_teclas - 20
+            if sobra > 80:
+                rc = T.text(s, contexto, (x, y), 17, T.TEXT_FAINT, maxw=sobra)
+                # A folga é somada DEPOIS de desenhar: se ela fosse parte do
+                # texto, o corte por reticências a comeria junto e o nome do
+                # disco ficaria colado no primeiro quadradinho.
+                x = rc.right + 22
+            elif larg_teclas > cabe:
+                # Nem as teclas cabem: sem moldura elas ainda entram.
+                T.text(s, teclas.replace("[", "").replace("]", ""), (x, y), 17,
+                       T.TEXT_FAINT, maxw=cabe)
                 return
-            txt = txt.replace("[", "").replace("]", "")
-        T.text(s, txt, pos, 17, T.TEXT_FAINT, maxw=r.w - 88)
+        T.frase_com_teclas(s, teclas, (x, y), 17, T.TEXT_FAINT)
 
     def lista_com_saida(self, s, r, titulo, sub, acoes, sel, job, dica,
                         size=20):
