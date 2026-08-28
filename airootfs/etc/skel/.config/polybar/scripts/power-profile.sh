@@ -35,7 +35,7 @@ PATHNAME="/${BUS//.//}"
 # The plain words, with no bar markup. Two callers want the name and only one
 # of them is polybar: the notification shown after a click was being handed
 # label_for's output, so it popped up reading
-# "%{F#5bcefa}󰾅%{F#7e899c} Equilibrado" - the colour tags printed literally,
+# "%{F#5bcefa}󰾅%{F#768094} Equilibrado" - the colour tags printed literally,
 # because nothing outside the bar knows what to do with them.
 name_for() {
     case $1 in
@@ -57,7 +57,7 @@ icon_for() {
 
 # For the bar only.
 label_for() {
-    printf '%%{F#5bcefa}%s%%{F#7e899c} %s' "$(icon_for "$1")" "$(name_for "$1")"
+    printf '%%{F#5bcefa}%s%%{F#768094} %s' "$(icon_for "$1")" "$(name_for "$1")"
 }
 
 current_profile() {

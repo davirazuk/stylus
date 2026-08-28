@@ -3,9 +3,9 @@
   <defs>
     <style>
       .bg { fill: #07080b; }
-      .hl { fill: #1a1c28; }
+      .hl { fill: #1a1e28; }
       .accent { fill: #f0a030; }
-      .text { fill: #e2e7f0; }
+      .text { fill: #e8ecf5; }
       .faint { fill: #768094; }
       .line { fill: #343a48; }
       .amber-dim { fill: #c08020; }

@@ -4,12 +4,12 @@
 
 * {
     base:       #07080b;
-    mantle:     #05070a;
-    surface0:   #0d0f14;
-    surface1:   #141820;
-    text:       #e2e7f0;
-    subtext0:   #c3cbd8;
-    overlay0:   #7e899c;
+    mantle:     #04060a;
+    surface0:   #101219;
+    surface1:   #1a1e28;
+    text:       #e8ecf5;
+    subtext0:   #8a95aa;
+    overlay0:   #768094;
     blue:       #5bcefa;
     mauve:      #5bcefa;
     red:        #f5a9b8;

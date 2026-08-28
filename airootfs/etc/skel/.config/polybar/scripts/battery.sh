@@ -49,7 +49,7 @@ esac
 # colour tag; putting a `%{F…}` immediately after a literal `%` is how this
 # script once ended up printing "77%%" in the bar.
 if [ "$colour" = "#5bcefa" ]; then
-    printf '%%{F#5bcefa}%s%%{F#7e899c} %s%%\n' "$icon" "$cap"
+    printf '%%{F#5bcefa}%s%%{F#768094} %s%%\n' "$icon" "$cap"
 else
     printf '%%{F%s}%s %s%%\n' "$colour" "$icon" "$cap"
 fi

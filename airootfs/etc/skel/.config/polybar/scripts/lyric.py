@@ -45,7 +45,7 @@ SYNC_EVERY = 4.0       # how often the player is actually asked anything
 MAX_CHARS = 32
 
 ACCENT = "#5bcefa"
-DIM = "#6e7887"
+DIM = "#768094"
 TEXT = "#a8b0bc"
 
 # One call, all four fields, unit-separated - the same reason media.sh uses

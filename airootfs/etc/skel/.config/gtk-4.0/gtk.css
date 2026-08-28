@@ -18,7 +18,7 @@
 
 @define-color accent_color #7fd7ff;
 @define-color accent_bg_color #5bcefa;
-@define-color accent_fg_color #040507;
+@define-color accent_fg_color #04060a;
 
 /* Standalone accent text - links, selected labels - sits on the window
    background rather than on the accent, so it uses the brighter tone to stay
@@ -27,19 +27,19 @@
 
 /* GTK4 applications that are not libadwaita still read these. */
 @define-color theme_selected_bg_color #5bcefa;
-@define-color theme_selected_fg_color #040507;
+@define-color theme_selected_fg_color #04060a;
 
 @define-color link_color #5bcefa;
 @define-color success_color #5bcefa;
 @define-color success_bg_color #5bcefa;
-@define-color success_fg_color #040507;
+@define-color success_fg_color #04060a;
 
 /* Sidebars and list selections, to match Thunar's GTK3 placessidebar. */
 row:selected,
 listview > row:selected,
 .navigation-sidebar > row:selected {
     background-color: #5bcefa;
-    color: #040507;
+    color: #04060a;
 }
 
 /* Focus rings default to the accent, but the plain green is dark against a

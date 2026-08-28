@@ -27,7 +27,7 @@ except Exception:
     sys.exit(0)
 
 ACCENT = "#5bcefa"
-DIM = "#6e7887"
+DIM = "#768094"
 POLL = 5.0
 
 _cache = {}

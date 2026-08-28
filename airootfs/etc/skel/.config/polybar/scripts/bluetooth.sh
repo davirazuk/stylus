@@ -12,5 +12,5 @@ if bluetoothctl show 2>/dev/null | grep -q "Powered: yes"; then
         printf '%%{F#5bcefa}󰂯%%{F-}\n'
     fi
 else
-    printf '%%{F#7e899c}󰂲%%{F-}\n'
+    printf '%%{F#768094}󰂲%%{F-}\n'
 fi

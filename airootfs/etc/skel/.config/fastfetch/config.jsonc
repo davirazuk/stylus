@@ -19,8 +19,8 @@
     // depth, and the campus line quieter than both.
     "color": {
       "1": "#5bcefa",
-      "2": "#141820",
-      "3": "#c3cbd8"
+      "2": "#1a1e28",
+      "3": "#8a95aa"
     },
     "padding": { "top": 1, "left": 2, "right": 3 }
   },
@@ -36,7 +36,7 @@
     "color": {
       "keys": "#5bcefa",
       "title": "#5bcefa",
-      "output": "#e2e7f0"
+      "output": "#e8ecf5"
     }
   },
 

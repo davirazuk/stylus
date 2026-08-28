@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  palette — as cores do STYLUS, num lugar só
+# ═══════════════════════════════════════════════════════════════════════════
+#  Fonte da verdade: ui/theme.py. Este arquivo é a MESMA paleta escrita onde
+#  um shell, um config de barra ou uma pessoa conseguem ler — e é contra ele
+#  que o tools/check.sh confere os arquivos da área de trabalho.
+#
+#  Por que ele existe: as cores estavam copiadas à mão em sete lugares
+#  (polybar, rofi, dunst, alacritty, kdeglobals, Kvantum, qt5ct) e tinham
+#  DERIVADO. O texto era #e8ecf5 na tela cheia e #e2e7f0 na barra; o azul era
+#  #5bcefa no rofi e #70c8e8 na polybar; o lavanda #b7a0ff num lugar e
+#  #b090f0 no outro. Nenhuma dessas diferenças é visível lado a lado — e é
+#  exatamente por isso que passaram. O efeito não é "uma cor errada", é o
+#  sistema inteiro parecendo montado de pedaços de origens diferentes.
+#
+#  §5.5: o âmbar é a ÚNICA cor viva. Azul é informação. Lavanda é especial.
+#  O resto é preto frio e cinza. Nada de madeira, nada de verde-fosforescente.
+#
+#  Mexeu aqui? Mexa no theme.py também, e rode o tools/check.sh.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Mais fundo que o INK. Existe para o rofi ter um degrau abaixo do fundo
+# da tela; havia DOIS pretos assim, #040507 e #05070a, a duas unidades um
+# do outro — dois nomes para a mesma intenção é como a deriva começa.
+INK_DEEP=#04060a
+INK=#07080b
+INK_SOFT=#101219
+INK_LIFT=#1a1e28
+LINE=#343a48
+TEXT=#e8ecf5
+TEXT_DIM=#8a95aa
+TEXT_FAINT=#768094
+AMBER=#f0a030
+AMBER_DIM=#c08020
+AMBER_GLOW=#ffc850
+BLUE=#5bcefa
+LAV=#b7a0ff
+GREEN=#7ed99e
+RED=#ee7a82
+PINK=#f5a9b8

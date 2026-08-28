@@ -285,10 +285,10 @@ title_align center
 for_window [class=".*"] title_format "  %title  "
 
 # class                 border  backgr. text    indicator child_border
-client.focused          #5bcefa #5bcefa #040507 #5bcefa   #5bcefa
-client.focused_inactive #0d0f14 #0d0f14 #e2e7f0 #0d0f14   #0d0f14
-client.unfocused        #0d0f14 #07080b #7e899c #0d0f14   #0d0f14
-client.urgent           #f5a9b8 #f5a9b8 #040507 #f5a9b8   #f5a9b8
+client.focused          #5bcefa #5bcefa #04060a #5bcefa   #5bcefa
+client.focused_inactive #101219 #101219 #e8ecf5 #101219   #101219
+client.unfocused        #101219 #07080b #768094 #101219   #101219
+client.urgent           #f5a9b8 #f5a9b8 #04060a #f5a9b8   #f5a9b8
 client.background       #07080b
 
 # ── STYLUS ────────────────────────────────────────────────────────────────

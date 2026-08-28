@@ -14,18 +14,18 @@
 
    schemes by substituting those exact strings:
 
-     #07080b base      #0d0f14 surface   #141820 hover     #040507 deep
-     #e2e7f0 text      #c3cbd8 subtext   #7e899c dim
+     #07080b base      #101219 surface   #1a1e28 hover     #04060a deep
+     #e8ecf5 text      #8a95aa subtext   #768094 dim
      #5bcefa accent    #5bcefa accent-2  #7fd7ff bright
    ───────────────────────────────────────────────────────────────────────── */
 
 @define-color stylus_base    #07080b;
-@define-color stylus_surface #0d0f14;
-@define-color stylus_hover   #141820;
-@define-color stylus_deep    #040507;
-@define-color stylus_text    #e2e7f0;
-@define-color stylus_subtext #c3cbd8;
-@define-color stylus_dim     #7e899c;
+@define-color stylus_surface #101219;
+@define-color stylus_hover   #1a1e28;
+@define-color stylus_deep    #04060a;
+@define-color stylus_text    #e8ecf5;
+@define-color stylus_subtext #8a95aa;
+@define-color stylus_dim     #768094;
 @define-color stylus_accent  #5bcefa;
 @define-color stylus_accent2 #5bcefa;
 @define-color stylus_bright  #7fd7ff;
@@ -41,7 +41,7 @@
 @define-color theme_selected_fg_color @stylus_deep;
 @define-color insensitive_bg_color @stylus_base;
 @define-color insensitive_fg_color @stylus_dim;
-@define-color borders #141820;
+@define-color borders #1a1e28;
 @define-color accent_color @stylus_accent;
 @define-color accent_bg_color @stylus_accent;
 @define-color accent_fg_color @stylus_deep;

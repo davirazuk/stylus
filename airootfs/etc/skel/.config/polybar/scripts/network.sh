@@ -37,13 +37,13 @@ if command -v nmcli >/dev/null 2>&1; then
         [[ -n ${name//[[:space:]]/} && $name != "--" ]] || name=$device
 
         case $type in
-            wifi)     printf '%%{F#5bcefa}󰖩%%{F#7e899c} %s\n' "$name"; exit 0 ;;
+            wifi)     printf '%%{F#5bcefa}󰖩%%{F#768094} %s\n' "$name"; exit 0 ;;
             ethernet) [[ -n $nm_wired ]] || nm_wired=$name ;;
         esac
     done < <(nmcli -t -f TYPE,STATE,DEVICE,CONNECTION device status 2>/dev/null)
 
     if [[ -n $nm_wired ]]; then
-        printf '%%{F#5bcefa}󰈀%%{F#7e899c} %s\n' "$nm_wired"
+        printf '%%{F#5bcefa}󰈀%%{F#768094} %s\n' "$nm_wired"
         exit 0
     fi
 
@@ -51,7 +51,7 @@ if command -v nmcli >/dev/null 2>&1; then
     # so report it rather than falling through and asking the kernel the same
     # question a second time.
     if (( nm_answered )); then
-        printf '%%{F#f5a9b8}󰖪%%{F#7e899c} offline\n'
+        printf '%%{F#f5a9b8}󰖪%%{F#768094} offline\n'
         exit 0
     fi
 fi
@@ -66,14 +66,14 @@ for dev in /sys/class/net/*; do
         ssid=""
         command -v iw >/dev/null 2>&1 &&
             ssid=$(iw dev "$iface" link 2>/dev/null | sed -n 's/^\s*SSID: //p')
-        printf '%%{F#5bcefa}󰖩%%{F#7e899c} %s\n' "${ssid:-$iface}"
+        printf '%%{F#5bcefa}󰖩%%{F#768094} %s\n' "${ssid:-$iface}"
         exit 0
     fi
     wired=$iface
 done
 
 if [ -n "${wired:-}" ]; then
-    printf '%%{F#5bcefa}󰈀%%{F#7e899c} %s\n' "$wired"
+    printf '%%{F#5bcefa}󰈀%%{F#768094} %s\n' "$wired"
 else
-    printf '%%{F#f5a9b8}󰖪%%{F#7e899c} offline\n'
+    printf '%%{F#f5a9b8}󰖪%%{F#768094} offline\n'
 fi

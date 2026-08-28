@@ -42,18 +42,18 @@ label() {
     if [[ $paused == true ]]; then
         # Yellow, and it stays on the bar with nothing behind it: silence is
         # a state worth seeing, not the absence of one.
-        printf '%%{F#f0bd76}%s%%{F#7e899c}' "$ICON_MUTED"
+        printf '%%{F#f0bd76}%s%%{F#768094}' "$ICON_MUTED"
         (( count )) && printf ' %s' "$count"
         printf '\n'
         return
     fi
 
     if (( count )); then
-        printf '%%{F#5bcefa}%s%%{F#7e899c} %s\n' "$ICON_BELL" "$count"
+        printf '%%{F#5bcefa}%s%%{F#768094} %s\n' "$ICON_BELL" "$count"
     else
         # Nothing waiting: the bell in the dim colour, so the click target is
         # still there without drawing attention to itself.
-        printf '%%{F#7e899c}%s\n' "$ICON_BELL"
+        printf '%%{F#768094}%s\n' "$ICON_BELL"
     fi
 }
 

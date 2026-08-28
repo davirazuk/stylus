@@ -660,6 +660,94 @@ else
     printf '      %s\n' "${naodoc[@]}"
 fi
 
+sec "a paleta não derivou"
+# **Sintoma:** nenhum. E é esse o problema.
+#
+# As cores estavam copiadas à mão em sete arquivos e tinham derivado devagar:
+# o texto era #e8ecf5 na tela cheia e #e2e7f0 na barra; o azul, #5bcefa no
+# rofi e #70c8e8 na polybar; o lavanda, #b7a0ff aqui e #b090f0 ali. Havia até
+# dois pretos "mais fundos que o fundo" a duas unidades um do outro.
+#
+# Nenhuma dessas diferenças aparece quando se olha um arquivo por vez — só
+# quando se olha o sistema. O resultado não é "uma cor errada": é a barra, o
+# menu e a tela cheia parecendo vir de três projetos diferentes.
+#
+# A regra: uma cor no /etc/skel ou é IGUAL a uma da paleta, ou é claramente
+# outra cor. O que não pode existir é quase-igual — que é sempre engano, nunca
+# escolha. As variantes claras do terminal (o azul brilhante do ANSI, por
+# exemplo) ficam longe o bastante e passam.
+deriva=$(python3 - <<'PALEOF'
+import re, pathlib
+
+pal = {}
+for linha in open("airootfs/usr/share/stylus/palette", encoding="utf-8"):
+    m = re.match(r"^([A-Z_]+)=#([0-9a-fA-F]{6})$", linha.strip())
+    if m:
+        pal[m.group(1)] = m.group(2).lower()
+
+
+def rgb(h):
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+LIMITE = 22.0        # abaixo disto, duas cores sao a mesma intencao
+
+# Os dois lados da casa. O i3 mora no /etc/skel; o KDE, em /usr/share --
+# esquema de cor, Kvantum, qt5ct/qt6ct. Uma paleta que so vale de um lado
+# nao e uma paleta: e a barra do i3 e o Dolphin do KDE discordando sobre
+# qual e o cinza do sistema, que e exatamente o que se quer evitar quando
+# duas pessoas usam a mesma maquina de jeitos diferentes.
+RAIZES = ["airootfs/etc/skel",
+          "airootfs/usr/share/color-schemes",
+          "airootfs/usr/share/Kvantum",
+          "airootfs/usr/share/qt5ct",
+          "airootfs/usr/share/qt6ct"]
+
+achados = {}
+
+
+def confere(cor, r, arq):
+    for nome, v in pal.items():
+        d = sum((a - b) ** 2 for a, b in zip(r, rgb(v))) ** 0.5
+        if 0 < d < LIMITE:
+            achados.setdefault(f"{cor} esta a {d:.0f} de {nome} (#{v})", set()).add(
+                str(arq).replace("airootfs/", ""))
+            return
+
+
+for raiz in RAIZES:
+    for arq in pathlib.Path(raiz).rglob("*"):
+        if not arq.is_file() or arq.suffix in (".svg", ".png"):
+            continue
+        try:
+            txt = arq.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        # 8 digitos = cor com transparencia; o prefixo de alfa nao e cor.
+        for m in re.finditer(r"#([0-9a-fA-F]{8})\b|#([0-9a-fA-F]{6})\b", txt):
+            h = (m.group(1)[2:] if m.group(1) else m.group(2)).lower()
+            if h not in pal.values():
+                confere(f"#{h}", rgb(h), arq)
+        # O KDE escreve cor como "R,G,B" decimal, nao como hex.
+        for m in re.finditer(r"^\s*[A-Za-z][A-Za-z0-9]*\s*=\s*(\d{1,3}),(\d{1,3}),(\d{1,3})\s*$",
+                             txt, re.M):
+            r = tuple(int(x) for x in m.groups())
+            if any(x > 255 for x in r):
+                continue
+            if "%02x%02x%02x" % r in pal.values():
+                continue
+            confere("%d,%d,%d" % r, r, arq)
+for k in sorted(achados):
+    print(k + "  em  " + ", ".join(sorted(achados[k])[:3]))
+PALEOF
+)
+if [[ -z $deriva ]]; then
+    ok "as $(grep -cE '^[A-Z_]+=#' airootfs/usr/share/stylus/palette) cores da paleta valem em toda a área de trabalho"
+else
+    bad "cor quase-igual a uma da paleta (deriva):"
+    printf '      %s\n' "$deriva"
+fi
+
 sec "a sessão X11 do KDE tem gerenciador de janelas"
 # **Sintoma:** o KDE instala, abre, mostra o painel e a área de trabalho — e
 # não dá para arrastar, redimensionar nem fechar uma janela. O alt+tab não faz
