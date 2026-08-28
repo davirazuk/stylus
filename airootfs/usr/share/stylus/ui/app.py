@@ -352,10 +352,11 @@ class NowScreen(Screen):
             T.text(s, "  ".join(icons), (r.right - 20, r.bottom - 50), 20,
                    T.AMBER, anchor="bottomright")
 
-        self.app.hint(s, r, "enter abrir o deck   espaço pausa   "
-                            "n/p faixa   ←/→ busca   v/b lado   +/- volume   "
-                            + ("D deck sozinho: ligado" if self.app.auto_deck
-                               else "D deck sozinho: desligado"))
+        self.app.hint(s, r, "[enter] abre o deck   [space] pausa   "
+                            "[n]/[p] faixa   [←]/[→] busca   [v]/[b] lado   "
+                            "[+]/[-] volume   "
+                            + ("[D] deck sozinho: ligado" if self.app.auto_deck
+                               else "[D] deck sozinho: desligado"))
 
     def _groove(self, s, rect, frac):
         """Barra de progresso como sulco — começo na borda, fim no centro."""
@@ -683,6 +684,12 @@ class ShelfScreen(Screen):
             T.text(s, it["name"], (cx, ty), 17,
                    T.TEXT if i == self.sel else T.TEXT_DIM, maxw=cw)
             T.text(s, it["artist"], (cx, ty + 22), 15, T.TEXT_FAINT, maxw=cw)
+        # O aviso de que a grade continua. Sem ele, a fileira cortada ao meio
+        # se lê como fileira com defeito e não como "tem mais aqui embaixo".
+        total_h = ((len(its) + self.COLS - 1) // self.COLS) * ch
+        T.borda_rolagem(s, clip,
+                        acima=self.scroll > 2,
+                        abaixo=self.scroll + view_h < total_h - 2)
         s.set_clip(old)
 
         # Now-playing bar — thin amber strip at the bottom if music is playing
@@ -704,7 +711,8 @@ class ShelfScreen(Screen):
         self.app.hint(
             s, r,
             f"{sel['artist']} — {sel['name']}   ·   {ha_quanto(sel['last'])}"
-            f"   ·   enter põe   s empilha   a artista   o ordem   / procura")
+            f"   ·   [enter] põe   [s] empilha   [a] artista   [o] ordem   "
+            f"[/] procura")
 
     def _picker(self, s, r):
         """A lista de quem está na coleção, para filtrar a estante.
@@ -746,8 +754,8 @@ class ShelfScreen(Screen):
             T.text(s, str(n_discos), (lx + lw - 30, ry + 6), 16,
                    T.TEXT_FAINT, anchor="topright")
         s.set_clip(velho)
-        self.app.hint(s, r, "enter escolhe   ·   ↑↓ anda   ·   "
-                            "esc desiste   ·   o mesmo artista de novo limpa")
+        self.app.hint(s, r, "[enter] escolhe   ·   [↑][↓] anda   ·   "
+                            "[esc] desiste")
 
     def _card(self, s, rect, it, selected):
         # O selecionado é puxado meio palmo para fora da prateleira: cresce e
@@ -851,8 +859,8 @@ class StackScreen(Screen):
         if total:
             T.text(s, f"{int(total)} min de disco encostado no móvel",
                    (x, y + 8), 19, T.TEXT_FAINT)
-        self.app.hint(s, r, "enter põe este e tira da pilha   x descarta   "
-                            "t monta uma noite")
+        self.app.hint(s, r, "[enter] põe este e tira da pilha   [x] descarta   "
+                            "[t] monta uma noite")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -987,7 +995,7 @@ class SignalScreen(Screen):
             T.text(s, "algo mais está segurando o grafo nessa taxa, ou o "
                       "conversor ainda não soltou a anterior",
                    (bx, vy + 34), 18, T.TEXT_FAINT)
-        self.app.hint(s, r, "atualiza sozinho   ·   enter força agora")
+        self.app.hint(s, r, "atualiza sozinho   ·   [enter] força agora")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1109,7 +1117,7 @@ class DiaryScreen(Screen):
         # 190 e não 132: com o valor antigo a legenda do calendário caía
         # exatamente em cima da linha de dicas, e as duas viravam um borrão.
         self._calendar(s, pygame.Rect(x, r.bottom - 190, r.w - 88, 104))
-        self.app.hint(s, r, "enter põe de novo   ·   ↑↓ anda   ·   s o formato")
+        self.app.hint(s, r, "[enter] põe de novo   ·   [↑][↓] anda   ·   [s] o formato")
 
     # ── a segunda página: o formato ────────────────────────────────────────
     def _barras(self, s, rect, valores, rotulos, cor, gutter=62):
@@ -1231,7 +1239,7 @@ class DiaryScreen(Screen):
                       f"nunca foram postos  ·  o SORTEIO puxa para eles",
                    (x, r.bottom - rodape + 4), 17,
                    T.AMBER if self.nunca else T.GREEN)
-        self.app.hint(s, r, "s volta para a lista")
+        self.app.hint(s, r, "[s] volta para a lista")
 
     def _calendar(self, s, rect):
         """Um ano em quadradinhos: uma coluna por semana, um por dia.
@@ -1320,7 +1328,7 @@ class PhoneScreen(Screen):
             "a coleção é a mesma nos dois lados; a parte difícil é manter "
             "os dois honestos sobre qual cópia é a melhor",
             self.ACOES, self.sel, self.job,
-            "enter roda   ·   nada aqui mexe no celular sem você mandar",
+            "[enter] roda   ·   nada aqui mexe no celular sem você mandar",
             size=21)
 
 
@@ -1371,7 +1379,7 @@ class ToolsScreen(Screen):
             s, r, "a oficina",
             "as mesmas ferramentas do terminal, sem o terminal",
             self.ACOES, self.sel, self.job,
-            "enter roda   ·   a saída aparece do lado")
+            "[enter] roda   ·   a saída aparece do lado")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1775,7 +1783,7 @@ class QobuzScreen(Screen):
             item = self.results[self.sel]
             hint = (f"{item.get('display_subtitle', '')} — "
                     f"{item.get('display_title', '')}   ·   "
-                    f"/ procura   enter examina   d baixa")
+                    f"[/] procura   [enter] examina   [d] baixa")
             self.app.hint(s, r, hint)
 
         if self.job:
@@ -2148,7 +2156,7 @@ class SpotifyScreen(Screen):
             item = self.results[self.sel]
             hint = (f"{item.get('artist', '')} — "
                     f"{item.get('name', '')}   ·   "
-                    f"/ procura   enter toca   space pausa")
+                    f"[/] procura   [enter] toca   [space] pausa")
             self.app.hint(s, r, hint)
 
         if self.job:
@@ -2440,7 +2448,7 @@ class GamesScreen(Screen):
                    T.TEXT if sel else T.TEXT_FAINT, bold=sel, anchor="center",
                    maxw=bx.w - 20)
 
-        self.app.hint(s, r, "enter abre · ← → navega")
+        self.app.hint(s, r, "[enter] abre   ·   [←][→] navega")
 
     def _draw_buscar(self, s, r):
         x, y = r.x + 44, r.y + 90
@@ -2836,7 +2844,7 @@ class InstallScreen(Screen):
             T.text(s, linha, (x, y), 18, T.TEXT_FAINT, maxw=r.w - 90)
             y += 26
 
-        self.app.hint(s, r, "enter escolhe   ·   ↑↓ anda   ·   "
+        self.app.hint(s, r, "[enter] escolhe   ·   [↑][↓] anda   ·   "
                             "o instalador abre por cima desta tela")
 
 
@@ -3263,8 +3271,25 @@ class App:
 
     # ── desenho comum ──────────────────────────────────────────────────────
     def hint(self, s, r, txt):
-        T.text(s, txt, (r.x + 44, r.bottom - 34), 17, T.TEXT_FAINT,
-               maxw=r.w - 88)
+        """A linha de dicas do rodapé, com as teclas desenhadas como teclas.
+
+        O `[X]` vira quadradinho (ver T.frase_com_teclas). Sem isso a linha
+        lê "s empilha  a artista  o ordem", que parece três palavras faltando
+        e não três teclas — o mesmo defeito que a tela da pilha tinha.
+
+        Se a frase com os quadradinhos não couber na largura, cai para texto
+        puro: dica cortada no meio é pior do que dica sem enfeite.
+        """
+        pos = (r.x + 44, r.bottom - 34)
+        if "[" in txt:
+            larg = T.largura(txt.replace("[", "").replace("]", ""), 17)
+            # cada tecla custa ~2 caracteres a mais de moldura
+            larg += txt.count("[") * 18
+            if larg <= r.w - 88:
+                T.frase_com_teclas(s, txt, pos, 17, T.TEXT_FAINT)
+                return
+            txt = txt.replace("[", "").replace("]", "")
+        T.text(s, txt, pos, 17, T.TEXT_FAINT, maxw=r.w - 88)
 
     def lista_com_saida(self, s, r, titulo, sub, acoes, sel, job, dica,
                         size=20):

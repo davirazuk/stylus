@@ -255,15 +255,23 @@ def relogio(seg):
 
 
 def ha_quanto(ts):
+    """Quando este disco foi posto pela última vez, em português corrido.
+
+    Devolve a frase inteira e não só o tempo. **Sintoma:** o rodapé da
+    estante mostrava "Aphex Twin — Selected Ambient Works · nunca · enter
+    põe…", e aquele "nunca" solto no meio não dizia nunca O QUÊ. "hoje" e
+    "há 3 dias" ainda se adivinham; "nunca" sozinho é só uma palavra caída
+    no meio de uma linha de atalhos.
+    """
     if not ts:
-        return "nunca"
+        return "nunca posto"
     d = (time.time() - ts) / 86400.0
     if d < 1:
-        return "hoje"
+        return "posto hoje"
     if d < 2:
-        return "ontem"
+        return "posto ontem"
     if d < 30:
-        return f"há {int(d)} dias"
+        return f"posto há {int(d)} dias"
     if d < 365:
-        return f"há {int(d / 30)} meses"
-    return f"há {int(d / 365)} anos"
+        return f"posto há {int(d / 30)} meses"
+    return f"posto há {int(d / 365)} anos"

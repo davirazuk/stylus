@@ -146,20 +146,20 @@ def main():
     ap.add_argument("--rate", type=int, default=48000)
     ap.add_argument("--frames", type=int, default=6)
     ap.add_argument("--fps", type=int, default=60)
-    ap.add_argument("--start", type=float, default=0.0, help="--file offset, seconds")
+    ap.add_argument("--start", type=float, default=0.0, help="a que altura do arquivo começar, em segundos")
     ap.add_argument("--size", type=int, default=420)
     ap.add_argument("--zoom", type=float, default=0.9)
     ap.add_argument("--mode", default="lissajous_xy")
     ap.add_argument("--stats", action="store_true",
-                    help="print window-length stability numbers")
+                    help="imprime os números de estabilidade do tamanho da janela")
     ap.add_argument("--beam", action="store_true",
-                    help="apply the app's beam brightness + flyback blanking,\nso blanked segments show as real gaps")
+                    help="usa o brilho de feixe e o apagamento de retorno do programa,\npara que o trecho apagado apareça como buraco de verdade")
     ap.add_argument("--cutoff", type=float, default=3.5,
-                    help="flyback blanking threshold for --beam")
+                    help="limiar do apagamento de retorno, para o --beam")
     ap.add_argument("--true-scope", dest="true_scope", action="store_true",
-                    help="fidelity mode: no adaptive window, no autoscale —\nwhat a real instrument shows (matches the app's y key)")
+                    help="modo fiel: sem janela adaptativa e sem escala automática —\no que um instrumento de verdade mostra (é a tecla y do programa)")
     ap.add_argument("--raw", action="store_true",
-                    help="skip the XY low-pass the app applies (debug only)")
+                    help="pula o filtro passa-baixa de XY que o programa aplica (só para depurar)")
     ap.add_argument("--lpf", type=float, default=None,
                     help="override XY_LPF_CUTOFF_HZ for the input filter")
     ap.add_argument("--grace", type=int, default=None,

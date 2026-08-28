@@ -365,6 +365,40 @@ def sleeve(surf, rect, art, selected=False):
         pygame.draw.rect(surf, AMBER, rect.inflate(4, 4), width=2, border_radius=2)
 
 
+_fade_cache = {}
+
+
+def borda_rolagem(surf, rect, acima=False, abaixo=False, alt=44):
+    """Desvanece o topo e/ou o pé de uma área que rola.
+
+    Uma grade cortada no meio de uma fileira já é o aviso de que tem mais
+    coisa — mas só para quem sabe que aquilo é uma grade que rola. Sem
+    nenhuma outra pista, a leitura mais natural é que a fileira de baixo
+    está com defeito, não que ela continua.
+
+    Um degradê até o fundo resolve sem gastar espaço nem cor: o conteúdo
+    "entra" e "sai" da área em vez de ser decepado. É a mesma ideia da
+    lombada da capa — a informação vem de luz, não de moldura.
+    """
+    for lado, liga in (("cima", acima), ("baixo", abaixo)):
+        if not liga:
+            continue
+        chave = (lado, rect.w, alt)
+        faixa = _fade_cache.get(chave)
+        if faixa is None:
+            faixa = pygame.Surface((rect.w, alt), pygame.SRCALPHA)
+            for y in range(alt):
+                # quadrático: quase opaco na borda e sumindo rápido, para
+                # não apagar a fileira inteira só para sugerir que ela segue
+                t = (y / alt) if lado == "baixo" else (1.0 - y / alt)
+                faixa.fill((*INK, int(255 * t * t)), (0, y, rect.w, 1))
+            if len(_fade_cache) > 12:
+                _fade_cache.clear()
+            _fade_cache[chave] = faixa
+        surf.blit(faixa, (rect.x, rect.bottom - alt if lado == "baixo"
+                          else rect.y))
+
+
 # ── o vazio como cena ──────────────────────────────────────────────────────
 def vazio(surf, rect, desenhar, titulo, linhas, alt=210):
     """O estado vazio desenhado como CENA, não como um buraco com legenda.

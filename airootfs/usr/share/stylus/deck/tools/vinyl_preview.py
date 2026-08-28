@@ -222,8 +222,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--album", default=None,
                     help="pasta do disco; sem isto, sorteia um da estante")
-    ap.add_argument("--at", type=float, default=0.35, help="album progress 0..1")
-    ap.add_argument("--contact", action="store_true", help="strip of ceremony phases")
+    ap.add_argument("--at", type=float, default=0.35, help="em que ponto do disco, de 0 a 1")
+    ap.add_argument("--contact", action="store_true", help="uma tira com as fases da cerimônia")
     ap.add_argument("--res", default="2560x1600")
     args = ap.parse_args()
 
