@@ -700,6 +700,100 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("conferência de colisão", traceback.format_exc())
 
+    # ── o rato ────────────────────────────────────────────────────────────
+    secao("o rato")
+    try:
+        # 1. Um clique só ESCOLHE; o segundo, no mesmo lugar, é que abre.
+        #    Num sistema em que abrir significa pôr um disco, clique único que
+        #    já toca é alto demais para quem só estava mirando.
+        app.cur = 0
+        app.alvos = [(pygame.Rect(10, 10, 40, 40), 3)]
+        app._alvos_do_trilho = []
+        tela = app.screens[0]
+        antes = getattr(tela, "sel", 0)
+        tela.sel = 0
+        pygame.event.clear()
+        app._clique(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(20, 20),
+                                       button=1))
+        if tela.sel != 3:
+            bad("clique não escolhe", f"sel ficou {tela.sel}, esperado 3")
+        elif [e for e in pygame.event.get() if e.type == pygame.KEYDOWN]:
+            bad("clique único já abriu", "devia só escolher")
+        else:
+            ok("um clique escolhe, sem abrir")
+        pygame.event.clear()
+        app._clique(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(20, 20),
+                                       button=1))
+        teclas = [e.key for e in pygame.event.get() if e.type == pygame.KEYDOWN]
+        if pygame.K_RETURN in teclas:
+            ok("o segundo clique abre")
+        else:
+            bad("segundo clique não abriu", str(teclas))
+        tela.sel = antes
+
+        # 2. O botão da direita é o ESC — a mesma volta, sem inventar outra.
+        pygame.event.clear()
+        app._clique(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(20, 20),
+                                       button=3))
+        teclas = [e.key for e in pygame.event.get() if e.type == pygame.KEYDOWN]
+        if pygame.K_ESCAPE in teclas:
+            ok("botão direito volta")
+        else:
+            bad("botão direito não voltou", str(teclas))
+
+        # 3. Clique fora de qualquer alvo não faz nada. Um clique no vazio que
+        #    abre o último item escolhido é o pior tipo de surpresa.
+        pygame.event.clear()
+        app.alvos = [(pygame.Rect(10, 10, 40, 40), 3)]
+        app._clique(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(900, 900),
+                                       button=1))
+        if [e for e in pygame.event.get() if e.type == pygame.KEYDOWN]:
+            bad("clique no vazio fez alguma coisa")
+        else:
+            ok("clique no vazio não faz nada")
+
+        # 4. O cursor acende ao mexer e some sozinho. Ele nascia escondido
+        #    PARA SEMPRE, e numa mesa isso se lê como a tela travada.
+        app._rato_visivel = False
+        app._rato_mexeu((100, 100))
+        acendeu = app._rato_visivel
+        app._rato_t -= app.RATO_SOME + 1
+        app._rato_pisca()
+        if acendeu and not app._rato_visivel:
+            ok("o cursor acende ao mexer e some parado")
+        else:
+            bad("o cursor não acende ou não some",
+                f"acendeu={acendeu} visível={app._rato_visivel}")
+
+        # 5. Toda tela que desenha grade tem que ANOTAR os alvos, senão o
+        #    clique cai no vazio e o rato "não funciona" só naquela seção.
+        sem_alvo = []
+        for i, tela in enumerate(app.screens):
+            app.cur = i
+            app.alvos = []
+            app._alvos_do_trilho = []
+            try:
+                tela.draw(app.surf, pygame.Rect(240, 0, 1280 - 240, 800))
+            except Exception:                               # noqa: BLE001
+                continue
+            # Só cobra de quem TEM o que clicar agora: a loja desenhada sem
+            # conta e a pilha vazia não têm item nenhum na tela, e exigir
+            # alvo delas seria uma conferência que reprova o estado correto.
+            itens = 0
+            for campo in ("results", "ACOES", "items", "rows"):
+                v = getattr(tela, campo, None)
+                if isinstance(v, (list, tuple)):
+                    itens = max(itens, len(v))
+            if hasattr(tela, "sel") and itens and not app.alvos:
+                sem_alvo.append(tela.name)
+        if sem_alvo:
+            bad(f"{len(sem_alvo)} seções com seleção e sem alvo de rato",
+                ", ".join(sem_alvo))
+        else:
+            ok("toda seção com seleção responde ao clique")
+    except Exception:                                       # noqa: BLE001
+        bad("conferência do rato", traceback.format_exc())
+
     pygame.quit()
     print()
     if FAIL:

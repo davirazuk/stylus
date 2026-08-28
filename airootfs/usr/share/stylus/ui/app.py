@@ -891,6 +891,11 @@ class ShelfScreen(Screen):
             cy = r.y + head + (i // self.COLS) * ch - int(self.scroll)
             if cy > clip.bottom or cy + ch < clip.top:
                 continue
+            # O alvo do rato é a capa MAIS a legenda: clicar no nome do
+            # disco é clicar no disco, e um alvo do tamanho exato da capa
+            # falha justamente onde o olho mira quando o disco é escuro.
+            self.app.alvos.append(
+                (pygame.Rect(cx, cy, cw, cw + 44).clip(clip), i))
             self._card(s, pygame.Rect(cx, cy, cw, cw), it, i == self.sel)
             # favorito: estrela âmbar no canto superior direito
             if os.path.normpath(it["folder"]) in favs:
@@ -2256,6 +2261,9 @@ class QobuzScreen(Screen):
             cy = r.y + head + (i // self.COLS) * ch - int(self.scroll)
             if cy > clip.bottom or cy + ch < clip.top:
                 continue
+            # Ver a estante: o alvo do rato pega a capa e a legenda.
+            self.app.alvos.append(
+                (pygame.Rect(cx, cy, cw, cw + 44).clip(clip), i))
             self._card(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
         # O mesmo aviso que a estante já tinha e a loja não: sem ele a fileira
         # cortada ao meio se lê como fileira com defeito, e o que sobrava aqui
@@ -2711,6 +2719,9 @@ class SpotifyScreen(Screen):
             cy = r.y + head + (i // self.COLS) * ch - int(self.scroll)
             if cy > clip.bottom or cy + ch < clip.top:
                 continue
+            # Ver a estante: o alvo do rato pega a capa e a legenda.
+            self.app.alvos.append(
+                (pygame.Rect(cx, cy, cw, cw + 44).clip(clip), i))
             self._draw_track(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
 
         # O mesmo aviso que a estante tem: sem ele a fileira cortada ao meio
@@ -3012,6 +3023,7 @@ class GamesScreen(Screen):
             col = i % cols
             row = i // cols
             bx = pygame.Rect(x + col * (cw + gap), y + row * 120, cw, 100)
+            self.app.alvos.append((bx.copy(), i))
             sel = i == self.sel
             tem = self._is_installed(binario)
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
@@ -3515,6 +3527,14 @@ class App:
             self.W, self.H, flags = 1600, 950, 0
         self.surf = pygame.display.set_mode((self.W, self.H), flags)
         pygame.mouse.set_visible(False)
+        # O SDL só manda MOUSEMOTION quando o ponteiro se move DENTRO da
+        # janela; a posição inicial não gera evento nenhum. Guardá-la aqui
+        # evita que o primeiro quadro veja um "movimento" que não houve e
+        # acenda o cursor sozinho numa tela que ninguém tocou.
+        try:
+            self._rato_pos = pygame.mouse.get_pos()
+        except Exception:                 # noqa: BLE001
+            pass
         self.clock = pygame.time.Clock()
 
         self.shelf = Shelf()
@@ -3537,6 +3557,20 @@ class App:
             self.cur = 0
         self.rail = False                 # o trilho está com o foco?
         self.rail_sel = self.cur
+        # ── o rato ──────────────────────────────────────────────────────
+        # Esta tela nasceu para um controle e um sofá, e escondia o cursor
+        # para sempre: mexer o rato não fazia NADA, nem aparecer a seta. Numa
+        # mesa isso se lê como a interface travada. Agora ele aparece quando
+        # se mexe e some sozinho depois de parado — a tela volta a ser só a
+        # música, sem uma seta esquecida no meio dela.
+        self._rato_t = 0.0
+        self._rato_visivel = False
+        self._rato_pos = (-1, -1)
+        # A área que cada item ocupa na tela, preenchida no desenho. É o que
+        # transforma "onde eu cliquei" em "qual disco" sem cada tela precisar
+        # saber de rato: quem desenha grade só anota o retângulo.
+        self.alvos = []
+        self._alvos_do_trilho = []
         self.stack = self._stack_load()
         self._toast = ""
         self._toast_until = 0.0
@@ -3981,6 +4015,7 @@ class App:
             rotulo = item[0]
             escolhido = i == sel
             box = pygame.Rect(x, y, larg, passo - 6)
+            self.alvos.append((box.copy(), i))
             if escolhido:
                 T.linha_escolhida(s, box)
                 T.text(s, "▸", (box.x + 16, box.y + 11), size, T.AMBER)
@@ -4053,6 +4088,7 @@ class App:
                 # barra lateral âmbar — indicador de posição
                 pygame.draw.rect(s, T.AMBER, (12, y - 3, 3, 42), border_radius=2)
 
+            self._alvos_do_trilho.append((box.copy(), i))
             cor = T.TEXT if (atual or foco) else T.TEXT_DIM
             # ícone + nome com mais espaço
             T.text(s, T.icon(sc.icon), (34, y + 4), 22, cor)
@@ -4299,6 +4335,68 @@ class App:
         self.rail_sel = i
         self.screens[i].enter()
 
+    # ── o rato ─────────────────────────────────────────────────────────
+    RATO_SOME = 3.0                       # segundos parado até o cursor sumir
+
+    def _rato_mexeu(self, pos):
+        """Acende o cursor. Chamado por movimento, clique e roda."""
+        if pos == self._rato_pos and self._rato_visivel:
+            return
+        self._rato_pos = pos
+        self._rato_t = time.time()
+        self._ultima_entrada = self._rato_t
+        if not self._rato_visivel:
+            self._rato_visivel = True
+            pygame.mouse.set_visible(True)
+
+    def _rato_pisca(self):
+        """Some depois de parado. Roda uma vez por quadro."""
+        if self._rato_visivel and time.time() - self._rato_t > self.RATO_SOME:
+            self._rato_visivel = False
+            pygame.mouse.set_visible(False)
+
+    def _clique(self, ev):
+        """Um clique vira a mesma coisa que a tecla equivalente faria.
+
+        Nada aqui inventa comportamento novo: clicar num item é escolhê-lo e
+        apertar enter, clicar no trilho é ir para aquela seção, o botão da
+        direita é o ESC. Duas maneiras de fazer a mesma coisa, e uma só
+        implementação por baixo — que é o que impede o rato de fazer uma
+        terceira coisa que ninguém previu.
+        """
+        if ev.button == 3:                # direito = voltar
+            pygame.event.post(pygame.event.Event(
+                pygame.KEYDOWN, key=pygame.K_ESCAPE, unicode="", mod=0))
+            return None
+        if ev.button != 1:
+            return None
+        # O trilho primeiro: ele fica por cima e é o alvo mais fácil de
+        # acertar sem querer com uma grade larga do lado.
+        for caixa, i in self._alvos_do_trilho:
+            if caixa.collidepoint(ev.pos):
+                if i >= len(self.screens):
+                    self.toast("indo para a área de trabalho…")
+                    pygame.display.flip()
+                    spawn(["stylus-mode", "desktop"])
+                else:
+                    self._goto(i)
+                return None
+        for caixa, indice in self.alvos:
+            if not caixa.collidepoint(ev.pos):
+                continue
+            tela = self.screens[self.cur]
+            if getattr(tela, "sel", None) != indice:
+                # Um clique em cima de um item que ainda não estava escolhido
+                # só ESCOLHE. Abrir de primeira faz o cursor abrir coisa que a
+                # pessoa só estava mirando — e num sistema em que abrir
+                # significa pôr um disco, isso é alto.
+                tela.sel = indice
+                return None
+            pygame.event.post(pygame.event.Event(
+                pygame.KEYDOWN, key=pygame.K_RETURN, unicode="", mod=0))
+            return None
+        return None
+
     def run(self):
         rail_w = max(200, min(300, self.W // 7))
         while True:
@@ -4308,6 +4406,22 @@ class App:
                     return
                 if ev.type == pygame.KEYDOWN:
                     if self._key(ev) == "quit":
+                        return
+                elif ev.type == pygame.MOUSEMOTION:
+                    self._rato_mexeu(ev.pos)
+                elif ev.type == pygame.MOUSEWHEEL:
+                    # A roda vira seta em vez de virar código novo em cada
+                    # tela: toda tela daqui já sabe responder a ↑/↓, e uma
+                    # roda que só funcionasse em três delas seria pior do que
+                    # uma roda que não funciona.
+                    self._rato_mexeu(pygame.mouse.get_pos())
+                    tecla = pygame.K_UP if ev.y > 0 else pygame.K_DOWN
+                    for _ in range(min(3, max(1, abs(ev.y)))):
+                        pygame.event.post(pygame.event.Event(
+                            pygame.KEYDOWN, key=tecla, unicode="", mod=0))
+                elif ev.type == pygame.MOUSEBUTTONDOWN:
+                    self._rato_mexeu(ev.pos)
+                    if self._clique(ev) == "quit":
                         return
                 elif ev.type in (pygame.JOYDEVICEADDED,
                                  pygame.JOYDEVICEREMOVED):
@@ -4339,6 +4453,12 @@ class App:
             self._particles.update(dt)
             self._particles.draw(self.surf)
             body = pygame.Rect(rail_w, 0, self.W - rail_w, self.H)
+            # Os alvos são de UM quadro: a grade muda de tamanho com a
+            # janela, com o filtro e com a busca, e um retângulo guardado do
+            # quadro passado clica no disco errado.
+            self.alvos = []
+            self._alvos_do_trilho = []
+            self._rato_pisca()
             self._idle_deck()
             try:
                 self.screens[self.cur].draw(self.surf, body)
