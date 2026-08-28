@@ -1478,6 +1478,16 @@ MenuBar=Disabled
 ToolBarsMovable=Disabled
 EOF
 
+        # Os atalhos (Meta+M, Meta+D…) escritos AGORA, não no primeiro login.
+        # O autostart abaixo roda depois que a área de trabalho já apareceu,
+        # e o kglobalaccel lê esse arquivo ao subir: escrito lá, o primeiro
+        # login é sempre o login em que nenhuma tecla funciona.
+        if [ -x /usr/local/bin/stylus-kde-shortcuts ]; then
+            HOME="/home/${STYLUS_USERNAME}" \
+            XDG_CONFIG_HOME="$KDE_CONF" \
+                /usr/local/bin/stylus-kde-shortcuts --seed
+        fi
+
         cat > "$KDE_CONF/autostart/stylus-kde.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application

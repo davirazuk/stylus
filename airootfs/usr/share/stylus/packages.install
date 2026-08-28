@@ -116,6 +116,13 @@ libfdk-aac
 # ═══════════════════════════════════════════════════════════════════════════
 strawberry
 mpv
+# O mpv NÃO fala MPRIS sozinho: quem publica o que está tocando no D-Bus é
+# este plugin, carregado por /etc/mpv/scripts/mpris.so. Sem ele o playerctl
+# não enxerga o toca-discos, e junto com ele param as teclas de mídia, o
+# controle do painel do KDE, o scrobble, o aviso de virar o lado e o que a
+# tela cheia mostra tocando. Estava instalado na máquina de quem desenvolve
+# e em lista de pacote nenhuma — então funcionava lá e em mais lugar nenhum.
+mpv-mpris
 cmus
 # The deck and the full-screen shelf are Python. This is their runtime, not
 # an extra: /usr/share/stylus/deck and /usr/share/stylus/ui do not start

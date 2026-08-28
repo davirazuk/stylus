@@ -1,90 +1,114 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  stylus-kde-shortcuts — roda no login do KDE
+#  stylus-kde-shortcuts — a sessão do KDE com cara de STYLUS
 # ═══════════════════════════════════════════════════════════════════════════
-#  Stock KDE + atalhos Stylus + configs visuais. NÃO mata nenhum processo
-#  KDE. Os atalhos Stylus usam seções próprias no kglobalshortcutsrc —
-#  não sobrescrevem nada do KDE.
+#  KDE de fábrica + atalhos do STYLUS + a paleta âmbar. NÃO mata processo
+#  nenhum do KDE e não substitui nada que seja do Plasma.
+#
+#      stylus-kde-shortcuts            no login (autostart), sessão de pé
+#      stylus-kde-shortcuts --seed     só escreve arquivo; roda no chroot da
+#                                      instalação, para que os atalhos já
+#                                      valham no PRIMEIRO login
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-# ── Wallpaper ──────────────────────────────────────────────────────────
-WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
-if [[ -f "$WALLPAPER" ]] && command -v plasma-apply-wallpaperimage &>/dev/null; then
-    plasma-apply-wallpaperimage "$WALLPAPER" 2>/dev/null
-fi
+SEED=0
+[[ ${1:-} == --seed ]] && SEED=1
 
-# ── Numlock ────────────────────────────────────────────────────────────
-command -v numlockx &>/dev/null && numlockx on 2>/dev/null
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+mkdir -p "$CONF" 2>/dev/null
 
-# ── Tema Kvantum ──────────────────────────────────────────────────────
-# Aplica o tema Stylus no Kvantum (se instalado)
-if command -v kvantummanager &>/dev/null && [[ -d /usr/share/Kvantum/Stylus ]]; then
-    kvantummanager -x Stylus 2>/dev/null || true
-fi
+# ── Atalhos ────────────────────────────────────────────────────────────────
+# O formato importa. Um atalho que ABRE UM PROGRAMA mora numa seção
+# `[services][arquivo.desktop]` com a chave `_launch`; era escrito como
+# `[stylus-shelf]` com uma linha `stylus-shelf=Meta+M,none,...`, que é o
+# formato de quem REGISTRA uma ação no KGlobalAccel — coisa que só um
+# programa do KDE em execução faz. O arquivo ficava bonito e nenhuma tecla
+# funcionava.
+KGSC="$CONF/kglobalshortcutsrc"
+[[ -f $KGSC ]] || : > "$KGSC"
 
-# ── Atalhos Stylus ────────────────────────────────────────────────────
-KGSC="$HOME/.config/kglobalshortcutsrc"
-mkdir -p "$(dirname "$KGSC")"
-
-add_shortcut() {
-    local id="$1" name="$2" keys="$3"
-    grep -q "\[$id\]" "$KGSC" 2>/dev/null && return
+atalho() {                      # atalho <arquivo.desktop> <teclas> <nome>
+    local desk=$1 keys=$2 nome=$3
+    [[ -f /usr/share/applications/$desk ]] || return 0   # não prometa o que não existe
+    grep -qF "[services][$desk]" "$KGSC" 2>/dev/null && return 0
     {
-        echo ""
-        echo "[$id]"
-        echo "_k_friendly_name=$name"
-        echo "$id=$keys,none,$name"
+        printf '\n[services][%s]\n' "$desk"
+        printf '_k_friendly_name=%s\n' "$nome"
+        printf '_launch=%s\n' "$keys"
     } >> "$KGSC"
 }
 
-# Música
-add_shortcut "stylus-shelf" "Stylus Shelf" "Meta+M"
-add_shortcut "stylus-deck" "Stylus Deck" "Meta+D"
-add_shortcut "stylus-qobuz" "Stylus Qobuz" "Meta+Q"
-add_shortcut "stylus-phone" "Stylus Phone" "Meta+P"
+# Meta+M/D/Q/P são a música; Meta+Esc troca de mundo. Nada disso colide com
+# atalho de fábrica do Plasma (que usa Meta sozinho, Meta+E, Meta+L…).
+atalho stylus-shelf.desktop  "Meta+M"      "Estante"
+atalho stylus-deck.desktop   "Meta+D"      "Toca-discos"
+atalho stylus-qobuz.desktop  "Meta+Q"      "Qobuz"
+atalho stylus-phone.desktop  "Meta+P"      "Celular"
+atalho stylus-mode.desktop   "Meta+Escape" "Trocar de modo"
+atalho stylus-claude.desktop "Meta+T"      "Terminal"
 
-# Sistema
-add_shortcut "stylus-term" "Stylus Terminal" "Meta+T"
-add_shortcut "stylus-mode" "Stylus Toggle Mode" "Meta+Escape"
-
-# ── Dolphin config ────────────────────────────────────────────────────
-# Detalhes, fundo escuro, colunas úteis
-DOLPHIN_RC="$HOME/.config/dolphinrc"
-if [[ -f "$DOLPHIN_RC" ]]; then
-    # Mostrar barra de localização (path bar)
-    sed -i 's/ShowLocationBarInNewTabs=.*/ShowLocationBarInNewTabs=true/' "$DOLPHIN_RC" 2>/dev/null
-    sed -i 's/ShowFullPath=.*/ShowFullPath=false/' "$DOLPHIN_RC" 2>/dev/null
+# ── Konsole: o perfil Stylus como padrão ───────────────────────────────────
+# Antes isto só agia se o konsolerc JÁ falasse em Stylus — ou seja, nunca na
+# máquina onde faria diferença.
+KRC="$CONF/konsolerc"
+if [[ -f $KRC ]]; then
+    if grep -q '^DefaultProfile=' "$KRC"; then
+        sed -i 's/^DefaultProfile=.*/DefaultProfile=Stylus.profile/' "$KRC" 2>/dev/null
+    else
+        printf '\n[Desktop Entry]\nDefaultProfile=Stylus.profile\n' >> "$KRC"
+    fi
 else
-    mkdir -p "$(dirname "$DOLPHIN_RC")"
-    cat > "$DOLPHIN_RC" <<'EOF'
+    printf '[Desktop Entry]\nDefaultProfile=Stylus.profile\n' > "$KRC"
+fi
+
+# ── Dolphin ────────────────────────────────────────────────────────────────
+DRC="$CONF/dolphinrc"
+if [[ ! -f $DRC ]]; then
+    cat > "$DRC" <<'EOF'
 [General]
 ShowLocationBarInNewTabs=true
 ShowFullPath=false
 ShowStatusBar=true
-ShowSortButton=true
-ShowZoomButton=true
+RememberOpenedTabs=false
 
-[Settings]
-ShowPreviewForFolders=true
+[DetailsMode]
+PreviewSize=32
+
+[IconsMode]
+PreviewSize=64
 EOF
 fi
 
-# ── Konsole — perfil Stylus como padrão ───────────────────────────────
-KONSOLE_PROF="$HOME/.config/konsolerc"
-if [[ -f "$KONSOLE_PROF" ]]; then
-    # Tornar o perfil Stylus o padrão para novos terminais
-    if grep -q 'Stylus' "$KONSOLE_PROF" 2>/dev/null; then
-        sed -i 's/DefaultProfile=.*/DefaultProfile=Stylus.profile/' "$KONSOLE_PROF" 2>/dev/null
-    fi
+# Daqui para baixo só faz sentido com uma sessão de pé.
+(( SEED )) && exit 0
+
+# ── Papel de parede ────────────────────────────────────────────────────────
+WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
+if [[ -f $WALLPAPER ]] && command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then
+    plasma-apply-wallpaperimage "$WALLPAPER" >/dev/null 2>&1
 fi
 
-# ── Dunst (notificações) ──────────────────────────────────────────────
-if command -v dunst &>/dev/null && ! pgrep -x dunst >/dev/null 2>&1; then
-    dunst &
+# ── A paleta ───────────────────────────────────────────────────────────────
+# O kdeglobals já nasce apontando para o StylusDark, mas quem instalou antes
+# desta versão não tem essa linha — e aplicar por fora conserta sem mexer no
+# que a pessoa escolheu depois.
+if command -v plasma-apply-colorscheme >/dev/null 2>&1 \
+   && [[ -f /usr/share/color-schemes/StylusDark.colors ]] \
+   && ! grep -q '^ColorScheme=StylusDark' "$CONF/kdeglobals" 2>/dev/null; then
+    plasma-apply-colorscheme StylusDark >/dev/null 2>&1
 fi
 
-# ── KWin — desabilitar compostor se lento ──────────────────────────────
-# O KWin tem um compositor que pode causar input lag em jogos.
-# Se o usuário tem GPU dedicada, vale manter; se é integrada, desligar
-# ajuda. Aqui só documentamos — quem quiser desliga com Alt+Shift+F12.
+if command -v kvantummanager >/dev/null 2>&1 && [[ -d /usr/share/Kvantum/Stylus ]]; then
+    kvantummanager --set Stylus >/dev/null 2>&1 || kvantummanager -x Stylus >/dev/null 2>&1
+fi
+
+command -v numlockx >/dev/null 2>&1 && numlockx on >/dev/null 2>&1
+
+# O dunst NÃO entra aqui. O KDE tem notificação própria (o Plasma), e os dois
+# disputam o mesmo nome no D-Bus: quem chega primeiro fica com ele e o outro
+# some — na prática, ligar o dunst aqui apagava as notificações do Plasma. É
+# por isso que o stylus-dunst.desktop diz NotShowIn=KDE, e era contradito por
+# esta linha, que rodava SÓ no KDE.
+
+exit 0
