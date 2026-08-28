@@ -292,6 +292,22 @@ def main():
         # e é isso que tira a última frase da tela num outro longo.
         check("guarda as linhas em branco", any(x.strip() == "" for _t, x in ly))
 
+    if not alb.sides or not (alb.total or 0):
+        # Daqui para baixo tudo mede o LADO, e sem duração não há lado: o
+        # `alb.sides[0]` estourava um IndexError cru, que se lê como defeito
+        # do vinyl.py e é falta de dado. E o caso comum não é álbum estranho,
+        # é máquina sem ffprobe — ali TODA faixa mede zero e este arquivo
+        # inteiro fica inutilizável sem dizer por quê.
+        import shutil as _sh
+        porque = ("" if _sh.which("ffprobe")
+                  else " — não há ffprobe nesta máquina, e é ele que mede")
+        print(f"\n  \033[2mo álbum de teste não tem duração{porque}:\033[0m"
+              "\n  \033[2ma geometria, a cerimônia e a agulha ficam de fora"
+              " desta rodada\033[0m")
+        print(f"\n  \033[1;32m{PASS} passaram\033[0m"
+              + (f", \033[1;31m{FAIL} falharam\033[0m" if FAIL else "") + "\n")
+        return 1 if FAIL else 0
+
     case("a geometria devolve o formato que o scope.py consome")
     iso = (0.625, 1.0)
     env = alb.envelope_snapshot()
