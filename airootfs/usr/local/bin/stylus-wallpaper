@@ -160,6 +160,28 @@ def desenhar(pasta, estilo, res, quieto=False):
     return png
 
 
+ATUAL = os.path.join(CACHE, "atual.png")
+
+
+def apontar_atual(png):
+    """Um nome fixo para "o disco que está na parede agora".
+
+    Os arquivos do cache são nomeados por um sha1 do caminho da pasta, o que
+    é certo para o cache e inútil para qualquer outro programa: ninguém
+    consegue perguntar "qual é o de agora?" sem refazer a conta. Este link é
+    a resposta, e é o que deixa a TELA DE BLOQUEIO mostrar o disco que está
+    tocando em vez do papel de parede de fábrica.
+    """
+    try:
+        tmp = ATUAL + ".novo"
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
+        os.symlink(png, tmp)
+        os.replace(tmp, ATUAL)          # troca atômica: nunca meio-link
+    except OSError:
+        pass                            # é enfeite; não vale falhar por isso
+
+
 def sessao_kde():
     """Esta sessão é o Plasma?
 
@@ -229,6 +251,7 @@ def uma_vez(pasta, estilo, res, quieto=False):
         return 1
     if not pendurar(png):
         return 1
+    apontar_atual(png)
     if not quieto:
         print(f"  {os.path.basename(pasta)} está na parede")
     return 0

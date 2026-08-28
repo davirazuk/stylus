@@ -50,15 +50,29 @@ geometry=$(xrandr --current 2>/dev/null | awk '/\*/ {print $1; exit}')
 PRERENDERED="/usr/share/stylus/lock/stylus-$geometry.png"
 [[ -f $PRERENDERED ]] && exec i3lock -i "$PRERENDERED" -e -f
 
+# ── A tela de bloqueio mostra o disco que está tocando ────────────────────
+# O stylus-wallpaper já desenha um papel de parede a partir da intensidade
+# medida do álbum, e deixa um link com nome fixo apontando para o de agora.
+# Usar esse link aqui é o que faz trancar a tela virar mais uma vez em que a
+# máquina lembra o que você pôs para tocar — em vez de um fundo genérico que
+# é igual em toda instalação. Sem disco tocando, cai no papel de parede do
+# sistema, que é o comportamento de antes.
+FONTE="$BG"
+ATUAL="$CACHE_DIR/wallpapers/atual.png"
+[[ -f $ATUAL ]] && FONTE="$ATUAL"
+
 CACHE="$CACHE_DIR/lock-$geometry.png"
 
-if [[ ! -f $CACHE && -f $BG ]]; then
+# `-nt` segue o link e compara a data do ALVO: trocar de disco troca o alvo,
+# o cache fica velho e é refeito. Sem isto, o primeiro disco da vida da
+# máquina ficaria na tela de bloqueio para sempre.
+if [[ -f $FONTE && ( ! -f $CACHE || $FONTE -nt $CACHE ) ]]; then
     mkdir -p "$CACHE_DIR"
     if command -v magick >/dev/null; then
-        magick "$BG" -resize "${geometry}^" -gravity center -extent "$geometry" \
+        magick "$FONTE" -resize "${geometry}^" -gravity center -extent "$geometry" \
                -fill black -colorize 35% "$CACHE" 2>/dev/null
     elif command -v convert >/dev/null; then
-        convert "$BG" -resize "${geometry}^" -gravity center -extent "$geometry" \
+        convert "$FONTE" -resize "${geometry}^" -gravity center -extent "$geometry" \
                 -fill black -colorize 35% "$CACHE" 2>/dev/null
     elif command -v ffmpeg >/dev/null; then
         # `colorchannelmixer` (multiplicativo), e NÃO `eq=brightness` — que
@@ -71,7 +85,7 @@ if [[ ! -f $CACHE && -f $BG ]]; then
         # Os 0.65 são os mesmos 35% em direção ao preto do -colorize acima:
         # os três caminhos têm que dar a MESMA tela, senão o bloqueio muda de
         # cara conforme o que estiver instalado na máquina.
-        ffmpeg -loglevel quiet -y -i "$BG" \
+        ffmpeg -loglevel quiet -y -i "$FONTE" \
                -vf "scale=${geometry/x/:}:force_original_aspect_ratio=increase,crop=${geometry/x/:},colorchannelmixer=rr=0.65:gg=0.65:bb=0.65" \
                "$CACHE" 2>/dev/null
     fi
