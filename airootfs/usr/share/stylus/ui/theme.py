@@ -562,7 +562,11 @@ def passos(surf, rect, titulo, porque, lista, rodape=None):
     if rodape:
         # Quantas linhas o rodapé vai ocupar de fato: ele é uma frase inteira
         # e cortá-la com reticências apaga justamente o endereço que ela dá.
-        n_rod = max(1, -(-f_rod.size(rodape)[0] // corpo))
+        # O teto tem que ser o MESMO aqui e no `limite` do paragrafo lá
+        # embaixo. Eram 3 no desenho e nenhum aqui: uma frase de quatro
+        # linhas reservava espaço para quatro e desenhava três, e a quarta
+        # — que era a que dizia o que fazer — sumia sem nada indicando.
+        n_rod = max(1, min(4, -(-f_rod.size(rodape)[0] // corpo)))
     alt = (_P_TOPO + _P_TIT + _P_POR + (n_por - 1) * 24
            + sum(_P_PASSO + (_P_CMD if d else 0) for _f, _t, d in lista)
            + (_P_ROD + (n_rod - 1) * 22 if rodape else 0) + _P_BASE)
@@ -597,7 +601,7 @@ def passos(surf, rect, titulo, porque, lista, rodape=None):
 
     if rodape:
         paragrafo(surf, rodape, (x, y + 6), 16, TEXT_FAINT, maxw=corpo,
-                  entrelinha=1.35, limite=3)
+                  entrelinha=1.35, limite=n_rod)
     return caixa
 
 

@@ -1923,6 +1923,7 @@ class SpotifyScreen(Screen):
         self.error = None
         self.job = None
         self._daemon_ok = None
+        self._daemon = None          # ausente | parado | ok
         self._now_playing = None
         self._np_t = 0.0
         self._setup = None
@@ -1933,12 +1934,22 @@ class SpotifyScreen(Screen):
 
     def _check_daemon_threaded(self):
         def _probe():
+            # Três estados, não dois. "Não está tocando" e "não está
+            # instalado" pediam coisas diferentes, e a tela dizia a mesma para
+            # os dois: `systemctl --user enable --now spotifyd`. Numa máquina
+            # sem o spotifyd — que não está nos repositórios do Arch, está no
+            # AUR — esse comando falha com "Unit not found", e quem fez
+            # exatamente o que a tela mandou fica sem saída nenhuma.
+            self._daemon = "ausente"
             try:
-                r = subprocess.run(["playerctl", "-p", "spotifyd", "status"],
-                                   capture_output=True, text=True, timeout=3)
-                self._daemon_ok = r.returncode == 0
-            except Exception:
-                self._daemon_ok = False
+                r = subprocess.run(["stylus-spotify", "daemon"],
+                                   capture_output=True, text=True, timeout=6)
+                saida = (r.stdout or "").strip()
+                if saida in ("ok", "parado", "ausente"):
+                    self._daemon = saida
+            except Exception:             # noqa: BLE001
+                pass
+            self._daemon_ok = self._daemon == "ok"
             self._setup = self._ler_montagem()
         threading.Thread(target=_probe, daemon=True).start()
 
@@ -2157,7 +2168,9 @@ class SpotifyScreen(Screen):
         head = 58
         self.COLS = max(3, min(8, r.w // 200))
 
-        status = "pronto" if self._daemon_ok else "spotifyd não encontrado"
+        status = {"ok": "pronto", "parado": "spotifyd instalado, parado",
+                  "ausente": "sem o spotifyd"}.get(self._daemon,
+                                                   "olhando…")
         T.text(s, "spotify", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
         T.text(s, status, (r.right - pad, r.y + 24), 15,
                T.GREEN if self._daemon_ok else T.TEXT_FAINT, anchor="topright")
@@ -2219,9 +2232,14 @@ class SpotifyScreen(Screen):
                       "~/.config/stylus/spotify.conf   →   [spotify]"),
                      (m["daemon"], "o spotifyd, que é quem toca",
                       None if m["daemon"] else
-                      "systemctl --user enable --now spotifyd")],
+                      ("systemctl --user enable --now spotifyd"
+                       if self._daemon == "parado"
+                       else "stylus spotify instalar --daemon"))],
                     rodape="as credenciais saem de developer.spotify.com — "
-                           "criar um app ali é de graça e leva um minuto")
+                           "criar um app ali é de graça. e tocar exige conta "
+                           "Premium — o Spotify não deixa um programa de fora "
+                           "tocar sem ela. o Qobuz, aqui do lado, não pede "
+                           "nada disso.")
                 return
             T.vazio(s, r, T.fantasma_busca, "a loja de streaming", [
                 "[/] procura uma faixa",
