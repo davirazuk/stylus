@@ -701,7 +701,12 @@ RAIZES = ["airootfs/etc/skel",
           "airootfs/usr/share/color-schemes",
           "airootfs/usr/share/Kvantum",
           "airootfs/usr/share/qt5ct",
-          "airootfs/usr/share/qt6ct"]
+          "airootfs/usr/share/qt6ct",
+          # E o celular. A coleção é a mesma dos dois lados, e a promessa do
+          # sistema é que ela SE PARECE a mesma. O app tinha dezesseis cores
+          # quase-iguais às do computador e usava o âmbar do Material
+          # (#ffc107) em cinco lugares onde vai o âmbar do STYLUS.
+          "android/app/src/main"]
 
 achados = {}
 
@@ -717,15 +722,17 @@ def confere(cor, r, arq):
 
 for raiz in RAIZES:
     for arq in pathlib.Path(raiz).rglob("*"):
-        if not arq.is_file() or arq.suffix in (".svg", ".png"):
+        if not arq.is_file() or arq.suffix in (".svg", ".png", ".webp", ".jar"):
             continue
         try:
             txt = arq.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
         # 8 digitos = cor com transparencia; o prefixo de alfa nao e cor.
-        for m in re.finditer(r"#([0-9a-fA-F]{8})\b|#([0-9a-fA-F]{6})\b", txt):
-            h = (m.group(1)[2:] if m.group(1) else m.group(2)).lower()
+        for m in re.finditer(r"#([0-9a-fA-F]{8})\b|#([0-9a-fA-F]{6})\b"
+                             r"|0[xX][fF][fF]([0-9a-fA-F]{6})\b", txt):
+            h = (m.group(1)[2:] if m.group(1)
+                 else (m.group(2) or m.group(3))).lower()
             if h not in pal.values():
                 confere(f"#{h}", rgb(h), arq)
         # O KDE escreve cor como "R,G,B" decimal, nao como hex.
@@ -742,7 +749,7 @@ for k in sorted(achados):
 PALEOF
 )
 if [[ -z $deriva ]]; then
-    ok "as $(grep -cE '^[A-Z_]+=#' airootfs/usr/share/stylus/palette) cores da paleta valem em toda a área de trabalho"
+    ok "as $(grep -cE '^[A-Z_]+=#' airootfs/usr/share/stylus/palette) cores da paleta valem no i3, no KDE e no celular"
 else
     bad "cor quase-igual a uma da paleta (deriva):"
     printf '      %s\n' "$deriva"

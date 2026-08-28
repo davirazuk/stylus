@@ -67,10 +67,10 @@ class MainActivity : AppCompatActivity() {
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         )
-        window.statusBarColor = 0xFF050608.toInt()
-        window.navigationBarColor = 0xFF050608.toInt()
+        window.statusBarColor = 0xFF04060a.toInt()
+        window.navigationBarColor = 0xFF04060a.toInt()
 
-        val root = FrameLayout(this).apply { setBackgroundColor(0xFF050608.toInt()) }
+        val root = FrameLayout(this).apply { setBackgroundColor(0xFF04060a.toInt()) }
 
         // Ambient particles — floating amber dust behind everything
         val particles = AmbientParticles(this)
@@ -172,9 +172,9 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), dp(8), dp(12), dp(8))
             isSingleLine = true
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xFF0A0C12.toInt())
+                setColor(0xFF07080b.toInt())
                 cornerRadius = dp(8).toFloat()
-                setStroke(1, 0xFF151A28.toInt())
+                setStroke(1, 0xFF1a1e28.toInt())
             }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -231,7 +231,7 @@ class MainActivity : AppCompatActivity() {
         // Bottom bar
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF0A0C12.toInt())
+            setBackgroundColor(0xFF07080b.toInt())
             setPadding(dp(16), dp(8), dp(16), dp(8))
             gravity = Gravity.CENTER_VERTICAL
         }
@@ -282,7 +282,7 @@ class MainActivity : AppCompatActivity() {
         // Now Playing bar — shows when returning from player
         nowPlayingBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF111620.toInt())
+            setBackgroundColor(0xFF101219.toInt())
             setPadding(dp(14), dp(8), dp(14), dp(8))
             gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
@@ -412,12 +412,12 @@ class MainActivity : AppCompatActivity() {
                 val img = ImageView(this).apply {
                     layoutParams = LinearLayout.LayoutParams(dp(104), dp(104))
                     scaleType = ImageView.ScaleType.CENTER_CROP
-                    setBackgroundColor(0xFF08090C.toInt())
+                    setBackgroundColor(0xFF07080b.toInt())
                 }
                 card.addView(img)
                 val name = TextView(this).apply {
                     text = album.name
-                    setTextColor(0xFF8892B0.toInt())
+                    setTextColor(0xFF8a95aa.toInt())
                     textSize = 8f
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -554,7 +554,7 @@ class MainActivity : AppCompatActivity() {
             hint = "https://seu.webdav/exemplo/"
             setText(cur)
             setTextColor(0xFFE8ECF5.toInt())
-            setHintTextColor(0xFF6B7898.toInt())
+            setHintTextColor(0xFF768094.toInt())
             textSize = 13f
         }
         val pad = dp(20)
@@ -590,7 +590,7 @@ class MainActivity : AppCompatActivity() {
                    "Saidas: USB DAC bit-perfect, DLNA/UPnP\n" +
                    "last.fm: scrobble autom\u00e1tico\n\n" +
                    "${allAlbums.size} albuns na estante"
-            setTextColor(0xFF8892B0.toInt())
+            setTextColor(0xFF8a95aa.toInt())
             textSize = 12f
             setPadding(dp(24), dp(16), dp(24), dp(8))
             setLineSpacing(0f, 1.3f)
@@ -669,18 +669,18 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 val bg = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(0xFF0A0C12.toInt())
+                    setColor(0xFF07080b.toInt())
                     cornerRadius = dp2(ctx, 6).toFloat()
                 }
                 background = bg
                 setOnTouchListener { v, event ->
                     when (event.action) {
                         android.view.MotionEvent.ACTION_DOWN -> {
-                            bg.setColor(0xFF141828.toInt())
-                            bg.setStroke(1, 0xFF252E48.toInt())
+                            bg.setColor(0xFF1a1e28.toInt())
+                            bg.setStroke(1, 0xFF343a48.toInt())
                         }
                         android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                            bg.setColor(0xFF0A0C12.toInt())
+                            bg.setColor(0xFF07080b.toInt())
                             bg.setStroke(0, 0)
                         }
                     }
@@ -691,7 +691,7 @@ class MainActivity : AppCompatActivity() {
             val cover = ImageView(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp2(ctx, 145))
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(0xFF08090C.toInt())
+                setBackgroundColor(0xFF07080b.toInt())
                 adjustViewBounds = true
                 id = View.generateViewId()
                 clipToOutline = true
@@ -725,7 +725,7 @@ class MainActivity : AppCompatActivity() {
 
             // Track count + duration row
             val meta = TextView(ctx).apply {
-                setTextColor(0xFF2E3650.toInt())
+                setTextColor(0xFF343a48.toInt())
                 textSize = 8f
                 maxLines = 1
                 setPadding(dp2(ctx, 6), 0, dp2(ctx, 6), dp2(ctx, 3))
@@ -757,7 +757,7 @@ class MainActivity : AppCompatActivity() {
                 holder.cover.setImageBitmap(cachedBmp)
             } else {
                 holder.cover.setImageBitmap(null)
-                holder.cover.setBackgroundColor(0xFF08090C.toInt())
+                holder.cover.setBackgroundColor(0xFF07080b.toInt())
                 Thread {
                     try {
                         resolver.openInputStream(album.coverUri())?.use { stream ->
@@ -787,12 +787,12 @@ class MainActivity : AppCompatActivity() {
             // Favorite state + click
             val isFav = prefs.getBoolean("fav_${album.id}", false)
             holder.favBtn?.text = if (isFav) "\u2605" else "\u2606"
-            holder.favBtn?.setTextColor(if (isFav) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+            holder.favBtn?.setTextColor(if (isFav) 0xFFf0a030.toInt() else 0xFF4A5570.toInt())
             holder.favBtn?.setOnClickListener {
                 val wasFav = prefs.getBoolean("fav_${album.id}", false)
                 prefs.edit().putBoolean("fav_${album.id}", !wasFav).apply()
                 holder.favBtn.text = if (!wasFav) "\u2605" else "\u2606"
-                holder.favBtn.setTextColor(if (!wasFav) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+                holder.favBtn.setTextColor(if (!wasFav) 0xFFf0a030.toInt() else 0xFF4A5570.toInt())
             }
 
             // Fix click and long-click

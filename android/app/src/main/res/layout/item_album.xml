@@ -13,7 +13,7 @@
         android:layout_width="match_parent"
         android:layout_height="140dp"
         android:scaleType="centerCrop"
-        android:background="#08090C"
+        android:background="#07080b"
         android:contentDescription="Capa" />
 
     <TextView

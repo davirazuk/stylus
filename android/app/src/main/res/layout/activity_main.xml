@@ -5,6 +5,6 @@
     android:background="#07080b">
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:text="STYLUS — vinyl bit-perfect"
-        android:textColor="#e2e7f0"
+        android:textColor="#e8ecf5"
         android:layout_gravity="center"/>
 </FrameLayout>

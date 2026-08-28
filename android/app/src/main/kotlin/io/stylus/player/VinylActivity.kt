@@ -350,7 +350,7 @@ class VinylActivity : AppCompatActivity() {
 
                     // Track info
                     trackInfoView = TextView(this).apply {
-                        setTextColor(0xFF8892B0.toInt())
+                        setTextColor(0xFF8a95aa.toInt())
                         textSize = 11f
                         gravity = android.view.Gravity.CENTER
                         setPadding(24, 0, 24, 4)
@@ -369,7 +369,7 @@ class VinylActivity : AppCompatActivity() {
 
         // ── Bottom: time + controls + hint + progress ──
         timeView = TextView(this).apply {
-            setTextColor(0xFF6B7394.toInt())
+            setTextColor(0xFF768094.toInt())
             textSize = 11f
             gravity = android.view.Gravity.CENTER
             setPadding(0, 0, 0, 4)
@@ -383,7 +383,7 @@ class VinylActivity : AppCompatActivity() {
         }
         prevBtn = TextView(this).apply {
             text = "\u25C0"
-            setTextColor(0xFF6B7394.toInt())
+            setTextColor(0xFF768094.toInt())
             textSize = 18f
             setPadding(dp(24), dp(8), dp(24), dp(8))
             setOnClickListener { skipToPrev() }
@@ -394,7 +394,7 @@ class VinylActivity : AppCompatActivity() {
         })
         nextBtn = TextView(this).apply {
             text = "\u25B6"
-            setTextColor(0xFF6B7394.toInt())
+            setTextColor(0xFF768094.toInt())
             textSize = 18f
             setPadding(dp(24), dp(8), dp(24), dp(8))
             setOnClickListener { skipToNext() }
@@ -411,7 +411,7 @@ class VinylActivity : AppCompatActivity() {
             setOnClickListener {
                 val p = player ?: return@setOnClickListener
                 p.toggleShuffle()
-                setTextColor(if (p.shuffleMode) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+                setTextColor(if (p.shuffleMode) 0xFFf0a030.toInt() else 0xFF4A5570.toInt())
                 textSize = if (p.shuffleMode) 16f else 14f
             }
             shuffleBtnRef = this
@@ -434,7 +434,7 @@ class VinylActivity : AppCompatActivity() {
                     else -> "\u27F3"
                 }
                 val active = p.repeatMode != 0
-                setTextColor(if (active) 0xFFFFC107.toInt() else 0xFF4A5570.toInt())
+                setTextColor(if (active) 0xFFf0a030.toInt() else 0xFF4A5570.toInt())
                 textSize = if (active) 16f else 14f
             }
             repeatBtnRef = this
@@ -444,7 +444,7 @@ class VinylActivity : AppCompatActivity() {
         // Sleep timer button
         val sleepBtn = TextView(this).apply {
             text = "\u23F0"
-            setTextColor(0xFF6B7394.toInt())
+            setTextColor(0xFF768094.toInt())
             textSize = 14f
             setPadding(dp(20), dp(8), dp(20), dp(8))
             setOnClickListener {
@@ -479,7 +479,7 @@ class VinylActivity : AppCompatActivity() {
 
         val hint = TextView(this).apply {
             text = "toque = pausar | swipe = faixa | duplo toque = playlist"
-            setTextColor(0xFF8892B0.toInt())
+            setTextColor(0xFF8a95aa.toInt())
             textSize = 8f
             gravity = android.view.Gravity.CENTER
             alpha = 0.4f
@@ -558,7 +558,7 @@ class VinylActivity : AppCompatActivity() {
         volumeHandler = android.os.Handler(mainLooper)
         volumeOverlay = TextView(this).apply {
             textSize = 16f
-            setTextColor(0xFFE0E4F0.toInt())
+            setTextColor(0xFFe8ecf5.toInt())
             gravity = android.view.Gravity.CENTER
             setPadding(dp(24), dp(12), dp(24), dp(12))
             background = android.graphics.drawable.GradientDrawable().apply {
@@ -621,8 +621,8 @@ class VinylActivity : AppCompatActivity() {
                                         text = lys[i].second.ifBlank { "\u00B7" }
                                         textSize = if (isCurrent) 14.5f else 11f
                                         setTextColor(
-                                            if (isCurrent) 0xFFEEF2FA.toInt()
-                                            else 0xFF6878A0.toInt()
+                                            if (isCurrent) 0xFFe8ecf5.toInt()
+                                            else 0xFF768094.toInt()
                                         )
                                         gravity = android.view.Gravity.CENTER
                                         setPadding(dp(4), dp(5), dp(4), dp(5))
@@ -965,7 +965,7 @@ class VinylActivity : AppCompatActivity() {
 
         val header = TextView(this).apply {
             text = "FAIXAS"
-            setTextColor(0xFF6A7590.toInt())
+            setTextColor(0xFF768094.toInt())
             textSize = 10f
             letterSpacing = 0.15f
             setPadding(dp(20), dp(8), dp(20), dp(8))
@@ -985,7 +985,7 @@ class VinylActivity : AppCompatActivity() {
                 val t = tracks[i]
                 val prefix = if (i == currentIdx) "\u25B6 " else "${i + 1}. "
                 tv.text = "$prefix${t.title}"
-                tv.setTextColor(if (i == currentIdx) 0xFFFFC107.toInt() else 0xFF8892B0.toInt())
+                tv.setTextColor(if (i == currentIdx) 0xFFf0a030.toInt() else 0xFF8a95aa.toInt())
                 return tv
             }
         }
