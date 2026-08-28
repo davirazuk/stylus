@@ -904,9 +904,41 @@ class ShelfScreen(Screen):
         alpha = 1.0 - pow(2.718281828, -dt * 12.0) if dt > 0 else 0.28
         self.scroll += (self.target - self.scroll) * alpha
 
+        # ── qual destes está tocando ───────────────────────────────────────
+        # A grade não dizia. Havia a tarja no rodapé com o nome da faixa, mas
+        # numa parede de capas a pergunta é "qual delas", e a resposta estava
+        # escrita em letra de dez pixels do outro lado da tela. O disco que
+        # está no prato ganha o mesmo halo da AGORA — a luz que aquela tela
+        # já usa para dizer "é este" — e ela respira com o som.
+        al_tocando = self.app.playing.album
+        pasta_tocando = (os.path.normpath(al_tocando.folder)
+                         if al_tocando is not None and al_tocando.folder
+                         else None)
+        i_tocando = None
+        if pasta_tocando:
+            for i, it in enumerate(its):
+                if (it["folder"] == pasta_tocando
+                        or os.path.normpath(it["folder"]) == pasta_tocando):
+                    i_tocando = i
+                    break
+
         clip = pygame.Rect(r.x, r.y + head, r.w, view_h)
         old = s.get_clip()
         s.set_clip(clip)
+        # O halo vem ANTES de todas as capas, e não junto com a sua.
+        # Desenhado no meio do laço, ele passava por cima da capa do vizinho
+        # da esquerda — a luz do disco que toca tingindo de âmbar a arte de
+        # outro disco. Luz atrás é atrás de TODAS.
+        if i_tocando is not None:
+            cx = r.x + pad + (i_tocando % self.COLS) * (cw + gap)
+            cy = r.y + head + (i_tocando // self.COLS) * ch - int(self.scroll)
+            nivel = min(1.0, self.app.audio_level())
+            # O piso de 110 é para a marca não sumir no silêncio: numa máquina
+            # sem PortAudio o nível é zero o tempo todo, e um disco tocando
+            # sem marca nenhuma é pior do que não ter marca.
+            hal = T.halo(int(cw * 0.62), forca=int(110 + nivel * 145))
+            s.blit(hal, (cx + cw // 2 - hal.get_width() // 2,
+                         cy + cw // 2 - hal.get_height() // 2))
         for i, it in enumerate(its):
             cx = r.x + pad + (i % self.COLS) * (cw + gap)
             cy = r.y + head + (i // self.COLS) * ch - int(self.scroll)
@@ -924,8 +956,14 @@ class ShelfScreen(Screen):
             # 14 e não 8: o disco selecionado levanta 6px para cada lado, e
             # com a legenda colada nela mesma ela encostava na capa levantada.
             ty = cy + cw + 14
+            # O nome do que está tocando vai em âmbar. O halo atrás da capa
+            # some entre as capas do meio da grade — sobram os 18 px de folga
+            # para ele aparecer — e o âmbar é a palavra que este sistema usa
+            # para "é aqui" (ver o cabeçalho do theme.py). As duas coisas
+            # juntas dizem qual disco está no prato de qualquer distância.
             T.text(s, it["name"], (cx, ty), 17,
-                   T.TEXT if i == self.sel else T.TEXT_DIM, maxw=cw)
+                   T.AMBER if i == i_tocando else
+                   (T.TEXT if i == self.sel else T.TEXT_DIM), maxw=cw)
             T.text(s, it["artist"], (cx, ty + 22), 15, T.TEXT_FAINT, maxw=cw)
         # O aviso de que a grade continua. Sem ele, a fileira cortada ao meio
         # se lê como fileira com defeito e não como "tem mais aqui embaixo".

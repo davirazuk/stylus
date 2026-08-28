@@ -366,6 +366,76 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("artista", traceback.format_exc())
 
+    secao("a estante diz qual disco está no prato")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # A grade não dizia. Havia a tarja com o nome da faixa no rodapé, e numa
+    # parede de capas a pergunta é "qual delas" — a resposta estava em letra
+    # de dez pixels do outro lado da tela. O disco que toca ganha o halo da
+    # AGORA atrás da capa e o nome em âmbar.
+    try:
+        import theme as _T
+        estante = next(s for s in app.screens if s.name == "ESTANTE")
+        if estante.picking or estante.searching:
+            estante.key(pygame.event.Event(pygame.KEYDOWN,
+                                           key=pygame.K_ESCAPE, unicode="",
+                                           mod=0))
+        estante.artist = None
+        itens = estante.items()
+        if not itens:
+            ok("(coleção vazia: nada para marcar)")
+        else:
+            class _Tocando:                 # só o que o desenho pergunta
+                def __init__(self, folder):
+                    self.folder = folder
+            alvo = itens[-1]                # o último, não o selecionado
+            app.playing.album = _Tocando(alvo["folder"])
+
+            original = _T.text
+            cores = {}
+
+            def espiao_cor(surf, txt, pos, size=20, colour=_T.TEXT,
+                           bold=False, anchor="topleft", maxw=None):
+                cores.setdefault(str(txt), colour)
+                return original(surf, txt, pos, size, colour, bold, anchor,
+                                maxw)
+
+            _T.text = espiao_cor
+            i_est = app.screens.index(estante)
+            app._goto(i_est)
+            estante.draw(app.surf, corpo)
+            _T.text = original
+
+            if cores.get(alvo["name"]) != _T.AMBER:
+                bad("o disco que toca não vem em âmbar na estante",
+                    f'{alvo["name"]}: {cores.get(alvo["name"])}')
+            else:
+                ok(f'"{alvo["name"]}" marcado como o que está tocando')
+
+            # E os outros NÃO podem vir em âmbar: se tudo é o disco que toca,
+            # nada é.
+            outros = [n for it in itens[:-1]
+                      for n in (it["name"],) if cores.get(n) == _T.AMBER]
+            if outros:
+                bad(f"{len(outros)} discos parados também vieram em âmbar",
+                    ", ".join(outros[:3]))
+            else:
+                ok("os discos parados continuam apagados")
+
+            # Sem nada tocando, ninguém é marcado — e nada estoura.
+            app.playing.album = None
+            _T.text = espiao_cor
+            cores.clear()
+            estante.draw(app.surf, corpo)
+            _T.text = original
+            if [n for it in itens for n in (it["name"],)
+                    if cores.get(n) == _T.AMBER]:
+                bad("com nada tocando ainda há disco marcado")
+            else:
+                ok("com nada tocando, nenhum disco é marcado")
+    except Exception:                                       # noqa: BLE001
+        bad("o disco no prato", traceback.format_exc())
+
     secao("o botão B volta em vez de sair")
     try:
         # Sem a janela de desenvolvimento: é o modo música que interessa aqui.
