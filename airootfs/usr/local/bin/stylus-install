@@ -655,6 +655,23 @@ case $DESKTOP_CHOICE in
         DESKTOP_SESSION="plasma.desktop"
         DESKTOP_PKGS=(
             plasma-desktop plasma-workspace sddm
+            # ── O gerenciador de janelas. NÃO é opcional, e não vem junto ──
+            # O KDE separou o KWin em dois pacotes: `kwin` virou o compositor
+            # do WAYLAND, e o X11 saiu para `kwin-x11`. O plasma-workspace
+            # depende do `kwin` — o de Wayland — e NADA depende do kwin-x11.
+            #
+            # Este sistema é X11 (DisplayServer=x11, startplasma-x11). Sem
+            # esta linha o KDE instalava, abria, mostrava o painel e a área
+            # de trabalho, e não tinha gerenciador de janelas NENHUM: não
+            # dava para arrastar, redimensionar nem fechar uma janela, o
+            # alt+tab não fazia nada e nenhum atalho do KDE funcionava. E
+            # nada dizia por quê, porque o `startplasma-x11` existe do mesmo
+            # jeito — ele vem do plasma-workspace.
+            #
+            # O plasma-x11-session são quatro arquivos (só o .desktop da
+            # sessão) e depende do kwin-x11: pedir por ele é pedir "a sessão
+            # X11 do Plasma, inteira", que é exatamente o que se quer aqui.
+            plasma-x11-session
             konsole dolphin ark gwenview kate
             plasma-nm plasma-pa powerdevil
             kde-gtk-config kvantum
@@ -1736,7 +1753,7 @@ $( [[ $DESKTOP_CHOICE == kde ]] && {
     else
         echo "    ${c_yel}O KDE foi escolhido, mas o Plasma não chegou ao disco${c_reset} — a sessão
     padrão continua sendo a do STYLUS. Dá para instalar depois com
-    ${c_b}sudo pacman -S plasma-desktop plasma-workspace${c_reset}.
+    ${c_b}sudo pacman -S plasma-desktop plasma-workspace plasma-x11-session${c_reset}.
 "
     fi
 } )

@@ -27,8 +27,12 @@ ok "Usuário: $REAL_USER ($USER_HOME)"
 # sem nenhum window manager e trava. Instalar, verificar, e SÓ DEPOIS
 # remover o i3.
 info "Instalando KDE Plasma..."
+# O plasma-x11-session traz o kwin-x11 junto, e é ele que faz a sessão X11
+# ter gerenciador de janelas. Sem ele o KDE abre sem conseguir mover uma
+# janela sequer — veja o comentário longo no stylus-install.
 pacman -S --needed --noconfirm \
-    plasma-desktop plasma-workspace plasma-nm plasma-pa powerdevil \
+    plasma-desktop plasma-workspace plasma-x11-session \
+    plasma-nm plasma-pa powerdevil \
     kde-gtk-config kvantum konsole dolphin gwenview kate \
     xdg-desktop-portal-kde \
     && ok "KDE Plasma instalado" || { fail "KDE não instalou — i3 mantido"; exit 1; }
@@ -36,11 +40,22 @@ pacman -S --needed --noconfirm \
 # Verificar se startplasma-x11 existe
 if ! command -v startplasma-x11 >/dev/null 2>&1; then
     fail "startplasma-x11 não encontrado — KDE não instalou direito"
-    fail "i3 continua funcionando. Tente: sudo pacman -S plasma-desktop"
+    fail "i3 continua funcionando. Tente: sudo pacman -S plasma-desktop plasma-workspace plasma-x11-session"
     exit 1
 fi
 
 ok "startplasma-x11 encontrado"
+
+# O startplasma-x11 existir não prova nada sobre a sessão X11 funcionar: ele
+# vem do plasma-workspace, e o gerenciador de janelas do X11 vem do kwin-x11,
+# que é outro pacote. Conferir só o primeiro deixava passar um KDE onde não se
+# arrasta uma janela.
+if ! command -v kwin_x11 >/dev/null 2>&1; then
+    fail "kwin_x11 não encontrado — a sessão X11 ficaria sem gerenciador de janelas"
+    fail "Tente: sudo pacman -S plasma-x11-session"
+    exit 1
+fi
+ok "kwin_x11 encontrado"
 
 # ── 2. O i3 FICA ───────────────────────────────────────────────────────
 # Este bloco removia `i3-wm i3lock xss-lock polybar picom arandr autorandr`.

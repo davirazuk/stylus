@@ -84,6 +84,20 @@ i3_area() { anota "abrindo: área de trabalho do i3"
 desistir() {  # desistir <motivo em português>
     printf '%s\n' "$1" >"$MOTIVO" 2>/dev/null || true
     anota "área de trabalho recusada: $1"
+    # Avisar NA TELA, e não só no arquivo. Sem isto a proteção é muda: quem
+    # escolheu KDE na tela de login cai no i3 sem uma palavra e conclui que a
+    # máquina está quebrada. O aviso sai depois que a sessão firmou, porque
+    # antes disso não há com quem falar — o dunst ainda não subiu. Fica para
+    # trás de propósito, como o marcador da trava.
+    (
+        sleep 8
+        command -v notify-send >/dev/null 2>&1 &&
+            notify-send --app-name=STYLUS --urgency=critical \
+                "a área de trabalho não abriu" \
+                "$(printf '%s' "$1" | head -2)
+
+detalhes:  stylus kde" 2>/dev/null
+    ) >/dev/null 2>&1 &
     # De propósito, NÃO se mexe na sessão que o SDDM guarda. Se este script
     # está rodando, o SDDM já lançou uma sessão do STYLUS, e ele vai lançar a
     # mesma no próximo login — passando por este mesmo pré-voo. É isso que faz
@@ -117,7 +131,30 @@ piscando. Para ver o motivo e tentar de novo:  stylus kde"
 
     if ! command -v startplasma-x11 >/dev/null 2>&1; then
         desistir "O Plasma não está instalado nesta máquina (falta o
-startplasma-x11). Para instalar:  sudo pacman -S plasma-desktop plasma-workspace"
+startplasma-x11). Para instalar:
+  sudo pacman -S plasma-desktop plasma-workspace plasma-x11-session"
+        return
+    fi
+
+    # ── e o gerenciador de janelas? ────────────────────────────────────────
+    # Perguntar pelo startplasma-x11 NÃO responde se o Plasma tem como
+    # funcionar, e essa confusão custou uma tarde: o KDE subia, mostrava o
+    # painel e a área de trabalho, e não dava para arrastar, redimensionar
+    # nem fechar uma janela — nem o alt+tab, nem atalho nenhum do KDE. Porque
+    # quem move janela é o KWin, e o KWin do X11 mora num pacote separado
+    # (kwin-x11) do qual NADA depende: o plasma-workspace depende do `kwin`,
+    # que hoje é só o compositor do Wayland. O startplasma-x11 vem do
+    # plasma-workspace e estava lá o tempo todo, então o pré-voo dizia sim.
+    #
+    # Uma área de trabalho onde não se move uma janela não é uma área de
+    # trabalho. Melhor o i3, que funciona, e uma linha dizendo qual é o
+    # pacote — o pré-voo roda de novo no próximo login e devolve o KDE
+    # sozinho assim que ele estiver lá.
+    if [[ -z ${KDEWM:-} ]] && ! command -v kwin_x11 >/dev/null 2>&1; then
+        desistir "O Plasma está aqui, mas sem o gerenciador de janelas da sessão
+X11. Sem ele a área de trabalho abre e não dá para arrastar, redimensionar
+nem fechar janela nenhuma, e nenhum atalho do KDE funciona.
+Para resolver:  sudo pacman -S plasma-x11-session"
         return
     fi
 

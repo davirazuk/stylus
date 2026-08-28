@@ -630,6 +630,60 @@ done < <(sed -n '/stylus-configure.sh/,/^CHROOT$/p' airootfs/usr/local/bin/stylu
 if (( ${#faltando[@]} == 0 )); then ok "toda unidade que a instalação liga vem de um pacote instalado"
 else bad "a instalação liga o que pode não existir:"; printf '      %s\n' "${faltando[@]}"; fi
 
+sec "a sessão X11 do KDE tem gerenciador de janelas"
+# **Sintoma:** o KDE instala, abre, mostra o painel e a área de trabalho — e
+# não dá para arrastar, redimensionar nem fechar uma janela. O alt+tab não faz
+# nada. Nenhum atalho do KDE funciona. Nada no registro reclama.
+#
+# O KDE separou o KWin em dois pacotes: `kwin` passou a ser o compositor do
+# WAYLAND, e o gerenciador de janelas do X11 saiu para `kwin-x11`. O
+# plasma-workspace depende do `kwin` — o de Wayland — e NADA depende do
+# kwin-x11. Este sistema é X11, então instalar "plasma-desktop
+# plasma-workspace" entrega uma área de trabalho sem gerenciador de janelas.
+#
+# E o que mais atrapalhou: `command -v startplasma-x11` continua respondendo
+# que sim, porque ele vem do plasma-workspace. Toda conferência que perguntava
+# "o Plasma está instalado?" dizia que sim.
+#
+# O plasma-x11-session são quatro arquivos e depende do kwin-x11: pedir por
+# ele é pedir a sessão X11 inteira.
+# Por VIZINHANÇA, e medida em CÓDIGO. Duas versões erradas antes desta:
+#
+#   por arquivo   "o arquivo cita plasma-x11-session em algum lugar?" — passava
+#                 com o defeito de volta, porque o stylus-install também
+#                 imprime uma dica de instalação trezentas linhas abaixo.
+#                 Citar em outro lugar não instala.
+#   por linha     contando linhas do arquivo — e o comentário que explica POR
+#                 QUE o pacote está ali empurrava o próprio pacote para fora
+#                 da janela. A conferência acusava a lista que ela mesma
+#                 tinha acabado de aprovar.
+#
+# Comentário e linha em branco saem antes de medir; o que sobra é a lista de
+# pacotes como o shell a vê.
+sem_wm=()
+while IFS= read -r arquivo; do
+    # `grep -n .` não serve: o sed acima apaga o TEXTO do comentário e deixa a
+    # indentação, e uma linha só de espaços casa com ".". Os comentários
+    # continuavam ocupando a janela, que é justamente o que se quer evitar.
+    mapfile -t cod < <(sed 's/#.*//' "$arquivo" | grep -n '[^[:space:]]')
+    for i in "${!cod[@]}"; do
+        linha=${cod[i]#*:}
+        [[ $linha == *plasma-desktop* || $linha == *plasma-workspace* ]] || continue
+        achou=0
+        for (( j = i > 6 ? i - 6 : 0; j <= i + 8 && j < ${#cod[@]}; j++ )); do
+            viz=${cod[j]#*:}
+            [[ $viz == *plasma-x11-session* || $viz == *kwin-x11* ]] && { achou=1; break; }
+        done
+        (( achou )) || sem_wm+=("${arquivo#airootfs/}, linha ${cod[i]%%:*}")
+    done
+done < <(grep -rl 'plasma-desktop\|plasma-workspace' airootfs/usr/local/bin 2>/dev/null | sort)
+if (( ${#sem_wm[@]} == 0 )); then
+    ok "todo lugar que instala o Plasma instala também o gerenciador de janelas do X11"
+else
+    bad "instala o Plasma sem gerenciador de janelas para o X11 (falta plasma-x11-session):"
+    printf '      %s\n' "${sem_wm[@]}"
+fi
+
 sec "multilib no medium ao vivo"
 # lib32-gamemode está na lista de TODA máquina, e o /etc/pacman.conf do sistema
 # ao vivo não vem do perfil: vem do pacote pacman, onde o multilib está

@@ -77,6 +77,20 @@ else
     if [[ -n $alvo ]] && ! command -v "$alvo" >/dev/null 2>&1; then
         problema="a sessão $SESSAO manda executar $alvo, que não existe"
     elif grep -qi 'startplasma\|^DesktopNames=KDE' "$ARQ" 2>/dev/null; then
+        # Sessão do Plasma. Duas perguntas, e a primeira não é sobre vídeo.
+        #
+        # O KWin do X11 mora no pacote kwin-x11, do qual nada depende — o
+        # plasma-workspace depende do `kwin`, que hoje é só o de Wayland.
+        # Sem ele o autologin entra numa área de trabalho onde não se move
+        # uma janela e nenhum atalho responde. Não é um laço, mas é um
+        # beco: a sessão do STYLUS ao lado funciona inteira.
+        if [[ -z ${KDEWM:-} ]] && [[ ! -x $RAIZ/usr/bin/kwin_x11 ]]; then
+            problema="o $SESSAO é do Plasma e falta o kwin_x11, o gerenciador
+    de janelas da sessão X11 (pacote kwin-x11, que nada instala junto).
+    Sem ele não dá para arrastar, redimensionar nem fechar janela, e
+    nenhum atalho do KDE funciona.
+    Para resolver:  sudo pacman -S plasma-x11-session"
+        fi
         # O caso que trouxe este arquivo ao mundo.
         # Sem `|| echo nenhum`: o --opengl IMPRIME "nenhum" e SAI 1 no caso
         # sem OpenGL, então o `||` disparava junto e a variável ficava com a
@@ -87,7 +101,7 @@ else
         # velho, que não conhece o --opengl, responde com o texto de uso; ler
         # isso como "não tem OpenGL" mandaria para o resgate uma máquina cujo
         # KDE abre sem problema nenhum, e o resgate nunca sairia.
-        if [[ $gl == nenhum ]]; then
+        if [[ -z $problema && $gl == nenhum ]]; then
             problema="o $SESSAO é do Plasma, e o KWin não abre sem OpenGL
     nesta máquina (falta o mesa). Sem este desvio, a tela ficaria
     piscando sem parar, sem tela de login para escolher outra coisa.

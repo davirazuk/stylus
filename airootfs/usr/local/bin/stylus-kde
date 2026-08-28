@@ -42,7 +42,22 @@ if command -v startplasma-x11 >/dev/null 2>&1; then
     ok "KDE Plasma instalado${sess:+ (sessão: $sess)}"
 else
     mau "O Plasma não está instalado."
-    printf '      sudo pacman -S plasma-desktop plasma-workspace\n'
+    printf '      sudo pacman -S plasma-desktop plasma-workspace plasma-x11-session\n'
+fi
+
+# O KWin do X11 é um pacote à parte (kwin-x11) e nada depende dele. Sem ele o
+# KDE abre inteiro e não move uma janela — é a falha que mais parece "o KDE
+# do STYLUS é quebrado" e a que menos se explica sozinha.
+if command -v kwin_x11 >/dev/null 2>&1; then
+    ok "Gerenciador de janelas do X11 (kwin_x11) presente"
+elif [[ -n ${KDEWM:-} ]]; then
+    aviso "Sem o kwin_x11, mas o KDEWM está apontando para: $KDEWM"
+else
+    mau "Falta o gerenciador de janelas da sessão X11 (kwin_x11).
+      É por isso que não dá para arrastar janela nem usar atalho do KDE:
+      o painel e a área de trabalho são o plasmashell, mas quem move
+      janela é o KWin — e o do X11 vem num pacote separado.
+      Para resolver:  ${c_b}sudo pacman -S plasma-x11-session${c_0}"
 fi
 
 # ── OpenGL: a pergunta que decide tudo ─────────────────────────────────────
