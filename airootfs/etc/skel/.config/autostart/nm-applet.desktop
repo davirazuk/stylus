@@ -1,8 +1,18 @@
+# O applet de rede do GTK, DESLIGADO no autostart — nos dois modos.
+#
+# Este arquivo dizia OnlyShowIn=KDE, ou seja: ligava o nm-applet exatamente
+# onde ele não deve rodar. O KDE tem o plasma-nm, que faz a mesma coisa, e os
+# dois juntos dão dois ícones de rede na bandeja e DOIS agentes de senha —
+# a senha do wi-fi é pedida duas vezes, ou por um diálogo que some quando o
+# outro responde primeiro.
+#
+# E no i3 ele também não precisa daqui: o ~/.config/i3/config já tem
+# `exec --no-startup-id nm-applet`. Ligado nos dois lugares, o i3 abria dois.
+#
+# É a mesma lição do stylus-dunst.desktop, ao lado: quem manda no que aparece
+# na bandeja é o ambiente, não a lista de pacotes.
 [Desktop Entry]
 Type=Application
 Name=Network Manager Applet
 Exec=nm-applet --indicator
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-OnlyShowIn=KDE;
+Hidden=true

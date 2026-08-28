@@ -33,6 +33,7 @@ info "Instalando KDE Plasma..."
 pacman -S --needed --noconfirm \
     plasma-desktop plasma-workspace plasma-x11-session \
     plasma-nm plasma-pa powerdevil \
+    kscreen bluedevil spectacle plasma-systemmonitor \
     kde-gtk-config kvantum konsole dolphin gwenview kate \
     xdg-desktop-portal-kde \
     && ok "KDE Plasma instalado" || { fail "KDE não instalou — i3 mantido"; exit 1; }

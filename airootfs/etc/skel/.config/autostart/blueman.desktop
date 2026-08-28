@@ -1,0 +1,15 @@
+# O applet de bluetooth do GTK, DESLIGADO no autostart. Anula
+# /etc/xdg/autostart/blueman.desktop, que vem do pacote e roda em todo lugar.
+#
+# No KDE quem cuida do bluetooth é o bluedevil, integrado ao painel e às
+# configurações. Os dois juntos dão dois ícones na bandeja e dois agentes de
+# pareamento — numa máquina de música, onde parear fone é coisa de todo dia,
+# é o pedido de pareamento aparecer em duplicata e falhar em um dos dois.
+#
+# No i3 continua: o ~/.config/i3/config tem `exec --no-startup-id
+# blueman-applet`.
+[Desktop Entry]
+Type=Application
+Name=Blueman Applet
+Exec=blueman-applet
+Hidden=true

@@ -672,6 +672,23 @@ case $DESKTOP_CHOICE in
             # sessão) e depende do kwin-x11: pedir por ele é pedir "a sessão
             # X11 do Plasma, inteira", que é exatamente o que se quer aqui.
             plasma-x11-session
+            # ── O que o Plasma NÃO traz sozinho e faz muita falta ──
+            # Nenhum destes é dependência de nada acima; sem eles a área de
+            # trabalho abre inteira e com buracos que parecem defeito:
+            #
+            #   kscreen              sem ele NÃO EXISTE a tela de Monitores nas
+            #                        configurações: não dá para trocar
+            #                        resolução nem ligar um segundo monitor.
+            #                        Numa máquina que vai para a TV, é o
+            #                        primeiro lugar aonde a pessoa vai.
+            #   bluedevil            o bluetooth do KDE. Sem ele, parear um
+            #                        fone só pelo bluetoothctl, na mão, num
+            #                        sistema cujo assunto é ouvir música.
+            #   spectacle            sem ele a tecla Print não faz nada.
+            #   plasma-systemmonitor o "gerenciador de tarefas" do KDE
+            #                        (Ctrl+Esc). Sem ele não há como ver o
+            #                        que travou nem fechar à força.
+            kscreen bluedevil spectacle plasma-systemmonitor
             konsole dolphin ark gwenview kate
             plasma-nm plasma-pa powerdevil
             kde-gtk-config kvantum

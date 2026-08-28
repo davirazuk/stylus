@@ -171,6 +171,7 @@ fi
 # Se existir, substituir. Se não existir, copiar.
 AUTOSTART_SKEL="$SRC/etc/skel/.config/autostart"
 if [[ -d $AUTOSTART_SKEL ]]; then
+    tocadas=0
     while IFS= read -r usuario; do
         casa=$(getent passwd "$usuario" | cut -d: -f6)
         [[ -d $casa ]] || continue
@@ -178,8 +179,12 @@ if [[ -d $AUTOSTART_SKEL ]]; then
         mkdir -p "$casa/.config/autostart"
         cp -a --no-preserve=ownership "$AUTOSTART_SKEL/." "$casa/.config/autostart/"
         chown -R "$usuario": "$casa/.config/autostart" 2>/dev/null || true
+        tocadas=$(( tocadas + 1 ))
     done < <(casas_de_verdade | cut -d: -f1)
-    ok "autostart KDE atualizado"
+    # Só avisa se mexeu mesmo. Fora da raiz viva o casas_de_verdade não devolve
+    # ninguém e o laço acima não roda — mas esta linha dizia "atualizado" do
+    # mesmo jeito, prometendo um trabalho que não aconteceu.
+    (( tocadas )) && ok "autostart atualizado em $tocadas casa(s)"
 fi
 
 # ── 3. o venv do deck, se sumiu ou está velho ──────────────────────────────

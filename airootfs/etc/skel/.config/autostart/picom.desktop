@@ -1,0 +1,18 @@
+# O picom, DESLIGADO no autostart. Anula /etc/xdg/autostart/picom.desktop,
+# que vem do pacote picom e não tem filtro de ambiente nenhum.
+#
+# **Sintoma:** no KDE, janelas tremendo, rasgo de imagem na rolagem e efeitos
+# do KWin pela metade.
+#
+# O picom é um compositor. O KWin também é. Rodando os dois na mesma tela,
+# cada um desenha por cima do outro. Como o arquivo do pacote autostarta em
+# TODO ambiente, escolher KDE trazia o picom junto sem ninguém pedir.
+#
+# No i3 ele continua rodando — o i3 o inicia explicitamente
+# (`~/.config/picom/launch.sh` na área de trabalho, `picom -b` no modo
+# música), que é o único lugar de onde ele deve subir.
+[Desktop Entry]
+Type=Application
+Name=Picom
+Exec=picom
+Hidden=true
