@@ -178,8 +178,22 @@ servir() {
 estado() {
     local bin porta pid
     echo
-    if bin=$(achar_binario); then ok "instalada: $bin"
-    else warn "não instalada — \`stylus qobuz instalar\`"; fi
+    # O qobuz-dl PRIMEIRO, e a interface web depois. É o qobuz-dl que o
+    # `buscar` e o `baixar` usam, e é dele que tudo depende; a interface é
+    # opcional. Antes esta tela só falava da interface, então uma máquina com
+    # a interface instalada e sem a biblioteca dizia "instalada" e não
+    # baixava nada pela linha de comando.
+    if "$PY" -c 'import qobuz_dl' 2>/dev/null; then
+        ok "o qobuz-dl está aí (é ele que procura e baixa)"
+    else
+        warn "sem o qobuz-dl — \`stylus qobuz instalar\`"
+    fi
+    if bin=$(achar_binario); then
+        printf '  %s·%s interface web: %s%s\n' "$c_d" "$c_0" "$bin" "$c_0"
+    else
+        printf '  %s·%s sem interface web (opcional): `stylus qobuz instalar --interface`%s\n' \
+            "$c_d" "$c_0" "$c_0"
+    fi
     if porta=$(achar_porta); then
         ok "no ar: http://127.0.0.1:$porta/"
     else
@@ -187,10 +201,32 @@ estado() {
     fi
     pid=$(pid_vivo) && printf '  %s·%s subida por nós, pid %s%s\n' \
         "$c_d" "$c_0" "$pid" "$c_0"
-    printf '  %sdestino dos downloads: %s%s\n' "$c_d" \
-        "${STYLUS_QOBUZ_DIR:-$HOME/Qobuz Downloads}" "$c_0"
-    printf '  %sa estante: %s%s\n' "$c_d" \
+
+    # A conta, e por qual dos dois jeitos. Quem entra pela interface web
+    # autentica por TOKEN e fica com e-mail e senha vazios no config.ini —
+    # olhar só para e-mail e senha diz "sem conta" numa máquina logada.
+    local cfg="$HOME/.config/qobuz-dl/config.ini"
+    if [[ -f $cfg ]]; then
+        if grep -qE '^user_auth_token *= *.+' "$cfg"; then
+            ok "conta: entrada por token"
+        elif grep -qE '^password *= *.+' "$cfg"; then
+            ok "conta: entrada por e-mail e senha"
+        else
+            warn "config.ini existe mas sem credencial — \`stylus qobuz abrir\`"
+        fi
+    else
+        warn "sem conta ainda — \`stylus qobuz abrir\` e entre uma vez"
+    fi
+
+    # Onde cada caminho põe o disco. Eram DOIS destinos diferentes e a tela
+    # só mostrava um: o `baixar` põe direto na estante, em Artista/Álbum, e é
+    # o caminho normal; a interface web usa a pasta dela e depois alguém tem
+    # que arquivar à mão. Mostrar só a segunda fazia parecer que o disco
+    # baixado tinha se perdido.
+    printf '  %sbaixar → a estante: %s%s\n' "$c_d" \
         "$("$PY" -c 'import sys; sys.path.insert(0,"/usr/share/stylus/deck"); import vinyl; print(vinyl.library_root())' 2>/dev/null || echo '?')" "$c_0"
+    printf '  %sinterface web → %s%s\n' "$c_d" \
+        "${STYLUS_QOBUZ_DIR:-$HOME/Qobuz Downloads}" "$c_0"
     echo
 }
 

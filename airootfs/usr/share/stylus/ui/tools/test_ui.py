@@ -131,7 +131,11 @@ def main():
               pygame.K_s, pygame.K_r, pygame.K_o, pygame.K_t, pygame.K_x,
               pygame.K_n, pygame.K_p, pygame.K_SLASH, pygame.K_DELETE,
               pygame.K_BACKSPACE, pygame.K_PAGEUP, pygame.K_PAGEDOWN,
-              pygame.K_HOME, pygame.K_END]
+              pygame.K_HOME, pygame.K_END,
+              # `d` baixa na loja do Qobuz. Só entrou na lista depois que o
+              # Job virou de mentira: antes, apertar `d` aqui teria começado
+              # um download de verdade dentro do teste.
+              pygame.K_d]
 
     secao("cada seção desenha e aguenta o teclado")
     # Nada aqui pode lançar processo de verdade. A varredura aperta ENTER em
@@ -142,8 +146,31 @@ def main():
     # comandos em vez de executá-los mantém a cobertura e torna o teste
     # hermético.
     spawn_reais = []
-    spawn_verdadeiro = A.spawn
+    # Sem guardar o original de propósito: a troca vale pelo processo inteiro.
+    # O resto do teste continua desenhando e apertando tecla depois daqui, e
+    # devolver o de verdade no meio abriria de novo a porta que acabamos de
+    # fechar.
     A.spawn = lambda cmd, *a, **k: spawn_reais.append(cmd)
+
+    # O Job também, e pelo mesmo motivo do spawn.
+    #
+    # O spawn estava grampeado desde a lição do Steam, mas o Job NÃO — e três
+    # seções lançam comando de verdade por ele no ENTER: OFICINA (`stylus
+    # check`, `stylus covers --apply`, `stylus rip`…), CELULAR (`stylus-phone
+    # sync --apply`) e AJUSTES. A varredura aperta ENTER em todas as telas.
+    # Hoje escapa por acidente de ordenação — a primeira ação de cada lista é
+    # de só-leitura — e no dia em que alguém reordenar a lista da OFICINA para
+    # pôr "pôr cover.jpg onde falta" na frente, este teste passa a ESCREVER
+    # na coleção de verdade, que não tem cópia em lugar nenhum.
+    #
+    # Um teste que aperta tudo precisa interceptar tudo que lança processo.
+    class JobDeMentira:
+        def __init__(self, cmd, title):
+            self.cmd, self.title = cmd, title
+            self.lines, self.done, self.rc = ["(gravado, não executado)"], True, 0
+            spawn_reais.append(cmd)
+
+    A.Job = JobDeMentira
     for i, tela in enumerate(app.screens):
         try:
             app._goto(i)
@@ -164,6 +191,18 @@ def main():
            f"({', '.join(unicos[:4])})")
     else:
         ok("nenhum comando disparado pela varredura")
+
+    # Uma tela que lança processo e NÃO passa por aqui é uma tela que o teste
+    # não protege. Se nenhuma passar, a interceptação parou de morder.
+    esperados = {"stylus check", "stylus-phone status"}
+    vistos = {" ".join(c) if isinstance(c, list) else str(c)
+              for c in spawn_reais}
+    if esperados & vistos:
+        ok(f"o Job foi interceptado ({len(esperados & vistos)} de "
+           f"{len(esperados)} conhecidos)")
+    else:
+        bad("o ENTER não chegou a nenhum Job conhecido — "
+            "a interceptação pode ter parado de morder")
 
     secao("o trilho e o aviso")
     try:
