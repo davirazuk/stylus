@@ -17,16 +17,38 @@ ok()   { printf '%s  ✓%s %s\n' "$c_g" "$c_0" "$*"; }
 die()  { printf '%s==> ERRO:%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
 
 OPT=/opt/stylus
-BIN=$HOME/.local/bin
-mkdir -p "$BIN"
+# Havia um `BIN=$HOME/.local/bin; mkdir -p "$BIN"` aqui, e nada no arquivo
+# usava o $BIN. Depois do `sudo -E` deste script o $HOME continua sendo o da
+# pessoa e o processo é root: numa casa onde ~/.local/bin ainda não existisse,
+# a linha o CRIAVA COMO ROOT — e a partir daí todo `pip install --user` e
+# todo instalador que escreve ali passa a falhar por permissão, sem ninguém
+# ligar uma coisa à outra.
 
-precisa_root() { [[ $EUID -eq 0 ]] || exec sudo -E "$0" "$@"; }
+# Os argumentos com que ESTE script foi chamado, guardados antes de qualquer
+# função existir.
+#
+# **Sintoma:** `stylus app yay` imprimia o menu e não instalava nada. Idem
+# clonehero e heroic — ou seja, todo aplicativo que precisa de root, que são
+# quase todos.
+#
+# O `precisa_root` era chamado de DENTRO de `app_yay`, como `precisa_root
+# "$@"`. Ali `$@` são os argumentos da FUNÇÃO, e o despachante lá embaixo
+# chama `"app_$a"` sem argumento nenhum. Então o `exec sudo -E "$0" "$@"`
+# relançava o stylus-app com a linha de comando VAZIA — e sem argumento o
+# stylus-app faz exatamente uma coisa: imprime a lista e sai com zero. Nada
+# falhava, nada avisava, e o comando parecia simplesmente não fazer nada.
+ARGV_ORIGINAL=("$@")
+
+precisa_root() {
+    [[ $EUID -eq 0 ]] && return 0
+    exec sudo -E "$0" "${ARGV_ORIGINAL[@]}"
+}
 
 app_clonehero() {
     # O Clone Hero é distribuído como um zip do site oficial, sem pacote e
     # sem URL estável de versão — por isso o link fixo "latest". É o jogo que
     # justifica metade da pasta de charts do celular.
-    precisa_root "$@"
+    precisa_root
     local url="https://clonehero.net/assets/release/clonehero-linux.zip"
     local dest=$OPT/clonehero
     info "Baixando Clone Hero…"
@@ -54,23 +76,31 @@ EOF
 }
 
 app_qobuzdl() {
-    # pip e não pacman porque não está nos repositórios; --user para não
-    # brigar com o gerenciador de pacotes por /usr/lib/python.
-    info "Instalando qobuz-dl…"
-    python3 -m pip install --user --upgrade --break-system-packages qobuz-dl \
-        || die "o pip falhou"
-    ok "qobuz-dl — configure com: qobuz-dl -r"
+    # Isto fazia `pip install --user --break-system-packages`, que é o jeito
+    # que o resto do sistema abandonou de propósito: o pacote vai para
+    # ~/.local/lib/python3.13 e SOME inteiro na atualização do python para
+    # 3.14, e o executável cai em ~/.local/bin, que pode nem estar no PATH.
+    # Funciona no dia e quebra depois, sem aviso. Quem faz certo é o
+    # `stylus qobuz instalar`, num venv da pessoa (ver venv.sh) — então é
+    # para lá que este vai, em vez de manter duas receitas para o mesmo
+    # programa, uma delas errada.
+    [[ $EUID -eq 0 ]] && die \
+        "não instale o qobuz-dl como root: ele iria para a casa do root.
+       Rode sem sudo:  stylus app qobuzdl"
+    info "Instalando o qobuz-dl…"
+    stylus-qobuz instalar || die "não deu para instalar o qobuz-dl"
+    ok "qobuz-dl — entre na sua conta com:  stylus qobuz abrir"
 }
 
 app_heroic() {
-    precisa_root "$@"
+    precisa_root
     info "Heroic vem do AUR; instalando com o yay…"
     command -v yay >/dev/null || die "instale o yay primeiro: stylus app yay"
     sudo -u "${SUDO_USER:-$USER}" yay -S --needed --noconfirm heroic-games-launcher-bin
 }
 
 app_yay() {
-    precisa_root "$@"
+    precisa_root
     command -v yay >/dev/null && { ok "o yay já está aqui"; return; }
     info "Compilando o yay…"
     pacman -S --needed --noconfirm git base-devel

@@ -6,9 +6,12 @@
 #     stylus-mode music        volta para a tela cheia
 #     stylus-mode toggle       o outro, seja qual for
 #     sudo stylus-mode permitir  libera a troca sem senha (uma vez só)
+#     stylus-mode autologin      entra sozinho? (ligar / desligar)
 #
-# Encerra a sessão X para trocar. Com o autologin ligado (que é o padrão
-# deste sistema) isso é meio segundo de tela preta e você está do outro lado.
+# Encerra a sessão X para trocar. COM autologin isso é meio segundo de tela
+# preta e você está do outro lado; sem ele, a tela de login aparece no meio e
+# pede a senha — o que assusta quem não foi avisado. `stylus-mode autologin`
+# diz em qual dos dois casos esta máquina está.
 set -uo pipefail
 F="$HOME/.config/stylus/mode"
 mkdir -p "$(dirname "$F")"
@@ -46,6 +49,59 @@ permitir() {
     exit 0
 }
 
+# ── entrar sozinho ─────────────────────────────────────────────────────────
+#  A promessa desta ferramenta — "meio segundo de preto e você está do outro
+#  lado" — só existe com autologin. Numa máquina instalada ele vem DESLIGADO
+#  de propósito: entrar sem senha é decisão de quem usa o computador, não
+#  nossa, e ligá-lo escondido dentro de outro comando seria tomá-la no lugar
+#  da pessoa. Então fica aqui, com o nome dito por extenso.
+CONF_SDDM=/etc/sddm.conf.d/stylus.conf
+
+autologin_usuario() {   # imprime o usuário do autologin, se houver
+    local f
+    for f in /etc/sddm.conf /etc/sddm.conf.d/*.conf; do
+        [[ -f $f ]] || continue
+        sed -n '/^\[Autologin\]/,/^\[/p' "$f" 2>/dev/null \
+            | sed -n 's/^User=\(.\+\)/\1/p' | head -1 | grep . && return 0
+    done
+    return 1
+}
+
+autologin() {
+    local quem acao=${1:-}
+    case "$acao" in
+        ""|estado)
+            if quem=$(autologin_usuario); then
+                echo "entra sozinho como $quem."
+            else
+                echo "não entra sozinho: o login pede a senha."
+                echo "para ligar:  sudo stylus-mode autologin ligar"
+            fi
+            exit 0 ;;
+        ligar|desligar) ;;
+        *) echo "uso: stylus-mode autologin [ligar|desligar]" >&2; exit 1 ;;
+    esac
+    [[ $EUID -eq 0 ]] || { echo "use: sudo stylus-mode autologin $acao" >&2; exit 1; }
+    quem=${SUDO_USER:-}
+    [[ -n $quem ]] || { echo "não sei para quem; rode com sudo" >&2; exit 1; }
+    mkdir -p "$(dirname "$CONF_SDDM")"
+    [[ -f $CONF_SDDM ]] || printf '[Autologin]\n' > "$CONF_SDDM"
+    grep -q '^\[Autologin\]' "$CONF_SDDM" || printf '\n[Autologin]\n' >> "$CONF_SDDM"
+    # Só a linha User= dentro do bloco [Autologin]; nada mais do arquivo é
+    # tocado. Um sed sem o intervalo pegaria um User= de outra seção.
+    sed -i '/^\[Autologin\]/,/^\[/{/^User=/d}' "$CONF_SDDM"
+    if [[ $acao == ligar ]]; then
+        sed -i "/^\[Autologin\]/a User=$quem" "$CONF_SDDM"
+        grep -q '^Relogin=' "$CONF_SDDM" || sed -i "/^\[Autologin\]/a Relogin=true" "$CONF_SDDM"
+        echo "pronto: a máquina entra sozinha como $quem."
+        echo "(trocar de modo passa a ser meio segundo de preto, sem senha.)"
+    else
+        echo "pronto: o login volta a pedir a senha."
+        echo "(trocar de modo continua funcionando — só passa pela tela de login.)"
+    fi
+    exit 0
+}
+
 # Troca a sessão do SDDM, e devolve se conseguiu.
 #
 # `-n` primeiro, sempre: a regra do sudoers libera exatamente estas duas
@@ -63,9 +119,10 @@ trocar_sessao() {
 case "${1:-}" in
     "")        echo "$cur"; exit 0 ;;
     permitir|allow) shift; permitir "$@" ;;
+    autologin|sozinho) shift; autologin "$@" ;;
     music|desktop|kde) novo=$1 ;;
     toggle)    novo=$([[ $cur == music ]] && echo desktop || echo music) ;;
-    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *)         echo "stylus-mode: música ou área de trabalho, só isso." >&2; exit 1 ;;
 esac
 
@@ -81,7 +138,15 @@ esac
 # sessão era derrubada mesmo quando a troca falhava — deixando o arquivo
 # dizendo "music" numa máquina que voltou no KDE, e o próximo `toggle` indo
 # para o lado errado.
-if [[ $novo != "music" ]] && ! command -v startplasma-x11 >/dev/null 2>&1; then
+# A área de trabalho NÃO é só o Plasma. Exigir o startplasma-x11 aqui
+# recusava a troca numa máquina que tem o i3 completo — e é exatamente para
+# ele que o stylus-session cai quando o Plasma não está instalado, de
+# propósito ("o i3 é uma área de trabalho de verdade"). Quem decide qual das
+# duas abrir é o stylus-session, na hora; aqui só se pergunta se existe
+# ALGUMA.
+if [[ $novo != "music" ]] \
+   && ! command -v startplasma-x11 >/dev/null 2>&1 \
+   && ! command -v i3 >/dev/null 2>&1; then
     echo "não há área de trabalho instalada — rode: sudo stylus-switch-kde" >&2
     exit 1
 fi
@@ -104,13 +169,45 @@ sudo stylus-mode permitir" 2>/dev/null || true
 fi
 echo "$novo" > "$F"
 
+# ── vai voltar sozinho, ou vai pedir senha? ────────────────────────────────
+# **Sintoma:** "o Meta+Esc quebrou o KDE e eu tive que reiniciar."
+#
+# O que acontecia: a sessão caía, e a máquina NÃO entrava de volta sozinha.
+# A promessa desta ferramenta — "meio segundo de preto e você está do outro
+# lado" — depende de o SDDM ter autologin configurado. Numa máquina instalada
+# ele não tem: o instalador tira o `User=` do bloco [Autologin] de propósito,
+# porque autologin sem senha numa máquina de verdade é decisão de quem
+# instala, não nossa.
+#
+# Sem o `User=`, apertar o atalho dá: tela preta, e depois uma tela de login
+# que ninguém estava esperando. Do lado de quem apertou, isso não se lê como
+# "digite sua senha": lê-se como a máquina ter quebrado. E a reação certa
+# para uma máquina quebrada é reiniciar, que foi o que aconteceu.
+#
+# A troca continua sendo a mesma; o que faltava era avisar.
+autologin_ligado() { autologin_usuario >/dev/null 2>&1; }
+alvo_humano=$([[ $novo == music ]] && echo MÚSICA || echo 'ÁREA DE TRABALHO')
+if autologin_ligado; then
+    aviso="voltando em um segundo…"
+    urgencia=low
+else
+    aviso="a tela vai apagar e o login vai pedir a sua senha.
+o modo $alvo_humano já está escolhido lá.
+(sudo stylus-mode autologin ligar tira a senha do caminho)"
+    urgencia=normal
+    echo "atenção: esta máquina não tem autologin." >&2
+    echo "A tela vai apagar e o SDDM vai pedir a sua senha — o modo $alvo_humano" >&2
+    echo "já vai estar escolhido. (Não é defeito.)" >&2
+    echo "Para trocar de modo sem passar por ali:  sudo stylus-mode autologin ligar" >&2
+fi
+
 # Avisar ANTES de derrubar a sessão: sem isto a tela some sem explicação e
 # parece que alguma coisa quebrou.
 command -v notify-send >/dev/null && \
-    notify-send --app-name=STYLUS --urgency=low \
-        "modo $([[ $novo == music ]] && echo MÚSICA || echo 'ÁREA DE TRABALHO')" \
-        "voltando em um segundo…" 2>/dev/null || true
-sleep 0.6
+    notify-send --app-name=STYLUS --urgency="$urgencia" \
+        "modo $alvo_humano" "$aviso" 2>/dev/null || true
+# Sem autologin a pessoa precisa LER o aviso antes de a tela apagar.
+sleep "$(autologin_ligado && echo 0.6 || echo 2.5)"
 if command -v i3-msg >/dev/null && i3-msg -t get_version >/dev/null 2>&1; then
     exec i3-msg exit
 fi

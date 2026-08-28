@@ -1106,6 +1106,37 @@ else
     printf '  %s—%s sem config do i3 ou sem keybindings.txt\n' "$y" "$z"
 fi
 
+# ── quem pede root não pode perder o que ia fazer ─────────────────────────
+# **Sintoma:** `stylus app yay` imprimia o menu e não instalava nada. Idem
+# clonehero e heroic — todo aplicativo que precisa de root, que são quase
+# todos.
+#
+# O `precisa_root` era chamado de dentro de `app_yay` como `precisa_root
+# "$@"`, e ali `$@` são os argumentos da FUNÇÃO — o despachante chama
+# `"app_$a"` sem nenhum. O `exec sudo -E "$0" "$@"` relançava o script com a
+# linha de comando VAZIA, e sem argumento o stylus-app faz exatamente uma
+# coisa: imprime a lista e sai com zero. Nada falhava e nada avisava.
+#
+# Ler não pega isso — as duas formas são shell válido e parecem iguais. Então
+# a conferência EXECUTA o comando com um `sudo` de mentira e olha o que
+# chegaria do outro lado.
+sec "o pedido de root não engole o comando"
+if [[ -x airootfs/usr/local/bin/stylus-app ]]; then
+    falso=$(mktemp -d)
+    printf '#!/bin/bash\necho "SUDO: $*"\nexit 0\n' > "$falso/sudo"
+    chmod +x "$falso/sudo"
+    saida=$(PATH="$falso:$PATH" timeout 20 bash airootfs/usr/local/bin/stylus-app yay 2>&1)
+    rm -rf "$falso"
+    if grep -q 'SUDO:.* yay$' <<<"$saida"; then
+        ok "o \`stylus app NOME\` chega do outro lado do sudo com o NOME"
+    else
+        bad "o \`stylus app yay\` perde o argumento ao pedir root"
+        head -3 <<<"$saida" | sed 's/^/      /'
+    fi
+else
+    printf '  %s—%s sem o stylus-app\n' "$y" "$z"
+fi
+
 # ── nada de gosto se aplica sem as duas trancas ───────────────────────────
 # O stylus-kde-shortcuts roda a CADA login do KDE. Tudo que ele mexe em gosto
 # — papel de parede, paleta, tema de widget, cursor — tem que passar por
