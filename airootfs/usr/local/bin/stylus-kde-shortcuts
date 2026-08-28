@@ -170,7 +170,15 @@ command -v numlockx >/dev/null 2>&1 && numlockx on >/dev/null 2>&1
 # os vê voltar no login seguinte.
 CARIMBO="${XDG_DATA_HOME:-$HOME/.local/share}/stylus/kde-primeiro-login"
 if [[ ! -e $CARIMBO ]]; then
-    AREA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
+    # Nunca a raiz da casa. O `xdg-user-dir` devolve "$HOME/" quando não sabe
+    # — e ele passa a não saber sempre que o xdg-user-dirs-update passa por
+    # cima de um user-dirs.dirs cuja pasta não existia naquele instante. Aí
+    # este bloco despejava dois .desktop soltos dentro da pasta pessoal.
+    # A causa está consertada no stylus-session; isto é para a máquina que já
+    # ficou assim, e para o dia em que algum outro caminho fizer de novo.
+    AREA=$(xdg-user-dir DESKTOP 2>/dev/null || true)
+    AREA=${AREA%/}
+    [[ -n $AREA && $AREA != "$HOME" ]] || AREA="$HOME/Desktop"
     if mkdir -p "$AREA" 2>/dev/null; then
         for d in stylus-ui stylus-music-mode; do
             origem="/usr/share/applications/$d.desktop"

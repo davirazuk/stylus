@@ -65,7 +65,62 @@ case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
         export LC_CTYPE="$LANG"
         ;;
 esac
-command -v xdg-user-dirs-update >/dev/null && xdg-user-dirs-update
+# ── as pastas do XDG ───────────────────────────────────────────────────────
+# **Sintoma:** aqui rodava `xdg-user-dirs-update` a CADA LOGIN, sem guarda.
+#
+# Esse comando não é inofensivo em cima de um user-dirs.dirs que já existe:
+# toda entrada cuja pasta não estiver lá NAQUELE INSTANTE ele reescreve como
+# `XDG_MUSIC_DIR="$HOME/"`, dizendo "was removed, reassigning to homedir".
+# Medido: uma casa com as duas linhas certas e as pastas ainda não criadas
+# sai daqui com MUSIC e DESKTOP apontando para a casa inteira.
+#
+# Duas maneiras de isso acontecer numa máquina em uso:
+#
+#   a coleção mora num disco externo, num NFS, ou no celular pelo WebDAV — e
+#   no instante do login o ponto de montagem ainda não subiu;
+#   a conta veio de um sistema em inglês e as pastas em português nunca
+#   existiram.
+#
+# O estrago aparece longe daqui. A estante em si sobrevive (ela lê o
+# ~/.config/stylus/library), mas o `xdg-user-dir DESKTOP` passa a devolver a
+# casa — e é com ele que o stylus-kde-shortcuts escolhe onde pôr os dois
+# ícones do primeiro login. No KDE do amigo, o primeiro login despejava
+# arquivo solto na raiz da casa.
+#
+# Então: só numa conta nova, onde o arquivo ainda não existe. E quando ele
+# existe e já foi estragado, conserta — porque o config do i3 também chama o
+# mesmo comando, e aquele arquivo é do usuário, o sync.sh não o alcança.
+pastas_xdg() {
+    command -v xdg-user-dirs-update >/dev/null 2>&1 || return 0
+    local arq="${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+    if [[ ! -f $arq ]]; then
+        xdg-user-dirs-update >/dev/null 2>&1 || true
+        return 0
+    fi
+    local chave nome
+    for chave in MUSIC DESKTOP; do
+        # `xdg-user-dir` devolve a casa COM barra no fim quando não sabe;
+        # comparar com "$HOME" pelado não pega.
+        [[ $(xdg-user-dir "$chave" 2>/dev/null) == "$HOME/" ]] || continue
+        case "$chave:${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in
+            MUSIC:pt*)   nome=Músicas ;;
+            MUSIC:*)     nome=Music ;;
+            DESKTOP:pt*) nome="Área de trabalho" ;;
+            DESKTOP:*)   nome=Desktop ;;
+        esac
+        # A pasta TEM que passar a existir, senão a próxima passagem do
+        # xdg-user-dirs-update desfaz o conserto de novo — que é o laço em
+        # que a máquina estava.
+        mkdir -p "$HOME/$nome" 2>/dev/null || continue
+        if grep -q "^XDG_${chave}_DIR=" "$arq" 2>/dev/null; then
+            sed -i "s|^XDG_${chave}_DIR=.*|XDG_${chave}_DIR=\"\$HOME/$nome\"|" "$arq"
+        else
+            printf 'XDG_%s_DIR="$HOME/%s"\n' "$chave" "$nome" >>"$arq"
+        fi
+        anota "pasta $chave apontava para a casa inteira; devolvida a ~/$nome"
+    done
+}
+pastas_xdg
 
 if [[ ! -s $HOME/.config/stylus/library ]]; then
     /usr/share/stylus/first-run.sh || true

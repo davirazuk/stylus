@@ -43,7 +43,13 @@ exec --no-startup-id stylus-wallpaper --se-ligado
 exec --no-startup-id nm-applet
 exec --no-startup-id blueman-applet
 exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
-exec --no-startup-id xdg-user-dirs-update
+# O `xdg-user-dirs-update` saiu daqui. Rodando a cada início de sessão, ele
+# reescreve como "$HOME/" toda entrada cuja pasta não estiver montada
+# naquele instante — a coleção num disco externo bastava para a pasta de
+# música virar a casa inteira. Quem cuida disso agora é o stylus-session,
+# que só o chama numa conta nova e conserta a entrada quando ela já foi
+# estragada. (Máquina que já existe continua com esta linha: o sync.sh
+# preserva o ~/.config. Por isso o conserto está lá, e não só aqui.)
 
 # Mount removable media and say so. thunar-volman only does this while Thunar is
 # open, being a Thunar plugin, so plugging in a pendrive on the desktop itself

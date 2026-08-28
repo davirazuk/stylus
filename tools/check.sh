@@ -1106,6 +1106,32 @@ else
     printf '  %s—%s sem config do i3 ou sem keybindings.txt\n' "$y" "$z"
 fi
 
+# ── ninguém chama o xdg-user-dirs-update no escuro ────────────────────────
+# Ele NÃO é inofensivo em cima de um user-dirs.dirs que já existe: toda
+# entrada cuja pasta não estiver montada naquele instante ele reescreve como
+# `XDG_MUSIC_DIR="$HOME/"`. Uma coleção num disco externo, num NFS ou no
+# celular pelo WebDAV basta — e o estrago aparece longe, no dia em que o
+# `xdg-user-dir DESKTOP` devolver a casa inteira e alguém escrever ali.
+#
+# Duas passagens já tinham nascido sem guarda (o stylus-session e o config do
+# i3), com o mesmo comentário longo explicando o perigo três arquivos ao
+# lado. Quem chamar tem que falar de user-dirs.dirs no mesmo arquivo.
+sec "o xdg-user-dirs-update é sempre guardado"
+# Linha de comentário não conta — foi assim que a conferência do python
+# embutido nasceu acusando o próprio exemplo dentro do próprio comentário.
+# Aqui o arquivo do i3 EXPLICA por que a chamada saiu de lá, e explicar não
+# é chamar.
+nus=""
+while IFS= read -r f; do
+    grep -vE '^[[:space:]]*#' "$f" | grep -q 'xdg-user-dirs-update' || continue
+    grep -q 'user-dirs\.dirs' "$f" || nus+=" ${f#./}"
+done < <(grep -rl 'xdg-user-dirs-update' airootfs 2>/dev/null)
+if [[ -n $nus ]]; then
+    bad "chamam o xdg-user-dirs-update sem olhar o user-dirs.dirs:$nus"
+else
+    ok "toda chamada ao xdg-user-dirs-update é guardada"
+fi
+
 # ── o Python escondido dentro dos scripts de shell ────────────────────────
 # A conferência de sintaxe de python acima só olha arquivos .py. Metade da
 # lógica de `stylus-qobuz`, `stylus-spotify` e companhia mora em heredoc:
