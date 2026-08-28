@@ -160,13 +160,38 @@ class Thumbs:
         threading.Thread(target=self._make, args=(cover,), daemon=True).start()
         return None
 
+    def _baixar(self, url):
+        """Uma capa que mora na internet, trazida para o cache.
+
+        A loja do Qobuz devolve endereço, não caminho — e sem isto a única
+        tela do sistema que mostra discos sem mostrar capa era justamente a
+        que tem capa de sobra para mostrar. Como já é uma thread própria, a
+        espera de rede não custa quadro nenhum.
+        """
+        import urllib.request
+        alvo = os.path.join(THUMBS, f"{_key(url)}-orig")
+        if os.path.isfile(alvo):
+            return alvo
+        os.makedirs(THUMBS, exist_ok=True)
+        with urllib.request.urlopen(url, timeout=20) as r:
+            dados = r.read()
+        # Pelo .parcial: um download interrompido deixaria um jpeg truncado
+        # no cache, e o `isfile` acima nunca mais tentaria de novo.
+        with open(alvo + ".parcial", "wb") as fh:
+            fh.write(dados)
+        os.replace(alvo + ".parcial", alvo)
+        return alvo
+
     def _make(self, cover):
         try:
             tp = self._thumb_path(cover)
             if not os.path.isfile(tp):
                 from PIL import Image
                 os.makedirs(THUMBS, exist_ok=True)
-                im = Image.open(cover)
+                origem = (self._baixar(cover)
+                          if cover.startswith(("http://", "https://"))
+                          else cover)
+                im = Image.open(origem)
                 im.draft("RGB", (self.px * 2, self.px * 2))   # decodifica menos
                 im = im.convert("RGB")
                 im.thumbnail((self.px, self.px), Image.LANCZOS)

@@ -551,13 +551,19 @@ def passos(surf, rect, titulo, porque, lista, rodape=None):
     """
     larg = min(rect.w - 120, 720)
     corpo = larg - 60
+    # O "porquê" é uma frase inteira e cabia numa linha só. Numa caixa de
+    # 720 px ela saía cortada — "depois o disco cai direto na esta…" — e a
+    # metade que sumia é justamente a que responde por que vale a pena fazer
+    # os passos. Quebra em linhas, como o rodapé já fazia.
+    f_por = font(18)
+    n_por = max(1, -(-f_por.size(porque)[0] // corpo)) if porque else 0
     f_rod = font(16)
     n_rod = 0
     if rodape:
         # Quantas linhas o rodapé vai ocupar de fato: ele é uma frase inteira
         # e cortá-la com reticências apaga justamente o endereço que ela dá.
         n_rod = max(1, -(-f_rod.size(rodape)[0] // corpo))
-    alt = (_P_TOPO + _P_TIT + _P_POR
+    alt = (_P_TOPO + _P_TIT + _P_POR + (n_por - 1) * 24
            + sum(_P_PASSO + (_P_CMD if d else 0) for _f, _t, d in lista)
            + (_P_ROD + (n_rod - 1) * 22 if rodape else 0) + _P_BASE)
     caixa = pygame.Rect(0, 0, larg, alt)
@@ -568,8 +574,10 @@ def passos(surf, rect, titulo, porque, lista, rodape=None):
     y = caixa.y + _P_TOPO
     text(surf, titulo, (x, y), 26, TEXT, bold=True, maxw=corpo)
     y += _P_TIT
-    text(surf, porque, (x, y), 18, TEXT_FAINT, maxw=corpo)
-    y += _P_POR
+    if porque:
+        paragrafo(surf, porque, (x, y), 18, TEXT_FAINT, maxw=corpo,
+                  entrelinha=1.33, limite=3)
+    y += _P_POR + (n_por - 1) * 24
 
     for feito, oque, fazer in lista:
         # ✓ verde para o que já está de pé, ○ âmbar para o que falta: o âmbar
@@ -702,6 +710,58 @@ SPINDLE_R = 0.035     # o furo
 _INTERVALOS = (0.52, 0.63, 0.71, 0.80, 0.885)
 
 _disco_cache = {}
+_halo_cache = {}
+
+
+def halo(raio, folga=None):
+    """A luz que o disco espalha no escuro atrás de si. Em cache.
+
+    `raio` é o do DISCO; `folga` é o quanto a luz vaza para fora dele
+    (padrão: 30% do raio). A superfície devolvida tem raio+folga.
+
+    A lei do desenho do vinil (CLAUDE.md §5.5) diz onde vem o peso num fundo
+    quase preto: de LUZ, nunca de sombra — não há para onde escurecer a
+    partir de (7,8,11). O disco parado, desenhado sozinho, boiava recortado
+    no nada. Um halo por trás é o que o assenta sem inventar mesa, plinto ou
+    sombra de contato.
+
+    O brilho é FORTE NA BORDA DO DISCO e cai para fora. A primeira versão
+    disto era um degradê radial comum, mais claro no centro — e o centro
+    fica inteiro debaixo do disco, então noventa por cento da luz era gasta
+    onde ninguém a via e o que sobrava na borda não dava para notar.
+
+    Vem em alfa cheio e se apaga com `set_alpha` na hora de desenhar: assim
+    ele respira sem redesenhar círculo nenhum a sessenta quadros por segundo.
+    """
+    raio = max(8, int(raio))
+    folga = max(4, int(raio * 0.3 if folga is None else folga))
+    chave = (raio, folga)
+    pronto = _halo_cache.get(chave)
+    if pronto is not None:
+        return pronto
+    total = raio + folga
+    h = pygame.Surface((total * 2, total * 2), pygame.SRCALPHA)
+    c = total
+    # De fora para dentro, senão cada anel apaga o anterior: o pygame desenha
+    # círculo CHEIO, e um círculo menor por cima substitui os pixels em vez
+    # de somar.
+    # `u`: 0 na borda de FORA do halo, 1 encostado no disco. O brilho cresce
+    # com u — máximo colado no disco. A primeira versão tinha o expoente do
+    # lado errado (`(1-u)²`) e desenhava uma auréola brilhante na borda
+    # externa com o miolo apagado: uma nuvem de mostarda em volta do disco,
+    # em vez de luz saindo dele.
+    passos = max(10, folga)
+    for i in range(passos):
+        u = i / (passos - 1)
+        rr = int(total - u * folga)
+        a = int(34 * u ** 2)
+        if a <= 0:
+            continue
+        pygame.draw.circle(h, (*AMBER_GLOW, a), (c, c), rr)
+    if len(_halo_cache) > 6:
+        _halo_cache.clear()
+    _halo_cache[chave] = h
+    return h
 
 
 def disco(raio):

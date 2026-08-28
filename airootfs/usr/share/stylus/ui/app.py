@@ -371,27 +371,48 @@ class NowScreen(Screen):
             pygame.draw.circle(s, T.TEXT, (f.right, rect.centery), 6)
 
     def _nothing(self, s, r):
-        """Nada tocando: o disco parado, com o braço no berço.
+        """Nada tocando: o disco parado no escuro, e onde a agulha cairia.
 
-        Era um radar — oito circunferências e uma linha girando em volta do
-        eixo. Um braço não gira em torno do eixo: ele pivota de um ponto fora
-        do disco, e quando não há nada tocando ele está PARADO, no berço.
-        Uma agulha girando sozinha num disco que não toca é a única coisa
-        nesta tela que descrevia algo que não estava acontecendo.
+        ── Por que o braço saiu daqui ────────────────────────────────────────
+        Antes havia um braço inteiro: haste cinza, pivô, CONTRAPESO atrás do
+        pivô, cabeçote, e um descanso feito de poste vertical com um berço em
+        U e um pé. A lei do desenho (CLAUDE.md §5.5) proíbe isso pelo nome —
+        "braço de metal com contrapeso desenhado" — e o motivo aparece na
+        tela: era a única peça em cinza frio num quadro cujo assunto é âmbar
+        no escuro, e ela puxava o olho para uma peça de móvel em vez de para
+        o disco. Toda vez que alguém tentou desenhar isto "como um toca-discos
+        de verdade", o resultado foi reprovado na hora.
+
+        O que ficou é só luz, e cada peça diz alguma coisa:
+
+            o halo    assenta o disco no escuro sem inventar mesa nem sombra
+            o brilho  passa uma vez a cada volta: a tela não congelou
+            o eixo    pulsa devagar — o "ligado" da máquina
+            a faísca  onde a agulha cairia, respirando. É um convite, e é a
+                      única coisa que precisava do braço para ser dita.
         """
         t = time.time()
         # O disco ocupa o que a tela der, com espaço para o texto embaixo.
         R = int(max(120, min(r.w * 0.20, (r.h - 220) * 0.42)))
         cx, cy = r.centerx, r.centery - 30
 
+        # ── o halo, respirando ────────────────────────────────────────────
+        # Sem ele o disco fica recortado no nada. Respira em contratempo com
+        # o eixo (fases diferentes) para as duas pulsações não baterem juntas
+        # e virarem um piscar só.
+        folga = int(R * 0.30)
+        h = T.halo(R, folga)
+        h.set_alpha(int(170 + 60 * math.sin(t * 0.55)))
+        s.blit(h, (cx - R - folga, cy - R - folga))
+
         d = T.disco(R)
         s.blit(d, (cx - R, cy - R))
 
         # O brilho que passa: é ele que diz que o disco está ali, parado, e
-        # não que a tela congelou. Uma volta a cada ~9s.
-        # A intensidade sobe e desce ao longo do arco. Com a queda só de um
-        # lado — como estava — o começo do brilho era um corte reto, e o que
-        # aparecia no disco era um quadrilátero claro, não um reflexo.
+        # não que a tela congelou. A intensidade sobe e desce ao longo do
+        # arco. Com a queda só de um lado — como estava — o começo do brilho
+        # era um corte reto, e o que aparecia no disco era um quadrilátero
+        # claro, não um reflexo.
         ang = (t * 0.7) % (2 * math.pi)
         bril = pygame.Surface((R * 2, R * 2), pygame.SRCALPHA)
         n, arco = 40, math.radians(34)
@@ -417,68 +438,34 @@ class NowScreen(Screen):
         s.blit(glow, (cx - gr, cy - gr))
         pygame.draw.circle(s, T.AMBER, (cx, cy), max(3, int(R * 0.022)))
 
-        # ── o braço, no berço ────────────────────────────────────────────
-        # As proporções vêm do deck (deck/vinyl.py): pivô a 1.39 raio, a 42°
-        # de 12 horas, braço de 1.51 raio. Em repouso a agulha para FORA do
-        # disco, que é onde o berço fica.
-        pang = math.radians(42.0)
-        ux, uy = math.sin(pang), -math.cos(pang)     # direção centro → pivô
-        m, L, rest_r = 1.39, 1.51, 1.26              # em raios (deck/vinyl.py)
-        px, py = cx + ux * R * m, cy + uy * R * m
-        # Onde a agulha para: o ponto que está a 1.26 raio do centro E a um
-        # braço de distância do pivô. Chutar um ângulo punha a agulha no meio
-        # do disco — que é o lugar onde ela justamente NÃO fica em repouso.
-        qx = (rest_r ** 2 - L ** 2 + m ** 2) / (2 * m)
-        qy = math.sqrt(max(0.0, rest_r ** 2 - qx ** 2))
-        ax = cx + (ux * qx + uy * -qy) * R          # perpendicular: para fora
-        ay = cy + (uy * qx + ux * qy) * R
-        pygame.draw.line(s, T.LINE, (px, py), (ax, ay), max(2, R // 60))
-        # contrapeso atrás do pivô, na direção oposta à agulha
-        dx, dy = ax - px, ay - py
-        dl = math.hypot(dx, dy) or 1.0
-        bx = px - dx / dl * R * 0.22
-        by = py - dy / dl * R * 0.22
-        pygame.draw.line(s, T.LINE, (px, py), (bx, by), max(3, R // 42))
-        pygame.draw.circle(s, T.TEXT_FAINT, (int(px), int(py)),
-                           max(3, R // 40))
-        # ── o cabeçote e o descanso ──────────────────────────────────────
-        # Antes daqui saía só um risquinho cruzado na ponta, e o braço ficava
-        # pousado em coisa nenhuma: uma linha que descia do nada e parava no
-        # ar ao lado do disco. Braço em repouso DESCANSA em alguma coisa —
-        # sem esse apoio o olho não lê "parado", lê "solto".
-        #
-        # Duas peças, e nenhuma delas é desenho de madeira (§5.5): o cabeçote
-        # é um segmento mais grosso no prolongamento do braço, e o descanso é
-        # um poste vertical com um berço em U em cima. Vertical porque quem
-        # segura o braço parado é a gravidade, não o ângulo do braço.
-        hx = ax + dx / dl * R * 0.085
-        hy = ay + dy / dl * R * 0.085
-        pygame.draw.line(s, T.TEXT_FAINT, (ax, ay), (hx, hy), max(4, R // 28))
-        # a agulha, na ponta do cabeçote
-        pygame.draw.circle(s, T.AMBER_DIM, (int(hx), int(hy)), max(2, R // 64))
-
-        base_y = hy + R * 0.13
-        poste = max(2, R // 70)
-        pygame.draw.line(s, T.LINE, (hx, hy + R * 0.02), (hx, base_y), poste)
-        # o berço em U: dois braços curtos para cima, abraçando o cabeçote
-        u = R * 0.045
-        pygame.draw.line(s, T.LINE, (hx - u, hy + R * 0.055),
-                         (hx - u, hy + R * 0.015), poste)
-        pygame.draw.line(s, T.LINE, (hx + u, hy + R * 0.055),
-                         (hx + u, hy + R * 0.015), poste)
-        pygame.draw.line(s, T.LINE, (hx - u, hy + R * 0.055),
-                         (hx + u, hy + R * 0.055), poste)
-        # o pé, encostado na mesma linha em que o disco assenta
-        pygame.draw.line(s, T.LINE, (hx - u * 0.8, base_y),
-                         (hx + u * 0.8, base_y), max(2, R // 60))
+        # ── a faísca da queda ─────────────────────────────────────────────
+        # Onde a agulha encosta: o começo do primeiro sulco, no alto à
+        # direita. O ângulo é o mesmo pivô de 42° que o deck usa (vinyl.py),
+        # para as duas telas não contarem histórias diferentes sobre o mesmo
+        # disco — só que aqui ele vira um ponto de luz em vez de uma haste.
+        qa = math.radians(42.0) - math.pi / 2
+        qr = R * (T.GROOVE_O - 0.015)
+        qx, qy = cx + math.cos(qa) * qr, cy + math.sin(qa) * qr
+        resp = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(t * 1.1 + 1.6))
+        fr = max(10, int(R * 0.12))
+        faisca = pygame.Surface((fr * 2, fr * 2), pygame.SRCALPHA)
+        for k in range(6, 0, -1):
+            pygame.draw.circle(faisca, (*T.AMBER_GLOW, int(20 * resp)),
+                               (fr, fr), int(fr * k / 6))
+        s.blit(faisca, (qx - fr, qy - fr))
+        pygame.draw.circle(s, T.AMBER, (int(qx), int(qy)),
+                           max(2, int(R * 0.016)))
 
         # ── o texto ──────────────────────────────────────────────────────
+        # As teclas viram teclas: é a mesma linguagem do resto da interface,
+        # e "pressione r" escrito por extenso era o único lugar que ainda
+        # explicava um atalho com uma frase.
         ty = cy + R + 56
         T.text(s, "nada tocando", (cx, ty), 32, T.TEXT_DIM, anchor="center")
         T.text(s, "vá para a ESTANTE e escolha um disco",
                (cx, ty + 42), 20, T.TEXT_FAINT, anchor="center")
-        T.text(s, "ou pressione r para sortear",
-               (cx, ty + 72), 17, T.TEXT_FAINT, anchor="center")
+        T.frase_com_teclas(s, "ou [r] sorteia um por você",
+                           (cx, ty + 76), 17, T.TEXT_FAINT, anchor="center")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1571,11 +1558,33 @@ class QobuzScreen(Screen):
         self.examing = None
         self.app.toast(f"baixando: {artist} — {title}")
 
+    def _tocar(self, item):
+        """Toca agora, sem baixar. A assinatura usada como assinatura.
+
+        Ouvir um disco que você ainda não sabe se quer guardar exigia gastar
+        quatro gigabytes e depois apagar — ou abrir o site num navegador, que
+        é sair do sistema inteiro para fazer a única coisa que ele existe
+        para fazer.
+        """
+        ident = str(item.get("id") or "").strip() or item.get("url", "")
+        if not ident:
+            self.app.toast("esse disco veio sem id")
+            return
+        artist = item.get("display_subtitle", "")
+        title = item.get("display_title", "")
+        if spawn(["stylus-qobuz", "tocar", ident]):
+            self.examing = None
+            self.app.toast(f"pondo pela rede: {artist} — {title}")
+        else:
+            self.app.toast("não deu para chamar o stylus-qobuz")
+
     def key(self, ev):
         # ── overlay de exame ────────────────────────────────────────────────
         if self.examing:
             if ev.key == pygame.K_ESCAPE:
                 self.examing = None
+            elif ev.key == pygame.K_p:
+                self._tocar(self.examing)
             elif ev.key == pygame.K_d:
                 self._download(self.examing)
             elif ev.key == pygame.K_i:
@@ -1628,6 +1637,9 @@ class QobuzScreen(Screen):
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if n:
                 self.examing = self.results[self.sel]
+        elif ev.key == pygame.K_p:
+            if n:
+                self._tocar(self.results[self.sel])
         elif ev.key == pygame.K_d:
             # `d` baixa aqui também. A linha de dicas prometia "[d] baixa" na
             # grade inteira e só o overlay de exame respondia — apertar `d` em
@@ -1645,21 +1657,33 @@ class QobuzScreen(Screen):
     # ── desenho ─────────────────────────────────────────────────────────────
 
     def _card(self, s, rect, item, sel):
-        """Um disco na prateleira."""
-        if sel:
-            T.panel(s, rect, T.INK_LIFT, radius=10, border=T.LINE)
+        """Um disco na loja, desenhado como um disco na estante.
+
+        Antes era um painel cinza com o mesmo ícone de disco em todos —
+        vinte e cinco quadrados iguais, do lado de uma ESTANTE que mostra as
+        capas de verdade. O Qobuz manda a capa junto com o resultado da
+        busca; era só ninguém estar pedindo. Pelo mesmo `T.sleeve` da
+        estante, para a mesma capa não ter duas aparências dependendo da
+        tela em que aparece.
+        """
+        cov = self.app.thumbs.get(item.get("cover") or "")
+        if cov is None:
+            # Enquanto a capa não chega da rede: um painel, não um ícone.
+            T.panel(s, rect, T.INK_LIFT if sel else T.INK_SOFT, radius=3)
+            T.text(s, (item.get("display_title") or "?")[:2].upper(),
+                   (rect.centerx, rect.centery), max(16, rect.w // 6),
+                   T.TEXT_FAINT, anchor="center")
+            if sel:
+                pygame.draw.rect(s, T.AMBER, rect.inflate(4, 4), width=2,
+                                 border_radius=2)
         else:
-            T.panel(s, rect, T.INK_SOFT, radius=10, border=T.LINE)
+            T.sleeve(s, rect, cov, sel)
 
-        # capa: silhouette de disco
-        T.text(s, "󰝡", (rect.centerx, rect.centery - 4), 38,
-               T.AMBER if sel else T.TEXT_FAINT, anchor="center")
-
-        # qualidade: se hi-res, um brilho
+        # hi-res: um ponto de luz no canto. É a única informação que vale um
+        # marcador próprio numa máquina cuja tese é não reamostrar.
         quality = item.get("quality", "")
         if item.get("hires"):
-            T.text(s, "◆", (rect.right - 10, rect.y + 10), 11,
-                   T.AMBER, anchor="topright")
+            pygame.draw.circle(s, T.AMBER, (rect.right - 9, rect.y + 9), 3)
 
         # informações abaixo
         ty = rect.bottom + 8
@@ -1677,7 +1701,7 @@ class QobuzScreen(Screen):
         if year:
             info_parts.append(str(year))
         if tracks:
-            info_parts.append(f"{tracks}faixas")
+            info_parts.append(f"{tracks} faixas")
         if quality:
             info_parts.append(quality)
         info = "  ·  ".join(info_parts)
@@ -1697,52 +1721,65 @@ class QobuzScreen(Screen):
         s.blit(dim, r.topleft)
 
         # painel central
-        pw, ph = 520, 360
+        pw, ph = 620, 330
         px = r.x + (r.w - pw) // 2
         py = r.y + (r.h - ph) // 2
         T.panel(s, pygame.Rect(px, py, pw, ph), T.INK_LIFT, radius=16,
                 border=T.LINE)
 
-        # disco grande no centro
-        T.text(s, "󰝡", (px + pw // 2, py + 70), 72, T.AMBER, anchor="center")
-
-        # informações
+        # a capa, do tamanho de segurar na mão
         title = item.get("display_title", "?")
         artist = item.get("display_subtitle", "?")
         year = item.get("release_year", "")
         tracks = item.get("tracks", 0)
         quality = item.get("quality", "")
 
-        T.text(s, title, (px + 32, py + 130), 24, T.TEXT, bold=True, maxw=pw - 64)
-        T.text(s, artist, (px + 32, py + 165), 20, T.AMBER, maxw=pw - 64)
-
-        # detalhes
-        y = py + 205
-        detail_parts = []
-        if year:
-            detail_parts.append(f"lançamento: {year}")
-        if tracks:
-            detail_parts.append(f"{tracks} faixas")
-        if quality:
-            detail_parts.append(f"qualidade: {quality}")
-        detail = "  ·  ".join(detail_parts)
-        if detail:
-            T.text(s, detail, (px + 32, y), 16, T.TEXT_DIM, maxw=pw - 64)
-
-        # status do download
-        y = py + 250
-        if self.job and not self.job.done:
-            T.text(s, "já tem um disco baixando", (px + 32, y), 16, T.AMBER)
-        elif item.get("hires"):
-            T.text(s, "d baixa para a estante — hi-res, sem reamostrar",
-                   (px + 32, y), 16, T.GREEN)
+        cap = pygame.Rect(px + 32, py + 32, 152, 152)
+        cov = self.app.thumbs_hi.get(item.get("cover") or "")
+        if cov is None:
+            cov = self.app.thumbs.get(item.get("cover") or "")
+        if cov is not None:
+            T.sleeve(s, cap, cov)
         else:
-            T.text(s, "d baixa para a estante", (px + 32, y), 16, T.GREEN)
+            T.panel(s, cap, T.INK_SOFT, radius=3)
+            T.text(s, title[:2].upper(), cap.center, 34, T.TEXT_FAINT,
+                   anchor="center")
+
+        tx = cap.right + 24
+        tw = px + pw - 32 - tx
+        T.text(s, title, (tx, cap.y + 6), 24, T.TEXT, bold=True, maxw=tw)
+        T.text(s, artist, (tx, cap.y + 42), 20, T.AMBER, maxw=tw)
+
+        # Detalhes em duas linhas, e sem os rótulos. Numa linha só eles não
+        # cabiam nos 456 px do painel e a última palavra saía como
+        # "qualidade…" — o rótulo sobrevivia e o valor, que é a informação,
+        # sumia.
+        if year or tracks:
+            partes = ([str(year)] if year else []) + \
+                     ([f"{tracks} faixas"] if tracks else [])
+            T.text(s, "  ·  ".join(partes), (tx, cap.y + 78), 16, T.TEXT_DIM,
+                   maxw=tw)
+        if quality:
+            T.text(s, quality, (tx, cap.y + 102), 16,
+                   T.AMBER if item.get("hires") else T.TEXT_DIM, maxw=tw)
+
+        # as duas coisas que dá para fazer com um disco que não é seu
+        y = py + 214
+        T.frase_com_teclas(s, "[p] toca agora, sem ocupar disco",
+                           (px + 32, y), 16, T.GREEN)
+        if self.job and not self.job.done:
+            T.text(s, "já tem um disco baixando", (px + 32, y + 26), 16, T.AMBER)
+        elif item.get("hires"):
+            T.frase_com_teclas(s, "[d] guarda na estante — hi-res, sem reamostrar",
+                               (px + 32, y + 26), 16, T.TEXT_DIM)
+        else:
+            T.frase_com_teclas(s, "[d] guarda na estante",
+                               (px + 32, y + 26), 16, T.TEXT_DIM)
 
         # ações
         y = py + ph - 50
-        T.text(s, "d baixa  ·  i copia URL  ·  esc volta",
-               (px + 32, y), 15, T.TEXT_FAINT)
+        T.frase_com_teclas(s, "[i] copia a URL   ·   [esc] volta",
+                           (px + 32, y), 15, T.TEXT_FAINT)
 
     def draw(self, s, r):
         pad, gap = 30, 14
@@ -1790,20 +1827,21 @@ class QobuzScreen(Screen):
             if m and not pronto:
                 T.passos(
                     s, r, "a loja ainda não está ligada",
-                    "duas coisas, uma vez só — depois o disco cai direto na "
-                    "estante",
-                    [(m["lib"], "o qobuz-dl, que procura e baixa",
+                    "duas coisas, uma vez só — e depois qualquer disco do "
+                    "catálogo toca aqui na hora, sem baixar",
+                    [(m["lib"], "o qobuz-dl, que procura, toca e baixa",
                       None if m["lib"] else "stylus qobuz instalar"),
                      (m["cred"], "a sua conta do Qobuz",
-                      None if m["cred"] else "qobuz-dl  (uma vez, e ele "
-                                             "pergunta o resto)")],
-                    rodape="precisa de assinatura Qobuz. o que você baixar "
-                           "vira arquivo seu, na sua pasta, e aparece na "
-                           "estante junto com o resto.")
+                      None if m["cred"] else "stylus qobuz abrir  (entre uma "
+                                             "vez e feche)")],
+                    rodape="precisa de assinatura Qobuz. tocar não ocupa "
+                           "disco nenhum; o que você guardar vira arquivo "
+                           "seu, na sua pasta, e aparece na estante junto "
+                           "com o resto.")
                 return
             T.vazio(s, r, T.fantasma_busca, "a loja", [
                 "[/] procura um disco",
-                "o que baixar vira arquivo seu, na estante",
+                "[p] toca agora  ·  [d] guarda na estante",
             ])
             return
 
@@ -1834,6 +1872,14 @@ class QobuzScreen(Screen):
             if cy > clip.bottom or cy + ch < clip.top:
                 continue
             self._card(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
+        # O mesmo aviso que a estante já tinha e a loja não: sem ele a fileira
+        # cortada ao meio se lê como fileira com defeito, e o que sobrava aqui
+        # era pior — a fileira seguinte entrava por um fio de um pixel, uma
+        # tira de cor viva atravessando a linha de legendas.
+        total_h = ((len(self.results) + self.COLS - 1) // self.COLS) * ch
+        T.borda_rolagem(s, clip,
+                        acima=self.scroll > 2,
+                        abaixo=self.scroll + view_h < total_h - 2)
         s.set_clip(old)
 
         # Sob o estado, não em cima dele: os dois eram desenhados no mesmo
@@ -1845,7 +1891,7 @@ class QobuzScreen(Screen):
         if self.results:
             item = self.results[self.sel]
             self.app.hint(
-                s, r, "[/] procura   [enter] examina   [d] baixa",
+                s, r, "[/] procura   [enter] examina   [p] toca   [d] baixa",
                 contexto=f"{item.get('display_subtitle', '')} — "
                          f"{item.get('display_title', '')}")
 

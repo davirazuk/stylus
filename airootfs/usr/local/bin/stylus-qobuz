@@ -12,12 +12,18 @@
 #      stylus qobuz instalar     instala o qobuz-dl (num venv, dentro da casa)
 #      stylus qobuz buscar TERMO procura discos e mostra id, ano e qualidade
 #      stylus qobuz baixar ID    baixa direto para a estante, sem navegador
+#      stylus qobuz tocar ID     TOCA sem baixar — o disco vem pela rede
 #      stylus qobuz abrir        põe a interface web no ar e abre no navegador
 #      stylus qobuz servir       põe no ar e fica em segundo plano
 #      stylus qobuz parar        derruba
 #      stylus qobuz log          acompanha o registro dela
 #      stylus qobuz fila ARQ     baixa a fila inteira e arquiva cada disco
 #                                  (linhas "url|artista|álbum")
+#
+#  O `tocar` é a assinatura usada como assinatura: o disco toca agora, sem
+#  ocupar disco nenhum, pelo mesmo mpv e com as mesmas travas de áudio do
+#  deck — nada de reamostrar, nada de replaygain. O que você quiser guardar,
+#  `baixar` guarda.
 #
 #  O `buscar` e o `baixar` são o caminho de linha de comando e não precisam da
 #  interface web nem de navegador nenhum: buscar imprime os discos com o id ao
@@ -32,7 +38,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-SHARE=/usr/share/stylus
+# Igual ao `stylus`: dá para apontar este comando para um clone e testar o
+# conserto antes de aplicá-lo na máquina.
+SHARE=${STYLUS_SHARE:-/usr/share/stylus}
 TOOLS=$SHARE/tools
 
 # O qobuz-dl não existe nos repositórios do Arch, e o `pip install` do sistema
@@ -375,6 +383,13 @@ for item in items:
         # momento em que a string passou a dizer "24bit/96kHz" o losango
         # dourado sumiu de todos os discos de uma vez.
         "hires": bool(depth > 16 or rate > 48),
+        # A capa. Sem ela a loja era uma grade de quadrados cinzentos com um
+        # ícone igual em todos — do lado de uma ESTANTE que mostra as capas
+        # de verdade, parecia outra máquina. A `large` tem 600 px, que é o
+        # tamanho de uma capa na grade em telas grandes.
+        "cover": ((item.get("image") or {}).get("large")
+                  or (item.get("image") or {}).get("small")
+                  or (item.get("image") or {}).get("thumbnail") or ""),
         "url": f"https://www.qobuz.com/album/{item.get('id', '')}",
     })
 
@@ -625,6 +640,67 @@ if _TRADUTOR.tty:
 print("pronto. `stylus reindex` se a estante não mostrar na hora.")
 QOBUZDL
         ;;
-    -h|--help|help) sed -n '11,26p' "$0" | sed 's/^# \?//' ;;
+    tocar|play|stream)
+        alvo="${2:-}"
+        [[ -n $alvo ]] || die "uso: stylus qobuz tocar ID|URL
+       o id sai do \`stylus qobuz buscar TERMOS\`"
+        precisa_ser_voce
+        command -v mpv >/dev/null || die "o mpv não está instalado."
+        LISTA=$("$PY" "$SHARE/qobuz_stream.py" "$alvo") || exit 1
+        [[ -s $LISTA ]] || die "não saiu lista nenhuma"
+
+        # Pôr um disco é um ato EXCLUSIVO, e o pidfile é o MESMO do deck: sem
+        # isto, transmitir enquanto um disco da estante toca deixa os dois
+        # saindo pela mesma placa, e o polybar mostrando um enquanto se ouve
+        # o outro. O deck já resolvia isso para si; o problema era que ele
+        # resolvia sozinho, e nada mais conhecia o pidfile dele.
+        PIDMPV="$ESTADO/deck.mpv.pid"
+        if [[ -f $PIDMPV ]]; then
+            _old=$(cat "$PIDMPV" 2>/dev/null || true)
+            # Confere o comm antes de matar: um PID reciclado por outro
+            # programa entre uma sessão e outra não é para morrer.
+            if [[ $_old =~ ^[0-9]+$ ]] && [[ -r /proc/$_old/comm ]] \
+               && [[ $(cat "/proc/$_old/comm" 2>/dev/null) == mpv ]]; then
+                kill "$_old" 2>/dev/null || true
+            fi
+        fi
+        mkdir -p "$ESTADO"
+
+        # O MESMO socket do deck. É por ele que o `stylus-side-watch` sabe em
+        # que faixa e em que segundo a agulha está — e sem isso um disco vindo
+        # da rede tocaria sem nunca avisar que o lado acabou, que é a única
+        # coisa que este sistema faz e mais nenhum faz.
+        SOCK="$ESTADO/deck.sock"
+        rm -f "$SOCK"
+
+        # As mesmas travas de áudio do stylus-deck, e pelo mesmo motivo: um
+        # `replaygain=track` ou um `af=loudnorm` herdado de um ~/.config/mpv
+        # desfaz a tese do sistema ANTES de o som chegar ao PipeWire, e o
+        # `stylus audio` — que mede dali para a frente — continuaria dizendo
+        # "sem conversão". A linha de comando ganha do arquivo do usuário.
+        mpv_args=(--input-ipc-server="$SOCK"
+                  --no-video --really-quiet --audio-display=no
+                  --gapless-audio=yes --audio-samplerate=0
+                  --replaygain=no --af= --volume=100
+                  --loop-playlist=no
+                  # Isto vem pela INTERNET. Sem cache, um FLAC de 24/192 num
+                  # link doméstico engasga no meio da faixa — e o sintoma
+                  # parece defeito de áudio, não de rede. É a mesma folga que
+                  # o deck já dá para coleção montada por FUSE.
+                  --cache=yes --demuxer-max-bytes=192MiB
+                  --demuxer-readahead-secs=40
+                  --playlist="$LISTA")
+        [[ ${STYLUS_QOBUZ_MUDO:-} == 1 ]] && mpv_args+=(--ao=null)
+        setsid mpv "${mpv_args[@]}" </dev/null >/dev/null 2>&1 &
+        printf '%s\n' "$!" > "$PIDMPV"
+        ok "tocando. \`stylus deck --no-scope\` não; isto vem da rede."
+        ;;
+    -h|--help|help)
+        # Do primeiro `stylus qobuz` do cabeçalho até a linha que o fecha.
+        # Era `sed -n '11,26p'` — um intervalo de linhas escrito à mão, que
+        # passa a mentir na primeira vez que alguém acrescenta um subcomando
+        # acima dele. Foi o que aconteceu quando o `tocar` entrou.
+        sed -n '/^#      stylus qobuz /,/^# ═══/p' "$0" \
+            | sed '$d' | sed 's/^# \?//' ;;
     *) die "não conheço \"$1\". \`stylus qobuz --help\`" ;;
 esac
