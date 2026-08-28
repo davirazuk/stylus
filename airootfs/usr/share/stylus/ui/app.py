@@ -1604,9 +1604,43 @@ class QobuzScreen(Screen):
         self.job = None
         self._montagem = None
         self.entrada = None           # o formulário de login, quando aberto
+        self.favoritos = False        # a grade mostra os seus favoritos?
 
     def enter(self):
         self._olhar()
+        # A loja abria vazia, com um "[/] procura um disco" e mais nada. A
+        # coisa mais óbvia de se querer ver ao abrir a loja da SUA assinatura
+        # é o que você já marcou lá dentro — dezenas de discos que já estavam
+        # do outro lado da conta, sem caminho nenhum até eles daqui.
+        if not self.results and not self.query:
+            self._favoritos()
+
+    def _favoritos(self):
+        """Os discos marcados na sua conta do Qobuz, na abertura da loja."""
+        if self.loading:
+            return
+        self.loading = True
+        self.error = None
+
+        def _do():
+            try:
+                r = rodar(["stylus-qobuz", "favoritos"],
+                          capture_output=True, text=True, timeout=30)
+                dados = json.loads((r.stdout or "").strip() or "{}")
+                # Sem conta ainda não é ERRO: é o estado normal de quem
+                # acabou de instalar. Um vermelho no meio da tela para dizer
+                # "você ainda não entrou" é assustar sem motivo — o cartão de
+                # instalação já diz isso com calma, e é ele que aparece.
+                if dados.get("results"):
+                    self.results = dados["results"]
+                    self.sel, self.scroll, self.target = 0, 0.0, 0.0
+                    self.favoritos = True
+            except Exception:             # noqa: BLE001
+                pass
+            finally:
+                self.loading = False
+
+        threading.Thread(target=_do, daemon=True).start()
 
     def _entrar(self):
         """Abre o formulário de conta. Ver a classe Formulario."""
@@ -1703,6 +1737,7 @@ class QobuzScreen(Screen):
                     self.error = data["error"]
                     return
                 self.results = data.get("results", [])
+                self.favoritos = False
                 self.sel = 0
                 self.scroll = 0.0
                 self.target = 0.0
@@ -1795,7 +1830,11 @@ class QobuzScreen(Screen):
         # ── modo de busca ───────────────────────────────────────────────────
         if self.searching:
             if ev.key == pygame.K_ESCAPE:
+                # Sair da busca sem ter procurado nada volta para os
+                # favoritos, e não para uma grade vazia.
                 self.searching, self.query = False, ""
+                if not self.results:
+                    self._favoritos()
             elif ev.key == pygame.K_RETURN:
                 self._search()
             elif ev.key == pygame.K_BACKSPACE:
@@ -1849,6 +1888,8 @@ class QobuzScreen(Screen):
             self._olhar()
             if self.query:
                 self._search()
+            else:
+                self._favoritos()
         else:
             return False
         return True
@@ -2096,8 +2137,9 @@ class QobuzScreen(Screen):
         # Sob o estado, não em cima dele: os dois eram desenhados no mesmo
         # canto superior direito, um em y+20 e o outro em y+24, e "pronto"
         # saía escrito por dentro de "25 discos".
-        T.text(s, f"{len(self.results)} discos", (r.right - pad, r.y + 46), 15,
-               T.TEXT_FAINT, anchor="topright")
+        T.text(s, (f"{len(self.results)} que você marcou" if self.favoritos
+                   else f"{len(self.results)} discos"),
+               (r.right - pad, r.y + 46), 15, T.TEXT_FAINT, anchor="topright")
 
         if self.results:
             item = self.results[self.sel]

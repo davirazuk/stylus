@@ -12,6 +12,7 @@
 #      stylus qobuz instalar     instala o qobuz-dl (num venv, dentro da casa)
 #      stylus qobuz entrar       entra na sua conta, sem navegador nenhum
 #      stylus qobuz buscar TERMO procura discos e mostra id, ano e qualidade
+#      stylus qobuz favoritos    os discos que você marcou lá, em JSON
 #      stylus qobuz baixar ID    baixa direto para a estante, sem navegador
 #      stylus qobuz tocar ID     TOCA sem baixar — o disco vem pela rede
 #      stylus qobuz tocar --deck ID   idem, com a cerimônia e o disco girando
@@ -276,127 +277,15 @@ case "${1:-}" in
     buscar|search)
         query="${2:-}"
         [[ -n $query ]] || die "uso: stylus qobuz buscar TERMOS"
-        "$PY" - "$query" <<'PYEOF'
-import contextlib, json, sys, os
-
-# ── Só JSON no stdout ──────────────────────────────────────────────────────
-# O qobuz_dl imprime "Logging..." e "Membership: Studio" no stdout ao
-# autenticar. Este comando promete JSON, e quem consome — a tela de Qobuz da
-# interface em tela cheia — fazia json.loads() em cima de
-# "Logging...\nMembership: Studio\n{...}" e estourava. De fora, a busca do
-# Qobuz simplesmente não funcionava, sem nada dizendo por quê.
-#
-# O barulho não é lixo: é útil para quem roda no terminal. Então ele vai para
-# o stderr, onde não atrapalha o JSON e continua visível.
-@contextlib.contextmanager
-def so_json():
-    with contextlib.redirect_stdout(sys.stderr):
-        yield
-
-
-try:
-    from qobuz_dl.qopy import Client
-except ImportError:
-    # `pip install qobuz-dl` não funciona no Arch: o python é do pacman e o
-    # pip recusa (PEP 668). Mandar fazer o impossível é pior que não dizer
-    # nada — quem tentava concluía que o sistema estava quebrado.
-    print(json.dumps({"error": "o qobuz-dl não está instalado. "
-                               "Rode:  stylus qobuz instalar"}))
-    sys.exit(1)
-
-cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
-if not os.path.isfile(cfg):
-    print(json.dumps({"error": "qobuz-dl não configurado: rode `qobuz-dl` uma vez para criar ~/.config/qobuz-dl/config.ini"}))
-    sys.exit(1)
-
-import configparser
-c = configparser.ConfigParser()
-c.read(cfg)
-app_id = c.get("DEFAULT", "app_id", fallback="")
-secrets = c.get("DEFAULT", "secrets", fallback="")
-token = c.get("DEFAULT", "user_auth_token", fallback="")
-user_id = c.get("DEFAULT", "user_id", fallback="")
-
-if not app_id or not token:
-    print(json.dumps({"error": "qobuz-dl sem credenciais"}))
-    sys.exit(1)
-
-secrets_list = [s.strip() for s in secrets.split(",") if s.strip()]
-try:
-  with so_json():
-    client = Client(
-        email="", pwd="",
-        app_id=app_id,
-        secrets=secrets_list,
-        skip_auth=True,
-    )
-    client.auth_with_token(user_id, token)
-except Exception as e:
-    print(json.dumps({"error": f"autenticação falhou: {e}"}))
-    sys.exit(1)
-
-query = sys.argv[1]
-try:
-    with so_json():
-        data = client.search_albums(query, limit=25)
-except Exception as e:
-    print(json.dumps({"error": f"busca falhou: {e}"}))
-    sys.exit(1)
-
-items = data.get("albums", {})
-if isinstance(items, dict):
-    items = items.get("items", [])
-if not isinstance(items, list):
-    items = []
-
-results = []
-for item in items:
-    artist_name = "?"
-    artist_data = item.get("artist", {})
-    if isinstance(artist_data, dict):
-        artist_name = artist_data.get("name", "?")
-    elif isinstance(artist_data, str):
-        artist_name = artist_data
-
-    # O maximum_sampling_rate do Qobuz JÁ VEM EM kHz (44.1, 96, 192), não em
-    # Hz. O `rate/1000` de antes transformava todo CD em "16bit/0.0kHz" — e
-    # como o ramo hi-res escondia a taxa por completo, a única taxa que a tela
-    # chegava a mostrar era a errada.
-    depth = item.get("maximum_bit_depth") or 16
-    rate = item.get("maximum_sampling_rate") or 44.1
-    try:
-        rate = float(rate)
-    except (TypeError, ValueError):
-        rate = 44.1
-    if rate > 1000:                       # se um dia mudarem de ideia
-        rate /= 1000.0
-    taxa = ("%g" % round(rate, 1)).replace(".", ",")
-    quality = f"{depth}bit/{taxa}kHz"
-
-    results.append({
-        "id": item.get("id", ""),
-        "display_title": item.get("title", "?"),
-        "display_subtitle": artist_name,
-        "release_year": str(item.get("release_date_original", item.get("release_date_stream", "")))[:4],
-        "tracks": item.get("tracks_count", 0),
-        "quality": quality,
-        # Booleano em vez de "tem 'hi' no texto?": a tela marcava o disco de
-        # hi-res procurando a palavra dentro da string de qualidade, e no
-        # momento em que a string passou a dizer "24bit/96kHz" o losango
-        # dourado sumiu de todos os discos de uma vez.
-        "hires": bool(depth > 16 or rate > 48),
-        # A capa. Sem ela a loja era uma grade de quadrados cinzentos com um
-        # ícone igual em todos — do lado de uma ESTANTE que mostra as capas
-        # de verdade, parecia outra máquina. A `large` tem 600 px, que é o
-        # tamanho de uma capa na grade em telas grandes.
-        "cover": ((item.get("image") or {}).get("large")
-                  or (item.get("image") or {}).get("small")
-                  or (item.get("image") or {}).get("thumbnail") or ""),
-        "url": f"https://www.qobuz.com/album/{item.get('id', '')}",
-    })
-
-print(json.dumps({"results": results}))
-PYEOF
+        shift
+        # Mudou-se para um .py de verdade. Eram cem linhas de python dentro de
+        # um heredoc — que nenhuma conferência de sintaxe lia até pouco tempo
+        # atrás, e que duplicava, com uma diferença de unidade no meio, o
+        # mesmo mapeamento que os favoritos precisavam.
+        exec "$PY" "$SHARE/qobuz_busca.py" buscar "$@"
+        ;;
+    favoritos|favorites)
+        exec "$PY" "$SHARE/qobuz_busca.py" favoritos "${2:-60}"
         ;;
     baixar|download|get)
         alvo="${2:-}"
