@@ -700,6 +700,50 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("conferência de colisão", traceback.format_exc())
 
+    # ── outros alfabetos ──────────────────────────────────────────────────
+    secao("outros alfabetos")
+    try:
+        import theme as _T
+        principal = _T._arquivo_principal()
+        caixinhas, trocas = [], []
+        for amostra, nome in (("Kid A", "latino"), ("Привет", "cirílico"),
+                              ("Ελληνικά", "grego"), ("日本語のアルバム", "japonês"),
+                              ("한국어", "coreano"), ("中文專輯", "chinês"),
+                              ("עברית", "hebraico"), ("ไทย", "tailandês")):
+            f = _T.fonte_para(amostra, 22)
+            # A pergunta que importa não é "escolheu outra fonte", é "o que
+            # sai na tela é o nome do disco ou é o retângulo vazio". Um disco
+            # japonês virava uma fileira de caixinhas, e o nome é a única
+            # coisa que a grade tem para dizer qual disco é.
+            if _T._assinatura(f, amostra[0]) == _T._assinatura(f, _T._NADA):
+                caixinhas.append("%s (%s)" % (nome, amostra))
+            arq = [k for k, v in _T._cache.items() if v is f]
+            if arq and arq[0][0] != principal:
+                trocas.append(nome)
+        if caixinhas:
+            bad(f"{len(caixinhas)} alfabetos saem como caixinha",
+                ", ".join(caixinhas))
+        else:
+            ok("oito alfabetos desenham de verdade")
+        # E o latino/cirílico/grego NÃO podem trocar de fonte: a nossa os tem,
+        # e trocar por trocar mudaria o desenho da tela inteira.
+        if "latino" in trocas or "cirílico" in trocas or "grego" in trocas:
+            bad("trocou de fonte onde não precisava", ", ".join(trocas))
+        else:
+            ok("só troca de fonte quem precisa (%s)"
+               % (", ".join(trocas) or "ninguém"))
+        # E o custo tem que caber num quadro: isto roda por texto desenhado.
+        t0 = time.time()
+        for _ in range(20000):
+            _T.fonte_para("Radiohead — Kid A", 22)
+        gasto = time.time() - t0
+        if gasto > 0.5:
+            bad("escolher fonte custa caro", f"20 mil chamadas em {gasto:.2f}s")
+        else:
+            ok(f"20 mil escolhas de fonte em {gasto*1000:.0f} ms")
+    except Exception:                                       # noqa: BLE001
+        bad("conferência de alfabetos", traceback.format_exc())
+
     # ── o rato ────────────────────────────────────────────────────────────
     secao("o rato")
     try:

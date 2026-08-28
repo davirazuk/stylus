@@ -14,6 +14,7 @@ onde a pessoa olha primeiro, onde o sistema está dizendo "estou aqui".
 import glob
 import math
 import os
+import subprocess
 import random
 import time
 
@@ -66,19 +67,174 @@ _FONT_FILE = None
 
 def font(size, bold=False):
     """Uma fonte, em cache. Chamar isto num laço de desenho é normal."""
+    return _abrir(_arquivo_principal(), size, bold)
+
+
+def _arquivo_principal():
     global _FONT_FILE
-    key = (size, bold)
-    if key in _cache:
-        return _cache[key]
     if _FONT_FILE is None:
         _FONT_FILE = _find_font() or ""
-    if _FONT_FILE:
-        f = pygame.font.Font(_FONT_FILE, size)
+    return _FONT_FILE
+
+
+def _abrir(arquivo, size, bold):
+    key = (arquivo, size, bold)
+    if key in _cache:
+        return _cache[key]
+    if arquivo:
+        try:
+            f = pygame.font.Font(arquivo, size)
+        except OSError:
+            f = pygame.font.SysFont("dejavusansmono,monospace", size)
         f.set_bold(bold)
     else:
         f = pygame.font.SysFont("dejavusansmono,monospace", size, bold=bold)
     _cache[key] = f
     return f
+
+
+# ── outros alfabetos ───────────────────────────────────────────────────────
+# A JetBrains Mono cobre o latino, o cirílico e o grego, e MAIS NADA. Um disco
+# japonês, coreano ou chinês na estante virava uma fileira de caixinhas — e o
+# nome do disco é a única coisa que a grade tem para dizer qual disco é. Fica
+# ilegível, não "meio feio".
+#
+# O pygame não faz cadeia de reserva sozinho, e não dá para perguntar a ele se
+# a fonte tem o caractere: `metrics()` devolve métrica para tudo, inclusive
+# para um codepoint que não existe em fonte nenhuma. Medido: 日, 한 e um plano
+# 1 inventado saem TODOS com a mesma tinta, que é a do retângulo vazio.
+#
+# Então a pergunta certa é essa mesma: este caractere desenha igual ao
+# retângulo vazio? Se sim, esta fonte não o tem, e vai para a próxima.
+_RESERVAS = ("NotoSansCJK-Regular.ttc", "NotoSansCJK*-Regular.*",
+             "NotoSans-Regular.ttf", "NotoSansSymbols2-Regular.ttf",
+             "DejaVuSans.ttf")
+
+
+def _quem_tem(ch):
+    """Quem, nesta máquina, desenha ESTE caractere? Pergunta ao fontconfig.
+
+    A lista fixa acima não escala: são dezenas de alfabetos e o Noto é um
+    arquivo por alfabeto. Medido aqui, a NotoSans-Regular respondia à
+    máscara como se tivesse hebraico, tailandês E árabe — os três com a
+    MESMA quantidade de tinta, porque os três caíam no mesmo glifo de
+    reserva dela. Pixel não distingue isso; o fontconfig sabe.
+
+    `scalable=true` porque sem ele o hebraico casava com uma fonte de
+    terminal em bitmap (ter-u12n.otb), que o pygame não sabe redimensionar —
+    e o conserto sairia num tamanho só.
+    """
+    try:
+        r = subprocess.run(
+            ["fc-match", "--format=%{file}",
+             ":charset=%04X:scalable=true" % ord(ch)],
+            capture_output=True, text=True, timeout=4)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    caminho = (r.stdout or "").strip()
+    return caminho if caminho and os.path.isfile(caminho) else ""
+_CADEIA = None
+_TOFU = {}
+_COBRE = {}
+# Um codepoint do plano 1 que nenhuma fonte de texto tem: serve de padrão do
+# "retângulo vazio" desta fonte neste tamanho.
+_NADA = "\U000107a2"
+
+
+def _cadeia():
+    """Os arquivos de fonte, na ordem: a nossa primeiro, as reservas depois."""
+    global _CADEIA
+    if _CADEIA is not None:
+        return _CADEIA
+    achados = [_arquivo_principal()]
+    for pat in _RESERVAS:
+        for d in _FONT_DIRS:
+            hits = sorted(glob.glob(os.path.join(d, "**", pat), recursive=True))
+            if hits and hits[0] not in achados:
+                achados.append(hits[0])
+                break
+    _CADEIA = [a for a in achados if a]
+    return _CADEIA
+
+
+def _cobre(arquivo, ch, size=24):
+    """Esta fonte desenha ESTE caractere, ou desenha a caixinha?"""
+    chave = (arquivo, ch)
+    if chave in _COBRE:
+        return _COBRE[chave]
+    f = _abrir(arquivo, size, False)
+    if arquivo not in _TOFU:
+        _TOFU[arquivo] = _assinatura(f, _NADA)
+    resp = _assinatura(f, ch) != _TOFU[arquivo]
+    _COBRE[chave] = resp
+    return resp
+
+
+def _assinatura(f, ch):
+    """Largura, altura e a média da TINTA. Um número por glifo.
+
+    Conta PIXEL, e não média de cor. A média de um glifo branco num quadro de
+    14x32 arredonda para preto — para TODOS eles — e a comparação passava a
+    dizer que a fonte principal não tinha nem o cirílico, que ela tem. A
+    máscara conta os pixels que têm tinta, e dois glifos diferentes não
+    acertam o mesmo número por acaso.
+    """
+    try:
+        sup = f.render(ch, True, (255, 255, 255))
+    except pygame.error:
+        return None
+    return (sup.get_width(), sup.get_height(),
+            pygame.mask.from_surface(sup, 40).count())
+
+
+def fonte_para(texto, size=20, bold=False):
+    """A primeira fonte da cadeia que desenha ESTE texto de verdade.
+
+    Decidida por texto inteiro, e não por caractere: um nome de disco é de um
+    alfabeto só, e trocar de fonte no meio de uma palavra desalinha a linha de
+    base — fica pior do que a caixinha que se veio consertar.
+    """
+    principal = _arquivo_principal()
+    # O caminho comum, e é a maioria esmagadora das chamadas num quadro: nome
+    # de disco em ASCII. `isascii()` é uma comparação em C sobre a string
+    # inteira; o laço abaixo é um `if` por caractere em Python.
+    if texto.isascii():
+        return _abrir(principal, size, bold)
+    faltando = None
+    for ch in texto:
+        # ASCII e a área de ícones do Nerd Font são da nossa fonte por
+        # definição; perguntar por elas seria o caso comum pagando o caro.
+        if ch < "\u0080" or "\ue000" <= ch <= "\uf8ff":
+            continue
+        if not _cobre(principal, ch):
+            faltando = ch
+            break
+    if faltando is None:
+        return _abrir(principal, size, bold)
+    # A escolha é guardada pelo BLOCO do caractere, não pelo texto: são
+    # dezenas de discos japoneses e um punhado de blocos, e guardar por texto
+    # faria o cache crescer com a coleção.
+    chave = (ord(faltando) >> 8, size, bold)
+    if chave in _ESCOLHA:
+        return _ESCOLHA[chave]
+    escolhida = None
+    # O fontconfig primeiro: ele responde por alfabeto, não por lista escrita
+    # à mão, e é o mesmo que todo programa gráfico desta máquina usa.
+    achado = _quem_tem(faltando)
+    if achado and _cobre(achado, faltando):
+        escolhida = _abrir(achado, size, bold)
+    if escolhida is None:
+        for arquivo in _cadeia()[1:]:
+            if _cobre(arquivo, faltando):
+                escolhida = _abrir(arquivo, size, bold)
+                break
+    if escolhida is None:
+        escolhida = _abrir(principal, size, bold)
+    _ESCOLHA[chave] = escolhida
+    return escolhida
+
+
+_ESCOLHA = {}
 
 
 _tem = {}
@@ -122,7 +278,7 @@ def icon(ch, alt="•"):
 def text(surf, s, pos, size=20, colour=TEXT, bold=False, anchor="topleft",
          maxw=None):
     """Escreve, cortando com reticências em vez de vazar do painel."""
-    f = font(size, bold)
+    f = fonte_para(s, size, bold)
     if maxw and f.size(s)[0] > maxw:
         # binário, não O(n²) — coleção de 400 discos com nome japonês longo não janka
         lo, hi = 0, len(s)
@@ -151,7 +307,7 @@ def largura(s, size=20, bold=False):
     ~320 px. Chute contra chute, e o nome do aparelho é o único dos dois que
     varia de máquina para máquina — ou seja, quebrava só na máquina do outro.
     """
-    return font(size, bold).size(s)[0]
+    return fonte_para(s, size, bold).size(s)[0]
 
 
 def paragrafo(surf, s, pos, size=20, colour=TEXT, maxw=600, anchor="topleft",
@@ -162,7 +318,7 @@ def paragrafo(surf, s, pos, size=20, colour=TEXT, maxw=600, anchor="topleft",
     numa prateleira e o errado para uma frase que explica o que fazer: uma
     mensagem de erro cortada no meio não diz o que estava tentando dizer.
     """
-    f = font(size, bold)
+    f = fonte_para(s, size, bold)
     linhas, atual = [], ""
     for palavra in s.split():
         tenta = (atual + " " + palavra).strip()
