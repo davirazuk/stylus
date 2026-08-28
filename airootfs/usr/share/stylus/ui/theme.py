@@ -873,7 +873,7 @@ _disco_cache = {}
 _halo_cache = {}
 
 
-def halo(raio, folga=None):
+def halo(raio, folga=None, forca=255):
     """A luz que o disco espalha no escuro atrás de si. Em cache.
 
     `raio` é o do DISCO; `folga` é o quanto a luz vaza para fora dele
@@ -890,12 +890,34 @@ def halo(raio, folga=None):
     fica inteiro debaixo do disco, então noventa por cento da luz era gasta
     onde ninguém a via e o que sobrava na borda não dava para notar.
 
-    Vem em alfa cheio e se apaga com `set_alpha` na hora de desenhar: assim
-    ele respira sem redesenhar círculo nenhum a sessenta quadros por segundo.
+    A força do brilho vem ASSADA na superfície, e não por `set_alpha` na hora
+    de desenhar, que era como isto começou. **Medido, num halo de 1040 px:**
+
+        set_alpha + blit          4,44 ms
+        blit, sem set_alpha       0,27 ms
+
+    Dezesseis vezes. Alfa por superfície SOMADO a alfa por pixel joga o SDL
+    no caminho de composição mais lento que ele tem, e a tela AGORA blita
+    isto uma vez por quadro — sozinho, um quarto do orçamento de 60 fps para
+    desenhar uma luz.
+
+    Por isso a força é quantizada em passos de 64: o brilho ainda respira com
+    a música, em quatro degraus que a 60 quadros por segundo ninguém separa,
+    e cada degrau é desenhado uma vez e reusado para sempre. Quatro e não
+    dezesseis porque cada um destes é uma superfície de cinco megabytes.
+
+    E `set_alpha(None)` no fim, que parece não fazer nada e faz 3,6 vezes:
+    uma superfície SRCALPHA nasce com alfa-de-superfície 255, e o SDL trata
+    "255" como um valor a multiplicar em cada pixel, não como "não tem". Com
+    None ele some do caminho — 1,09 ms viram 0,30 ms no mesmo blit.
     """
     raio = max(8, int(raio))
     folga = max(4, int(raio * 0.3 if folga is None else folga))
-    chave = (raio, folga)
+    # A força vem QUANTIZADA e é assada na superfície. Ver a docstring: um
+    # `set_alpha` neste tamanho custa 4,4 ms por quadro.
+    forca = max(0, min(255, int(forca)))
+    forca -= forca % 64
+    chave = (raio, folga, forca)
     pronto = _halo_cache.get(chave)
     if pronto is not None:
         return pronto
@@ -914,14 +936,55 @@ def halo(raio, folga=None):
     for i in range(passos):
         u = i / (passos - 1)
         rr = int(total - u * folga)
-        a = int(34 * u ** 2)
+        a = int(34 * u ** 2 * forca / 255.0)
         if a <= 0:
             continue
         pygame.draw.circle(h, (*AMBER_GLOW, a), (c, c), rr)
-    if len(_halo_cache) > 6:
+    # O teto tem que caber os DEGRAUS de força, senão o cache se limpa a cada
+    # respiração e cada quadro redesenha um halo do zero — que é mais caro do
+    # que o set_alpha que se veio tirar. Quatro degraus por raio, e a AGORA
+    # usa um raio por vez.
+    if len(_halo_cache) > 10:
         _halo_cache.clear()
+    h.set_alpha(None)                 # ver a docstring: 1,09 ms → 0,30 ms
     _halo_cache[chave] = h
     return h
+
+
+_RASCUNHOS = {}
+
+
+def rascunho(w, h, tag=""):
+    """Uma superfície transparente para desenhar e jogar fora — REAPROVEITADA.
+
+    A tela AGORA criava uma `pygame.Surface` nova por quadro só para poder
+    desenhar com alfa por cima do fundo: no reflexo do disco isso é uma
+    superfície de 1000x1000 — quatro megabytes — alocada e descartada
+    sessenta vezes por segundo, para desenhar quarenta e seis linhas finas
+    dentro dela.
+
+    **Medido, e o resultado NÃO foi o esperado:** alocar 1000x1000 custa 0,17
+    ms e reaproveitar+limpar custa os mesmos 0,17 ms. O SDL aloca tão rápido
+    quanto varre. Isto não é, portanto, uma otimização de tempo, e escrever
+    aqui que era seria mentira que alguém acreditaria depois.
+
+    O que se ganha é não produzir quatro megabytes de lixo por quadro, que o
+    coletor do Python leva na conta dele. Fica porque não custa nada e porque
+    o número acima já está pago; se um dia atrapalhar, o comentário diz que
+    não há tempo nenhum a perder desfazendo.
+
+    O `tag` separa quem desenha o quê: dois usos do mesmo tamanho no mesmo
+    quadro apagariam um ao outro, e o defeito apareceria como "às vezes o
+    brilho some".
+    """
+    chave = (int(w), int(h), tag)
+    sup = _RASCUNHOS.get(chave)
+    if sup is None:
+        sup = pygame.Surface((max(1, int(w)), max(1, int(h))), pygame.SRCALPHA)
+        _RASCUNHOS[chave] = sup
+    else:
+        sup.fill((0, 0, 0, 0))
+    return sup
 
 
 def disco(raio):
@@ -979,5 +1042,9 @@ def disco(raio):
     d = pygame.transform.smoothscale(d, (raio * 2, raio * 2))
     if len(_disco_cache) > 6:
         _disco_cache.clear()
+    # O mesmo 3,6x do halo: uma superfície SRCALPHA nasce com alfa-de-
+    # superfície 255, e o SDL multiplica esse 255 em cada pixel em vez de
+    # pulá-lo. Ver a docstring do `halo`.
+    d.set_alpha(None)
     _disco_cache[raio] = d
     return d

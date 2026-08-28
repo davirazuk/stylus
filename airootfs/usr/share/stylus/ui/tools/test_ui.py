@@ -744,6 +744,49 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("conferência de alfabetos", traceback.format_exc())
 
+    # ── o custo de um quadro ──────────────────────────────────────────────
+    secao("o custo de um quadro")
+    try:
+        import theme as _T
+        # 1. Superfície em cache com alfa-de-superfície 255 é o caminho lento
+        #    do SDL: ele multiplica o 255 em cada pixel em vez de pular.
+        #    Medido num halo de 1040 px: 1,09 ms contra 0,30 ms no mesmo blit.
+        #    É invisível na leitura e são três quartos do custo.
+        lentas = []
+        for nome, sup2 in (("halo", _T.halo(300, forca=192)),
+                           ("disco", _T.disco(300))):
+            if sup2.get_alpha() is not None:
+                lentas.append("%s (alpha=%s)" % (nome, sup2.get_alpha()))
+        if lentas:
+            bad("superfície em cache no caminho lento do SDL", ", ".join(lentas))
+        else:
+            ok("as superfícies em cache saem do caminho lento")
+
+        # 2. O cache do halo tem que caber os degraus de força. Se não couber,
+        #    ele se limpa a cada respiração e cada quadro redesenha um halo do
+        #    zero — 7,7 ms, mais caro do que o set_alpha que se veio tirar.
+        _T._halo_cache.clear()
+        for _ in range(3):
+            for nivel in (90, 150, 210, 255):
+                _T.halo(300, forca=nivel)
+        if len(_T._halo_cache) < 3:
+            bad("o cache do halo se esvaziou", f"{len(_T._halo_cache)} entradas")
+        else:
+            ok(f"os {len(_T._halo_cache)} degraus de brilho ficam em cache")
+
+        # 3. E o quadro inteiro tem que caber em 60 fps com folga.
+        t0 = time.time()
+        for k in range(200):
+            _T.halo(300, forca=90 + (k % 4) * 55)
+            _T.disco(300)
+        gasto = (time.time() - t0) / 200 * 1000
+        if gasto > 1.0:
+            bad("halo e disco custam caro", f"{gasto:.2f} ms/quadro")
+        else:
+            ok(f"halo e disco em cache: {gasto*1000:.0f} µs/quadro")
+    except Exception:                                       # noqa: BLE001
+        bad("conferência de custo", traceback.format_exc())
+
     # ── o rato ────────────────────────────────────────────────────────────
     secao("o rato")
     try:

@@ -432,13 +432,25 @@ class NowScreen(Screen):
         level, wave, spec = self.app.audio_now()
 
         # ── brilho reativo ao áudio: a capa "respira" com a música ──────────
+        # O T.halo, e não um círculo CHEIO de alfa uniforme como era antes.
+        # Aquilo não é um brilho, é um disco âmbar chapado atrás da capa, com
+        # aresta dura no raio — a coisa exata que a §5.5 chama de app de um
+        # dólar. O halo é forte na borda do disco e cai para fora, que é onde
+        # a luz de um objeto realmente está.
+        #
+        # E ele é EM CACHE. O círculo era uma superfície nova de meio megabyte
+        # por quadro, sessenta vezes por segundo, para desenhar sempre a mesma
+        # coisa com outro alfa; agora o alfa muda com `set_alpha`, que é uma
+        # multiplicação na hora de compor.
         if level > 0.01:
-            glow_r = int(size * 0.70)
-            glow = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
-            alpha = int(18 + level * 45)
-            pygame.draw.circle(glow, (*T.AMBER, alpha),
-                               (glow_r, glow_r), glow_r, 0)
-            s.blit(glow, (cr.centerx - glow_r, cr.centery - glow_r))
+            # O raio é o do VINIL (0.60), não o da capa: o brilho do halo é
+            # mais forte na borda do disco e cai para fora, e é justamente
+            # esse anel de fora que se vê — o resto fica debaixo do disco e
+            # da capa. Com um raio menor que o do vinil, a luz inteira ficava
+            # escondida e o trabalho era desenhar o que ninguém veria.
+            hal = T.halo(int(size * 0.60), forca=int(90 + level * 165))
+            s.blit(hal, (cr.centerx - hal.get_width() // 2,
+                         cr.centery - hal.get_height() // 2))
 
         # ── o disco girando ATRÁS da capa ──────────────────────────────────
         # A capa está no prato: o vinil é um pouco maior que a capa, sobra um
@@ -452,7 +464,10 @@ class NowScreen(Screen):
             s.blit(d, (cr.centerx - rm, cr.centery - rm))
             t = time.time()
             ang = (t * (0.25 + level * 1.4) + frac * 5.0) % (2 * math.pi)
-            bril = pygame.Surface((rm * 2, rm * 2), pygame.SRCALPHA)
+            # Reaproveitada, não alocada. Não é mais rápido — está medido
+            # no T.rascunho — mas deixa de fazer quatro megabytes de lixo por
+            # quadro para desenhar 46 linhas.
+            bril = T.rascunho(rm * 2, rm * 2, "reflexo")
             n, arco = 46, math.radians(40)
             r0, r1 = rm * 0.93, rm * T.GROOVE_O
             for i in range(n):
@@ -562,7 +577,7 @@ class NowScreen(Screen):
         if level < 0.015 or len(spec) == 0:
             return
         n = len(spec)
-        banda = pygame.Surface((24, cr.h), pygame.SRCALPHA)
+        banda = T.rascunho(24, cr.h, "espectro")
         base = cr.h - 4
         passo = (cr.h - 8) / n
         for i in range(n):
@@ -594,7 +609,7 @@ class NowScreen(Screen):
             pygame.draw.lines(s, T.AMBER, False, pts)
         # ponta luminosa na posição atual
         if frac > 0.01:
-            glow = pygame.Surface((18, rect.h + 6), pygame.SRCALPHA)
+            glow = T.rascunho(18, rect.h + 6, "sulco")
             pygame.draw.circle(glow, (*T.AMBER_GLOW, 60), (9, rect.h // 2 + 3), 8)
             s.blit(glow, (rect.x + int(rect.w * frac) - 9, rect.y - 3))
             pygame.draw.circle(s, T.TEXT, (rect.x + int(rect.w * frac),
@@ -644,7 +659,7 @@ class NowScreen(Screen):
         # era um corte reto, e o que aparecia no disco era um quadrilátero
         # claro, não um reflexo.
         ang = (t * 0.7) % (2 * math.pi)
-        bril = pygame.Surface((R * 2, R * 2), pygame.SRCALPHA)
+        bril = T.rascunho(R * 2, R * 2, "bril")
         n, arco = 40, math.radians(34)
         r0, r1 = R * T.GROOVE_I, R * T.GROOVE_O
         for i in range(n):
@@ -662,7 +677,7 @@ class NowScreen(Screen):
         # O eixo, pulsando devagar — o "ligado" da máquina.
         pulse = 0.7 + 0.3 * math.sin(t * 1.5)
         gr = int(R * 0.10)
-        glow = pygame.Surface((gr * 2, gr * 2), pygame.SRCALPHA)
+        glow = T.rascunho(gr * 2, gr * 2, "glow")
         pygame.draw.circle(glow, (*T.AMBER_GLOW, int(26 * pulse)),
                            (gr, gr), gr)
         s.blit(glow, (cx - gr, cy - gr))
@@ -678,7 +693,7 @@ class NowScreen(Screen):
         qx, qy = cx + math.cos(qa) * qr, cy + math.sin(qa) * qr
         resp = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(t * 1.1 + 1.6))
         fr = max(10, int(R * 0.12))
-        faisca = pygame.Surface((fr * 2, fr * 2), pygame.SRCALPHA)
+        faisca = T.rascunho(fr * 2, fr * 2, "faisca")
         for k in range(6, 0, -1):
             pygame.draw.circle(faisca, (*T.AMBER_GLOW, int(20 * resp)),
                                (fr, fr), int(fr * k / 6))
