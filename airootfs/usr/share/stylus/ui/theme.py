@@ -204,7 +204,22 @@ def fonte_para(texto, size=20, bold=False):
     for ch in texto:
         # ASCII e a área de ícones do Nerd Font são da nossa fonte por
         # definição; perguntar por elas seria o caso comum pagando o caro.
-        if ch < "\u0080" or "\ue000" <= ch <= "\uf8ff":
+        #
+        # **E "a área de ícones" são TRÊS.** Isto conferia só a do BMP
+        # (E000–F8FF), e não há um único ícone nossa ali: os 27 que o app.py
+        # usa — 󰝰 󰊴 󰲸 — são Material Design, que o Nerd Font v3 pôs no plano
+        # 15 (F0000–FFFFD). Ou seja, o atalho descrito no comentário nunca
+        # valia, e todo rótulo com ícone caía no caminho caro.
+        #
+        # Pior que lento: numa máquina sem o Nerd Font, o ícone "faltando"
+        # escolhia a fonte do RÓTULO INTEIRO — e quem cobre um caractere de
+        # uso privado é uma fonte de símbolos, que não tem letra latina. O
+        # resultado era "Clone Hero" desenhado como uma fileira de caixinhas.
+        # Ícone que falta tem que ser um glifo faltando, não um rótulo
+        # ilegível.
+        if (ch < "\u0080" or "\ue000" <= ch <= "\uf8ff"
+                or "\U000f0000" <= ch <= "\U000ffffd"
+                or "\U00100000" <= ch <= "\U0010fffd"):
             continue
         if not _cobre(principal, ch):
             faltando = ch

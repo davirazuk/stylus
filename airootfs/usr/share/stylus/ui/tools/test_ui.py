@@ -747,6 +747,33 @@ def main():
         else:
             ok("só troca de fonte quem precisa (%s)"
                % (", ".join(trocas) or "ninguém"))
+        # ── o ícone nunca decide a fonte do rótulo ────────────────────────
+        # **Sintoma:** numa máquina sem o Nerd Font, "󰝰  Clone Hero" saía
+        # como uma fileira de caixinhas — o NOME junto com o ícone. O
+        # `fonte_para` decide por texto inteiro, e o ícone é um caractere de
+        # uso privado: quem "cobre" uso privado é uma fonte de símbolos, que
+        # não tem letra latina nenhuma. Escolhida por causa do ícone, ela
+        # desenhava o rótulo todo.
+        #
+        # O atalho que evita isso existia e apontava para a área errada: só a
+        # do BMP (E000–F8FF), onde este repositório não tem um ícone sequer.
+        # Os 27 que ele usa são Material Design, que o Nerd Font v3 pôs no
+        # plano 15.
+        icones = sorted({c for tela in app.screens
+                         for c in getattr(tela, "icon", "")
+                         if ord(c) > 0xFFFF})
+        rotulo_ruim = []
+        for ic in icones + ["\U000f0770"]:
+            f_ic = _T.fonte_para(f"{ic}  Clone Hero", 22)
+            f_puro = _T.fonte_para("Clone Hero", 22)
+            if f_ic is not f_puro:
+                rotulo_ruim.append(hex(ord(ic)))
+        if rotulo_ruim:
+            bad(f"{len(rotulo_ruim)} ícones arrastam o rótulo para outra fonte",
+                ", ".join(rotulo_ruim))
+        else:
+            ok(f"os {len(icones) + 1} ícones não mudam a fonte do rótulo")
+
         # E o custo tem que caber num quadro: isto roda por texto desenhado.
         t0 = time.time()
         for _ in range(20000):
