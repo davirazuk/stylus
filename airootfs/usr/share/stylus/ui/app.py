@@ -1982,6 +1982,15 @@ class QobuzScreen(Screen):
         n = len(self.results)
         if ev.key == pygame.K_SLASH:
             self.searching, self.query = True, ""
+        # As playlists sao Shift+L, e esta linha tem de vir ANTES da navegacao.
+        # O `l` sozinho ja e "direita" no par vim logo abaixo, e num if/elif
+        # quem chega primeiro leva: enquanto isto estava la embaixo, apertar
+        # `l` andava um disco para o lado e a chamada de _listas() nunca rodava
+        # — codigo morto, com a linha de dica prometendo playlists e a tela
+        # respondendo com o cursor mexendo. Se algum dia mover isto para baixo
+        # da grade, o defeito volta inteiro e de novo sem recado nenhum.
+        elif ev.key == pygame.K_l and (ev.mod & pygame.KMOD_SHIFT):
+            self._listas()
         # Numa GRADE, para baixo é uma FILEIRA e para o lado é um disco. Estava
         # trocado: ↓ andava um disco para a direita e → pulava cinco. Com o
         # cursor no meio da grade, apertar → mandava o foco para a linha de
@@ -2027,10 +2036,8 @@ class QobuzScreen(Screen):
                 self._download(self.results[self.sel])
         elif ev.key == pygame.K_c:
             self._entrar()
-        elif ev.key == pygame.K_l:
-            self._listas()
         elif ev.key == pygame.K_f:
-            # De volta aos favoritos. Sem esta, quem apertasse [l] ficava
+            # De volta aos favoritos. Sem esta, quem apertasse [L] ficava
             # preso nas playlists até reiniciar a tela.
             self.query = ""
             self._favoritos()
@@ -2246,7 +2253,7 @@ class QobuzScreen(Screen):
             T.vazio(s, r, T.fantasma_busca, "a loja", [
                 "[/] procura um disco",
                 "[p] toca agora  ·  [d] guarda na estante",
-                "[l] as suas playlists  ·  [f] os seus favoritos",
+                "[L] as suas playlists  ·  [f] os seus favoritos",
             ])
             return
 
@@ -2301,7 +2308,7 @@ class QobuzScreen(Screen):
             item = self.results[self.sel]
             self.app.hint(
                 s, r, "[/] procura  [enter] examina  [p] toca  [d] baixa  "
-                      "[l] playlists  [f] favoritos  [c] conta",
+                      "[L] playlists  [f] favoritos  [c] conta",
                 contexto=f"{item.get('display_subtitle', '')} — "
                          f"{item.get('display_title', '')}")
 
