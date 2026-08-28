@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import vinyl                                            # noqa: E402
 import theme as T                                       # noqa: E402
+import audio_live                                       # noqa: E402
 from model import (Playing, Shelf, Thumbs, ha_quanto,    # noqa: E402
                    humano, relogio)
 
@@ -426,15 +427,48 @@ class NowScreen(Screen):
             cov = self.app.thumbs.get(al.cover)
         cr = pygame.Rect(r.x + (r.w - total) // 2, r.y + (r.h - size) // 2,
                          size, size)
+        # O som do momento em três números — esta tela inteira é desenhada a
+        # partir deles, e o monitor (audio_live) já os calculou no fundo.
+        level, wave, spec = self.app.audio_now()
+
         # ── brilho reativo ao áudio: a capa "respira" com a música ──────────
-        level = self.app.audio_level()
         if level > 0.01:
-            glow_r = int(size * 0.58)
+            glow_r = int(size * 0.70)
             glow = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
             alpha = int(18 + level * 45)
             pygame.draw.circle(glow, (*T.AMBER, alpha),
                                (glow_r, glow_r), glow_r, 0)
             s.blit(glow, (cr.centerx - glow_r, cr.centery - glow_r))
+
+        # ── o disco girando ATRÁS da capa ──────────────────────────────────
+        # A capa está no prato: o vinil é um pouco maior que a capa, sobra um
+        # aro ao redor — e o aro tem um reflexo girando, porque o vinil é
+        # simétrico e sem o reflexo não se vê que está girando. A velocidade
+        # dança com o som (e adormece na pausa); a fase anda com o lado, para
+        # o reflexo não aparecer sempre no mesmo sulco.
+        if spec is not None:
+            rm = int(size * 0.60)
+            d = T.disco(rm)
+            s.blit(d, (cr.centerx - rm, cr.centery - rm))
+            t = time.time()
+            ang = (t * (0.25 + level * 1.4) + frac * 5.0) % (2 * math.pi)
+            bril = pygame.Surface((rm * 2, rm * 2), pygame.SRCALPHA)
+            n, arco = 46, math.radians(40)
+            r0, r1 = rm * 0.93, rm * T.GROOVE_O
+            for i in range(n):
+                f = i / (n - 1)
+                aa = ang + (f - 0.5) * arco
+                a = int((14 + level * 26) * math.sin(f * math.pi) ** 2)
+                if a <= 0:
+                    continue
+                pygame.draw.line(
+                    bril, (*T.AMBER_GLOW, a),
+                    (rm + math.cos(aa) * r0, rm + math.sin(aa) * r0),
+                    (rm + math.cos(aa) * r1, rm + math.sin(aa) * r1), 2)
+            s.blit(bril, (cr.centerx - rm, cr.centery - rm))
+
+            # ── coluna de espectro, na beirada da capa ─────────────────────
+            self._spectrum(s, cr, spec, level)
 
         T.sleeve(s, cr, cov)
         if not cov:
@@ -463,7 +497,7 @@ class NowScreen(Screen):
             T.text(s, rotulo, (x, y), 30, side_cor, bold=True)
             T.text(s, ("acaba em " if ultimo else "vira em ") + humano(resta),
                    (x + 150, y + 5), 22, T.TEXT_DIM)
-            self._groove(s, pygame.Rect(x, y + 48, w, 14), frac)
+            self._groove(s, pygame.Rect(x, y + 48, w, 14), frac, wave)
             y += 84
 
         if track:
@@ -519,17 +553,52 @@ class NowScreen(Screen):
                             + ("[D] deck sozinho: ligado" if self.app.auto_deck
                                else "[D] deck sozinho: desligado"))
 
-    def _groove(self, s, rect, frac):
-        """Barra de progresso como sulco — começo na borda, fim no centro."""
+    def _spectrum(self, s, cr, spec, level):
+        """Uma coluna de faixas na beirada da capa — o esqueleto do som.
+
+        Faixas logarítmicas empilhadas, do grave embaixo ao agudo em cima;
+        cada uma vira uma barra âmbar mais larga quanto mais forte. Sem nível
+        não desenha nada: uma coluna de zeros não é informação, é ruído."""
+        if level < 0.015 or len(spec) == 0:
+            return
+        n = len(spec)
+        banda = pygame.Surface((24, cr.h), pygame.SRCALPHA)
+        base = cr.h - 4
+        passo = (cr.h - 8) / n
+        for i in range(n):
+            v = float(spec[i])
+            y = base - passo * (i + 1)
+            larg = int(2 + v * 15)
+            cor = (*T.AMBER, int(60 + 150 * v))
+            pygame.draw.rect(banda, cor,
+                             (2, int(y), larg, max(1, int(passo) - 1)),
+                             border_radius=1)
+        s.blit(banda, (cr.left - 28, cr.top))
+
+    def _groove(self, s, rect, frac, wave=None):
+        """Barra de progresso como sulco — e o sulco desenha a música.
+
+        O traço âmbar é a própria onda dos últimos ~21 ms, lida do monitor do
+        PipeWire (audio_live) — o sulco é onde o som está, é justo que o som
+        o desenhe. Sem monitor (máquina sem PortAudio, teste de tela sem
+        áudio) a barra volta ao traço clássico: nenhum desenho pode depender
+        de um hardware que não existe."""
         pygame.draw.rect(s, T.LINE, rect, border_radius=6)
-        f = pygame.Rect(rect.x, rect.y, int(rect.w * frac), rect.h)
-        pygame.draw.rect(s, T.AMBER, f, border_radius=6)
+        if wave is not None and len(wave) >= 2:
+            y0 = rect.centery
+            pts = []
+            salto = (len(wave) - 1) / float(max(1, rect.w - 1))
+            for xi in range(rect.w):
+                v = float(wave[int(xi * salto)]) * rect.h * 0.42
+                pts.append((rect.x + xi, int(y0 - v)))
+            pygame.draw.lines(s, T.AMBER, False, pts)
         # ponta luminosa na posição atual
         if frac > 0.01:
             glow = pygame.Surface((18, rect.h + 6), pygame.SRCALPHA)
             pygame.draw.circle(glow, (*T.AMBER_GLOW, 60), (9, rect.h // 2 + 3), 8)
-            s.blit(glow, (f.right - 9, rect.y - 3))
-            pygame.draw.circle(s, T.TEXT, (f.right, rect.centery), 6)
+            s.blit(glow, (rect.x + int(rect.w * frac) - 9, rect.y - 3))
+            pygame.draw.circle(s, T.TEXT, (rect.x + int(rect.w * frac),
+                                           rect.centery), 6)
 
     def _nothing(self, s, r):
         """Nada tocando: o disco parado no escuro, e onde a agulha cairia.
@@ -3731,22 +3800,27 @@ class App:
 
     @classmethod
     def audio_level(cls):
-        """Nível de áudio atual (0.0 a 1.0) para efeitos visuais reativos.
-        Throttled: só consulta wpctl a cada 5 chamadas (~83ms a 60fps)."""
+        """Nível de áudio real (0.0 a 1.0) para efeitos reativos.
+
+        O audio_live mantém um monitor do PipeWire aberto numa thread e o
+        nível já está calculado: ler aqui é só uma atribuição, não um
+        subprocess (o wpctl de antes media o GANHO do sink, não a música, e
+        pagava um processo novo a cada 5 quadros)."""
         cls._audio_level_counter += 1
-        if cls._audio_level_counter % 5 != 0:
-            return cls._audio_level_cache[0]
-        try:
-            r = subprocess.run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
-                               capture_output=True, text=True, timeout=1)
-            parts = r.stdout.strip().split()
-            if len(parts) >= 2:
-                val = float(parts[1])
-                cls._audio_level_cache = (val, cls._audio_level_counter)
-                return val
-        except Exception:                 # noqa: BLE001
-            pass
-        return cls._audio_level_cache[0]
+        mon = audio_live.get_monitor()
+        return mon.snapshot()[0] if mon is not None else 0.0
+
+    def audio_now(self):
+        """(level, wave, spectrum) do momento, prontos para desenhar.
+
+        A AGORA precisa das três peças, e pedi-las por getters separados
+        faria três snapshots no mesmo quadro. As duas matrizes são cópias
+        protegidas da thread; desenhar sem ela é meio-quadro com uma faixa
+        pela metade."""
+        mon = audio_live.get_monitor()
+        if mon is None:
+            return 0.0, None, None
+        return mon.snapshot()
 
     # ── desenho comum ──────────────────────────────────────────────────────
     def hint(self, s, r, teclas, contexto=""):
@@ -4260,6 +4334,7 @@ def main():
     try:
         App().run()
     finally:
+        audio_live.close_monitor()
         pygame.quit()
     return 0
 
