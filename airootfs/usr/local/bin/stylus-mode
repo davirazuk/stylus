@@ -5,6 +5,7 @@
 #     stylus-mode desktop      vai para a área de trabalho
 #     stylus-mode music        volta para a tela cheia
 #     stylus-mode toggle       o outro, seja qual for
+#     sudo stylus-mode permitir  libera a troca sem senha (uma vez só)
 #
 # Encerra a sessão X para trocar. Com o autologin ligado (que é o padrão
 # deste sistema) isso é meio segundo de tela preta e você está do outro lado.
@@ -13,34 +14,95 @@ F="$HOME/.config/stylus/mode"
 mkdir -p "$(dirname "$F")"
 cur=$(cat "$F" 2>/dev/null || echo music)
 
+# ── Liberar a troca sem senha ──────────────────────────────────────────────
+#  A troca precisa mexer na configuração do SDDM, e isso é root. O
+#  stylus-install grava a regra que permite exatamente estas duas chamadas —
+#  mas SÓ na hora de instalar. Máquina que já existia nunca recebe: o
+#  stylus-update copia o airootfs e o airootfs não tem sudoers de máquina
+#  instalada (o único que existe lá é o do medium ao vivo, que some no
+#  final da instalação).
+#
+#  Sem a regra, o `sudo` de baixo é chamado a partir de um item de menu, sem
+#  terminal e sem askpass. Ele falha na hora, o aviso vai para um stderr que
+#  ninguém está lendo, e o script seguia em frente e derrubava a sessão do
+#  mesmo jeito — que voltava no MESMO modo, porque o SDDM não tinha sido
+#  trocado. Do lado de cá: clicou em "Modo música", a tela piscou, e nada.
+permitir() {
+    [[ $EUID -eq 0 ]] || { echo "use: sudo stylus-mode permitir" >&2; exit 1; }
+    local quem=${SUDO_USER:-${1:-}}
+    [[ -n $quem ]] || { echo "não sei para quem liberar; rode com sudo" >&2; exit 1; }
+    id "$quem" >/dev/null 2>&1 || { echo "usuário desconhecido: $quem" >&2; exit 1; }
+    local alvo=/etc/sudoers.d/stylus-mode tmp
+    tmp=$(mktemp) || exit 1
+    printf '%s ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session desktop, /usr/local/bin/stylus-set-session music\n' \
+        "$quem" > "$tmp"
+    # Um sudoers com erro de sintaxe tranca o sudo da máquina inteira. Valida
+    # ANTES de pôr no lugar, e nunca escreve direto no destino.
+    if ! visudo -cf "$tmp" >/dev/null 2>&1; then
+        rm -f "$tmp"; echo "a regra não passou no visudo; nada foi mudado" >&2; exit 1
+    fi
+    install -m 0440 -o root -g root "$tmp" "$alvo" && rm -f "$tmp"
+    echo "pronto: $quem troca de modo sem senha."
+    exit 0
+}
+
+# Troca a sessão do SDDM, e devolve se conseguiu.
+#
+# `-n` primeiro, sempre: a regra do sudoers libera exatamente estas duas
+# chamadas sem senha, e sem terminal um `sudo` que PEDE senha abriria um
+# askpass que pode não existir — pendurando o item de menu para sempre. Só
+# quando há terminal de verdade é que vale a pena perguntar.
+trocar_sessao() {
+    local alvo=$1
+    sudo -n /usr/local/bin/stylus-set-session "$alvo" >/dev/null 2>&1 && return 0
+    [[ -t 0 ]] || return 1
+    echo "a troca de modo precisa de sudo nesta máquina:" >&2
+    sudo /usr/local/bin/stylus-set-session "$alvo" >/dev/null
+}
+
 case "${1:-}" in
     "")        echo "$cur"; exit 0 ;;
+    permitir|allow) shift; permitir "$@" ;;
     music|desktop|kde) novo=$1 ;;
     toggle)    novo=$([[ $cur == music ]] && echo desktop || echo music) ;;
-    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *)         echo "stylus-mode: música ou área de trabalho, só isso." >&2; exit 1 ;;
 esac
 
 [[ $novo == "$cur" ]] && { echo "já está no modo $novo"; exit 0; }
-echo "$novo" > "$F"
 
 # ── Trocar a sessão do SDDM ───────────────────────────────────────────
 # O SDDM precisa saber qual sessão lançar. Vai o NOME do modo, não o nome do
 # arquivo: quem sabe se a sessão do Plasma se chama plasma.desktop ou
 # plasmax11.desktop nesta máquina é o stylus-set-session, que olha.
-if [[ $novo == "desktop" || $novo == "kde" ]]; then
-    sudo /usr/local/bin/stylus-set-session desktop 2>/dev/null \
-        || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-kde" >&2
-else
-    # Verificar se i3 está instalado antes de trocar
-    if ! command -v i3 >/dev/null 2>&1; then
-        echo "⚠ i3 não está instalado — rode: sudo stylus-switch-i3" >&2
-        echo "$cur" > "$F"
-        exit 1
-    fi
-    sudo /usr/local/bin/stylus-set-session music 2>/dev/null \
-        || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-i3" >&2
+#
+# E a ordem importa: TROCAR PRIMEIRO, gravar o modo depois, derrubar a sessão
+# por último. Antes o modo era gravado antes de qualquer conferência, e a
+# sessão era derrubada mesmo quando a troca falhava — deixando o arquivo
+# dizendo "music" numa máquina que voltou no KDE, e o próximo `toggle` indo
+# para o lado errado.
+if [[ $novo != "music" ]] && ! command -v startplasma-x11 >/dev/null 2>&1; then
+    echo "não há área de trabalho instalada — rode: sudo stylus-switch-kde" >&2
+    exit 1
 fi
+if [[ $novo == "music" ]] && ! command -v i3 >/dev/null 2>&1; then
+    echo "i3 não está instalado — rode: sudo stylus-switch-i3" >&2
+    exit 1
+fi
+
+if ! trocar_sessao "$([[ $novo == music ]] && echo music || echo desktop)"; then
+    # E NÃO derruba a sessão. Derrubar aqui era o pior dos mundos: a tela
+    # apagava, voltava no mesmo lugar, e nada explicava.
+    echo "não deu para trocar a sessão do SDDM." >&2
+    echo "Falta a permissão. Rode uma vez:  sudo stylus-mode permitir" >&2
+    command -v notify-send >/dev/null && \
+        notify-send --app-name=STYLUS --urgency=critical \
+            "não deu para trocar de modo" \
+            "falta uma permissão. num terminal, uma vez só:
+sudo stylus-mode permitir" 2>/dev/null || true
+    exit 1
+fi
+echo "$novo" > "$F"
 
 # Avisar ANTES de derrubar a sessão: sem isto a tela some sem explicação e
 # parece que alguma coisa quebrou.

@@ -182,13 +182,26 @@ EOF
 # O stylus-mode roda como USUÁRIO mas precisa trocar o Session= no SDDM.
 # Em vez de polkit ou setuid (shell scripts não aceitam setuid no Arch),
 # damos permissão para um comando específico.
+# Escreve num temporário e só põe no lugar depois do visudo. Um sudoers com
+# erro de sintaxe tranca o sudo da MÁQUINA INTEIRA — inclusive o sudo que
+# seria preciso para desfazer isto. O stylus-install já validava; aqui se
+# escrevia direto no destino, e o nome do usuário entra na regra sem passar
+# por nada.
 SUDOERS_STYLUS="/etc/sudoers.d/stylus-mode"
-cat > "$SUDOERS_STYLUS" <<SUDOERS
+SUDOERS_TMP=$(mktemp)
+cat > "$SUDOERS_TMP" <<SUDOERS
 # stylus-mode pode trocar a sessão do SDDM sem senha.
 $REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session desktop, /usr/local/bin/stylus-set-session music
 SUDOERS
-chmod 0440 "$SUDOERS_STYLUS"
-ok "sudoers: stylus-mode pode trocar sessão"
+if command -v visudo >/dev/null && ! visudo -cf "$SUDOERS_TMP" >/dev/null 2>&1; then
+    rm -f "$SUDOERS_TMP"
+    warn "a regra do sudoers não passou no visudo — nada foi escrito."
+    warn "sem ela a troca de modo pede senha; \`sudo stylus-mode permitir\` tenta de novo."
+else
+    install -m 0440 -o root -g root "$SUDOERS_TMP" "$SUDOERS_STYLUS"
+    rm -f "$SUDOERS_TMP"
+    ok "sudoers: stylus-mode pode trocar sessão"
+fi
 
 # ── 7. KDE Config ──────────────────────────────────────────────────────
 # Stock KDE: não mexemos no kwinrc (deixa o KDE decidir focus policy,
