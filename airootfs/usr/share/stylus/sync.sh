@@ -77,6 +77,16 @@ find "$DST/usr/local/bin" -maxdepth 1 -type f -name 'stylus*' -exec chmod 0755 {
 find "$DST/usr/share/stylus" -maxdepth 2 -type f \( -name '*.sh' -o -name 'run-*' \) \
      -exec chmod 0755 {} + 2>/dev/null || true
 
+# As duas seções abaixo mexem na casa de gente de verdade, e descobrem quem
+# são pelo `getent passwd` — que responde sobre ESTE sistema, não sobre $DST.
+# Com um destino que não é a raiz viva (uma cópia de teste, um /mnt), elas
+# escreviam na casa do usuário da máquina que está rodando o comando. Nada
+# aqui vale esse risco: fora da raiz viva, os dotfiles ficam de fora.
+casas_de_verdade() {
+    [[ $(readlink -f "$DST") == / ]] || return 1
+    getent passwd | awk -F: '$3>=1000 && $3<65000'
+}
+
 # ── 2. os dotfiles: regra do pacman ────────────────────────────────────────
 SKEL="$SRC/etc/skel"
 if [[ -d $SKEL ]]; then
@@ -109,7 +119,7 @@ if [[ -d $SKEL ]]; then
                 mantidos+=("$rel")
             fi
         done < <(find "$SKEL" -type f -print0)
-    done < <(getent passwd | awk -F: '$3>=1000 && $3<65000')
+    done < <(casas_de_verdade)
 
     if (( ${#mantidos[@]} )); then
         echo
@@ -133,7 +143,7 @@ if [[ -d $AUTOSTART_SKEL ]]; then
         mkdir -p "$casa/.config/autostart"
         cp -a --no-preserve=ownership "$AUTOSTART_SKEL/." "$casa/.config/autostart/"
         chown -R "$usuario": "$casa/.config/autostart" 2>/dev/null || true
-    done < <(getent passwd | awk -F: '$3>=1000 && $3<65000')
+    done < <(casas_de_verdade | cut -d: -f1)
     ok "autostart KDE atualizado"
 fi
 
