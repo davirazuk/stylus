@@ -541,25 +541,41 @@ def main():
                              "graph": 48000, "fbits": 24, "codec": "FLAC",
                              "dev": "Meteor Lake-P HD Audio Controller Speaker",
                              "multi": True}
-        batidas = []
-        for i, tela in enumerate(app.screens):
-            app._goto(i)
-            caixas.clear()
-            app.screens[i].draw(app.surf, corpo)
-            for a in range(len(caixas)):
-                for b in range(a + 1, len(caixas)):
-                    ra, sa = caixas[a]
-                    rb, sb = caixas[b]
-                    cruz = ra.clip(rb)
-                    # Precisa cruzar de verdade: alguns px de sobra são só
-                    # acento de letra encostando na linha de cima.
-                    if cruz.w > 3 and cruz.h > ra.h * 0.4:
-                        batidas.append(f"{tela.name}: {sa[:30]!r} x {sb[:30]!r}")
+        batidas, vazados = [], []
+        # Em QUATRO tamanhos de tela. O layout do diário era uma altura fixa
+        # de 104 px numa posição fixa: numa tela de 720 o calendário entrava
+        # na lista, e nada disso aparece medindo só a resolução do
+        # desenvolvedor. Da tela de notebook barato à de 4K.
+        for larg, alt in ((1280, 720), (1366, 768), (1920, 1080), (3840, 2160)):
+            quadro = pygame.Rect(230, 0, larg - 230, alt)
+            for i, tela in enumerate(app.screens):
+                app._goto(i)
+                caixas.clear()
+                app.screens[i].draw(app.surf, quadro)
+                for a in range(len(caixas)):
+                    for b in range(a + 1, len(caixas)):
+                        ra, sa = caixas[a]
+                        rb, sb = caixas[b]
+                        cruz = ra.clip(rb)
+                        # Precisa cruzar de verdade: alguns px de sobra são
+                        # só acento de letra encostando na linha de cima.
+                        if cruz.w > 3 and cruz.h > ra.h * 0.4:
+                            batidas.append(f"{larg}x{alt} {tela.name}: "
+                                           f"{sa[:26]!r} x {sb[:26]!r}")
+                # E nada pode ser desenhado fora da tela — que é como um
+                # layout apertado falha antes de chegar a se sobrepor.
+                for rr, ss in caixas:
+                    if rr.bottom > alt + 2 or rr.y < -2:
+                        vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}")
         _T.text = original
         if batidas:
             bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))
         else:
-            ok(f"{len(app.screens)} seções, nenhum texto por cima de outro")
+            ok(f"{len(app.screens)} seções × 4 resoluções, nada por cima de nada")
+        if vazados:
+            bad(f"{len(vazados)} textos fora da tela", "\n".join(vazados[:5]))
+        else:
+            ok("nada desenhado fora da tela")
     except Exception:                                       # noqa: BLE001
         bad("conferência de colisão", traceback.format_exc())
 

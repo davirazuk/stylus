@@ -1094,17 +1094,20 @@ class DiaryScreen(Screen):
         T.text(s, f"{len(self.rows)} discos  ·  {total} vezes", (x, y), 24,
                T.TEXT_DIM)
         y += 46
-        for i, it in enumerate(self.rows[self.scroll:self.scroll + 7]):
+        # Quantas linhas cabem, em vez de sete sempre. Sete linhas de 84 px
+        # mais o cabeçalho passam de 660 px: numa tela de 720 elas comiam o
+        # calendário e a linha de dicas. Três é o piso — abaixo disso a
+        # seção deixa de ser uma lista.
+        cabem = max(3, min(7, (r.h - 240) // 84))
+        for i, it in enumerate(self.rows[self.scroll:self.scroll + cabem]):
             sel = i == 0
             row = pygame.Rect(x, y, r.w - 88, 78)
             if sel:
                 T.panel(s, row.inflate(16, 6), T.INK_LIFT, radius=10)
             cr = pygame.Rect(row.x, row.y, 66, 66)
-            cov = self.app.thumbs.get(it["cover"])
-            if cov:
-                s.blit(pygame.transform.smoothscale(cov, cr.size), cr)
-            else:
-                T.panel(s, cr, T.INK_LIFT, radius=4)
+            # A mesma capa-objeto do resto do sistema. Aqui ela ainda era
+            # colada chapada, e era a última lista que destoava.
+            T.sleeve(s, cr, self.app.thumbs.get(it["cover"]))
             T.text(s, it["name"], (cr.right + 18, row.y + 8), 22,
                    T.TEXT if sel else T.TEXT_DIM, maxw=row.w - 380)
             T.text(s, it["artist"], (cr.right + 18, row.y + 38), 17,
@@ -1114,9 +1117,16 @@ class DiaryScreen(Screen):
             T.text(s, f"{it['plays']}x", (row.right - 20, row.y + 20), 21,
                    T.PINK, anchor="topright")
             y += 84
-        # 190 e não 132: com o valor antigo a legenda do calendário caía
-        # exatamente em cima da linha de dicas, e as duas viravam um borrão.
-        self._calendar(s, pygame.Rect(x, r.bottom - 190, r.w - 88, 104))
+        # O calendário fica ENTRE o fim da lista e a linha de dicas, e fica
+        # com o que sobrar. Antes era altura fixa de 104 px numa posição
+        # fixa: numa tela grande sobrava espaço vazio debaixo da lista e o
+        # quadro ficava apertado do mesmo jeito, e numa tela pequena ele
+        # entrava por cima da lista. O -70 reserva a legenda dele e a linha
+        # de dicas, que foi o defeito que a posição fixa existia para evitar.
+        topo = y + 18
+        alt = min(170, r.bottom - topo - 70)
+        if alt >= 60:
+            self._calendar(s, pygame.Rect(x, topo, r.w - 88, alt))
         self.app.hint(s, r, "[enter] põe de novo   ·   [↑][↓] anda   ·   [s] o formato")
 
     # ── a segunda página: o formato ────────────────────────────────────────
@@ -1250,13 +1260,40 @@ class DiaryScreen(Screen):
         recuperar.
         """
         hoje = time.localtime()
-        dias = 364
         gap = 2
+        # Quantos dias mostrar. O ano inteiro é o objetivo — mas só depois de
+        # existir um ano de diário.
+        #
+        # **Sintoma:** numa máquina com oito dias de uso, o desenho eram 363
+        # quadradinhos vazios e seis pintados. Isso não diz "você passou meses
+        # sem ouvir nada", que é a leitura que o desenho propõe; diz "o sistema
+        # não estava instalado". Para quem acabou de instalar — o primeiro
+        # público desta tela — é uma tela inteira de fracasso que nunca
+        # aconteceu.
+        #
+        # Então o quadro começa no primeiro dia ANOTADO, e cresce sozinho até
+        # o ano. A partir daí, semana vazia volta a querer dizer o que o
+        # docstring acima diz que quer dizer.
+        dias = 364
+        if self.by_day:
+            try:
+                primeiro = min(time.mktime(time.strptime(k, "%Y-%m-%d"))
+                               for k in self.by_day)
+                idade = int((time.time() - primeiro) // 86400)
+                # Um mês de piso: menos que isso e o desenho fica estreito
+                # demais para se ler como calendário.
+                dias = max(27, min(364, idade + 6))
+            except ValueError:
+                pass
         # O quadradinho vem da largura E da altura disponíveis. Só da largura,
         # ele ficava preso em 10 px numa tela de 1600 e o ano inteiro ocupava
         # metade do espaço que tinha, lendo como um enfeite pequeno em vez de
         # como o gráfico que é.
-        cell = max(4, min(14, rect.w // 53 - gap, rect.h // 7 - gap))
+        # O quadradinho cabe nas SEMANAS QUE EXISTEM, não nas 53 de um ano:
+        # com o divisor fixo, um diário de quatro semanas desenhava quatro
+        # colunas minúsculas encolhidas para um ano que ainda não aconteceu.
+        semanas = dias // 7 + 1
+        cell = max(4, min(22, rect.w // semanas - gap, rect.h // 7 - gap))
         base = time.time() - dias * 86400
         maxi = max(self.by_day.values()) if self.by_day else 1
         for d in range(dias + 1):
@@ -1278,7 +1315,11 @@ class DiaryScreen(Screen):
         # retângulo: o retângulo é o espaço oferecido, e o desenho quase nunca
         # o preenche inteiro.
         fim = rect.y + 7 * (cell + gap)
-        T.text(s, f"um ano  ·  até {time.strftime('%d/%m', hoje)}",
+        # A legenda diz o período de VERDADE. "um ano" num quadro de cinco
+        # semanas seria a mesma mentira em texto.
+        desde = time.strftime("%d/%m", time.localtime(base))
+        quanto = "um ano" if dias >= 364 else f"desde {desde}"
+        T.text(s, f"{quanto}  ·  até {time.strftime('%d/%m', hoje)}",
                (rect.x, fim + 8), 15, T.TEXT_FAINT)
 
 
