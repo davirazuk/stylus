@@ -204,6 +204,91 @@ def shadow_card(surf, rect, radius=12):
         surf.blit(s, (rect.x - i, rect.y - i + 3))
 
 
+def linha_escolhida(surf, rect, radius=9):
+    """A linha selecionada de uma lista: painel + a barra âmbar do trilho.
+
+    O trilho da esquerda marca a seção atual com uma barra âmbar, e as listas
+    de dentro das telas marcavam a linha escolhida só com um painel cinza um
+    pouco mais claro. Duas gramáticas para a mesma ideia — e a cinza é a que
+    some numa TV do outro lado do quarto, que é onde este sistema costuma
+    estar. §5.5: o âmbar é a única cor viva, e "onde eu estou" é a informação
+    mais viva que existe numa tela que se navega com controle.
+    """
+    panel(surf, rect, INK_LIFT, radius=radius)
+    pygame.draw.rect(surf, AMBER, (rect.x, rect.y + 3, 3, rect.h - 6),
+                     border_radius=2)
+
+
+# ── a capa como objeto ─────────────────────────────────────────────────────
+_sleeve_cache = {}
+
+
+def sleeve(surf, rect, art, selected=False):
+    """Uma capa de disco desenhada como OBJETO, não como quadrado colorido.
+
+    **Sintoma:** a estante parecia uma grade de retângulos chapados. O
+    shadow_card acima já existia e não aparecia — e não podia aparecer: ele
+    desenha preto com alfa sobre o INK, que é (7,8,11). Não há para onde
+    escurecer. Uma sombra preta num fundo quase preto é trabalho de CPU para
+    produzir zero pixel de diferença.
+
+    Num fundo escuro, peso não vem de sombra: vem de LUZ. Três coisas, todas
+    baratas, e juntas a capa passa a ter espessura:
+
+      a lombada    uma faixa escura na borda esquerda com um fio claro do
+                   lado de dentro. É o que o olho lê como "isto é uma capa de
+                   papelão vista quase de frente", e é o detalhe que mais
+                   rende pelo que custa.
+      a luz        um fio claro em cima e à esquerda: a luz da sala bate ali.
+      o contato    uma linha escura logo abaixo, curta e fechada, que é onde
+                   a capa encosta na prateleira.
+
+    Isto é o §5.5 (fósforo, não realismo) e não o contradiz: não há madeira,
+    nem textura falsa, nem brilho plástico. É a MESMA paleta, com uma aresta
+    iluminada — do jeito que um osciloscópio mostra volume sem desenhar um
+    alto-falante.
+    """
+    # ── contato: onde a capa encosta ──────────────────────────────────────
+    # Curto e fechado de propósito. Sombra grande e difusa não é lida como
+    # peso num fundo escuro; é lida como borrão.
+    base = _sleeve_cache.get(("sombra", rect.w))
+    if base is None:
+        base = pygame.Surface((rect.w, 10), pygame.SRCALPHA)
+        for k in range(10):
+            a = int(58 * (1.0 - k / 10.0) ** 2)
+            pygame.draw.line(base, (0, 0, 0, a), (k // 2, k), (rect.w - k // 2, k))
+        if len(_sleeve_cache) > 48:
+            _sleeve_cache.clear()
+        _sleeve_cache[("sombra", rect.w)] = base
+    surf.blit(base, (rect.x, rect.bottom - 1))
+
+    # ── a arte ────────────────────────────────────────────────────────────
+    if art is not None:
+        surf.blit(pygame.transform.smoothscale(art, rect.size), rect)
+    else:
+        panel(surf, rect, INK_LIFT, radius=3)
+
+    # ── a lombada ─────────────────────────────────────────────────────────
+    lom = max(3, rect.w // 34)
+    faixa = pygame.Surface((lom, rect.h), pygame.SRCALPHA)
+    faixa.fill((0, 0, 0, 92))
+    surf.blit(faixa, rect.topleft)
+    pygame.draw.line(surf, lerp(INK, TEXT, 0.22),
+                     (rect.x + lom, rect.y + 1), (rect.x + lom, rect.bottom - 2))
+
+    # ── a luz ─────────────────────────────────────────────────────────────
+    luz = pygame.Surface((rect.w, 1), pygame.SRCALPHA)
+    luz.fill((255, 255, 255, 26))
+    surf.blit(luz, rect.topleft)
+    lado = pygame.Surface((1, rect.h), pygame.SRCALPHA)
+    lado.fill((255, 255, 255, 14))
+    surf.blit(lado, rect.topleft)
+
+    # ── selecionado: o disco puxado meio palmo para fora ──────────────────
+    if selected:
+        pygame.draw.rect(surf, AMBER, rect.inflate(4, 4), width=2, border_radius=2)
+
+
 # ── partículas atmosféricas ────────────────────────────────────────────────
 # Poeira virtual que flutua no fundo — dá profundidade sem chamar atenção.
 # Cada partícula é um ponto âmbar que nasce, flutua, e morre.

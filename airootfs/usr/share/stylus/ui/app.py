@@ -447,12 +447,36 @@ class NowScreen(Screen):
         pygame.draw.line(s, T.LINE, (px, py), (bx, by), max(3, R // 42))
         pygame.draw.circle(s, T.TEXT_FAINT, (int(px), int(py)),
                            max(3, R // 40))
-        # o berço propriamente dito, e a agulha pousada nele
-        pygame.draw.line(s, T.LINE,
-                         (ax - R * 0.05, ay + R * 0.05),
-                         (ax + R * 0.05, ay - R * 0.05), max(2, R // 70))
-        pygame.draw.circle(s, T.AMBER_DIM, (int(ax), int(ay)),
-                           max(2, R // 64))
+        # ── o cabeçote e o descanso ──────────────────────────────────────
+        # Antes daqui saía só um risquinho cruzado na ponta, e o braço ficava
+        # pousado em coisa nenhuma: uma linha que descia do nada e parava no
+        # ar ao lado do disco. Braço em repouso DESCANSA em alguma coisa —
+        # sem esse apoio o olho não lê "parado", lê "solto".
+        #
+        # Duas peças, e nenhuma delas é desenho de madeira (§5.5): o cabeçote
+        # é um segmento mais grosso no prolongamento do braço, e o descanso é
+        # um poste vertical com um berço em U em cima. Vertical porque quem
+        # segura o braço parado é a gravidade, não o ângulo do braço.
+        hx = ax + dx / dl * R * 0.085
+        hy = ay + dy / dl * R * 0.085
+        pygame.draw.line(s, T.TEXT_FAINT, (ax, ay), (hx, hy), max(4, R // 28))
+        # a agulha, na ponta do cabeçote
+        pygame.draw.circle(s, T.AMBER_DIM, (int(hx), int(hy)), max(2, R // 64))
+
+        base_y = hy + R * 0.13
+        poste = max(2, R // 70)
+        pygame.draw.line(s, T.LINE, (hx, hy + R * 0.02), (hx, base_y), poste)
+        # o berço em U: dois braços curtos para cima, abraçando o cabeçote
+        u = R * 0.045
+        pygame.draw.line(s, T.LINE, (hx - u, hy + R * 0.055),
+                         (hx - u, hy + R * 0.015), poste)
+        pygame.draw.line(s, T.LINE, (hx + u, hy + R * 0.055),
+                         (hx + u, hy + R * 0.015), poste)
+        pygame.draw.line(s, T.LINE, (hx - u, hy + R * 0.055),
+                         (hx + u, hy + R * 0.055), poste)
+        # o pé, encostado na mesma linha em que o disco assenta
+        pygame.draw.line(s, T.LINE, (hx - u * 0.8, base_y),
+                         (hx + u * 0.8, base_y), max(2, R // 60))
 
         # ── o texto ──────────────────────────────────────────────────────
         ty = cy + R + 56
@@ -733,20 +757,19 @@ class ShelfScreen(Screen):
                             "esc desiste   ·   o mesmo artista de novo limpa")
 
     def _card(self, s, rect, it, selected):
+        # O selecionado é puxado meio palmo para fora da prateleira: cresce e
+        # ganha um halo âmbar por trás. O halo é desenhado antes da capa
+        # porque é o que sobra visível ao redor dela.
         if selected:
-            # O disco selecionado LEVANTA: maior e com sombra mais funda.
             rect = rect.inflate(10, 10)
-            glow = rect.inflate(12, 12)
-            pygame.draw.rect(s, T.lerp(T.INK, T.AMBER, 0.25), glow,
-                             border_radius=10)
-            T.shadow_card(s, rect, radius=8)
-        else:
-            T.shadow_card(s, rect, radius=6)
+            pygame.draw.rect(s, T.lerp(T.INK, T.AMBER, 0.30), rect.inflate(14, 14),
+                             border_radius=6)
         cov = self.app.thumbs.get(it["cover"])
-        if cov:
-            s.blit(pygame.transform.smoothscale(cov, rect.size), rect)
-        else:
-            T.panel(s, rect, T.INK_LIFT, radius=6)
+        # A capa com lombada, luz e contato — o T.sleeve explica por quê. O
+        # shadow_card que estava aqui desenhava preto sobre um fundo quase
+        # preto: custava blits e não mudava pixel nenhum.
+        T.sleeve(s, rect, cov, selected)
+        if not cov:
             # Iniciais do artista como placeholder — mais útil que "sem capa"
             initials = "".join(w[0] for w in it["artist"].split()[:2]).upper()
             T.text(s, initials or it["name"][:2].upper(), rect.center, 36,
@@ -1313,13 +1336,15 @@ class PhoneScreen(Screen):
             sel = i == self.sel
             box = pygame.Rect(x, y, 460, 46)
             if sel:
-                T.panel(s, box, T.INK_LIFT, radius=9)
+                T.linha_escolhida(s, box)
             # maxw: sem ele, "pôr a coleção do celular na estante (WebDAV)"
             # era desenhado PARA FORA da caixa e entrava por baixo do painel
             # de saída, cortado no meio de uma palavra e sem reticências —
             # que se lê como texto corrompido, não como texto comprido.
-            T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 12),
-                   21, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 28)
+            if sel:
+                T.text(s, "▸", (box.x + 16, box.y + 12), 21, T.AMBER)
+            T.text(s, rotulo, (box.x + 34, box.y + 12),
+                   21, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 48)
             y += 52
         self.app.job_panel(s, pygame.Rect(x + 500, r.y + 120,
                                           r.right - x - 544, r.h - 220),
@@ -1380,9 +1405,11 @@ class ToolsScreen(Screen):
             sel = i == self.sel
             box = pygame.Rect(x, y, 470, 44)
             if sel:
-                T.panel(s, box, T.INK_LIFT, radius=9)
-            T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 11),
-                   20, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 28)
+                T.linha_escolhida(s, box)
+            if sel:
+                T.text(s, "▸", (box.x + 16, box.y + 11), 20, T.AMBER)
+            T.text(s, rotulo, (box.x + 34, box.y + 11),
+                   20, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 48)
             y += 50
         self.app.job_panel(s, pygame.Rect(x + 510, r.y + 120,
                                           r.right - x - 554, r.h - 220),
@@ -2601,10 +2628,12 @@ class SettingsScreen(Screen):
             sel = i == self.sel
             box = pygame.Rect(x, y, opt_w, 44)
             if sel:
-                T.panel(s, box, T.INK_LIFT, radius=9)
-            T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 14, box.y + 11),
+                T.linha_escolhida(s, box)
+            if sel:
+                T.text(s, "▸", (box.x + 16, box.y + 11), 20, T.AMBER)
+            T.text(s, rotulo, (box.x + 34, box.y + 11),
                    20, T.TEXT if sel else (T.TEXT_DIM if cmd else T.TEXT_FAINT),
-                   maxw=box.w - 30)
+                   maxw=box.w - 50)
             y += 50
 
         # O rodapé, com a altura de cada linha respeitada. Uma linha de 40px
@@ -2717,7 +2746,9 @@ class InstallScreen(Screen):
             box = pygame.Rect(x, y, min(r.w - 90, 720), 74)
             T.panel(s, box, T.INK_LIFT if sel else T.INK_SOFT, radius=12,
                     border=T.AMBER if sel else T.LINE)
-            T.text(s, ("▸ " if sel else "  ") + rotulo, (box.x + 20, box.y + 14),
+            if sel:
+                T.text(s, "▸", (box.x + 22, box.y + 14), 21, T.AMBER)
+            T.text(s, rotulo, (box.x + 40, box.y + 14),
                    23, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 40)
             T.text(s, sub, (box.x + 34, box.y + 44), 17, T.TEXT_FAINT,
                    maxw=box.w - 54)
