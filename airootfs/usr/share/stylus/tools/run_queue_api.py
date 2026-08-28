@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
-"""Sequential Qobuz queue runner driving the GUI's HTTP API directly.
+"""Roda a fila do Qobuz, um disco de cada vez, falando direto com a API da
+interface web.
 
-Why not run_queue.sh:
+Por que não o run_queue.sh:
 
-  * The API's `_download_overrides()` builds its override dict with
-    `data.get("embed_art", False)` — an absent key becomes a real `False`,
-    and `as_bool(False, cfg_default)` returns that `False` because it is a
-    genuine bool. An explicit-but-unsent flag therefore BEATS config.ini.
-    Posting a bare {"urls": ...} silently disables og_cover and embed_art
-    even though config.ini turns both on. Every flag we care about is now
-    sent explicitly.
-  * `^Completed$` log-grepping races: the line is emitted per *album* inside
-    the downloader, but the worker thread is still tagging/moving files
-    afterwards. `download_active` is the real gate.
-  * No duplicate check, no multi-disc handling, no per-album error capture.
+  * O `_download_overrides()` da API monta o dicionário com
+    `data.get("embed_art", False)` — uma chave AUSENTE vira um `False` de
+    verdade, e o `as_bool(False, cfg_default)` devolve esse `False` porque
+    ele é um booleano legítimo. Ou seja: uma opção que você não mandou GANHA
+    do config.ini. Mandar só {"urls": ...} desligava calado o og_cover e o
+    embed_art mesmo com os dois ligados no config.ini. Agora toda opção que
+    importa vai escrita.
+  * Procurar `^Completed$` no log é uma corrida: a linha sai por ÁLBUM, lá
+    dentro do baixador, mas a thread de trabalho ainda está etiquetando e
+    movendo arquivo depois disso. Quem sabe de verdade é o `download_active`.
+  * O script não conferia repetido, não sabia lidar com disco duplo e não
+    guardava o erro de cada álbum.
 
-Completion signal: POST /api/download with an empty url list. The route
-checks `state["download_active"]` BEFORE it validates the urls, so a busy
-backend answers "A download is already running." and an idle one answers
-"No URLs provided". Side-effect free, and authoritative in a way the log
-is not.
+Como se sabe que acabou: um POST /api/download com a lista de urls vazia. A
+rota confere o `state["download_active"]` ANTES de validar as urls, então um
+servidor ocupado responde "A download is already running." e um parado
+responde "No URLs provided". Não causa efeito nenhum, e é uma resposta
+confiável de um jeito que o log não é.
 
-Each album is finished completely — download, move, retag, lyrics, embed,
-master playlist, manifest — before the next one starts, so an interruption
-never leaves a half-filed album behind.
+Cada disco é terminado por inteiro — baixar, mover, reetiquetar, letra,
+embutir, playlist principal, manifesto — antes de o próximo começar, para
+que uma interrupção nunca deixe um álbum pela metade.
 
-Usage:  run_queue_api.py <queue-file> [--limit N] [--dry]
+Uso:  run_queue_api.py ARQUIVO-DA-FILA [--limit N] [--dry]
 """
 import json
 import os

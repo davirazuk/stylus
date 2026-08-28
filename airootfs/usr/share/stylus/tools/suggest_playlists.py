@@ -1,19 +1,17 @@
-"""
-Propose playlist additions for the newly-added albums — without touching the
-curated playlists themselves.
+"""Propõe o que acrescentar às playlists a partir dos discos que entraram,
+sem encostar nas playlists de verdade.
 
-Davi's 17 playlists are hand-curated and he cares about them being right
-(especially Suicidio), so auto-appending would be presumptuous. Instead this
-writes parallel "— sugestões.m3u" files he can audition and then merge with a
-plain `cat A >> B` if he agrees, or delete if he doesn't. Nothing existing is
-modified.
+As playlists são feitas à mão e a pessoa se importa com elas estarem
+certas, então sair acrescentando faixa sozinho seria atrevimento. Em vez
+disso, isto escreve arquivos paralelos "— sugestões.m3u", que dá para
+ouvir com calma e depois juntar com um `cat A >> B` — ou apagar. Nada do
+que já existe é modificado.
 
-Mapping is by artist, and deliberately conservative: an artist is only
-proposed for a playlist where the whole body of work plainly belongs to that
-genre. Anything mood-dependent rather than genre-dependent (Suicidio, Heavy
-Rotation, Night Drive) is left alone entirely — those are judgement calls
-about how a specific track feels, which is exactly the part that isn't
-mechanical.
+A correspondência é por artista, e de propósito conservadora: um artista
+só é proposto para a playlist em que a obra inteira dele claramente
+pertence àquele gênero. O que depende de humor em vez de gênero fica de
+fora inteiro — essas são decisões sobre como uma faixa específica soa, que
+é justamente a parte que não é mecânica.
 """
 import os
 

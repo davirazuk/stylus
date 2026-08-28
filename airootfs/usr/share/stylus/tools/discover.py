@@ -1,7 +1,8 @@
-"""
-For each artist, list Qobuz albums that look like real studio releases and
-aren't already in the library. Filters out the noise that made hand-searching
-tedious: wrong-artist matches, singles/EPs, live records, and compilations.
+"""Para cada artista, lista os discos do Qobuz que parecem lançamentos de
+estúdio de verdade e que ainda não estão na coleção.
+
+Filtra o ruído que tornava a busca à mão cansativa: artista trocado,
+single e EP, gravação ao vivo e coletânea.
 """
 import json, os, sys, urllib.parse
 import requests

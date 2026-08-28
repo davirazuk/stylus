@@ -1,13 +1,15 @@
-"""
-Write cover.jpg into album folders that don't have one but whose audio files
-already carry embedded art.
+"""Escreve o cover.jpg nas pastas de disco que não têm um, mas cujos arquivos
+de áudio já trazem a capa embutida.
 
-Not a playback fix — every album checked already had embedded art, so players
-were always fine. This is for file managers, folder thumbnails, and any tool
-that looks for a sidecar image rather than reading tags. Purely additive:
-never overwrites an existing cover, never modifies audio files.
+Não é conserto de reprodução: todo disco conferido já tinha a capa dentro
+do arquivo, e os tocadores sempre estiveram bem. Isto é para o gerenciador
+de arquivos, para a miniatura da pasta e para qualquer programa que procure
+uma imagem ao lado em vez de ler a etiqueta.
 
-Run with --apply to actually write; default is a dry run.
+Só acrescenta: nunca escreve por cima de uma capa que já existe e nunca
+mexe nos arquivos de áudio.
+
+Com --apply escreve de verdade; sem ele, só mostra o que faria.
 """
 import os
 import sys

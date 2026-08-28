@@ -1,33 +1,34 @@
-"""
-Embed cover art and lyrics into the audio files themselves.
+"""Põe a capa e a letra dentro dos próprios arquivos de áudio.
 
-Why: art and lyrics have been living as sidecar files (folder cover.jpg,
-per-track .lrc). Plenty of players read those, but embedded tags are what
-travel with the file — onto the phone, into other players, anywhere the
-folder structure doesn't come along. This fills in the tags without
-disturbing anything already there.
+Por quê: capa e letra vinham morando como arquivos ao lado (o cover.jpg da
+pasta, um .lrc por faixa). Muitos tocadores leem isso — mas a etiqueta
+embutida é o que VIAJA junto com o arquivo: para o celular, para outro
+tocador, para qualquer lugar aonde a pasta não vá junto. Isto preenche as
+etiquetas sem mexer no que já estiver lá.
 
-Sources, in order of preference:
-  art     existing embedded (left alone) -> folder cover.jpg/png -> another
-          track in the same folder that does have embedded art
-  lyrics  existing embedded (left alone) -> .lrc sidecar next to the track
-          -> LRCLIB lookup by artist/title/album/duration
+De onde tira, na ordem de preferência:
+  capa    a que já estiver embutida (fica como está) → o cover.jpg/png da
+          pasta → outra faixa da mesma pasta que tenha capa embutida
+  letra   a que já estiver embutida (fica como está) → o .lrc ao lado da
+          faixa → consulta ao LRCLIB por artista/título/álbum/duração
 
-Safety:
-  * Never overwrites art or lyrics that are already embedded.
-  * Never deletes sidecars — they stay as the source of truth.
-  * Writes tags only; audio streams are untouched.
-  * LRCLIB lookups are rate-limited and failures are non-fatal.
+O que ele nunca faz:
+  * escrever por cima de capa ou letra já embutida;
+  * apagar os arquivos ao lado — eles continuam sendo a fonte;
+  * tocar no áudio: só as etiquetas são escritas;
+  * parar por causa do LRCLIB — as consultas são espaçadas e falha ali não
+    interrompe o resto.
 
-Usage:
-  python3 embed_metadata.py            # dry run over the whole library
-  python3 embed_metadata.py --apply    # write tags
-  python3 embed_metadata.py --apply --no-fetch   # sidecars only, no network
-  python3 embed_metadata.py --apply /path/to/Artist/Album   # scope to a subtree
+Uso:
+  stylus tags                         só mostra o que faria, na coleção toda
+  stylus tags --apply                 escreve as etiquetas
+  stylus tags --apply --no-fetch      só o que está ao lado, sem rede
+  stylus tags --apply CAMINHO/DISCO   só naquele disco
 
-Scoping matters for the per-album pass after a download: walking all ~3500
-files and re-querying LRCLIB for every permanently-missing track takes many
-minutes and repeats the same failed lookups every run.
+Limitar a um disco importa na passada que roda depois de um download:
+percorrer os milhares de arquivos e reconsultar o LRCLIB para cada faixa
+que nunca terá letra leva muitos minutos e repete as mesmas consultas
+fracassadas toda vez.
 """
 import os
 import sys

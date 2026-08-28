@@ -1,25 +1,26 @@
-"""
-Build a playlist of everything added to the library in this session.
+"""Monta uma playlist com tudo que entrou na coleção nesta leva.
 
-Rationale: dozens of albums landed at once. They're correctly filed by
-artist/album, which means they're also invisible — scattered across a
-2000-track library with no way to find "the new stuff". A dated playlist is
-the difference between "music was added somewhere" and "here, press play".
+Por quê: quando dezenas de discos chegam de uma vez, eles são arquivados
+certo — por artista e álbum — e é justamente isso que os torna invisíveis.
+Ficam espalhados por uma coleção de milhares de faixas sem nenhum jeito de
+achar "o que é novo". Uma playlist com data é a diferença entre "entrou
+música em algum lugar" e "aqui, aperta o play".
 
-Self-maintaining: rather than a hand-kept list of albums (which silently goes
-stale the moment another batch downloads), this finds album folders whose
-mtime is after a cutoff. Default cutoff is 07:00 today, which cleanly
-separates the Qobuz work (started ~07:40) from the earlier phone sync
-(~02:16-02:30) — that sync pulled files into EXISTING album folders and so
-bumped their mtimes too, and those aren't new albums.
+Ela se mantém sozinha: em vez de uma lista de discos escrita à mão — que
+envelhece calada assim que a próxima leva baixa —, procura as pastas de
+disco cuja data de modificação é posterior a um corte. O corte padrão é às
+07:00 de hoje.
 
-Deliberately does NOT touch the curated mood playlists (Suicidio, Shoegaze &
-Dreampop, etc.) — those are hand-curated and Davi cares about getting them
-exactly right, so auto-populating them would be presumptuous. This is purely
-additive: a new file he can keep, rename, or delete.
+Isso importa porque sincronizar o celular também mexe na data das pastas:
+ele põe arquivos DENTRO de discos que já existiam, e esses não são discos
+novos. O corte é o que separa uma coisa da outra.
 
-Ordering is by artist → album → track number, so albums stay intact and in
-intended sequence (he listens to albums in order, not shuffled).
+De propósito, NÃO encosta nas playlists de humor feitas à mão. Aquelas são
+escolha de gente, e sair enchendo elas sozinho seria atrevimento. Isto só
+acrescenta: um arquivo novo, que dá para guardar, renomear ou apagar.
+
+A ordem é artista → álbum → número da faixa, para os discos continuarem
+inteiros e na sequência em que foram feitos para ser ouvidos.
 """
 import os
 import sys

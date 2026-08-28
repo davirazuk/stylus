@@ -929,6 +929,37 @@ elif (( ! FAST )); then
     else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
+# ── o que o --help escreve é texto que a pessoa lê ────────────────────────
+# A regra do projeto é: texto que o usuário vê é em português; comentário
+# acompanha o arquivo em que está. O docstring de um módulo é as DUAS coisas
+# — o argparse o imprime como descrição do `--help`. Quatro ferramentas
+# alcançáveis pelo `stylus` tinham o seu em inglês, e uma delas falava do
+# dono da máquina na terceira pessoa e pelo nome.
+sec "a ajuda das ferramentas está em português"
+ingles=$(python3 - <<'ENEOF'
+import ast, glob, os, re
+# Palavras que não existem em português. Nada de "files" ou "list", que
+# aparecem citando nome de arquivo ou de comando.
+ing = re.compile(r"\b(the|and|with|from|this|that|which|without|instead|"
+                 r"these|there|when|your|into|already|every)\b", re.I)
+for f in sorted(glob.glob("airootfs/usr/share/stylus/tools/*.py")):
+    try:
+        d = ast.get_docstring(ast.parse(open(f, encoding="utf-8").read())) or ""
+    except Exception:                       # noqa: BLE001
+        continue
+    n = len(ing.findall(d))
+    if n >= 4:
+        print(f"{os.path.basename(f)} ({n} palavras)")
+ENEOF
+)
+if [[ -z $ingles ]]; then
+    ok "os docstrings que viram --help estão em português"
+else
+    bad "o --help destas ferramentas sai em inglês:"
+    printf '%s\n' "$ingles" | sed 's/^/      /'
+fi
+
+
 # ── `stylus X --help` não pode FAZER o X ──────────────────────────────────
 # **Sintoma:** o `--help` era repassado ao programa de baixo, e vários não
 # sabem o que é. `stylus backup --help` FAZIA UM BACKUP e largava um .tar.gz
