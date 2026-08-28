@@ -63,22 +63,37 @@ ok "Modo: desktop"
 # precisa. O stylus-session com exec startplasma-x11 não faz isso.
 mkdir -p /etc/sddm.conf.d
 
-# ── 4a. Garantir que plasma.desktop existe ──────────────────────────────
-# O plasma.desktop normalmente vem do pacote plasma-desktop, mas se o
-# install falhou ou o arquivo sumiu, criamos o nosso. Assim o SDDM
-# sempre tem uma sessão KDE válida para lançar.
+# ── 4a. Qual é a sessão do Plasma nesta versão ──────────────────────────
+# O Plasma 6 renomeou a sessão X11 para plasmax11.desktop, e plasma.desktop
+# virou a do Wayland. Procurar antes de escrever: gravar um nome fixo no SDDM
+# dá, na versão errada, uma sessão que não existe e um login que morre na
+# hora — sem nada na tela dizendo por quê.
 mkdir -p /usr/share/xsessions
-if [[ ! -f /usr/share/xsessions/plasma.desktop ]]; then
+KDE_SESSION=""
+for _c in plasmax11 plasma-x11 plasma; do
+    [[ -f /usr/share/xsessions/$_c.desktop ]] && { KDE_SESSION=$_c.desktop; break; }
+done
+
+# Nenhuma sessão instalada, mas o binário está lá: escreve uma. Só neste
+# caso — antes isto rodava sempre que faltasse plasma.desktop, e no Plasma 6
+# faltava por ser o nome do Wayland, então criava um arquivo a mais sem
+# precisar.
+if [[ -z $KDE_SESSION ]] && [[ -x /usr/bin/startplasma-x11 ]]; then
     cat > /usr/share/xsessions/plasma.desktop <<'PLASMA'
 [Desktop Entry]
+Type=Application
 Name=Plasma
 Comment=KDE Plasma Desktop
 Exec=/usr/bin/startplasma-x11
-Type=Application
+TryExec=/usr/bin/startplasma-x11
 DesktopNames=KDE
 PLASMA
+    KDE_SESSION=plasma.desktop
     ok "plasma.desktop criado"
 fi
+# O fail() só imprime; sem o exit isto seguiria e gravaria "Session=" vazio.
+[[ -n $KDE_SESSION ]] || { fail "nenhuma sessão do Plasma instalada — SDDM não foi tocado"; exit 1; }
+ok "sessão do KDE: $KDE_SESSION"
 
 cat > /etc/sddm.conf.d/stylus.conf <<SDDM
 [General]
@@ -92,7 +107,7 @@ CursorSize=24
 
 [Autologin]
 User=$REAL_USER
-Session=plasma.desktop
+Session=$KDE_SESSION
 Relogin=true
 
 [X11]
@@ -123,7 +138,7 @@ EOF
 SUDOERS_STYLUS="/etc/sudoers.d/stylus-mode"
 cat > "$SUDOERS_STYLUS" <<SUDOERS
 # stylus-mode pode trocar a sessão do SDDM sem senha.
-$REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session plasma.desktop, /usr/local/bin/stylus-set-session stylus.desktop
+$REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session desktop, /usr/local/bin/stylus-set-session music
 SUDOERS
 chmod 0440 "$SUDOERS_STYLUS"
 ok "sudoers: stylus-mode pode trocar sessão"

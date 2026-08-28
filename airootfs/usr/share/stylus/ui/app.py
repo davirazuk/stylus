@@ -377,38 +377,90 @@ class NowScreen(Screen):
             pygame.draw.circle(s, T.TEXT, (f.right, rect.centery), 6)
 
     def _nothing(self, s, r):
-        cx, cy = r.centerx, r.centery
+        """Nada tocando: o disco parado, com o braço no berço.
+
+        Era um radar — oito circunferências e uma linha girando em volta do
+        eixo. Um braço não gira em torno do eixo: ele pivota de um ponto fora
+        do disco, e quando não há nada tocando ele está PARADO, no berço.
+        Uma agulha girando sozinha num disco que não toca é a única coisa
+        nesta tela que descrevia algo que não estava acontecendo.
+        """
         t = time.time()
+        # O disco ocupa o que a tela der, com espaço para o texto embaixo.
+        R = int(max(120, min(r.w * 0.20, (r.h - 220) * 0.42)))
+        cx, cy = r.centerx, r.centery - 30
 
-        # disco parado, girando devagar — mas com âmbar suave
-        for i in range(8):
-            rr = 50 + i * 28
-            alpha = 0.20 + i * 0.06
-            cor = T.lerp(T.INK_SOFT, T.AMBER_DIM, alpha)
-            pygame.draw.circle(s, cor, (cx, cy - 40), rr, 1)
+        d = T.disco(R)
+        s.blit(d, (cx - R, cy - R))
 
-        # agulha estática apontando para o centro
-        ang = (t * 0.3) % (2 * math.pi)
-        pygame.draw.line(s, T.AMBER_DIM, (cx + math.cos(ang) * 160,
-                         cy - 40 + math.sin(ang) * 160),
-                         (cx, cy - 40), 1)
+        # O brilho que passa: é ele que diz que o disco está ali, parado, e
+        # não que a tela congelou. Uma volta a cada ~9s.
+        # A intensidade sobe e desce ao longo do arco. Com a queda só de um
+        # lado — como estava — o começo do brilho era um corte reto, e o que
+        # aparecia no disco era um quadrilátero claro, não um reflexo.
+        ang = (t * 0.7) % (2 * math.pi)
+        bril = pygame.Surface((R * 2, R * 2), pygame.SRCALPHA)
+        n, arco = 40, math.radians(34)
+        r0, r1 = R * T.GROOVE_I, R * T.GROOVE_O
+        for i in range(n):
+            f = i / (n - 1)
+            aa = ang + (f - 0.5) * arco
+            a = int(20 * math.sin(f * math.pi) ** 2)
+            if a <= 0:
+                continue
+            pygame.draw.line(
+                bril, (*T.AMBER_GLOW, a),
+                (R + math.cos(aa) * r0, R + math.sin(aa) * r0),
+                (R + math.cos(aa) * r1, R + math.sin(aa) * r1), 2)
+        s.blit(bril, (cx - R, cy - R))
 
-        # centro do disco — um ponto âmbar que pulsa suavemente
+        # O eixo, pulsando devagar — o "ligado" da máquina.
         pulse = 0.7 + 0.3 * math.sin(t * 1.5)
-        center_r = int(6 + pulse * 3)
-        glow_s = pygame.Surface((center_r * 6, center_r * 6), pygame.SRCALPHA)
-        pygame.draw.circle(glow_s, (*T.AMBER_GLOW, int(20 * pulse)),
-                           (center_r * 3, center_r * 3), center_r * 3)
-        s.blit(glow_s, (cx - center_r * 3, cy - 40 - center_r * 3))
-        pygame.draw.circle(s, T.AMBER, (cx, cy - 40), center_r)
+        gr = int(R * 0.10)
+        glow = pygame.Surface((gr * 2, gr * 2), pygame.SRCALPHA)
+        pygame.draw.circle(glow, (*T.AMBER_GLOW, int(26 * pulse)),
+                           (gr, gr), gr)
+        s.blit(glow, (cx - gr, cy - gr))
+        pygame.draw.circle(s, T.AMBER, (cx, cy), max(3, int(R * 0.022)))
 
-        # texto convidativo
-        T.text(s, "nada tocando", (cx, cy + 200), 32, T.TEXT_DIM,
-               anchor="center")
+        # ── o braço, no berço ────────────────────────────────────────────
+        # As proporções vêm do deck (deck/vinyl.py): pivô a 1.39 raio, a 42°
+        # de 12 horas, braço de 1.51 raio. Em repouso a agulha para FORA do
+        # disco, que é onde o berço fica.
+        pang = math.radians(42.0)
+        ux, uy = math.sin(pang), -math.cos(pang)     # direção centro → pivô
+        m, L, rest_r = 1.39, 1.51, 1.26              # em raios (deck/vinyl.py)
+        px, py = cx + ux * R * m, cy + uy * R * m
+        # Onde a agulha para: o ponto que está a 1.26 raio do centro E a um
+        # braço de distância do pivô. Chutar um ângulo punha a agulha no meio
+        # do disco — que é o lugar onde ela justamente NÃO fica em repouso.
+        qx = (rest_r ** 2 - L ** 2 + m ** 2) / (2 * m)
+        qy = math.sqrt(max(0.0, rest_r ** 2 - qx ** 2))
+        ax = cx + (ux * qx + uy * -qy) * R          # perpendicular: para fora
+        ay = cy + (uy * qx + ux * qy) * R
+        pygame.draw.line(s, T.LINE, (px, py), (ax, ay), max(2, R // 60))
+        # contrapeso atrás do pivô, na direção oposta à agulha
+        dx, dy = ax - px, ay - py
+        dl = math.hypot(dx, dy) or 1.0
+        bx = px - dx / dl * R * 0.22
+        by = py - dy / dl * R * 0.22
+        pygame.draw.line(s, T.LINE, (px, py), (bx, by), max(3, R // 42))
+        pygame.draw.circle(s, T.TEXT_FAINT, (int(px), int(py)),
+                           max(3, R // 40))
+        # o berço propriamente dito, e a agulha pousada nele
+        pygame.draw.line(s, T.LINE,
+                         (ax - R * 0.05, ay + R * 0.05),
+                         (ax + R * 0.05, ay - R * 0.05), max(2, R // 70))
+        pygame.draw.circle(s, T.AMBER_DIM, (int(ax), int(ay)),
+                           max(2, R // 64))
+
+        # ── o texto ──────────────────────────────────────────────────────
+        ty = cy + R + 56
+        T.text(s, "nada tocando", (cx, ty), 32, T.TEXT_DIM, anchor="center")
         T.text(s, "vá para a ESTANTE e escolha um disco",
-               (cx, cy + 240), 20, T.TEXT_FAINT, anchor="center")
+               (cx, ty + 42), 20, T.TEXT_FAINT, anchor="center")
         T.text(s, "ou pressione r para sortear",
-               (cx, cy + 270), 17, T.TEXT_FAINT, anchor="center")
+               (cx, ty + 72), 17, T.TEXT_FAINT, anchor="center")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2242,7 +2294,9 @@ class GamesScreen(Screen):
                                           300, 80), self.job)
 
     def _draw_menu(self, s, r):
-        x, y = r.x + 44, r.y + 96
+        # O título ocupa até ~r.y+98 (30px de "jogos" + o subtítulo em y+40).
+        # Começar a grade em 96 punha a primeira fileira em cima da frase.
+        x, y = r.x + 44, r.y + 132
         n_games = len(self.ACOES)
         # games grid: 4 per row
         cols = min(4, n_games)
@@ -2258,7 +2312,8 @@ class GamesScreen(Screen):
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
                     border=T.AMBER if sel else T.LINE)
             T.text(s, f"{icon}  {nome}", bx.center, 22,
-                   T.TEXT if tem else T.TEXT_FAINT, bold=sel, anchor="center")
+                   T.TEXT if tem else T.TEXT_FAINT, bold=sel, anchor="center",
+                   maxw=bx.w - 24)
             # kind badge
             kind_icons = {"keyboard": "󰌌", "mouse": "󰍽", "controller": "󰣌"}
             kind_colors = {"keyboard": T.BLUE, "mouse": T.LAV, "controller": T.AMBER}
@@ -2269,7 +2324,7 @@ class GamesScreen(Screen):
                        anchor="topright")
             if not tem:
                 T.text(s, "não encontrado", (bx.centerx, bx.centery + 28),
-                       15, T.TEXT_FAINT, anchor="center")
+                       15, T.TEXT_FAINT, anchor="center", maxw=bx.w - 24)
 
         # CH songs row
         y2 = y + (n_games // cols + 1) * 120 + 10
@@ -2288,7 +2343,8 @@ class GamesScreen(Screen):
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=10,
                     border=T.AMBER if sel else T.LINE)
             T.text(s, f"{icon}  {label}", bx.center, 18,
-                   T.TEXT if sel else T.TEXT_FAINT, bold=sel, anchor="center")
+                   T.TEXT if sel else T.TEXT_FAINT, bold=sel, anchor="center",
+                   maxw=bx.w - 20)
 
         self.app.hint(s, r, "enter abre · ← → navega")
 
@@ -2489,13 +2545,32 @@ class SettingsScreen(Screen):
         return self._disk
 
     def _stylus_version(self):
+        """A versão desta máquina, na melhor fonte que existir.
+
+        O clone em /var/lib/stylus/repo só nasce no primeiro
+        `stylus-update`: numa máquina recém-instalada ele não está lá, e
+        a tela dizia "?" — a resposta menos útil possível para quem abriu
+        justamente para descobrir qual versão tem.
+        """
         try:
             r = subprocess.run(["git", "-C", "/var/lib/stylus/repo", "log",
                                 "-1", "--format=%h %s"],
                                capture_output=True, text=True, timeout=3)
-            return r.stdout.strip() or "?"
+            v = r.stdout.strip()
+            if v:
+                return v
         except Exception:                 # noqa: BLE001
-            return "?"
+            pass
+        # A ISO grava a data em que foi montada; é o que a máquina tem
+        # antes da primeira atualização.
+        try:
+            with open("/etc/os-release", encoding="utf-8") as fh:
+                for linha in fh:
+                    if linha.startswith("IMAGE_VERSION="):
+                        return linha.split("=", 1)[1].strip().strip('"')
+        except OSError:
+            pass
+        return "sem versão registrada"
 
     def key(self, ev):
         ops = self.opcoes()
@@ -2526,21 +2601,25 @@ class SettingsScreen(Screen):
                    maxw=box.w - 30)
             y += 50
 
-        # version + disk info
-        y_info = r.bottom - 160
+        # O rodapé, com a altura de cada linha respeitada. Uma linha de 40px
+        # ocupa ~48 na tela: escrever a próxima 46 abaixo é escrever em cima.
+        y_info = r.bottom - 152
         T.text(s, "STYLUS", (x, y_info), 40, T.AMBER, bold=True)
-        T.text(s, f"build: {self._stylus_version()}", (x, y_info + 46), 16,
-               T.TEXT_FAINT)
+        # O assunto do commit é texto de tamanho livre — corta no painel.
+        T.text(s, f"build: {self._stylus_version()}", (x, y_info + 54), 16,
+               T.TEXT_FAINT, maxw=opt_w)
         total, free = self._disk_info()
         if total > 0:
             used_gb = (total - free) / (1024 ** 3)
             total_gb = total / (1024 ** 3)
             pct = int((total - free) / total * 100)
             disk_txt = f"disco: {used_gb:.1f}/{total_gb:.1f} GB ({pct}%)"
-            T.text(s, disk_txt, (x, y_info + 68), 16, T.TEXT_FAINT)
+            T.text(s, disk_txt, (x, y_info + 76), 16, T.TEXT_FAINT)
 
+        # A frase fica ABAIXO do painel de saída, então tem a largura toda —
+        # cortá-la na coluna das opções tirava justamente o fim dela.
         T.text(s, "a agulha é o único ponto em que um objeto vira som.",
-               (x, r.bottom - 82), 19, T.TEXT_DIM)
+               (x, y_info + 108), 19, T.TEXT_DIM, maxw=r.right - x - 44)
         # job panel: right side if wide enough, otherwise below options
         jp_w = min(340, r.w - opt_w - 120)
         if jp_w > 120:

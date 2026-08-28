@@ -56,7 +56,7 @@ fi
 SUDOERS_STYLUS="/etc/sudoers.d/stylus-mode"
 cat > "$SUDOERS_STYLUS" <<SUDOERS
 # stylus-mode pode trocar a sessão do SDDM sem senha.
-$REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session plasma.desktop, /usr/local/bin/stylus-set-session stylus.desktop
+$REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session desktop, /usr/local/bin/stylus-set-session music
 SUDOERS
 chmod 0440 "$SUDOERS_STYLUS"
 ok "sudoers: stylus-mode pode trocar sessão"

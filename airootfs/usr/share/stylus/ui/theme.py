@@ -253,3 +253,87 @@ def vignette(surf):
             pygame.draw.circle(s, (val, val, val), (cx, cy), int(r))
         _vignette_cache[key] = s
     surf.blit(_vignette_cache[key], (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  O DISCO
+# ═══════════════════════════════════════════════════════════════════════════
+# A tela AGORA parada mostrava oito circunferências finas e uma linha girando
+# em volta do centro. Lia como um radar, não como um disco — e a linha era
+# errada de um jeito que quem tem toca-discos vê na hora: um braço não gira
+# em torno do eixo, ele pivota de um ponto FORA do disco.
+#
+# Isto aqui é um disco de verdade em fósforo, não em madeira (§5.5): corpo,
+# sulcos, os intervalos entre as faixas que dá para contar de longe, bolacha
+# no meio e furo do eixo. Nada de textura imitando vinil.
+#
+# As proporções são as mesmas que o deck usa em deck/vinyl.py, para os dois
+# desenhos não descreverem discos diferentes.
+LABEL_R   = 0.34      # bolacha do meio
+GROOVE_I  = 0.42      # onde os sulcos começam
+GROOVE_O  = 0.96      # e onde acabam
+SPINDLE_R = 0.035     # o furo
+
+# Onde ficam os intervalos entre faixas, na fração do raio. São eles que
+# fazem um disco parecer um disco a três metros: dá para CONTAR as músicas.
+_INTERVALOS = (0.52, 0.63, 0.71, 0.80, 0.885)
+
+_disco_cache = {}
+
+
+def disco(raio):
+    """O disco parado, pronto para desenhar. Superfície com alfa, em cache.
+
+    Desenhado no dobro do tamanho e reduzido: o pygame não suaviza
+    circunferência, e sulco serrilhado a 60 quadros por segundo cintila.
+    Como o resultado é sempre igual, o custo é pago uma vez só.
+    """
+    raio = int(raio)
+    if raio < 8:
+        raio = 8
+    pronto = _disco_cache.get(raio)
+    if pronto is not None:
+        return pronto
+
+    e = 2                                   # fator de superamostragem
+    lado = raio * 2 * e
+    d = pygame.Surface((lado, lado), pygame.SRCALPHA)
+    c = lado // 2
+    R = raio * e
+
+    # corpo: quase o fundo, só o suficiente para virar objeto
+    pygame.draw.circle(d, (*INK_SOFT, 255), (c, c), R)
+    # a borda do disco
+    pygame.draw.circle(d, (*lerp(INK_LIFT, AMBER_DIM, 0.30), 255), (c, c), R, e)
+
+    # os sulcos — grafite, não âmbar
+    dentro, fora = int(R * GROOVE_I), int(R * GROOVE_O)
+    passo = max(2 * e, (fora - dentro) // 60)
+    for rr in range(dentro, fora, passo):
+        f = (rr - dentro) / max(1, fora - dentro)
+        # um pouco mais claros na borda, onde a luz pegaria primeiro
+        cor = lerp(INK_LIFT, LINE, 0.15 + 0.40 * f)
+        pygame.draw.circle(d, (*cor, 150), (c, c), rr, e)
+
+    # os intervalos entre as faixas. É AQUI que o âmbar entra, e só aqui:
+    # é a única informação que o disco parado carrega — quantas faixas tem.
+    for frac in _INTERVALOS:
+        rr = int(R * frac)
+        if dentro < rr < fora:
+            pygame.draw.circle(d, (*AMBER_DIM, 150), (c, c), rr, e)
+
+    # a bolacha do meio — escura, com o aro âmbar
+    lr = int(R * LABEL_R)
+    pygame.draw.circle(d, (*lerp(INK, AMBER_DIM, 0.07), 255), (c, c), lr)
+    pygame.draw.circle(d, (*AMBER_DIM, 190), (c, c), lr, e)
+    # a faixa lisa entre o último sulco e a bolacha (o fim do lado)
+    pygame.draw.circle(d, (*lerp(INK_LIFT, AMBER_DIM, 0.18), 160),
+                       (c, c), int(R * (GROOVE_I - 0.03)), e)
+
+    # o furo do eixo
+    pygame.draw.circle(d, (*INK, 255), (c, c), max(e, int(R * SPINDLE_R)))
+
+    d = pygame.transform.smoothscale(d, (raio * 2, raio * 2))
+    if len(_disco_cache) > 6:
+        _disco_cache.clear()
+    _disco_cache[raio] = d
+    return d

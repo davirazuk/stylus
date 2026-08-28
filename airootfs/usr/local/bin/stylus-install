@@ -1501,7 +1501,7 @@ EOF
 
         # Deixa o stylus-mode alternar entre KDE e i3 sem pedir senha.
         cat > /etc/sudoers.d/stylus-mode <<SUDOERS
-${STYLUS_USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session ${SESSION_FILE##*/}, /usr/local/bin/stylus-set-session stylus.desktop
+${STYLUS_USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session desktop, /usr/local/bin/stylus-set-session music
 SUDOERS
         chmod 0440 /etc/sudoers.d/stylus-mode
         # Um sudoers com erro de sintaxe tranca o sudo da máquina inteira.

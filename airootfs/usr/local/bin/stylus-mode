@@ -25,10 +25,11 @@ esac
 echo "$novo" > "$F"
 
 # ── Trocar a sessão do SDDM ───────────────────────────────────────────
-# O SDDM precisa saber qual sessão lançar: plasma.desktop para desktop,
-# stylus.desktop (i3) para música.
+# O SDDM precisa saber qual sessão lançar. Vai o NOME do modo, não o nome do
+# arquivo: quem sabe se a sessão do Plasma se chama plasma.desktop ou
+# plasmax11.desktop nesta máquina é o stylus-set-session, que olha.
 if [[ $novo == "desktop" || $novo == "kde" ]]; then
-    sudo /usr/local/bin/stylus-set-session plasma.desktop 2>/dev/null \
+    sudo /usr/local/bin/stylus-set-session desktop 2>/dev/null \
         || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-kde" >&2
 else
     # Verificar se i3 está instalado antes de trocar
@@ -37,7 +38,7 @@ else
         echo "$cur" > "$F"
         exit 1
     fi
-    sudo /usr/local/bin/stylus-set-session stylus.desktop 2>/dev/null \
+    sudo /usr/local/bin/stylus-set-session music 2>/dev/null \
         || echo "⚠ não conseguiu trocar sessão — rode: sudo stylus-switch-i3" >&2
 fi
 
