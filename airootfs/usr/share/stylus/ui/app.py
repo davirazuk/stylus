@@ -2603,21 +2603,38 @@ class GamesScreen(Screen):
     name = "JOGOS"
     icon = "󰊴"
 
-    # (name, command, binary_or_path, icon, kind)
-    # kind: "keyboard" = arrow keys, "mouse" = mouse, "controller" = gamepad
+    # (nome, comando, binário, ícone, controle, de-onde-vem)
+    #
+    # O último campo é o que fazer quando o jogo NÃO está instalado. Nove dos
+    # onze quadros desta tela dizem "não encontrado" numa máquina nova, e
+    # apertar ENTER em cima de qualquer um deles só devolvia um aviso
+    # dizendo, de novo, "não encontrado" — a tela repetindo o que já estava
+    # escrito no quadro, e nenhum caminho a partir dali.
+    #
+    # Onde há receita, ENTER instala. Onde não há, ele ao menos DIZ de onde
+    # aquilo vem, que é a informação que faltava.
     ACOES = [
-        ("Clone Hero", ["clonehero"], "clonehero", "󰝰", "controller"),
+        ("Clone Hero", ["clonehero"], "clonehero", "󰝰", "controller",
+         ["stylus-term", "Clone Hero", "stylus", "app", "clonehero"]),
         ("Keyboard Warriors", [os.path.expanduser(
             "~/Documentos/coiso/keyboardwarrior/keyboardwarrior")],
-            "keyboardwarrior", "󰌑", "keyboard"),
-        ("StepMania", ["stepmania"], "stepmania", "󰝰", "keyboard"),
-        ("Etterna", ["etterna"], "etterna", "󰝰", "keyboard"),
-        ("YARG", ["yarg"], "yarg", "󰝰", "controller"),
-        ("osu!", ["osu"], "osu", "󰝰", "mouse"),
-        ("Audica", ["audica"], "audica", "󰝰", "controller"),
-        ("Steam", ["steam", "-bigpicture"], "steam", "󰓓", "controller"),
-        ("Lutris", ["lutris"], "lutris", "󰓓", "controller"),
-        ("Heroic", ["heroic"], "heroic", "󰓓", "controller"),
+            "keyboardwarrior", "󰌑", "keyboard", None),
+        ("StepMania", ["stepmania"], "stepmania", "󰝰", "keyboard",
+         "vem do AUR:  yay -S stepmania"),
+        ("Etterna", ["etterna"], "etterna", "󰝰", "keyboard",
+         "vem do AUR:  yay -S etterna"),
+        ("YARG", ["yarg"], "yarg", "󰝰", "controller",
+         "baixe do site do YARG e ponha em /opt"),
+        ("osu!", ["osu"], "osu", "󰝰", "mouse",
+         "vem do AUR:  yay -S osu-lazer-bin"),
+        ("Audica", ["audica"], "audica", "󰝰", "controller",
+         "é um jogo de VR, comprado na Steam"),
+        ("Steam", ["steam", "-bigpicture"], "steam", "󰓓", "controller",
+         ["stylus-term", "Steam", "sudo", "pacman", "-S", "--needed", "steam"]),
+        ("Lutris", ["lutris"], "lutris", "󰓓", "controller",
+         ["stylus-term", "Lutris", "sudo", "pacman", "-S", "--needed", "lutris"]),
+        ("Heroic", ["heroic"], "heroic", "󰓓", "controller",
+         ["stylus-term", "Heroic", "stylus", "app", "heroic"]),
     ]
 
     def __init__(self, app):
@@ -2711,12 +2728,21 @@ class GamesScreen(Screen):
             self.sel = (self.sel - 1) % total
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if self.sel < n_games:
-                nome, cmd, binario, _icon, _kind = self.ACOES[self.sel]
+                nome, cmd, binario, _icon, _kind, de_onde = self.ACOES[self.sel]
                 if self._is_installed(binario) or os.path.isfile(cmd[0]):
                     self.app.toast(f"abrindo {nome}…")
                     spawn(cmd)
+                elif isinstance(de_onde, list):
+                    # Num terminal, e não num Job: instalar pede senha de sudo
+                    # e leva minutos falando. Num painel de trinta linhas sem
+                    # entrada de teclado, isso fica pendurado para sempre.
+                    self.app.toast(f"instalando {nome} — veja o terminal",
+                                   secs=6.0)
+                    spawn(de_onde)
+                elif de_onde:
+                    self.app.toast(f"{nome}: {de_onde}", secs=8.0)
                 else:
-                    self.app.toast(f"{nome} não encontrado")
+                    self.app.toast(f"{nome} não está instalado")
             elif self.sel == n_games:  # buscar
                 self.sub = "buscar"
                 self.query_active = True
@@ -2839,7 +2865,7 @@ class GamesScreen(Screen):
         # games grid: 4 per row
         cols = min(4, n_games)
         cw, gap = 220, 20
-        for i, (nome, _cmd, binario, icon, kind) in enumerate(self.ACOES):
+        for i, (nome, _cmd, binario, icon, kind, de_onde) in enumerate(self.ACOES):
             col = i % cols
             row = i // cols
             bx = pygame.Rect(x + col * (cw + gap), y + row * 120, cw, 100)
@@ -2859,8 +2885,15 @@ class GamesScreen(Screen):
                 T.text(s, ki, (bx.right - 14, bx.y + 10), 16, kc,
                        anchor="topright")
             if not tem:
-                T.text(s, "não encontrado", (bx.centerx, bx.centery + 28),
-                       15, T.TEXT_FAINT, anchor="center", maxw=bx.w - 24)
+                # "não encontrado" é o que a máquina sabe; não é o que a
+                # pessoa precisa. Onde há receita, o quadro vira um convite.
+                if isinstance(de_onde, list):
+                    T.frase_com_teclas(s, "[enter] instala",
+                                       (bx.centerx, bx.centery + 30), 15,
+                                       T.AMBER, anchor="center")
+                else:
+                    T.text(s, "não instalado", (bx.centerx, bx.centery + 28),
+                           15, T.TEXT_FAINT, anchor="center", maxw=bx.w - 24)
 
         # CH songs row
         y2 = y + (n_games // cols + 1) * 120 + 10
@@ -2880,7 +2913,8 @@ class GamesScreen(Screen):
                    T.TEXT if sel else T.TEXT_FAINT, bold=sel, anchor="center",
                    maxw=bx.w - 20)
 
-        self.app.hint(s, r, "[enter] abre   ·   [←][→] navega")
+        self.app.hint(s, r, "[enter] abre — ou instala, quando falta"
+                            "   ·   [←][→] navega")
 
     def _draw_buscar(self, s, r):
         x, y = r.x + 44, r.y + 90
