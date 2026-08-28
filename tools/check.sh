@@ -401,12 +401,19 @@ done < <(sed 's/#.*//' airootfs/etc/skel/.config/i3/config |
 if (( ${#faltando[@]} == 0 )); then ok "todo arquivo que a área de trabalho abre existe"
 else bad "apontam para o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
-sec "o que os comandos chamam em /usr/share/stylus"
+sec "os arquivos que os comandos chamam existem"
 # O stylus-install chamava /usr/share/stylus/branding-sync.sh, que NÃO EXISTIA
 # — e chamava com `|| warn`. A instalação terminava dizendo "concluída" e
 # entregava um Arch com i3 sem um comando `stylus` na máquina. Agora vale para
 # TODO comando, não só para o instalador: era o instalador porque foi lá que
 # doeu, e não há motivo para o próximo não doer noutro lugar.
+#
+# Vale para mais do que /usr/share/stylus. O stylus-lock apontava para
+# /usr/share/backgrounds/stylus.png — mas "stylus" ali é uma PASTA, e o
+# arquivo é .../stylus/stylus.png. Como todo uso estava atrás de um
+# `[[ -f $BG ]]`, nada quebrava: a tela de bloqueio só nunca mostrava o papel
+# de parede, em resolução nenhuma, e caía sempre na cor chapada. Um ano
+# assim e ninguém nota, porque o defeito é uma coisa que NÃO acontece.
 #
 # Dois caminhos não existem no repositório de propósito:
 #   deck/venv/…   o venv é construído dentro do chroot (o PyOpenGL não está
@@ -421,11 +428,20 @@ while read -r caminho; do
     caminho=${caminho%%[.,;:)]}
     case $caminho in
         /usr/share/stylus/deck/venv/*|/usr/share/stylus/lock/stylus-) continue ;;
+        # Escrito pelo instalador em tempo de execução, e só quando o
+        # plasma-workspace não trouxe um .desktop de sessão X11. Não pode
+        # existir aqui: não é nosso, é um remendo para uma versão do Plasma.
+        /usr/share/xsessions/plasma.desktop) continue ;;
     esac
     [[ -e airootfs$caminho ]] || faltando+=("$caminho")
-done < <(grep -ohE -d skip '/usr/share/stylus/[A-Za-z0-9_./-]+' \
+done < <(grep -ohE -d skip \
+              -e '/usr/share/stylus/[A-Za-z0-9_./-]+' \
+              -e '/usr/share/backgrounds/[A-Za-z0-9_./-]+' \
+              -e '/usr/share/color-schemes/[A-Za-z0-9_./-]+' \
+              -e '/usr/share/xsessions/[A-Za-z0-9_./-]+' \
+              -e '/usr/share/applications/stylus[A-Za-z0-9_./-]*' \
               airootfs/usr/local/bin/* | sort -u)
-if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
+if (( ${#faltando[@]} == 0 )); then ok "todo arquivo do sistema que os comandos chamam pelo nome existe"
 else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
 
 sec "a agulha: quem escreve e quem lê combinam"
@@ -793,7 +809,12 @@ while IFS= read -r arquivo; do
     mapfile -t cod < <(sed 's/#.*//' "$arquivo" | grep -n '[^[:space:]]')
     for i in "${!cod[@]}"; do
         linha=${cod[i]#*:}
-        [[ $linha == *plasma-desktop* || $linha == *plasma-workspace* ]] || continue
+        # Âncora no plasma-desktop, e NÃO no plasma-workspace. Toda lista que
+        # instala o KDE tem os dois; mas o plasma-workspace também é citado em
+        # mensagens do tipo "isto vem do pacote plasma-workspace", e ali não
+        # há lista nenhuma para conferir. Ancorando nos dois, o stylus-wallpaper
+        # foi acusado por explicar de onde vem um binário.
+        [[ $linha == *plasma-desktop* ]] || continue
         achou=0
         for (( j = i > 6 ? i - 6 : 0; j <= i + 8 && j < ${#cod[@]}; j++ )); do
             viz=${cod[j]#*:}
@@ -801,7 +822,7 @@ while IFS= read -r arquivo; do
         done
         (( achou )) || sem_wm+=("${arquivo#airootfs/}, linha ${cod[i]%%:*}")
     done
-done < <(grep -rl 'plasma-desktop\|plasma-workspace' airootfs/usr/local/bin 2>/dev/null | sort)
+done < <(grep -rl 'plasma-desktop' airootfs/usr/local/bin 2>/dev/null | sort)
 if (( ${#sem_wm[@]} == 0 )); then
     ok "todo lugar que instala o Plasma instala também o gerenciador de janelas do X11"
 else

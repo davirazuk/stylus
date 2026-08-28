@@ -160,7 +160,46 @@ def desenhar(pasta, estilo, res, quieto=False):
     return png
 
 
+def sessao_kde():
+    """Esta sessão é o Plasma?
+
+    Importa porque o jeito de pendurar um papel de parede é outro. O feh
+    pinta a JANELA RAIZ do X; o Plasma desenha a própria área de trabalho por
+    cima dela. No KDE o feh roda, sai zero, e não muda nada na tela — o
+    recurso inteiro simplesmente não existia do lado do amigo, sem erro
+    nenhum para explicar.
+    """
+    if "KDE" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper():
+        return True
+    # Rodando de um serviço ou de um gancho, o ambiente pode vir vazio; aí
+    # pergunta-se à máquina. `pgrep -x`, com o nome exato: um `-f` casaria
+    # com a linha de comando do próprio shell que está perguntando.
+    try:
+        return subprocess.run(["pgrep", "-x", "plasmashell"],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        return False
+
+
 def pendurar(png):
+    if sessao_kde():
+        try:
+            r = subprocess.run(["plasma-apply-wallpaperimage", png],
+                               check=False, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.PIPE, text=True)
+            if r.returncode == 0:
+                return True
+            # Não cai no feh em silêncio: no Plasma ele não faria nada, e
+            # "sem erro e sem efeito" é o pior resultado possível.
+            print("stylus-wallpaper: o Plasma recusou o papel de parede"
+                  + (": " + r.stderr.strip().splitlines()[-1] if r.stderr.strip() else ""),
+                  file=sys.stderr)
+            return False
+        except OSError:
+            print("stylus-wallpaper: falta o plasma-apply-wallpaperimage "
+                  "(pacote plasma-workspace)", file=sys.stderr)
+            return False
     try:
         return subprocess.run(["feh", "--no-fehbg", "--bg-fill", png],
                               check=False,

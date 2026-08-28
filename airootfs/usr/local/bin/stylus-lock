@@ -15,9 +15,32 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 
-BG=/usr/share/backgrounds/stylus.png
+# O papel de parede mora numa PASTA chamada stylus, e este caminho apontava
+# para um arquivo com o nome da pasta. Como todo uso dele estava atrás de um
+# `[[ -f $BG ]]`, nada quebrava: a tela de bloqueio só nunca mostrava o papel
+# de parede, em resolução nenhuma, e caía sempre na cor chapada lá embaixo.
+BG=/usr/share/backgrounds/stylus/stylus.png
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/stylus"
-COLOR=10241d
+# INK, a mesma cor de fundo do resto do sistema. Era 10241d — um cinza
+# ESVERDEADO (16,36,29) que não está na paleta e não veio de lugar nenhum.
+# Ficava escondido justamente porque era o caminho que sempre acontecia.
+COLOR=07080b
+
+# ── No KDE, quem tranca é o KDE ────────────────────────────────────────────
+# Chamar o i3lock aqui dentro do Plasma desenha uma tela por cima e pronto: a
+# SESSÃO não fica marcada como trancada. O Plasma continua achando que está
+# aberta, o Meta+L dele abre um segundo bloqueio por baixo, e o que o
+# loginctl responde sobre a máquina passa a ser mentira. Pedir ao loginctl é
+# o mesmo caminho que o próprio KDE usa.
+if [[ ${XDG_CURRENT_DESKTOP:-} == *KDE* ]] || pgrep -x plasmashell >/dev/null 2>&1; then
+    loginctl lock-session "${XDG_SESSION_ID:-self}" 2>/dev/null && exit 0
+    command -v loginctl >/dev/null && loginctl lock-sessions 2>/dev/null && exit 0
+fi
+
+command -v i3lock >/dev/null 2>&1 || {
+    echo "stylus-lock: nem o KDE nem o i3lock estão aqui para trancar a tela" >&2
+    exit 1
+}
 
 geometry=$(xrandr --current 2>/dev/null | awk '/\*/ {print $1; exit}')
 [[ -z $geometry ]] && exec i3lock -c "$COLOR" -e -f
