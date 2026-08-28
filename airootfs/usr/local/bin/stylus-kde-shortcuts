@@ -109,6 +109,34 @@ primeira_vez() {                # primeira_vez <nome-do-ajuste>
     return 0
 }
 
+# ── e a segunda tranca, que é a que vale ───────────────────────────────────
+# O carimbo sozinho é uma promessa frágil. Ele mora em ~/.local/state, e essa
+# pasta some com mais facilidade do que parece: uma casa migrada de outra
+# máquina, um `~/.local/state` limpo, um usuário novo apontando para a mesma
+# coleção. Perdido o carimbo, TODO ajuste "de uma vez só" roda de novo — e
+# aí uma atualização apaga o papel de parede que a pessoa escolheu, que é
+# exatamente o que os carimbos existem para impedir.
+#
+# Então cada ajuste de gosto tem duas condições, e as duas têm que valer:
+#
+#     primeira_vez X        nunca fizemos isto
+#     ninguem_escolheu ...  e a pessoa também não escolheu nada ali
+#
+# A segunda lê o valor que está VALENDO agora. Com ela, mesmo com o carimbo
+# perdido, uma escolha da pessoa nunca é desfeita.
+ninguem_escolheu() {            # ninguem_escolheu ARQUIVO CHAVE [NOSSO_PADRÃO]
+    local arq=$1 chave=$2 nosso=${3:-} linha
+    [[ -f $arq ]] || return 0                       # nunca houve escolha
+    linha=$(grep -m1 -E "^[[:space:]]*$chave[[:space:]]*=" "$arq" 2>/dev/null) \
+        || return 0                                 # a chave nem existe
+    [[ -z ${linha#*=} ]] && return 0                # está lá, vazia
+    # O que está valendo é o nosso próprio padrão: reafirmar não desfaz nada.
+    [[ -n $nosso && $linha == *"$nosso"* ]] && return 0
+    return 1                                        # é escolha de alguém
+}
+
+PLASMARC="$CONF/plasma-org.kde.plasma.desktop-appletsrc"
+
 # ── Papel de parede: UMA vez, e nunca por cima da escolha da pessoa ────────
 # **Sintoma:** isto rodava a cada login e reaplicava o fundo padrão sem
 # perguntar. Quem escolhesse o próprio papel de parede o perdia no login
@@ -128,6 +156,7 @@ WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
 if [[ -f $WALLPAPER ]] \
    && [[ ! -f ${XDG_CONFIG_HOME:-$HOME/.config}/stylus/wallpaper ]] \
    && command -v plasma-apply-wallpaperimage >/dev/null 2>&1 \
+   && ninguem_escolheu "$PLASMARC" Image "$WALLPAPER" \
    && primeira_vez papel-de-parede; then
     plasma-apply-wallpaperimage "$WALLPAPER" >/dev/null 2>&1
 fi
@@ -140,12 +169,13 @@ fi
 # pessoa escolhesse OUTRA paleta, que é a definição de não deixar escolher.
 if command -v plasma-apply-colorscheme >/dev/null 2>&1 \
    && [[ -f /usr/share/color-schemes/StylusDark.colors ]] \
-   && ! grep -q '^ColorScheme=' "$CONF/kdeglobals" 2>/dev/null \
+   && ninguem_escolheu "$CONF/kdeglobals" ColorScheme StylusDark \
    && primeira_vez paleta; then
     plasma-apply-colorscheme StylusDark >/dev/null 2>&1
 fi
 
 if command -v kvantummanager >/dev/null 2>&1 && [[ -d /usr/share/Kvantum/Stylus ]] \
+   && ninguem_escolheu "$CONF/Kvantum/kvantum.kvconfig" theme Stylus \
    && primeira_vez kvantum; then
     kvantummanager --set Stylus >/dev/null 2>&1 || kvantummanager -x Stylus >/dev/null 2>&1
 fi
@@ -155,6 +185,7 @@ fi
 # entrava com o Breeze e o cursor MUDAVA de desenho no meio do login — um
 # detalhe pequeno que faz o sistema parecer duas coisas coladas.
 if command -v plasma-apply-cursortheme >/dev/null 2>&1 \
+   && ninguem_escolheu "$CONF/kcminputrc" cursorTheme Adwaita \
    && primeira_vez cursor; then
     plasma-apply-cursortheme Adwaita >/dev/null 2>&1
 fi

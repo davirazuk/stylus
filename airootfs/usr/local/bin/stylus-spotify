@@ -4,7 +4,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-SHARE=/usr/share/stylus
+# Igual ao `stylus`: dá para apontar este comando para um clone e testar o
+# conserto antes de aplicá-lo na máquina.
+SHARE=${STYLUS_SHARE:-/usr/share/stylus}
 
 # O spotipy não existe nos repositórios do Arch e o `pip install` do sistema
 # é recusado (PEP 668). Quem resolve isso é o venv da pessoa; veja o porquê
@@ -27,6 +29,7 @@ cat <<'EOF'
   stylus-spotify status          agora tocando (saída JSON)
   stylus-spotify daemon          verifica se spotifyd está rodando
   stylus-spotify instalar        instala o spotipy (uma vez, na sua casa)
+  stylus-spotify instalar --daemon  instala TAMBÉM o spotifyd, que é quem toca
 EOF
 }
 
@@ -133,7 +136,19 @@ PYEOF
             2>/dev/null || echo '{"status":"stopped"}'
         ;;
     daemon)
-        playerctl -p spotifyd status >/dev/null 2>&1 && echo "ok" || echo "down"
+        # Três estados, não dois. A tela de instalação mandava rodar
+        # `systemctl --user enable --now spotifyd` para quem não tinha o
+        # spotifyd INSTALADO — e ele não está nos repositórios oficiais do
+        # Arch, está no AUR. O comando falhava com "Unit spotifyd.service not
+        # found" e a pessoa ficava sem saída nenhuma, tendo feito exatamente o
+        # que a tela mandou.
+        if playerctl -p spotifyd status >/dev/null 2>&1; then
+            echo "ok"
+        elif command -v spotifyd >/dev/null 2>&1; then
+            echo "parado"
+        else
+            echo "ausente"
+        fi
         ;;
     instalar|install)
         declare -F venv_instalar >/dev/null || {
@@ -145,7 +160,28 @@ PYEOF
             venv_instalar spotipy || {
                 echo "stylus-spotify: a instalação falhou (sem rede?)" >&2; exit 1; }
         fi
-        venv_tem spotipy && echo "pronto. \`stylus spotify buscar NOME\` já funciona." ;;
+        venv_tem spotipy && echo "pronto. \`stylus spotify buscar NOME\` já funciona."
+        # O spotifyd só a pedido: ele vem do AUR, é compilado na máquina, e
+        # leva minutos. Instalar isso sem avisar dentro de um comando que a
+        # pessoa achou que era rápido é o tipo de surpresa que não se faz.
+        if [[ ${1:-} == --daemon ]]; then
+            if command -v spotifyd >/dev/null 2>&1; then
+                echo "o spotifyd já está aqui."
+            elif command -v yay >/dev/null 2>&1; then
+                echo "Instalando o spotifyd do AUR (ele é compilado aqui; leva alguns minutos)…"
+                yay -S --needed --noconfirm spotifyd || {
+                    echo "stylus-spotify: o spotifyd não instalou." >&2; exit 1; }
+            else
+                echo "o spotifyd mora no AUR e esta máquina não tem um auxiliar." >&2
+                echo "Rode antes:  install-yay" >&2
+                exit 1
+            fi
+            echo "agora:  systemctl --user enable --now spotifyd"
+            echo "(e ele precisa de conta Premium — o Spotify não deixa tocar sem.)"
+        else
+            command -v spotifyd >/dev/null 2>&1 || \
+                echo "  para tocar também:  stylus spotify instalar --daemon"
+        fi ;;
     -h|--help|help) usage ;;
     *) echo "stylus-spotify: \"$cmd\" não existe" >&2; usage >&2; exit 1 ;;
 esac

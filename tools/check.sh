@@ -1106,6 +1106,45 @@ else
     printf '  %s—%s sem config do i3 ou sem keybindings.txt\n' "$y" "$z"
 fi
 
+# ── nada de gosto se aplica sem as duas trancas ───────────────────────────
+# O stylus-kde-shortcuts roda a CADA login do KDE. Tudo que ele mexe em gosto
+# — papel de parede, paleta, tema de widget, cursor — tem que passar por
+# DUAS condições:
+#
+#     primeira_vez X        nunca fizemos isto nesta casa
+#     ninguem_escolheu ...  e a pessoa também não escolheu nada ali
+#
+# A segunda é a que vale: o carimbo mora em ~/.local/state e essa pasta some
+# com mais facilidade do que parece (uma casa migrada, um state limpo).
+# Perdido o carimbo, um ajuste "de uma vez só" roda de novo e apaga o papel
+# de parede que a pessoa escolheu — que é a coisa que mais rápido faz alguém
+# trocar de distribuição, e é o defeito que estas trancas existem para
+# impedir.
+sec "o KDE não desfaz a escolha de ninguém"
+KSH=airootfs/usr/local/bin/stylus-kde-shortcuts
+if [[ -f $KSH ]]; then
+    sem_tranca=$(awk '
+        /^[[:space:]]*#/ { next }
+        { linhas[NR] = $0 }
+        /plasma-apply-(wallpaperimage|colorscheme|cursortheme)|kvantummanager/ {
+            tem_pv = 0; tem_ne = 0
+            for (i = NR - 12; i <= NR; i++) {
+                if (linhas[i] ~ /primeira_vez/)     tem_pv = 1
+                if (linhas[i] ~ /ninguem_escolheu/) tem_ne = 1
+            }
+            # A própria definição do comando não conta como uso.
+            if ($0 ~ /command -v/ && !(tem_pv || tem_ne)) next
+            if (!tem_pv || !tem_ne) print NR
+        }' "$KSH" | tr '\n' ' ')
+    if [[ -n ${sem_tranca// /} ]]; then
+        bad "aplica gosto sem as duas trancas, nas linhas: $sem_tranca"
+    else
+        ok "papel de parede, paleta, cursor e widget só na primeira vez e só se ninguém escolheu"
+    fi
+else
+    printf '  %s—%s sem o stylus-kde-shortcuts\n' "$y" "$z"
+fi
+
 # ── ninguém chama o xdg-user-dirs-update no escuro ────────────────────────
 # Ele NÃO é inofensivo em cima de um user-dirs.dirs que já existe: toda
 # entrada cuja pasta não estiver montada naquele instante ele reescreve como

@@ -46,6 +46,14 @@ def morre(msg):
 
 
 def cliente():
+    # O qobuz_dl escreve "Logging..." e "Membership: Studio" pelo logging dele,
+    # em inglês, toda vez que autentica. Aqui isso é ruído: este programa já
+    # imprime uma linha em português dizendo o disco, as faixas e a qualidade,
+    # e essas duas apareciam ANTES dela, sem contexto nenhum. Baixar o nível
+    # do logger é o jeito de calá-lo sem mexer no pacote.
+    import logging
+    logging.getLogger("qobuz_dl").setLevel(logging.WARNING)
+    logging.getLogger("qopy").setLevel(logging.WARNING)
     try:
         from qobuz_dl.qopy import Client
     except ImportError:
