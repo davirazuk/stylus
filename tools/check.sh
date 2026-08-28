@@ -897,6 +897,59 @@ elif (( ! FAST )); then
     else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
+# ── a lista de atalhos não pode mentir ────────────────────────────────────
+# **Sintoma:** o Mod+F1 dizia "mudar o foco (ou Mod+H J K L)". O Mod+L
+# TRANCA A TELA. Quem seguia a própria ajuda do sistema para mover o foco
+# para a direita trancava a sessão — e o atalho de verdade, o Mod+;, não
+# estava escrito em lugar nenhum.
+#
+# Uma ajuda errada é pior do que ajuda nenhuma: ela é lida como verdade e
+# ninguém confere. Então cada tecla que a ajuda cita para focar/mover tem que
+# estar ligada, no config, ao comando que a ajuda promete.
+sec "a lista de atalhos bate com o i3"
+CFG=airootfs/etc/skel/.config/i3/config
+AJUDA=airootfs/usr/share/stylus/keybindings.txt
+if [[ -f $CFG && -f $AJUDA ]]; then
+    erros=""
+    # As teclas do vim que a ajuda anuncia entre parênteses, na ordem
+    # esquerda-baixo-cima-direita.
+    citadas=$(grep -oE '\(ou Mod\+(Shift\+)?[A-Z; ]+\)' "$AJUDA" | head -2)
+    for par in "focus:mudar o foco" "move:mover a janela"; do
+        acao=${par%%:*}
+        # o que o config liga de fato àquela ação
+        mapfile -t teclas < <(grep -oE "^bindsym \\\$mod\+(Shift\+)?[a-z]+ ${acao} (left|down|up|right)" "$CFG" |
+                              sed -E "s/^bindsym \\\$mod\+(Shift\+)?//; s/ ${acao}.*//" | sort -u)
+        for t in "${teclas[@]}"; do
+            # ponto-e-vírgula aparece na ajuda como o próprio caractere
+            mostra=$t; [[ $t == semicolon ]] && mostra=";"
+            [[ ${#mostra} -gt 1 ]] && continue     # setas, escritas em prosa
+            grep -qiF "$mostra" <<<"$citadas" || erros+=" $acao/$mostra"
+        done
+    done
+    # E o inverso, que é o defeito que aconteceu: uma tecla anunciada que na
+    # verdade está ligada a OUTRA coisa.
+    # Tira o "Mod+" e o "Shift+" ANTES de extrair as letras: sem isso o M de
+    # "Mod" e o S de "Shift" entram na lista e a conferência acusa duas
+    # teclas que a ajuda nunca prometeu.
+    for letra in $(grep -oE '\(ou Mod\+(Shift\+)?[A-Z; ]+\)' "$AJUDA" |
+                   sed -E 's/\(ou Mod\+(Shift\+)?//; s/\)//' |
+                   grep -oE '[A-Z;]' | sort -u); do
+        alvo=$letra; [[ $letra == ";" ]] && alvo=semicolon
+        min=$(tr '[:upper:]' '[:lower:]' <<<"$alvo")
+        linha=$(grep -E "^bindsym \\\$mod\+(Shift\+)?${min} " "$CFG" | head -1)
+        [[ -z $linha ]] && { erros+=" $letra(nao-ligada)"; continue; }
+        grep -qE ' (focus|move) (left|down|up|right)$' <<<"$linha" ||
+            erros+=" $letra(e-outra-coisa)"
+    done
+    if [[ -z $erros ]]; then
+        ok "as teclas que o Mod+F1 anuncia fazem o que ele promete"
+    else
+        bad "o Mod+F1 mente sobre:$erros"
+    fi
+else
+    printf '  %s—%s sem config do i3 ou sem keybindings.txt\n' "$y" "$z"
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

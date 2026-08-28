@@ -27,8 +27,13 @@
   ── janelas ───────────────────────────────────────────────────────────
   Mod+Q              fechar
   Mod+F              tela cheia
-  Mod+setas          mudar o foco          (ou Mod+H J K L)
-  Mod+Shift+setas    mover a janela
+  Mod+setas          mudar o foco          (ou Mod+H J K ;)
+  Mod+Shift+setas    mover a janela        (ou Mod+Shift+H J K ;)
+
+  É ponto-e-vírgula no lugar do L do vim: o Mod+L tranca a tela, aqui e em
+  qualquer área de trabalho, e trocar isso por "mover o foco" seria a única
+  tecla do sistema a significar uma coisa diferente do resto do mundo.
+
   Mod+B / Mod+V      dividir na horizontal / vertical
   Mod+W / Mod+S      abas / pilha
   Mod+Shift+Espaço   flutuar
