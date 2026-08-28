@@ -1678,10 +1678,13 @@ class QobuzScreen(Screen):
             return
 
         if self.error:
-            T.text(s, self.error, (r.centerx, r.centery - 20), 20,
-                   T.RED, anchor="center")
-            T.text(s, "/ procura de novo", (r.centerx, r.centery + 15),
-                   17, T.TEXT_FAINT, anchor="center")
+            # Em várias linhas: a mensagem que diz onde pôr as credenciais
+            # do Spotify não cabe numa, e cortada não ensina nada.
+            larg = min(760, r.w - 120)
+            h = T.paragrafo(s, self.error, (r.centerx, r.centery - 40), 20,
+                            T.RED, maxw=larg, anchor="center")
+            T.text(s, "/ procura de novo", (r.centerx, r.centery - 40 + h + 14),
+                   17, T.TEXT_FAINT, anchor="midtop")
             return
 
         if not self.results and self.query:
@@ -1997,10 +2000,13 @@ class SpotifyScreen(Screen):
             return
 
         if self.error:
-            T.text(s, self.error, (r.centerx, r.centery - 20), 20,
-                   T.RED, anchor="center")
-            T.text(s, "/ procura de novo", (r.centerx, r.centery + 15),
-                   17, T.TEXT_FAINT, anchor="center")
+            # Em várias linhas: a mensagem que diz onde pôr as credenciais
+            # do Spotify não cabe numa, e cortada não ensina nada.
+            larg = min(760, r.w - 120)
+            h = T.paragrafo(s, self.error, (r.centerx, r.centery - 40), 20,
+                            T.RED, maxw=larg, anchor="center")
+            T.text(s, "/ procura de novo", (r.centerx, r.centery - 40 + h + 14),
+                   17, T.TEXT_FAINT, anchor="midtop")
             return
 
         if not self.results and self.query:

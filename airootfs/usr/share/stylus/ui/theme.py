@@ -135,6 +135,41 @@ def text(surf, s, pos, size=20, colour=TEXT, bold=False, anchor="topleft",
     return r
 
 
+
+def paragrafo(surf, s, pos, size=20, colour=TEXT, maxw=600, anchor="topleft",
+              bold=False, entrelinha=1.35, limite=6):
+    """Escreve em várias linhas, quebrando nos espaços. Devolve a altura.
+
+    O `text()` corta com reticências, que é o certo para um nome de disco
+    numa prateleira e o errado para uma frase que explica o que fazer: uma
+    mensagem de erro cortada no meio não diz o que estava tentando dizer.
+    """
+    f = font(size, bold)
+    linhas, atual = [], ""
+    for palavra in s.split():
+        tenta = (atual + " " + palavra).strip()
+        if atual and f.size(tenta)[0] > maxw:
+            linhas.append(atual)
+            atual = palavra
+            if len(linhas) >= limite:
+                break
+        else:
+            atual = tenta
+    if atual and len(linhas) < limite:
+        linhas.append(atual)
+
+    passo = int(size * entrelinha)
+    x, y = pos
+    if anchor.endswith("center") or anchor == "center":
+        # centralizado na horizontal; o `pos` é o topo do bloco
+        for i, ln in enumerate(linhas):
+            text(surf, ln, (x, y + i * passo), size, colour, bold=bold,
+                 anchor="midtop")
+    else:
+        for i, ln in enumerate(linhas):
+            text(surf, ln, (x, y + i * passo), size, colour, bold=bold)
+    return len(linhas) * passo
+
 def panel(surf, rect, colour=INK_SOFT, radius=14, border=None, border_width=None):
     pygame.draw.rect(surf, colour, rect, border_radius=radius)
     if border:

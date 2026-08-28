@@ -27,51 +27,74 @@ case "$cmd" in
         query="$*"
         [[ -z $query ]] && { echo '{"error":"faltou a busca"}' >&2; exit 1; }
         $PY - "$query" <<'PYEOF'
-import sys, json, subprocess
+import configparser, json, os, sys
 
-def search_spotify(query):
-    """Busca via spotifyd D-Bus (MPRIS) — não precisa de credenciais."""
-    import dbus
-    bus = dbus.SessionBus()
-    # Procura spotifyd ou spotify no bus
-    for name in bus.list_names():
-        if "spotify" in name.lower():
-            player = bus.get_object(name, "/org/mpris/MediaPlayer2")
-            # OpenUri não busca; precisamos do spotipy para busca
-            break
-    # Fallback: spotipy com client credentials
+# As credenciais. A versão anterior trazia um client_id fixo no código e um
+# client_secret VAZIO — e o fluxo de client credentials do Spotify não
+# autentica sem segredo. Ou seja: a busca não funcionava em máquina nenhuma,
+# e o que aparecia era o erro do servidor, não "faltam credenciais".
+#
+# Aqui elas vêm do ambiente ou de ~/.config/stylus/spotify.conf, no mesmo
+# feitio do config.ini do qobuz-dl.
+def credenciais():
+    cid = os.environ.get("STYLUS_SPOTIFY_ID", "").strip()
+    seg = os.environ.get("STYLUS_SPOTIFY_SECRET", "").strip()
+    if cid and seg:
+        return cid, seg
+    conf = os.path.join(os.environ.get("XDG_CONFIG_HOME",
+                                       os.path.expanduser("~/.config")),
+                        "stylus", "spotify.conf")
+    if os.path.exists(conf):
+        cp = configparser.ConfigParser()
+        try:
+            cp.read(conf, encoding="utf-8")
+            sec = cp["spotify"] if cp.has_section("spotify") else cp["DEFAULT"]
+            return (sec.get("client_id", "").strip(),
+                    sec.get("client_secret", "").strip())
+        except Exception:                       # noqa: BLE001
+            pass
+    return "", ""
+
+
+FALTA = ("o Spotify precisa de credenciais: crie um app em "
+         "developer.spotify.com e escreva client_id e client_secret "
+         "em ~/.config/stylus/spotify.conf, na seção [spotify]")
+
+
+def buscar(query):
+    cid, seg = credenciais()
+    if not cid or not seg:
+        return {"error": FALTA}
     try:
         import spotipy
         from spotipy.oauth2 import SpotifyClientCredentials
-        sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-            client_id="d8a5ed958d274c2e8ee717e6a4b0971d",
-            client_secret=""
-        ))
-        results = sp.search(q=query, type="track", limit=20)
-        tracks = []
-        for t in results.get("tracks", {}).get("items", []):
-            artists = ", ".join(a["name"] for a in t.get("artists", []))
-            album = t.get("album", {}).get("name", "")
-            duration_ms = t.get("duration_ms", 0)
-            dur = f"{duration_ms // 60000}:{(duration_ms % 60000) // 1000:02d}"
-            tracks.append({
-                "name": t.get("name", ""),
-                "artist": artists,
-                "album": album,
-                "uri": t.get("uri", ""),
-                "duration": dur,
-            })
-        return {"tracks": tracks}
     except ImportError:
-        return {"error": "spotipy não instalado — pip install spotipy"}
-    except Exception as e:
+        return {"error": "o spotipy não está instalado (pip install --user spotipy)"}
+    try:
+        sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+            client_id=cid, client_secret=seg))
+        r = sp.search(q=query, type="track", limit=20)
+    except Exception as e:                      # noqa: BLE001
         return {"error": str(e)}
 
-query = sys.argv[1] if len(sys.argv) > 1 else ""
-if not query:
+    faixas = []
+    for t in r.get("tracks", {}).get("items", []):
+        ms = t.get("duration_ms", 0)
+        faixas.append({
+            "name":   t.get("name", ""),
+            "artist": ", ".join(a["name"] for a in t.get("artists", [])),
+            "album":  t.get("album", {}).get("name", ""),
+            "uri":    t.get("uri", ""),
+            "duration": "%d:%02d" % (ms // 60000, (ms % 60000) // 1000),
+        })
+    return {"tracks": faixas}
+
+
+q = sys.argv[1] if len(sys.argv) > 1 else ""
+if not q:
     print(json.dumps({"error": "busca vazia"}))
     sys.exit(1)
-print(json.dumps(search_spotify(query), ensure_ascii=False))
+print(json.dumps(buscar(q), ensure_ascii=False))
 PYEOF
         ;;
     play|tocar)
