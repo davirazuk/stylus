@@ -897,6 +897,40 @@ elif (( ! FAST )); then
     else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
+# ── ler o clone do sistema sem esbarrar no dono ───────────────────────────
+# **Sintoma:** a tela de AJUSTES mostrava a data da ISO no lugar da versão
+# instalada. O /var/lib/stylus/repo é do root — o stylus-update roda com
+# sudo — e o git recusa ler repositório de outro dono desde a 2.35.6
+# ("detected dubious ownership"). O erro vai para o stderr, o stdout vem
+# vazio, e quem chamou cai num plano B sem perceber que falhou.
+#
+# Isso quebra o laço de trabalho do sistema: publicar, `stylus-update`,
+# conferir se chegou. Quem responde "qual versão eu tenho" respondia sempre a
+# mesma coisa, e a resposta parecia plausível.
+#
+# A primeira versão desta conferência procurava `git ... -C .../repo` numa
+# linha só — e passou verde com o defeito de volta, porque no python o "git"
+# e o "-C" estão em LINHAS diferentes, que é exatamente o arquivo onde o
+# problema estava. Conferência que não reprova o defeito conhecido não é
+# conferência. Agora a regra é por ARQUIVO: quem cita o clone e chama git tem
+# que dizer safe.directory em algum lugar.
+sec "quem lê o clone do sistema passa o safe.directory"
+faltando=""
+for f in $(grep -rl '/var/lib/stylus/repo' airootfs/usr/local/bin \
+                     airootfs/usr/share/stylus 2>/dev/null); do
+    # O stylus-update fica de fora: ele é quem CRIA o clone e roda com sudo,
+    # então o dono bate e o git não reclama. safe.directory ali seria enfeite.
+    [[ ${f##*/} == stylus-update ]] && continue
+    grep -q 'git' "$f" || continue
+    grep -q 'safe\.directory' "$f" || faltando+="$f"$'\n'
+done
+if [[ -z $faltando ]]; then
+    ok "todo git que abre /var/lib/stylus/repo diz de quem ele é"
+else
+    bad "git em /var/lib/stylus/repo sem safe.directory (vai falhar calado):"
+    printf '%s' "$faltando" | sed 's/^/      /'
+fi
+
 # ── a lista de atalhos não pode mentir ────────────────────────────────────
 # **Sintoma:** o Mod+F1 dizia "mudar o foco (ou Mod+H J K L)". O Mod+L
 # TRANCA A TELA. Quem seguia a própria ajuda do sistema para mover o foco

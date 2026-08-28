@@ -2645,9 +2645,22 @@ class SettingsScreen(Screen):
         `stylus-update`: numa máquina recém-instalada ele não está lá, e
         a tela dizia "?" — a resposta menos útil possível para quem abriu
         justamente para descobrir qual versão tem.
+
+        **Sintoma:** e depois do primeiro update ela passou a mostrar a data
+        da ISO, que é mais velha ainda e parece certa. O clone é do ROOT (o
+        stylus-update roda com sudo) e o git recusa ler repositório de outro
+        dono desde a 2.35.6: "detected dubious ownership". O erro sai pelo
+        stderr, o stdout vem vazio, e o `if v:` cai calado no plano B.
+
+        Isso quebrava justamente o laço de trabalho do sistema — publicar,
+        `stylus-update`, conferir se chegou —, porque a tela que responde
+        "qual versão eu tenho" respondia sempre a mesma coisa. O
+        `-c safe.directory` é o jeito que o próprio git documenta para dizer
+        "eu sei de quem é, pode ler".
         """
         try:
-            r = subprocess.run(["git", "-C", "/var/lib/stylus/repo", "log",
+            r = subprocess.run(["git", "-c", "safe.directory=/var/lib/stylus/repo",
+                                "-C", "/var/lib/stylus/repo", "log",
                                 "-1", "--format=%h %s"],
                                capture_output=True, text=True, timeout=3)
             v = r.stdout.strip()

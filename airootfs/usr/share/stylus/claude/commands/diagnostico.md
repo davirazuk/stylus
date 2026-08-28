@@ -25,7 +25,7 @@ prometida); `systemctl --user status pipewire wireplumber pipewire-pulse`
 `stylus library`; `stylus check`; `cat ~/.config/stylus/library` (se existir)
 
 **a máquina**
-`cat /etc/os-release`; `git -C /var/lib/stylus/repo log -1 --oneline`;
+`cat /etc/os-release`; `git -c safe.directory=/var/lib/stylus/repo -C /var/lib/stylus/repo log -1 --oneline`;
 `uname -r`; `pacman -Q | wc -l`; `df -h /`; `free -h`
 
 Regras:
