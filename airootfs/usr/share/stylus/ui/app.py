@@ -1498,7 +1498,7 @@ class QobuzScreen(Screen):
             if n:
                 self.examing = self.results[self.sel]
         elif ev.key == pygame.K_r:
-            self._check_gui()
+            self._check_gui_threaded()
             if self.query:
                 self._search()
         else:
@@ -1689,6 +1689,321 @@ class QobuzScreen(Screen):
 
         if self.examing:
             self._draw_examing(s, r)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SPOTIFY — procurar e tocar
+# ═══════════════════════════════════════════════════════════════════════════
+class SpotifyScreen(Screen):
+    name = "SPOTIFY"
+    icon = "󰓇"
+    COLS = 5
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.query = ""
+        self.searching = False
+        self.loading = False
+        self.results = []
+        self.sel = 0
+        self.scroll = 0.0
+        self.target = 0.0
+        self.error = None
+        self.job = None
+        self._daemon_ok = None
+        self._now_playing = None
+        self._np_t = 0.0
+
+    def enter(self):
+        self._check_daemon_threaded()
+        self._refresh_now_playing()
+
+    def _check_daemon_threaded(self):
+        def _probe():
+            try:
+                r = subprocess.run(["playerctl", "-p", "spotifyd", "status"],
+                                   capture_output=True, text=True, timeout=3)
+                self._daemon_ok = r.returncode == 0
+            except Exception:
+                self._daemon_ok = False
+        threading.Thread(target=_probe, daemon=True).start()
+
+    def _refresh_now_playing(self):
+        def _get():
+            try:
+                r = subprocess.run(
+                    ["playerctl", "-p", "spotifyd", "metadata",
+                     "--format", "{{title}}\n{{artist}}\n{{album}}\n{{duration(m)}}\n{{position(m)}}"],
+                    capture_output=True, text=True, timeout=3)
+                if r.returncode == 0 and r.stdout.strip():
+                    lines = r.stdout.strip().split("\n")
+                    if len(lines) >= 2:
+                        self._now_playing = {
+                            "title": lines[0],
+                            "artist": lines[1],
+                            "album": lines[2] if len(lines) > 2 else "",
+                            "duration": lines[3] if len(lines) > 3 else "?",
+                            "position": lines[4] if len(lines) > 4 else "0",
+                        }
+                        return
+                self._now_playing = None
+            except Exception:
+                self._now_playing = None
+        self._np_t = time.time()
+        threading.Thread(target=_get, daemon=True).start()
+
+    def _search(self):
+        if not self.query.strip():
+            return
+        self.searching = False
+        self.loading = True
+        self.error = None
+
+        def _do():
+            try:
+                r = subprocess.run(
+                    ["stylus-spotify", "search", self.query.strip()],
+                    capture_output=True, text=True, timeout=20
+                )
+                out = r.stdout.strip()
+                if not out:
+                    self.error = r.stderr.strip() or "resposta vazia"
+                    return
+                data = json.loads(out)
+                if "error" in data:
+                    self.error = data["error"]
+                    return
+                self.results = data.get("tracks", [])
+                self.sel = 0
+                self.scroll = 0.0
+                self.target = 0.0
+            except subprocess.TimeoutExpired:
+                self.error = "busca demorou demais"
+            except json.JSONDecodeError as e:
+                self.error = f"resposta inválida: {e}"
+            except Exception as e:
+                self.error = str(e)
+            finally:
+                self.loading = False
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _play(self, item):
+        uri = item.get("uri", "")
+        if not uri:
+            self.app.toast("sem URI para tocar")
+            return
+        try:
+            subprocess.run(["playerctl", "-p", "spotifyd", "open", uri],
+                           timeout=5)
+            self.app.toast(f"tocando: {item.get('name', '?')}")
+            self._refresh_now_playing()
+        except Exception as e:
+            self.app.toast(f"erro: {e}", kind="erro")
+
+    def _toggle_play(self):
+        try:
+            subprocess.run(["playerctl", "-p", "spotifyd", "play-pause"],
+                           timeout=3)
+            self._refresh_now_playing()
+        except Exception:
+            pass
+
+    def _next(self):
+        try:
+            subprocess.run(["playerctl", "-p", "spotifyd", "next"], timeout=3)
+            time.sleep(0.3)
+            self._refresh_now_playing()
+        except Exception:
+            pass
+
+    def _prev(self):
+        try:
+            subprocess.run(["playerctl", "-p", "spotifyd", "previous"],
+                           timeout=3)
+            time.sleep(0.3)
+            self._refresh_now_playing()
+        except Exception:
+            pass
+
+    def key(self, ev):
+        if self.searching:
+            if ev.key == pygame.K_ESCAPE:
+                self.searching, self.query = False, ""
+            elif ev.key == pygame.K_RETURN:
+                self._search()
+            elif ev.key == pygame.K_BACKSPACE:
+                self.query = self.query[:-1]
+            elif ev.unicode and ev.unicode.isprintable():
+                self.query += ev.unicode
+            self.sel = 0
+            return True
+
+        n = len(self.results)
+        if ev.key == pygame.K_SLASH:
+            self.searching, self.query = True, ""
+        elif ev.key in (pygame.K_DOWN, pygame.K_j):
+            if n:
+                self.sel = (self.sel + 1) % n
+        elif ev.key in (pygame.K_UP, pygame.K_k):
+            if n:
+                self.sel = (self.sel - 1) % n
+        elif ev.key in (pygame.K_RIGHT, pygame.K_l):
+            if n:
+                self.sel = min(n - 1, self.sel + self.COLS)
+        elif ev.key in (pygame.K_LEFT, pygame.K_h):
+            if n:
+                self.sel = max(0, self.sel - self.COLS)
+        elif ev.key == pygame.K_PAGEDOWN:
+            if n:
+                self.sel = min(n - 1, self.sel + self.COLS * 3)
+        elif ev.key == pygame.K_PAGEUP:
+            if n:
+                self.sel = max(0, self.sel - self.COLS * 3)
+        elif ev.key == pygame.K_HOME:
+            self.sel = 0
+        elif ev.key == pygame.K_END:
+            self.sel = max(0, n - 1)
+        elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if n:
+                self._play(self.results[self.sel])
+        elif ev.key == pygame.K_SPACE:
+            self._toggle_play()
+        elif ev.key == pygame.K_n:
+            self._next()
+        elif ev.key == pygame.K_p:
+            self._prev()
+        elif ev.key == pygame.K_r:
+            self._check_daemon_threaded()
+            self._refresh_now_playing()
+            if self.query:
+                self._search()
+        else:
+            return False
+        return True
+
+    def _draw_track(self, s, rect, item, sel):
+        if sel:
+            T.panel(s, rect, T.INK_LIFT, radius=10, border=T.LINE)
+        else:
+            T.panel(s, rect, T.INK_SOFT, radius=10, border=T.LINE)
+
+        T.text(s, "󰓇", (rect.centerx, rect.centery - 4), 38,
+               T.AMBER if sel else T.TEXT_FAINT, anchor="center")
+
+        ty = rect.bottom + 8
+        name = item.get("name", "?")
+        artist = item.get("artist", "?")
+        album = item.get("album", "")
+        duration = item.get("duration", "")
+
+        T.text(s, name, (rect.x, ty), 15,
+               T.TEXT if sel else T.TEXT_DIM, maxw=rect.w)
+        T.text(s, artist, (rect.x, ty + 20), 13, T.TEXT_FAINT, maxw=rect.w)
+        if album:
+            T.text(s, album, (rect.x, ty + 36), 12, T.TEXT_FAINT, maxw=rect.w)
+        if duration:
+            T.text(s, duration, (rect.right - 4, ty + 36), 12,
+                   T.TEXT_FAINT, anchor="topright")
+
+    def draw(self, s, r):
+        pad, gap = 30, 14
+        head = 58
+        self.COLS = max(3, min(8, r.w // 200))
+
+        status = "pronto" if self._daemon_ok else "spotifyd não encontrado"
+        T.text(s, "spotify", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
+        T.text(s, status, (r.right - pad, r.y + 24), 15,
+               T.GREEN if self._daemon_ok else T.TEXT_FAINT, anchor="topright")
+
+        # now playing bar
+        if time.time() - self._np_t > 5.0:
+            self._refresh_now_playing()
+        np = self._now_playing
+        if np:
+            np_rect = pygame.Rect(r.x + pad, r.y + 50, r.w - pad * 2, 52)
+            T.panel(s, np_rect, T.INK_LIFT, radius=10, border=T.LINE)
+            T.text(s, "󰓇", (np_rect.x + 14, np_rect.y + 14), 24, T.AMBER)
+            T.text(s, f"{np['artist']} — {np['title']}",
+                   (np_rect.x + 46, np_rect.y + 10), 17, T.TEXT,
+                   maxw=np_rect.w - 60)
+            T.text(s, np['album'], (np_rect.x + 46, np_rect.y + 32), 13,
+                   T.TEXT_FAINT, maxw=np_rect.w - 60)
+            pos = np.get('position', '0')
+            dur = np.get('duration', '?')
+            T.text(s, f"{pos}/{dur}", (np_rect.right - 14, np_rect.y + 18),
+                   13, T.TEXT_FAINT, anchor="topright")
+            head = 116
+
+        if self.searching or self.query:
+            T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
+                   (r.x + pad, r.y + head + 4), 24, T.AMBER)
+
+        if self.loading:
+            T.text(s, "buscando…", (r.centerx, r.centery), 22,
+                   T.AMBER, anchor="center")
+            return
+
+        if self.error:
+            T.text(s, self.error, (r.centerx, r.centery - 20), 20,
+                   T.RED, anchor="center")
+            T.text(s, "/ procura de novo", (r.centerx, r.centery + 15),
+                   17, T.TEXT_FAINT, anchor="center")
+            return
+
+        if not self.results and self.query:
+            T.text(s, f'nenhuma faixa com "{self.query}"',
+                   (r.centerx, r.centery), 22, T.TEXT_DIM, anchor="center")
+            T.text(s, "/ procura de novo",
+                   (r.centerx, r.centery + 30), 17, T.TEXT_FAINT, anchor="center")
+            return
+        if not self.results and not self.query:
+            T.text(s, "/ procura  ·  space pausa  ·  n/p próximo/anterior",
+                   (r.centerx, r.centery), 20, T.TEXT_FAINT, anchor="center")
+            return
+
+        cw = (r.w - pad * 2 - gap * (self.COLS - 1)) // self.COLS
+        ch = cw + 58
+        view_h = r.h - head - 96
+        rows_vis = max(1, view_h // ch)
+
+        row = self.sel // self.COLS
+        if row * ch < self.target:
+            self.target = row * ch
+        elif (row + 1) * ch > self.target + rows_vis * ch:
+            self.target = (row + 1 - rows_vis) * ch
+        self.target = max(0, min(self.target,
+                                 max(0, (len(self.results) + self.COLS - 1)
+                                     // self.COLS - rows_vis) * ch))
+        dt = self.app.clock.get_time() / 1000.0
+        alpha = 1.0 - pow(2.718281828, -dt * 12.0) if dt > 0 else 0.28
+        self.scroll += (self.target - self.scroll) * alpha
+
+        clip = pygame.Rect(r.x, r.y + head, r.w, view_h)
+        old = s.get_clip()
+        s.set_clip(clip)
+        for i, item in enumerate(self.results):
+            cx = r.x + pad + (i % self.COLS) * (cw + gap)
+            cy = r.y + head + (i // self.COLS) * ch - int(self.scroll)
+            if cy > clip.bottom or cy + ch < clip.top:
+                continue
+            self._draw_track(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
+        s.set_clip(old)
+
+        n_found = len(self.results)
+        T.text(s, f"{n_found} faixas", (r.right - pad, r.y + 20), 16,
+               T.TEXT_FAINT, anchor="topright")
+
+        if self.results:
+            item = self.results[self.sel]
+            hint = (f"{item.get('artist', '')} — "
+                    f"{item.get('name', '')}   ·   "
+                    f"/ procura   enter toca   space pausa")
+            self.app.hint(s, r, hint)
+
+        if self.job:
+            self.app.job_panel(s, pygame.Rect(r.right - 380, r.y + head + 8,
+                                              360, 160), self.job)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1946,7 +2261,7 @@ class GamesScreen(Screen):
                    T.TEXT if tem else T.TEXT_FAINT, bold=sel, anchor="center")
             # kind badge
             kind_icons = {"keyboard": "󰌌", "mouse": "󰍽", "controller": "󰣌"}
-            kind_colors = {"keyboard": T.CYAN, "mouse": T.LAV, "controller": T.AMBER}
+            kind_colors = {"keyboard": T.BLUE, "mouse": T.LAV, "controller": T.AMBER}
             ki = kind_icons.get(kind, "")
             kc = kind_colors.get(kind, T.TEXT_DIM)
             if ki:
@@ -2396,8 +2711,8 @@ class App:
 
         self.screens = [NowScreen(self), ShelfScreen(self), StackScreen(self),
                         DiaryScreen(self), SignalScreen(self), PhoneScreen(self),
-                        ToolsScreen(self), QobuzScreen(self), GamesScreen(self),
-                        SettingsScreen(self)]
+                        ToolsScreen(self), QobuzScreen(self), SpotifyScreen(self),
+                        GamesScreen(self), SettingsScreen(self)]
         self.cur = 1                      # abre na ESTANTE, que é o assunto
         # No pendrive, INSTALAR vem primeiro e é onde a interface abre. A
         # estante de um medium ao vivo está vazia — abrir nela é a pior
@@ -2712,14 +3027,18 @@ class App:
         _save_prefs({"auto_deck": self.auto_deck,
                      "shuffle": self.shuffle, "repeat": self.repeat})
 
-    @staticmethod
     _volume_cache = (0, 0)
+    _volume_counter = 0
 
     @classmethod
     def volume_pct(cls):
-        """Volume atual (0-100). Throttled: 1 consulta/frame no máximo."""
-        cls._audio_level_counter += 1
-        if cls._audio_level_counter % 5 != 0:
+        """Volume atual (0-100). Throttled: 1 consulta a cada 5 chamadas.
+
+        Contador próprio: compartilhar o do audio_level fazia as duas
+        consultas caírem em frames alternados e o volume só atualizar
+        de dez em dez."""
+        cls._volume_counter += 1
+        if cls._volume_counter % 5 != 0:
             return cls._volume_cache[0]
         try:
             r = subprocess.run(["pamixer", "--get-volume"],

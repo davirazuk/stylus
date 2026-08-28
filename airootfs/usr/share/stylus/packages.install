@@ -101,6 +101,7 @@ qpwgraph
 pavucontrol
 pamixer
 playerctl
+spotifyd
 
 # ── bluetooth, with the codecs that are not embarrassing ───────────────────
 bluez

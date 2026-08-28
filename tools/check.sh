@@ -191,6 +191,9 @@ sec "nada de IFOS sobrando"
 # `s` e `i`. Uma conferência que sempre passa é pior do que nenhuma.
 resto=$(grep -rIlE --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
         --exclude-dir=.pkgcache --exclude-dir=.claude --exclude=check.sh \
+        --exclude-dir=__pycache__ --exclude-dir=build --exclude-dir=.gradle \
+        --exclude-dir=node_modules --exclude='.aider*' \
+        --exclude=local.properties \
         --exclude=README.md --exclude=CLAUDE.md \
         -e 'IFOS' -e 'ifos-' -e '\bifos\b' . 2>/dev/null || true)
 if [[ -z $resto ]]; then ok "o repositório é só do STYLUS"
@@ -364,6 +367,9 @@ sec "nenhuma casa de ninguém escrita à mão"
 # a casa de uma pessoa que não vai existir no computador de quem usar isto.
 casas=$(grep -rIn --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
         --exclude-dir=.pkgcache --exclude-dir=__pycache__ --exclude=check.sh \
+        --exclude-dir=.claude --exclude-dir=build --exclude-dir=.gradle \
+        --exclude-dir=node_modules --exclude='.aider*' \
+        --exclude=local.properties \
         --exclude=_raiz.py --exclude=CLAUDE.md --exclude=README.md \
         -oE '/home/[a-z_][a-z0-9_-]*/' . 2>/dev/null |
         grep -v ':/home/stylus/$' || true)
@@ -375,7 +381,7 @@ sec "arquivos que a área de trabalho aponta"
 # keybindings.txt (o Mod+F1) e o papel de parede eram caminhos que não existiam:
 # o feh apontava para backgrounds/stylus.png quando o arquivo é
 # backgrounds/stylus/stylus.png, então a sessão subia com o fundo cinza do X.
-mapfile -t SKELF < <(find airootfs/etc/skel -type f; echo airootfs/usr/share/stylus/i3-music.config)
+mapfile -t SKELF < <(find airootfs/etc/skel -name __pycache__ -prune -o -type f -print; echo airootfs/usr/share/stylus/i3-music.config)
 # O til numa variavel: escrito direto entre aspas ele e so um caractere
 # de busca, mas o shellcheck avisa (com razao, em geral) que til entre
 # aspas nao expande. Aqui ele NAO deve expandir mesmo - o que se procura
@@ -412,7 +418,7 @@ while read -r caminho; do
         /usr/share/stylus/deck/venv/*|/usr/share/stylus/lock/stylus-) continue ;;
     esac
     [[ -e airootfs$caminho ]] || faltando+=("$caminho")
-done < <(grep -ohE '/usr/share/stylus/[A-Za-z0-9_./-]+' \
+done < <(grep -ohE -d skip '/usr/share/stylus/[A-Za-z0-9_./-]+' \
               airootfs/usr/local/bin/* | sort -u)
 if (( ${#faltando[@]} == 0 )); then ok "todo /usr/share/stylus que os comandos chamam existe"
 else bad "um comando chama o que não existe:"; printf '      %s\n' "${faltando[@]}"; fi
@@ -501,7 +507,7 @@ sec "as ferramentas que uma ferramenta chama"
 faltando=()
 while read -r py; do
     [[ -f airootfs/usr/share/stylus/tools/$py ]] || faltando+=("$py")
-done < <({ grep -ohE '\$TOOLS/[a-z_]+\.py' airootfs/usr/local/bin/* \
+done < <({ grep -ohE -d skip '\$TOOLS/[a-z_]+\.py' airootfs/usr/local/bin/* \
              | sed 's|\$TOOLS/||'
            # Só o que é invocado como programa: [sys.executable, "x.py", ...].
            grep -ohE '\[sys\.executable, "[a-z_]+\.py"' \
@@ -517,14 +523,14 @@ sec "os lançadores do menu"
 # Um .desktop com Exec para um comando que não existe some do menu sem erro
 # nenhum — o rofi simplesmente não o lista, e não há onde ler o porquê.
 faltando=()
-for d in airootfs/usr/share/applications/*.desktop; do
-    [[ -e $d ]] || continue
-    linha=$(grep -m1 '^Exec=' "$d") || { faltando+=("$(basename "$d"): sem Exec="); continue; }
+for lanc in airootfs/usr/share/applications/*.desktop; do
+    [[ -e $lanc ]] || continue
+    linha=$(grep -m1 '^Exec=' "$lanc") || { faltando+=("$(basename "$lanc"): sem Exec="); continue; }
     # O primeiro campo é o programa; o resto são argumentos e pode ser
     # qualquer coisa (inclusive aspas, que é o caso do stylus-term).
     prog=${linha#Exec=}; prog=${prog%% *}
     [[ -x airootfs/usr/local/bin/$prog ]] || command -v "$prog" >/dev/null \
-        || faltando+=("$(basename "$d") -> $prog")
+        || faltando+=("$(basename "$lanc") -> $prog")
 done
 if (( ${#faltando[@]} == 0 )); then
     ok "todo .desktop do menu abre um comando que existe"

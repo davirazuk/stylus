@@ -40,6 +40,10 @@ SYSTEM_PATHS=(
     usr/share/xsessions
     usr/share/applications
     usr/share/backgrounds/stylus
+    usr/share/color-schemes
+    usr/share/Kvantum
+    usr/share/qt5ct
+    usr/share/qt6ct
     etc/pipewire
     etc/wireplumber
     etc/udev/rules.d
@@ -54,6 +58,15 @@ for p in "${SYSTEM_PATHS[@]}"; do
     mkdir -p "$DST/$(dirname "$p")"
     cp -a --no-preserve=ownership "$SRC/$p" "$DST/$(dirname "$p")/" || warn "falhou: $p"
 done
+# Mesma razão do build.sh: o __pycache__ que nasce quando alguém roda um teste
+# no clone não é do sistema, e vinha junto no cp -a acima.
+# O venv fica de fora: o __pycache__ dele é do próprio ambiente, foi feito na
+# versão certa do interpretador, e apagá-lo só faria o deck compilar tudo de
+# novo na primeira vez que alguém baixa a agulha.
+find "$DST/usr/share/stylus" "$DST/usr/local/bin" \
+     -path "$DST/usr/share/stylus/deck/venv" -prune -o \
+     -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
 # O venv do deck vive dentro de /usr/share/stylus/deck e NÃO está no
 # repositório. Copiar a pasta por cima apagaria ele; por isso o cp acima é de
 # diretório inteiro mas o venv é recriado logo abaixo se sumiu.

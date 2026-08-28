@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  stylus-spotify — busca e controle do Spotify via spotifyd + spotipy
+# ═══════════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+SHARE=/usr/share/stylus
+PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+
+usage() {
+cat <<'EOF'
+  stylus-spotify search QUERY    busca faixas (saída JSON)
+  stylus-spotify play URI        toca uma faixa (spotify:track:...)
+  stylus-spotify pause           pausa
+  stylus-spotify next            próxima faixa
+  stylus-spotify prev            faixa anterior
+  stylus-spotify status          agora tocando (saída JSON)
+  stylus-spotify daemon          verifica se spotifyd está rodando
+EOF
+}
+
+cmd=${1:-}
+[[ -n $cmd ]] && shift || true
+
+case "$cmd" in
+    search|buscar)
+        query="$*"
+        [[ -z $query ]] && { echo '{"error":"faltou a busca"}' >&2; exit 1; }
+        $PY - "$query" <<'PYEOF'
+import sys, json, subprocess
+
+def search_spotify(query):
+    """Busca via spotifyd D-Bus (MPRIS) — não precisa de credenciais."""
+    import dbus
+    bus = dbus.SessionBus()
+    # Procura spotifyd ou spotify no bus
+    for name in bus.list_names():
+        if "spotify" in name.lower():
+            player = bus.get_object(name, "/org/mpris/MediaPlayer2")
+            # OpenUri não busca; precisamos do spotipy para busca
+            break
+    # Fallback: spotipy com client credentials
+    try:
+        import spotipy
+        from spotipy.oauth2 import SpotifyClientCredentials
+        sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+            client_id="d8a5ed958d274c2e8ee717e6a4b0971d",
+            client_secret=""
+        ))
+        results = sp.search(q=query, type="track", limit=20)
+        tracks = []
+        for t in results.get("tracks", {}).get("items", []):
+            artists = ", ".join(a["name"] for a in t.get("artists", []))
+            album = t.get("album", {}).get("name", "")
+            duration_ms = t.get("duration_ms", 0)
+            dur = f"{duration_ms // 60000}:{(duration_ms % 60000) // 1000:02d}"
+            tracks.append({
+                "name": t.get("name", ""),
+                "artist": artists,
+                "album": album,
+                "uri": t.get("uri", ""),
+                "duration": dur,
+            })
+        return {"tracks": tracks}
+    except ImportError:
+        return {"error": "spotipy não instalado — pip install spotipy"}
+    except Exception as e:
+        return {"error": str(e)}
+
+query = sys.argv[1] if len(sys.argv) > 1 else ""
+if not query:
+    print(json.dumps({"error": "busca vazia"}))
+    sys.exit(1)
+print(json.dumps(search_spotify(query), ensure_ascii=False))
+PYEOF
+        ;;
+    play|tocar)
+        uri="${1:-}"
+        [[ -z $uri ]] && { echo '{"error":"faltou URI"}' >&2; exit 1; }
+        playerctl -p spotifyd open "$uri" 2>/dev/null
+        ;;
+    pause|pausar)
+        playerctl -p spotifyd play-pause 2>/dev/null
+        ;;
+    next|proxima)
+        playerctl -p spotifyd next 2>/dev/null
+        ;;
+    prev|anterior)
+        playerctl -p spotifyd previous 2>/dev/null
+        ;;
+    status|tocando)
+        playerctl -p spotifyd metadata \
+            --format '{"title":"{{title}}","artist":"{{artist}}","album":"{{album}}","status":"{{status}}","position":"{{position(m)}}","duration":"{{duration(m)}}"}' \
+            2>/dev/null || echo '{"status":"stopped"}'
+        ;;
+    daemon)
+        playerctl -p spotifyd status >/dev/null 2>&1 && echo "ok" || echo "down"
+        ;;
+    -h|--help|help) usage ;;
+    *) echo "stylus-spotify: \"$cmd\" não existe" >&2; usage >&2; exit 1 ;;
+esac

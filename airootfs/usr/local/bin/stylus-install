@@ -1090,13 +1090,15 @@ if [ "${STYLUS_NVIDIA:-0}" = 1 ] && [ -x /usr/local/bin/stylus-gpu ]; then
                      nvidia-resume.service 2>/dev/null || true
 fi
 
-mkinitcpio -P
+mkinitcpio -P || echo "  ! mkinitcpio: alguns avisos (geralmente inofensivo)"
 
 # optical, because `stylus rip` reads the CD drive directly and cdparanoia
 # needs the device, not a mount. rfkill, because the wifi key on a laptop is a
 # kill switch and toggling it without the group silently does nothing. uucp,
 # for USB DACs that present as serial devices.
 useradd -m -G wheel,audio,video,input,storage,optical,network,rfkill,uucp,lp \
+        -s /usr/bin/fish "${STYLUS_USERNAME}" 2>/dev/null ||
+    useradd -m -G wheel,audio,video,input,storage,network \
         -s /usr/bin/fish "${STYLUS_USERNAME}"
 
 # GameMode can only lower a game's nice value for users in its own group, and
@@ -1128,7 +1130,11 @@ chmod 440 /etc/sudoers.d/10-wheel
 # de pacotes e o `systemctl enable cups.socket` ficou. Por isso agora há duas
 # listas e uma função.
 essenciais() {          # sem estes não há máquina utilizável
-    systemctl enable "$@"
+    local s
+    for s in "$@"; do
+        systemctl enable "$s" 2>/dev/null ||
+            printf '  ! %s não pôde ser ligado\n' "$s"
+    done
 }
 opcionais() {           # a falta de um não justifica perder a instalação
     local u
@@ -1168,9 +1174,11 @@ ufw default allow outgoing || true
 ufw --force enable         || true
 
 if [ -d /sys/firmware/efi/efivars ]; then
-    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=STYLUS
+    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=STYLUS || \
+        echo "  ! grub-install (UEFI) encontrou problemas"
 else
-    grub-install --target=i386-pc "${STYLUS_DISK}"
+    grub-install --target=i386-pc "${STYLUS_DISK}" || \
+        echo "  ! grub-install (BIOS) encontrou problemas"
 fi
 sed -i 's/^#\?GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/' /etc/default/grub
 grep -q '^GRUB_DISABLE_OS_PROBER' /etc/default/grub || echo 'GRUB_DISABLE_OS_PROBER=false' >> /etc/default/grub
@@ -1233,7 +1241,7 @@ CUSTOM
     chmod +x /etc/grub.d/40_custom
 fi
 
-grub-mkconfig -o /boot/grub/grub.cfg
+grub-mkconfig -o /boot/grub/grub.cfg || echo "  ! grub-mkconfig encontrou problemas"
 
 # The deck's Python environment. PyOpenGL is not in the Arch repositories under
 # this or any other name, so the deck runs out of a venv - the ISO builds one
@@ -1263,64 +1271,141 @@ echo music > "/home/${STYLUS_USERNAME}/.config/stylus/mode"
 # answer, and seeding it is what makes the FIRST login land in music mode.
 # When KDE is installed, plasma.desktop becomes the default session.
 install -d -m 0755 /var/lib/sddm
+# Qual sessão o SDDM oferece primeiro. Começa na do STYLUS e só muda se o
+# KDE realmente chegou ao disco — escolher KDE numa máquina onde o
+# plasma-workspace não instalou escrevia um state.conf apontando para um
+# binário inexistente, e o greeter abria numa sessão que morre na hora.
+# Cair para a sessão de música é feio; abrir no nada não tem conserto sem
+# outro computador.
+SESSION_FILE="/usr/share/xsessions/stylus.desktop"
+
 if [ "${STYLUS_DESKTOP:-i3}" = "kde" ]; then
-    # KDE: ensure plasma.desktop exists (plasma-desktop provides it, but guard)
-    if [ ! -f /usr/share/xsessions/plasma.desktop ]; then
+    # O nome do arquivo de sessão mudou no Plasma 6: o X11 virou
+    # `plasmax11.desktop` e `plasma.desktop` passou a ser o do Wayland. Fixar
+    # um dos dois no código dá certo em metade das versões, então procura.
+    for _cand in plasmax11 plasma-x11 plasma; do
+        if [ -f "/usr/share/xsessions/${_cand}.desktop" ]; then
+            SESSION_FILE="/usr/share/xsessions/${_cand}.desktop"
+            break
+        fi
+    done
+
+    # Nenhum arquivo de sessão, mas o binário está lá: alguma versão do
+    # plasma-workspace não instalou o .desktop do X11. Escreve um.
+    if [ "$SESSION_FILE" = "/usr/share/xsessions/stylus.desktop" ] \
+       && [ -x /usr/bin/startplasma-x11 ]; then
         mkdir -p /usr/share/xsessions
         cat > /usr/share/xsessions/plasma.desktop <<'PLASMA'
 [Desktop Entry]
+Type=Application
 Name=Plasma
 Comment=KDE Plasma Desktop
 Exec=/usr/bin/startplasma-x11
-Type=Application
+TryExec=/usr/bin/startplasma-x11
 DesktopNames=KDE
 PLASMA
+        SESSION_FILE="/usr/share/xsessions/plasma.desktop"
     fi
-    SESSION_FILE="/usr/share/xsessions/plasma.desktop"
 
-    # KDE-specific user config: Breeze Dark, GTK theme, konsole profile, Kvantum
-    KDE_CONF="/home/${STYLUS_USERNAME}/.config"
-    mkdir -p "$KDE_CONF/plasmarc" "$KDE_CONF/gtk-3.0" "$KDE_CONF/gtk-4.0" \
-             "$KDE_CONF/konsole" "$KDE_CONF/autostart" "$KDE_CONF/Kvantum"
+    if [ "$SESSION_FILE" = "/usr/share/xsessions/stylus.desktop" ]; then
+        echo "  ! KDE foi escolhido mas o Plasma não está instalado —"
+        echo "    a sessão padrão continua sendo a do STYLUS."
+    fi
 
-    cat > "$KDE_CONF/plasmarc" <<'EOF'
+    # ── Aparência do KDE ────────────────────────────────────────────────────
+    # Tudo daqui para baixo é ENFEITE. Roda num subshell com `set +e` de
+    # propósito: foi exatamente aqui que a instalação morreu no meio do
+    # chroot, com o disco já formatado e antes do grub-install — ou seja,
+    # máquina que não liga, por causa de um tema.
+    #
+    # O erro era este: o `mkdir -p` abaixo criava `plasmarc` como PASTA, e a
+    # linha seguinte fazia `cat > .../plasmarc`. "É um diretório", `set -e`,
+    # fim da instalação. Se você mexer aqui, lembre que nenhuma linha desta
+    # seção vale uma máquina que não liga.
+    (
+        set +e
+        KDE_CONF="/home/${STYLUS_USERNAME}/.config"
+        KDE_DATA="/home/${STYLUS_USERNAME}/.local/share"
+        mkdir -p "$KDE_CONF/gtk-3.0" "$KDE_CONF/gtk-4.0" \
+                 "$KDE_CONF/autostart" "$KDE_CONF/Kvantum" \
+                 "$KDE_DATA/konsole" "$KDE_DATA/color-schemes"
+
+        # plasmarc é ARQUIVO. Nunca passe este caminho para o mkdir acima.
+        cat > "$KDE_CONF/plasmarc" <<'EOF'
 [Theme]
-name=Breeze Dark
+name=breeze-dark
 EOF
 
-    # Kvantum Stylus theme
-    cat > "$KDE_CONF/Kvantum/kvantum.kvconfig" <<'EOF'
+        # O que de fato deixa os aplicativos do KDE escuros. O plasmarc
+        # acima só troca o tema da barra e dos widgets do Plasma; sem o
+        # kdeglobals o Dolphin, o Kate e o Konsole abrem em Breeze CLARO
+        # numa máquina cujo resto é preto.
+        cat > "$KDE_CONF/kdeglobals" <<'EOF'
+[General]
+ColorScheme=StylusDark
+Name=STYLUS Dark
+AccentColor=240,160,48
+XftAntialias=true
+XftHintStyle=hintslight
+XftSubPixel=rgb
+
+[KDE]
+LookAndFeelPackage=org.kde.breezedark.desktop
+SingleClick=false
+widgetStyle=kvantum
+AnimationDurationFactor=0.5
+
+[Icons]
+Theme=Papirus-Dark
+
+[UiSettings]
+ColorScheme=StylusDark
+EOF
+        # A paleta em si vem do repositório (usr/share/color-schemes). Uma
+        # cópia na casa do usuário para o seletor de cores do KDE listar.
+        if [ -f /usr/share/color-schemes/StylusDark.colors ]; then
+            cp -f /usr/share/color-schemes/StylusDark.colors \
+                  "$KDE_DATA/color-schemes/StylusDark.colors"
+        fi
+
+        cat > "$KDE_CONF/Kvantum/kvantum.kvconfig" <<'EOF'
 [General]
 theme=Stylus
 EOF
 
-    cat > "$KDE_CONF/gtk-3.0/settings.ini" <<'EOF'
+        cat > "$KDE_CONF/gtk-3.0/settings.ini" <<'EOF'
 [Settings]
 gtk-theme-name=adw-gtk3-dark
 gtk-icon-theme-name=Papirus-Dark
 gtk-cursor-theme-name=Adwaita
 gtk-font-name=Noto Sans 11
+gtk-application-prefer-dark-theme=1
 EOF
-    cp "$KDE_CONF/gtk-3.0/settings.ini" "$KDE_CONF/gtk-4.0/settings.ini"
+        cp -f "$KDE_CONF/gtk-3.0/settings.ini" "$KDE_CONF/gtk-4.0/settings.ini"
 
-    for ver in qt5ct qt6ct; do
-        mkdir -p "$KDE_CONF/$ver"
-        cat > "$KDE_CONF/$ver/$ver.conf" <<EOF
+        for ver in qt5ct qt6ct; do
+            mkdir -p "$KDE_CONF/$ver"
+            cat > "$KDE_CONF/$ver/$ver.conf" <<EOF
 [Appearance]
 custom_palette=true
 color_scheme_path=/usr/share/$ver/colors/stylus.conf
 icon_theme=Papirus-Dark
-style=Fusion
+style=kvantum
 
 [Fonts]
 general=@Variant(\0\0\0@\0\0\0\x12Noto Sans\0\0\0\n\0\0\0\0\x28\x7f\0\0\x14)
 EOF
-    done
+        done
 
-    cat > "$KDE_CONF/konsole/Stylus.profile" <<'EOF'
+        # O Konsole lê perfil e esquema de cor de ~/.local/share/konsole,
+        # não de ~/.config. Escrito no lugar errado, o perfil existia e
+        # nunca era encontrado — terminal branco no meio do sistema preto.
+        cat > "$KDE_DATA/konsole/Stylus.profile" <<'EOF'
 [General]
 Name=Stylus
 Parent=FALLBACK/
+TerminalColumns=110
+TerminalRows=32
 
 [Appearance]
 ColorScheme=Stylus
@@ -1329,39 +1414,97 @@ UseCustomFont=true
 
 [Scrolling]
 HistoryMode=2
+
+[Cursor Options]
+CursorShape=0
+UseCustomCursorColor=true
+CustomCursorColor=240,160,48
 EOF
 
-    cat > "$KDE_CONF/konsole/Stylus.colorscheme" <<'EOF'
+        cat > "$KDE_DATA/konsole/Stylus.colorscheme" <<'EOF'
 [Background]
 Color=7,8,11
+[BackgroundIntense]
+Color=16,18,25
 [Foreground]
+Color=232,236,245
+[ForegroundIntense]
+Color=255,255,255
+[Color0]
+Color=7,8,11
+[Color0Intense]
+Color=52,58,72
+[Color1]
+Color=238,122,130
+[Color1Intense]
+Color=255,150,158
+[Color2]
+Color=126,217,158
+[Color2Intense]
+Color=150,240,182
+[Color3]
+Color=240,160,48
+[Color3Intense]
+Color=255,200,80
+[Color4]
+Color=91,206,250
+[Color4Intense]
+Color=130,220,255
+[Color5]
+Color=183,160,255
+[Color5Intense]
+Color=205,185,255
+[Color6]
+Color=126,200,217
+[Color6Intense]
+Color=150,225,240
+[Color7]
 Color=204,208,224
+[Color7Intense]
+Color=255,255,255
 [General]
 Description=Stylus Dark
 Opacity=0.95
 Blur=true
 EOF
 
-    cat > "$KDE_CONF/autostart/stylus-kde.desktop" <<'EOF'
+        # Sem isto o perfil existe e o Konsole abre no Breeze de sempre.
+        cat > "$KDE_CONF/konsolerc" <<'EOF'
+[Desktop Entry]
+DefaultProfile=Stylus.profile
+
+[MainWindow]
+MenuBar=Disabled
+ToolBarsMovable=Disabled
+EOF
+
+        cat > "$KDE_CONF/autostart/stylus-kde.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Stylus KDE
 Exec=/usr/local/bin/stylus-kde-shortcuts
 Hidden=false
 NoDisplay=true
-X-KDE-autostart-after-desktop=true
+X-KDE-autostart-after=panel
 OnlyShowIn=KDE;
 EOF
 
-    # Sudoers: let stylus-mode toggle between KDE and i3 without password
-    cat > /etc/sudoers.d/stylus-mode <<SUDOERS
-${STYLUS_USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session plasma.desktop, /usr/local/bin/stylus-set-session stylus.desktop
+        # Deixa o stylus-mode alternar entre KDE e i3 sem pedir senha.
+        cat > /etc/sudoers.d/stylus-mode <<SUDOERS
+${STYLUS_USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/stylus-set-session ${SESSION_FILE##*/}, /usr/local/bin/stylus-set-session stylus.desktop
 SUDOERS
-    chmod 0440 /etc/sudoers.d/stylus-mode
-
-    ok "KDE Plasma configurado como sessão padrão"
-else
-    SESSION_FILE="/usr/share/xsessions/stylus.desktop"
+        chmod 0440 /etc/sudoers.d/stylus-mode
+        # Um sudoers com erro de sintaxe tranca o sudo da máquina inteira.
+        if command -v visudo >/dev/null 2>&1; then
+            visudo -cf /etc/sudoers.d/stylus-mode >/dev/null 2>&1 ||
+                rm -f /etc/sudoers.d/stylus-mode
+        fi
+    )
+    if [ "$SESSION_FILE" = "/usr/share/xsessions/stylus.desktop" ]; then
+        echo "  ✓ aparência do KDE preparada (o Plasma pode ser instalado depois)"
+    else
+        echo "  ✓ KDE Plasma configurado (sessão: ${SESSION_FILE##*/})"
+    fi
 fi
 
 cat > /var/lib/sddm/state.conf <<SDDMSTATE

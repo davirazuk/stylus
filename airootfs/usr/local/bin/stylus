@@ -85,8 +85,18 @@ cmd=${1:-}
 [[ -n $cmd ]] && shift || true
 
 case "$cmd" in
-    ""|now)      exec "$PY" "$TOOLS/now.py" "$@" ;;
-    ui|big)      exec stylus-ui "$@" ;;
+    ""|now)
+        # No modo música, `stylus` sozinho abre a tela cheia — é o lançador.
+        # Se ela JÁ está aberta (o caso normal: o i3 a abriu no login), o
+        # stylus-ui devolve 76 e aqui cai no texto do que está tocando, que
+        # é o que alguém num terminal ou por ssh queria de verdade.
+        if [[ "${STYLUS_MODE:-}" == "music" ]] ||
+           [[ "$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/stylus/mode" 2>/dev/null)" == "music" ]]; then
+            stylus-ui "$@"; rc=$?
+            (( rc == 76 )) || exit $rc
+        fi
+        exec "$PY" "$TOOLS/now.py" "$@" ;;
+    ui|big|launch|abrir) exec stylus-ui "$@" ;;
     deck)        exec stylus-deck "$@" ;;
     play)        exec stylus-deck --no-scope "$@" ;;
     scope)       exec "$PY" "$DECK/scope.py" "$@" ;;

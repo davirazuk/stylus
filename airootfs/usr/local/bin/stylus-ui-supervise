@@ -8,10 +8,70 @@
 # Reinício em cascata (1s, 2s, 4s… até 30s) para que um defeito que impeça a
 # abertura não vire um laço quente consumindo a bateria.
 set -uo pipefail
+
+LOGDIR="${XDG_DATA_HOME:-$HOME/.local/share}/stylus"
+mkdir -p "$LOGDIR" 2>/dev/null
+LOG="$LOGDIR/ui-supervise.log"
+
+# O registro é a única testemunha de uma tela preta: sem ele o sintoma é
+# "não abriu" e não há o que ler. Mas ele também não pode crescer para
+# sempre numa máquina que fica ligada tocando disco o dia inteiro.
+if [[ -f $LOG ]] && (( $(stat -c %s "$LOG" 2>/dev/null || echo 0) > 262144 )); then
+    tail -n 500 "$LOG" > "$LOG.novo" 2>/dev/null && mv -f "$LOG.novo" "$LOG"
+fi
+
+log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG" 2>/dev/null; }
+
+log "--- supervisor iniciado (PID $$, DISPLAY=${DISPLAY:-<vazio>})"
+
+# Espera o X responder. O exec_always do i3 dispara junto com a sessão, e o
+# pygame morre sem dizer nada se o servidor ainda não subiu.
+#
+# A conferência usa xset, que está nas duas listas de pacote, e cai para o
+# soquete do X quando nem ele existe. Não use xdpyinfo: ele não está em
+# lista de pacote nenhuma, e a versão que o usava dava a espera por boa em
+# toda máquina instalada.
+export DISPLAY="${DISPLAY:-:0}"
+pronto() {
+    local d=${DISPLAY:-} n
+    [[ -n $d ]] || return 1
+    if [[ $d == :* ]]; then
+        n=${d#:}; n=${n%%.*}
+        [[ -S /tmp/.X11-unix/X${n} ]] && return 0
+    fi
+    command -v xset >/dev/null 2>&1 && xset -display "$d" q >/dev/null 2>&1
+}
+esperar_display() {
+    local i
+    for (( i = 0; i < 60; i++ )); do          # 60 × 0,5s = 30s
+        pronto && return 0
+        sleep 0.5
+    done
+    log "AVISO: o X não respondeu em 30s — tentando abrir mesmo assim"
+    return 1
+}
+esperar_display && log "o X respondeu"
+
 espera=1
 while true; do
     inicio=$SECONDS
-    /usr/local/bin/stylus-ui
-    (( SECONDS - inicio > 20 )) && espera=1 || espera=$(( espera < 30 ? espera * 2 : 30 ))
+    log "abrindo a interface"
+    /usr/local/bin/stylus-ui 2>>"$LOG"
+    rc=$?
+    duracao=$(( SECONDS - inicio ))
+    log "a interface saiu (rc=$rc, ${duracao}s no ar)"
+
+    # 0 é o Ctrl+Q: a pessoa fechou de propósito. Qualquer outro código é
+    # defeito ou display que ainda não subiu (75), e os dois se resolvem
+    # tentando de novo.
+    if (( rc == 0 )); then
+        log "saída limpa — o supervisor encerra junto"
+        break
+    fi
+
+    # Ficou de pé tempo suficiente para ser uso de verdade: a próxima queda
+    # merece uma tentativa imediata, não a espera acumulada da anterior.
+    if (( duracao > 20 )); then espera=1
+    else espera=$(( espera < 30 ? espera * 2 : 30 )); fi
     sleep "$espera"
 done

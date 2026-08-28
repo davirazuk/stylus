@@ -66,6 +66,13 @@ limpar_work() {
 limpar_work
 mkdir -p "$WORK"
 
+# O __pycache__ é do interpretador de QUEM CONSTRÓI, não do sistema que vai
+# ser gerado. Ele nasce sozinho toda vez que alguém roda um teste aqui, e o
+# mkarchiso copia o airootfs inteiro — então esses .pyc entravam na ISO, meio
+# mega de bytecode compilado contra uma versão de Python que pode nem ser a
+# que a máquina instalada tem.
+find airootfs -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
 start=$SECONDS
 if command -v mkarchiso >/dev/null && [[ -f /etc/arch-release || -f /etc/os-release ]]; then
     info "mkarchiso, nativo (isto demora)…"

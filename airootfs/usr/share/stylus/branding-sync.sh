@@ -97,6 +97,15 @@ copiar usr/share/backgrounds/stylus
 copiar usr/share/grub/themes/stylus
 copiar usr/share/plymouth/themes/stylus
 copiar usr/share/sddm/themes/stylus
+# A aparência do KDE. O instalador escreve, na casa do usuário, um kdeglobals
+# que aponta para o esquema StylusDark, um kvantum.kvconfig que aponta para o
+# tema Stylus e um qt5ct/qt6ct.conf que aponta para /usr/share/qt5ct/colors.
+# Nenhum dos três vinha até aqui: o apontador chegava e o alvo não, e o KDE
+# abria em Breeze claro sem dizer por quê.
+copiar usr/share/color-schemes/StylusDark.colors
+copiar usr/share/Kvantum/Stylus
+copiar usr/share/qt5ct/colors/stylus.conf
+copiar usr/share/qt6ct/colors/stylus.conf
 for px in 16 22 24 32 48 64 128 256 512; do
     copiar "usr/share/icons/hicolor/${px}x${px}/apps/stylus.png"
 done

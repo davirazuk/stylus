@@ -4,4 +4,60 @@ set -uo pipefail
 SHARE=/usr/share/stylus
 PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
 export PYTHONPATH="$SHARE/deck:$SHARE/ui${PYTHONPATH:+:$PYTHONPATH}"
+
+# O i3 chama isto pelo exec_always, e nesse instante o DISPLAY já existe. Mas
+# `stylus ui` também é chamado de um terminal do tty, e ali não existe.
+export DISPLAY="${DISPLAY:-:0}"
+
+# 75 é EX_TEMPFAIL: "não deu agora, tente de novo". O supervisor sabe ler.
+#
+# Este código NÃO pode ser 0. Já foi, e o resultado foi a máquina que este
+# arquivo existe para evitar: sair 0 aqui significa, para o supervisor, "o
+# usuário fechou a interface de propósito" — ele parava de tentar e a tela
+# ficava preta até o próximo login. Pior: a conferência era `command -v
+# xdpyinfo`, e o xorg-xdpyinfo não está na lista de pacotes de nenhum dos
+# dois sistemas. Numa máquina instalada a conferência falhava SEMPRE.
+tem_display() {
+    local d=${DISPLAY:-} n
+    [[ -n $d ]] || return 1
+    # Um DISPLAY local é ":N" ou ":N.S". O soquete é o sinal honesto de que o
+    # servidor subiu, e é o que resolve a corrida com o início da sessão.
+    #
+    # O xset vem depois, não antes: ele precisa do XAUTHORITY para responder,
+    # e falha por falta de autorização mesmo com o X no ar — o que fazia a
+    # espera desistir de um servidor perfeitamente vivo. Se o soquete está
+    # lá, abrir e deixar o erro de verdade cair no registro é melhor do que
+    # ficar esperando por uma tela que já podia estar acesa.
+    if [[ $d == :* ]]; then
+        n=${d#:}; n=${n%%.*}
+        [[ -S /tmp/.X11-unix/X${n} ]] && return 0
+    fi
+    # X remoto (DISPLAY=maquina:0) não tem soquete local; aí só o xset sabe.
+    command -v xset >/dev/null 2>&1 && xset -display "$d" q >/dev/null 2>&1
+}
+
+if ! tem_display; then
+    LOGDIR="${XDG_DATA_HOME:-$HOME/.local/share}/stylus"
+    mkdir -p "$LOGDIR" 2>/dev/null
+    printf '%s stylus-ui: DISPLAY=%s ainda não responde\n' \
+        "$(date '+%F %T')" "$DISPLAY" >>"$LOGDIR/ui-supervise.log" 2>/dev/null
+    exit 75
+fi
+
+# Instância única. No modo música a interface já está aberta pelo i3, e um
+# `stylus` digitado num terminal abria uma SEGUNDA tela cheia por cima da
+# primeira — duas cópias disputando o mesmo controle e o mesmo som.
+#
+# O fd 9 sobrevive ao exec de propósito: a trava fica de pé enquanto o Python
+# viver e cai sozinha quando ele morre, inclusive se morrer mal. 76 é o código
+# que o dispatcher lê para saber que deve mostrar o texto em vez da tela.
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/stylus-ui.lock"
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"$LOCK" 2>/dev/null || true
+    if [[ -e /dev/fd/9 ]] && ! flock -n 9; then
+        echo "a interface já está aberta" >&2
+        exit 76
+    fi
+fi
+
 exec "$PY" "$SHARE/ui/app.py" "$@"
