@@ -265,8 +265,6 @@ class NowScreen(Screen):
             cov = self.app.thumbs.get(al.cover)
         cr = pygame.Rect(r.x + (r.w - total) // 2, r.y + (r.h - size) // 2,
                          size, size)
-        T.shadow_card(s, cr, radius=14)
-
         # ── brilho reativo ao áudio: a capa "respira" com a música ──────────
         level = self.app.audio_level()
         if level > 0.01:
@@ -277,13 +275,8 @@ class NowScreen(Screen):
                                (glow_r, glow_r), glow_r, 0)
             s.blit(glow, (cr.centerx - glow_r, cr.centery - glow_r))
 
-        if cov:
-            # sem smoothscale se já do tamanho certo — mais nítido
-            if cov.get_width() != size or cov.get_height() != size:
-                cov = pygame.transform.smoothscale(cov, (size, size))
-            s.blit(cov, cr)
-        else:
-            T.panel(s, cr, T.INK_LIFT, radius=14)
+        T.sleeve(s, cr, cov)
+        if not cov:
             T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
 
         x = cr.right + gap
@@ -765,8 +758,8 @@ class ShelfScreen(Screen):
             pygame.draw.rect(s, T.lerp(T.INK, T.AMBER, 0.30), rect.inflate(14, 14),
                              border_radius=6)
         cov = self.app.thumbs.get(it["cover"])
-        # A capa com lombada, luz e contato — o T.sleeve explica por quê. O
-        # shadow_card que estava aqui desenhava preto sobre um fundo quase
+        # A capa com lombada, luz e contato — o T.sleeve explica por quê. A
+        # sombra que estava aqui desenhava preto sobre um fundo quase
         # preto: custava blits e não mudava pixel nenhum.
         T.sleeve(s, rect, cov, selected)
         if not cov:
@@ -830,12 +823,10 @@ class StackScreen(Screen):
     def draw(self, s, r):
         st = self.app.stack
         if not st:
-            T.text(s, "a pilha está vazia", (r.centerx, r.centery - 30), 30,
-                   T.TEXT_DIM, anchor="center")
-            T.text(s, "na estante, s empilha um disco",
-                   (r.centerx, r.centery + 12), 20, T.TEXT_FAINT, anchor="center")
-            T.text(s, "ou t monta uma noite inteira daqui",
-                   (r.centerx, r.centery + 42), 20, T.TEXT_FAINT, anchor="center")
+            T.vazio(s, r, T.fantasma_pilha, "a pilha está vazia", [
+                "na estante, [S] empilha o disco escolhido",
+                "ou [T] monta uma noite inteira daqui",
+            ])
             return
         total = 0.0
         x, y = r.x + 40, r.y + 34
@@ -848,11 +839,7 @@ class StackScreen(Screen):
                 T.panel(s, row.inflate(16, 8), T.INK_LIFT, radius=10)
             cr = pygame.Rect(row.x, row.y, 84, 84)
             cov = self.app.thumbs.get(it["cover"])
-            T.shadow_card(s, cr, radius=4)
-            if cov:
-                s.blit(pygame.transform.smoothscale(cov, cr.size), cr)
-            else:
-                T.panel(s, cr, T.INK_LIFT, radius=4)
+            T.sleeve(s, cr, cov)
             T.text(s, f"{i + 1}", (row.x - 18, row.y + 30), 22,
                    T.AMBER if sel else T.TEXT_FAINT, anchor="topright")
             T.text(s, it["name"], (cr.right + 20, row.y + 14), 24,
@@ -969,8 +956,13 @@ class SignalScreen(Screen):
             box = pygame.Rect(bx, by + n * 132, bw, 104)
             T.panel(s, box, T.INK_SOFT, radius=12, border=T.LINE)
             T.text(s, titulo, (box.x + 24, box.y + 18), 16, T.TEXT_FAINT)
+            # O nome do aparelho para onde o valor começa, MEDIDO. Ver
+            # T.largura: com folga fixa, o nome do conversor entrava por cima
+            # do "pode trocar de taxa" — e só em quem tem placa de nome
+            # comprido, que é sempre a máquina de outra pessoa.
+            folga = T.largura(str(val), 26, bold=True) + 40
             T.text(s, str(nome), (box.x + 24, box.y + 44), 24, T.TEXT,
-                   maxw=bw - 300)
+                   maxw=max(120, bw - 48 - folga))
             T.text(s, str(val), (box.right - 24, box.y + 44), 26,
                    cor if n < 2 else (T.GREEN if i.get("multi") else T.AMBER),
                    bold=True, anchor="topright")
@@ -1084,10 +1076,10 @@ class DiaryScreen(Screen):
             self._formato(s, r)
             return
         if not self.rows:
-            T.text(s, "nada anotado ainda", (r.centerx, r.centery), 28,
-                   T.TEXT_DIM, anchor="center")
-            T.text(s, "o sistema anota sozinho toda vez que você põe um disco",
-                   (r.centerx, r.centery + 36), 19, T.TEXT_FAINT, anchor="center")
+            T.vazio(s, r, T.fantasma_diario, "nada anotado ainda", [
+                "o sistema anota sozinho toda vez que você põe um disco",
+                "não precisa fazer nada — é só ouvir",
+            ])
             return
         x, y = r.x + 44, r.y + 30
         total = sum(self.by_day.values())
@@ -1187,11 +1179,8 @@ class DiaryScreen(Screen):
         for it in top:
             cr = pygame.Rect(x, rect.y + 26, lado, lado)
             cov = self.app.thumbs.get(it["cover"])
-            T.shadow_card(s, cr, radius=6)
-            if cov:
-                s.blit(pygame.transform.smoothscale(cov, cr.size), cr)
-            else:
-                T.panel(s, cr, T.INK_LIFT, radius=6)
+            T.sleeve(s, cr, cov)
+            if not cov:
                 T.text(s, it["name"][:12], cr.center, 13, T.TEXT_FAINT,
                        anchor="center", maxw=lado - 12)
             T.text(s, f"{it['plays']}x", (cr.centerx, cr.bottom + 8), 17,
@@ -1326,31 +1315,13 @@ class PhoneScreen(Screen):
         return True
 
     def draw(self, s, r):
-        x, y = r.x + 44, r.y + 34
-        T.text(s, "o celular", (x, y), 30, T.TEXT, bold=True)
-        T.text(s, "a coleção é a mesma nos dois lados; a parte difícil é "
-                  "manter os dois honestos sobre qual cópia é a melhor",
-               (x, y + 40), 18, T.TEXT_FAINT, maxw=r.w - 90)
-        y += 92
-        for i, (rotulo, _cmd) in enumerate(self.ACOES):
-            sel = i == self.sel
-            box = pygame.Rect(x, y, 460, 46)
-            if sel:
-                T.linha_escolhida(s, box)
-            # maxw: sem ele, "pôr a coleção do celular na estante (WebDAV)"
-            # era desenhado PARA FORA da caixa e entrava por baixo do painel
-            # de saída, cortado no meio de uma palavra e sem reticências —
-            # que se lê como texto corrompido, não como texto comprido.
-            if sel:
-                T.text(s, "▸", (box.x + 16, box.y + 12), 21, T.AMBER)
-            T.text(s, rotulo, (box.x + 34, box.y + 12),
-                   21, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 48)
-            y += 52
-        self.app.job_panel(s, pygame.Rect(x + 500, r.y + 120,
-                                          r.right - x - 544, r.h - 220),
-                           self.job)
-        self.app.hint(s, r, "enter roda   ·   nada aqui mexe no celular "
-                            "sem você mandar")
+        self.app.lista_com_saida(
+            s, r, "o celular",
+            "a coleção é a mesma nos dois lados; a parte difícil é manter "
+            "os dois honestos sobre qual cópia é a melhor",
+            self.ACOES, self.sel, self.job,
+            "enter roda   ·   nada aqui mexe no celular sem você mandar",
+            size=21)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1396,25 +1367,11 @@ class ToolsScreen(Screen):
         return True
 
     def draw(self, s, r):
-        x, y = r.x + 44, r.y + 34
-        T.text(s, "a oficina", (x, y), 30, T.TEXT, bold=True)
-        T.text(s, "as mesmas ferramentas do terminal, sem o terminal",
-               (x, y + 40), 18, T.TEXT_FAINT)
-        y += 88
-        for i, (rotulo, _c) in enumerate(self.ACOES):
-            sel = i == self.sel
-            box = pygame.Rect(x, y, 470, 44)
-            if sel:
-                T.linha_escolhida(s, box)
-            if sel:
-                T.text(s, "▸", (box.x + 16, box.y + 11), 20, T.AMBER)
-            T.text(s, rotulo, (box.x + 34, box.y + 11),
-                   20, T.TEXT if sel else T.TEXT_DIM, maxw=box.w - 48)
-            y += 50
-        self.app.job_panel(s, pygame.Rect(x + 510, r.y + 120,
-                                          r.right - x - 554, r.h - 220),
-                           self.job)
-        self.app.hint(s, r, "enter roda   ·   a saída aparece do lado")
+        self.app.lista_com_saida(
+            s, r, "a oficina",
+            "as mesmas ferramentas do terminal, sem o terminal",
+            self.ACOES, self.sel, self.job,
+            "enter roda   ·   a saída aparece do lado")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1441,6 +1398,7 @@ class QobuzScreen(Screen):
         self.gui_up = False
         self.examing = None
         self.job = None
+        self._montagem = None
 
     def enter(self):
         self._check_gui_threaded()
@@ -1454,7 +1412,40 @@ class QobuzScreen(Screen):
                 self.gui_up = True
             except Exception:
                 self.gui_up = False
+            self._montagem = self._ler_montagem()
         threading.Thread(target=_probe, daemon=True).start()
+
+    def _ler_montagem(self):
+        """O que falta para a loja funcionar: o qobuz-dl e a conta.
+
+        Nenhum dos dois tem a ver com a interface web — ela é opcional e é o
+        que se quer evitar num sofá. Ver o cabeçalho do draw.
+        """
+        cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
+        cred = False
+        if os.path.exists(cfg):
+            try:
+                import configparser
+                cp = configparser.ConfigParser()
+                cp.read(cfg, encoding="utf-8")
+                for sec in cp.sections() + ["DEFAULT"]:
+                    if (cp[sec].get("email", "").strip()
+                            and cp[sec].get("password", "").strip()):
+                        cred = True
+                        break
+            except Exception:             # noqa: BLE001
+                cred = False
+        venv = os.path.expanduser("~/.local/share/stylus/venv/bin/python3")
+        lib = False
+        for py in (venv, "python3"):
+            try:
+                lib = subprocess.run([py, "-c", "import qobuz_dl"],
+                                     capture_output=True, timeout=8).returncode == 0
+                if lib:
+                    break
+            except Exception:             # noqa: BLE001
+                pass
+        return {"lib": lib, "cred": cred}
 
     def _search(self):
         """Busca via stylus-qobuz buscar (API direta, sem navegador).
@@ -1690,10 +1681,16 @@ class QobuzScreen(Screen):
         self.COLS = max(3, min(8, r.w // 200))
 
         # ── header ──────────────────────────────────────────────────────────
-        status = "pronto" if self.gui_up else "busca direta (interface off)"
+        # O estado que importa é "dá para procurar e baixar", não "a interface
+        # web está de pé": a web é opcional e é justamente o que não se quer
+        # num sofá. Antes dizia "busca direta (interface off)" em cinza, o que
+        # parecia defeito e era o modo NORMAL de usar.
+        m = self._montagem
+        pronto = bool(m and m["lib"] and m["cred"])
         T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
-        T.text(s, status, (r.right - pad, r.y + 24), 15,
-               T.GREEN if self.gui_up else T.TEXT_FAINT, anchor="topright")
+        T.text(s, "pronto" if pronto else "ainda não ligada",
+               (r.right - pad, r.y + 24), 15,
+               T.GREEN if pronto else T.TEXT_FAINT, anchor="topright")
 
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
@@ -1721,8 +1718,24 @@ class QobuzScreen(Screen):
                    (r.centerx, r.centery + 30), 17, T.TEXT_FAINT, anchor="center")
             return
         if not self.results and not self.query:
-            T.text(s, "/ procura  ·  r atualiza",
-                   (r.centerx, r.centery), 20, T.TEXT_FAINT, anchor="center")
+            if m and not pronto:
+                T.passos(
+                    s, r, "a loja ainda não está ligada",
+                    "duas coisas, uma vez só — depois o disco cai direto na "
+                    "estante",
+                    [(m["lib"], "o qobuz-dl, que procura e baixa",
+                      None if m["lib"] else "stylus qobuz instalar"),
+                     (m["cred"], "a sua conta do Qobuz",
+                      None if m["cred"] else "qobuz-dl  (uma vez, e ele "
+                                             "pergunta o resto)")],
+                    rodape="precisa de assinatura Qobuz. o que você baixar "
+                           "vira arquivo seu, na sua pasta, e aparece na "
+                           "estante junto com o resto.")
+                return
+            T.vazio(s, r, T.fantasma_busca, "a loja", [
+                "[/] procura um disco",
+                "o que baixar vira arquivo seu, na estante",
+            ])
             return
 
         # ── resultados ──────────────────────────────────────────────────────
@@ -1795,6 +1808,7 @@ class SpotifyScreen(Screen):
         self._daemon_ok = None
         self._now_playing = None
         self._np_t = 0.0
+        self._setup = None
 
     def enter(self):
         self._check_daemon_threaded()
@@ -1808,7 +1822,40 @@ class SpotifyScreen(Screen):
                 self._daemon_ok = r.returncode == 0
             except Exception:
                 self._daemon_ok = False
+            self._setup = self._ler_montagem()
         threading.Thread(target=_probe, daemon=True).start()
+
+    def _ler_montagem(self):
+        """Quais dos três passos do Spotify já estão de pé.
+
+        São três e são independentes: o spotifyd (que toca), o spotipy (que
+        procura) e as credenciais (que autorizam procurar). Faltando qualquer
+        um a seção não funciona, e antes disto a tela dizia só "spotifyd não
+        encontrado" — que é, dos três, o que menos costuma ser o problema.
+        """
+        conf = os.path.expanduser("~/.config/stylus/spotify.conf")
+        cred = False
+        if os.path.exists(conf):
+            try:
+                import configparser
+                cp = configparser.ConfigParser()
+                cp.read(conf, encoding="utf-8")
+                sec = cp["spotify"] if cp.has_section("spotify") else cp["DEFAULT"]
+                cred = bool(sec.get("client_id", "").strip()
+                            and sec.get("client_secret", "").strip())
+            except Exception:             # noqa: BLE001
+                cred = False
+        venv = os.path.expanduser("~/.local/share/stylus/venv/bin/python3")
+        lib = False
+        for py in (venv, "python3"):
+            try:
+                lib = subprocess.run([py, "-c", "import spotipy"],
+                                     capture_output=True, timeout=6).returncode == 0
+                if lib:
+                    break
+            except Exception:             # noqa: BLE001
+                pass
+        return {"daemon": bool(self._daemon_ok), "spotipy": lib, "cred": cred}
 
     def _refresh_now_playing(self):
         def _get():
@@ -2043,8 +2090,26 @@ class SpotifyScreen(Screen):
                    (r.centerx, r.centery + 30), 17, T.TEXT_FAINT, anchor="center")
             return
         if not self.results and not self.query:
-            T.text(s, "/ procura  ·  space pausa  ·  n/p próximo/anterior",
-                   (r.centerx, r.centery), 20, T.TEXT_FAINT, anchor="center")
+            m = self._setup
+            if m and not (m["daemon"] and m["spotipy"] and m["cred"]):
+                T.passos(
+                    s, r, "o Spotify ainda não está ligado",
+                    "três coisas, uma vez só — depois é só procurar e tocar",
+                    [(m["spotipy"], "a biblioteca que procura (spotipy)",
+                      None if m["spotipy"] else "stylus spotify instalar"),
+                     (m["cred"], "as credenciais da sua conta de programador",
+                      None if m["cred"] else
+                      "~/.config/stylus/spotify.conf   →   [spotify]"),
+                     (m["daemon"], "o spotifyd, que é quem toca",
+                      None if m["daemon"] else
+                      "systemctl --user enable --now spotifyd")],
+                    rodape="as credenciais saem de developer.spotify.com — "
+                           "criar um app ali é de graça e leva um minuto")
+                return
+            T.vazio(s, r, T.fantasma_busca, "a loja de streaming", [
+                "[/] procura uma faixa",
+                "[space] pausa   ·   [N] e [P] pulam",
+            ])
             return
 
         cw = (r.w - pad * 2 - gap * (self.COLS - 1)) // self.COLS
@@ -2340,8 +2405,6 @@ class GamesScreen(Screen):
             bx = pygame.Rect(x + col * (cw + gap), y + row * 120, cw, 100)
             sel = i == self.sel
             tem = self._is_installed(binario)
-            if sel:
-                T.shadow_card(s, bx, radius=10)
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
                     border=T.AMBER if sel else T.LINE)
             T.text(s, f"{icon}  {nome}", bx.center, 22,
@@ -2371,8 +2434,6 @@ class GamesScreen(Screen):
         for i, (label, icon, _sub) in enumerate(ch_actions):
             bx = pygame.Rect(x + i * (cw2 + gap), y2, cw2, 60)
             sel = i + n_games == self.sel
-            if sel:
-                T.shadow_card(s, bx, radius=8)
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=10,
                     border=T.AMBER if sel else T.LINE)
             T.text(s, f"{icon}  {label}", bx.center, 18,
@@ -3192,6 +3253,59 @@ class App:
         T.text(s, txt, (r.x + 44, r.bottom - 34), 17, T.TEXT_FAINT,
                maxw=r.w - 88)
 
+    def lista_com_saida(self, s, r, titulo, sub, acoes, sel, job, dica,
+                        size=20):
+        """Uma lista de ações à esquerda e a saída do que rodou à direita.
+
+        **Sintoma:** a OFICINA e o CELULAR reservavam 470 px fixos para a
+        lista, e três dos rótulos não cabiam — "pôr a coleção do celular na
+        es…", "o papel de parede vira o disco de …". Ao lado, o painel de
+        saída ficava com 760 px e passa quase toda a vida VAZIO. O espaço
+        estava todo do lado que não tinha o que mostrar.
+
+        Aqui a coluna é medida a partir do rótulo mais comprido: nada corta,
+        e a saída ainda fica com a maior parte da tela.
+        """
+        x, y = r.x + 44, r.y + 34
+        T.text(s, titulo, (x, y), 30, T.TEXT, bold=True)
+        alt_sub = T.paragrafo(s, sub, (x, y + 40), 18, T.TEXT_FAINT,
+                              maxw=r.w - 90, limite=2)
+        y += 74 + alt_sub
+
+        recuo = 34 + 14                   # o ▸ à esquerda e a folga à direita
+        # A saída tem piso: abaixo de ~380 px ela não mostra uma linha de
+        # terminal inteira e vira decoração. O que sobra é o teto da coluna —
+        # e se o rótulo mais comprido não couber nele, quem cede é o TAMANHO
+        # DA LETRA, não o texto: um rótulo uma letra menor continua legível,
+        # um rótulo cortado no meio não diz mais o que a ação faz.
+        # O painel fica com `r.w - larg - 128` (os 128 são as margens e o vão
+        # entre as duas colunas). Invertendo: para a saída ter no mínimo 420,
+        # a coluna não pode passar de r.w - 548.
+        teto = max(320, r.w - 128 - 420)
+        while size > 15:
+            larg = max(T.largura(rot, size) for rot, *_ in acoes) + recuo
+            if larg <= teto:
+                break
+            size -= 1
+        larg = int(max(320, min(larg, teto)))
+
+        passo = size + 30
+        for i, item in enumerate(acoes):
+            rotulo = item[0]
+            escolhido = i == sel
+            box = pygame.Rect(x, y, larg, passo - 6)
+            if escolhido:
+                T.linha_escolhida(s, box)
+                T.text(s, "▸", (box.x + 16, box.y + 11), size, T.AMBER)
+            T.text(s, rotulo, (box.x + 34, box.y + 11), size,
+                   T.TEXT if escolhido else T.TEXT_DIM, maxw=box.w - recuo)
+            y += passo
+
+        px = x + larg + 40
+        self.job_panel(s, pygame.Rect(px, r.y + 120, r.right - px - 44,
+                                      r.h - 220), job)
+        self.hint(s, r, dica)
+
     def job_panel(self, s, rect, job):
         T.panel(s, rect, T.INK_SOFT, radius=12, border=T.LINE)
         if job is None:
@@ -3202,17 +3316,32 @@ class App:
                   else ("pronto" if job.rc == 0 else f"saiu com {job.rc}"))
         cor = (T.AMBER if not job.done
                else (T.GREEN if job.rc == 0 else T.RED))
-        T.text(s, job.title, (rect.x + 16, rect.y + 12), 19, T.TEXT,
-               maxw=rect.w - 140)
-        T.text(s, estado, (rect.right - 16, rect.y + 12), 18, cor,
-               anchor="topright")
+        # A folga para o estado, MEDIDA. Era um `- 140` fixo, e "saiu com
+        # 127" não cabe em 140 px — o mesmo defeito da tela SINAL.
+        #
+        # E quando nem assim cabe, o estado desce para a linha de baixo em
+        # vez de comer o título. Num painel estreito, "ver o que está…" não
+        # diz qual tarefa está rodando, que é a única coisa que este título
+        # existe para dizer.
+        folga = T.largura(estado, 18) + 32
+        topo = rect.y + 12
+        if T.largura(job.title, 19) <= rect.w - 32 - folga:
+            T.text(s, job.title, (rect.x + 16, topo), 19, T.TEXT)
+            T.text(s, estado, (rect.right - 16, topo), 18, cor,
+                   anchor="topright")
+            base = rect.y + 46
+        else:
+            T.text(s, job.title, (rect.x + 16, topo), 19, T.TEXT,
+                   maxw=rect.w - 32)
+            T.text(s, estado, (rect.x + 16, topo + 26), 18, cor)
+            base = rect.y + 72
         f = T.font(15)
         lh = f.get_linesize()
-        n = max(1, (rect.h - 52) // lh)
+        n = max(1, (rect.bottom - base - 6) // lh)
         old = s.get_clip()
         s.set_clip(rect.inflate(-8, -8))
         for i, ln in enumerate(job.lines[-n:]):
-            T.text(s, ln, (rect.x + 16, rect.y + 46 + i * lh), 15, T.TEXT_DIM,
+            T.text(s, ln, (rect.x + 16, base + i * lh), 15, T.TEXT_DIM,
                    maxw=rect.w - 32)
         s.set_clip(old)
 
@@ -3264,8 +3393,7 @@ class App:
                         self._rail_thumb[al.cover] = mini
                 if mini is not None:
                     cr = pygame.Rect(tx, ty + 8, 50, 50)
-                    T.shadow_card(s, cr, radius=4)
-                    s.blit(mini, cr)
+                    T.sleeve(s, cr, mini)
                     tx = cr.right + 14
             T.text(s, "TOCANDO", (tx, ty - 2), 13, T.TEXT_FAINT)
             T.text(s, al.name, (tx, ty + 18), 17, T.TEXT,

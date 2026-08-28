@@ -136,6 +136,20 @@ def text(surf, s, pos, size=20, colour=TEXT, bold=False, anchor="topleft",
 
 
 
+def largura(s, size=20, bold=False):
+    """Quanto este texto vai ocupar, em pixels.
+
+    Existe para que dois textos na mesma linha — um à esquerda, outro
+    encostado à direita — possam ser separados por uma conta em vez de por um
+    número chutado. **Sintoma:** na tela SINAL o nome do conversor ("Meteor
+    Lake-P HD Audio Controller Speaker") entrava por cima do "pode trocar de
+    taxa": a folga reservada era um `- 300` fixo, e o valor mais largo mede
+    ~320 px. Chute contra chute, e o nome do aparelho é o único dos dois que
+    varia de máquina para máquina — ou seja, quebrava só na máquina do outro.
+    """
+    return font(size, bold).size(s)[0]
+
+
 def paragrafo(surf, s, pos, size=20, colour=TEXT, maxw=600, anchor="topleft",
               bold=False, entrelinha=1.35, limite=6):
     """Escreve em várias linhas, quebrando nos espaços. Devolve a altura.
@@ -183,27 +197,6 @@ def lerp(a, b, t):
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-_shadow_cache = {}
-
-def shadow_card(surf, rect, radius=12):
-    """Sombra sob a capa — POUSADA, não colada. Cacheada por tamanho."""
-    key = (rect.w, rect.h, radius)
-    layers = _shadow_cache.get(key)
-    if layers is None:
-        layers = []
-        for i, alpha in ((10, 22), (6, 36), (3, 52), (1, 70)):
-            s = pygame.Surface((rect.w + i * 2, rect.h + i * 2), pygame.SRCALPHA)
-            pygame.draw.rect(s, (0, 0, 0, alpha), s.get_rect(),
-                             border_radius=radius + i)
-            layers.append((i, s))
-        # cap cache at 32 entries to avoid unbounded growth
-        if len(_shadow_cache) > 32:
-            _shadow_cache.clear()
-        _shadow_cache[key] = layers
-    for i, s in layers:
-        surf.blit(s, (rect.x - i, rect.y - i + 3))
-
-
 def linha_escolhida(surf, rect, radius=9):
     """A linha selecionada de uma lista: painel + a barra âmbar do trilho.
 
@@ -219,6 +212,80 @@ def linha_escolhida(surf, rect, radius=9):
                      border_radius=2)
 
 
+# ── a tecla como objeto ────────────────────────────────────────────────────
+def tecla(surf, letra, pos, size=18, anchor="topleft", cor=None):
+    """Uma tecla desenhada como TECLA, não como uma letra solta na frase.
+
+    **Sintoma:** a tela da pilha dizia "na estante, s empilha um disco". Isso
+    se lê como erro de digitação — falta uma palavra. O `s` era o nome da
+    tecla, mas nada na página dizia isso, e o leitor não tem como adivinhar
+    que aquela letra é um objeto e não uma palavra mal escrita.
+
+    Desenhar a tecla resolve sem gastar uma palavra a mais, e resolve em
+    todo lugar de uma vez: a mesma frase vira "na estante, [S] empilha um
+    disco" e não dá para ler errado.
+
+    Devolve o retângulo ocupado, para quem precisa continuar a frase depois.
+    """
+    cor = cor or AMBER
+    f = font(size, bold=True)
+    txt = f.render(letra.upper(), True, cor)
+    pad_x, pad_y = max(7, size // 2), max(4, size // 5)
+    w, h = txt.get_width() + pad_x * 2, txt.get_height() + pad_y * 2
+    r = pygame.Rect(0, 0, w, h)
+    setattr(r, anchor, pos)
+    # A tecla é um objeto com relevo: fundo mais claro que o painel, um fio
+    # de luz em cima (a luz da sala bate na quina de cima) e uma borda. É o
+    # mesmo raciocínio da capa — num fundo escuro, peso vem de luz.
+    pygame.draw.rect(surf, INK_LIFT, r, border_radius=5)
+    pygame.draw.rect(surf, lerp(LINE, cor, 0.35), r, width=1, border_radius=5)
+    luz = pygame.Surface((r.w - 6, 1), pygame.SRCALPHA)
+    luz.fill((255, 255, 255, 30))
+    surf.blit(luz, (r.x + 3, r.y + 1))
+    surf.blit(txt, txt.get_rect(center=r.center))
+    return r
+
+
+def frase_com_teclas(surf, texto, pos, size=18, colour=TEXT_DIM,
+                     anchor="topleft", cor_tecla=None):
+    """Escreve uma frase em que `[X]` vira uma tecla desenhada.
+
+        frase_com_teclas(s, "na estante, [S] empilha um disco", ...)
+
+    Existe para que a frase seja escrita uma vez, em português corrido, e o
+    desenho da tecla saia de graça — em vez de cada tela ter que medir texto
+    à mão para saber onde encaixar o quadradinho.
+    """
+    import re as _re
+    pedacos = [p for p in _re.split(r"(\[[^\]]{1,6}\])", texto) if p]
+    f = font(size)
+    larg = 0
+    for p in pedacos:
+        larg += (tecla_largura(p[1:-1], size) if p.startswith("[") and
+                 p.endswith("]") else f.size(p)[0])
+    alt = f.get_height()
+    x, y = pos
+    if anchor in ("midtop", "center"):
+        x -= larg // 2
+    if anchor == "center":
+        y -= alt // 2
+    for p in pedacos:
+        if p.startswith("[") and p.endswith("]"):
+            r = tecla(surf, p[1:-1], (x, y + alt // 2), size - 2,
+                      anchor="midleft", cor=cor_tecla)
+            x = r.right
+        else:
+            r = text(surf, p, (x, y), size, colour)
+            x = r.right
+    return pygame.Rect(pos[0] - (larg // 2 if anchor in ("midtop", "center")
+                                 else 0), y, larg, alt)
+
+
+def tecla_largura(letra, size=18):
+    f = font(size - 2, bold=True)
+    return f.size(letra.upper())[0] + max(7, (size - 2) // 2) * 2
+
+
 # ── a capa como objeto ─────────────────────────────────────────────────────
 _sleeve_cache = {}
 
@@ -226,11 +293,16 @@ _sleeve_cache = {}
 def sleeve(surf, rect, art, selected=False):
     """Uma capa de disco desenhada como OBJETO, não como quadrado colorido.
 
-    **Sintoma:** a estante parecia uma grade de retângulos chapados. O
-    shadow_card acima já existia e não aparecia — e não podia aparecer: ele
-    desenha preto com alfa sobre o INK, que é (7,8,11). Não há para onde
-    escurecer. Uma sombra preta num fundo quase preto é trabalho de CPU para
-    produzir zero pixel de diferença.
+    Vale de 46 px (a miniatura do trilho) a meia tela (a AGORA): é o único
+    jeito de desenhar capa no sistema, para a mesma capa não ter duas
+    aparências dependendo da tela em que aparece.
+
+    **Sintoma:** a estante parecia uma grade de retângulos chapados. Havia
+    um `shadow_card` que desenhava preto com alfa sob a capa e não aparecia —
+    e não podia aparecer: o INK é (7,8,11), não há para onde escurecer.
+    Medido: sobre o INK a maior mudança que ele fazia em qualquer pixel era
+    de 7 unidades somando os três canais, ~2 por canal. Quatro blits com alfa
+    por capa para produzir zero pixel de diferença. Foi removido.
 
     Num fundo escuro, peso não vem de sombra: vem de LUZ. Três coisas, todas
     baratas, e juntas a capa passa a ter espessura:
@@ -269,7 +341,7 @@ def sleeve(surf, rect, art, selected=False):
         panel(surf, rect, INK_LIFT, radius=3)
 
     # ── a lombada ─────────────────────────────────────────────────────────
-    lom = max(3, rect.w // 34)
+    lom = max(2, round(rect.w / 32))
     faixa = pygame.Surface((lom, rect.h), pygame.SRCALPHA)
     faixa.fill((0, 0, 0, 92))
     surf.blit(faixa, rect.topleft)
@@ -287,6 +359,200 @@ def sleeve(surf, rect, art, selected=False):
     # ── selecionado: o disco puxado meio palmo para fora ──────────────────
     if selected:
         pygame.draw.rect(surf, AMBER, rect.inflate(4, 4), width=2, border_radius=2)
+
+
+# ── o vazio como cena ──────────────────────────────────────────────────────
+def vazio(surf, rect, desenhar, titulo, linhas, alt=210):
+    """O estado vazio desenhado como CENA, não como um buraco com legenda.
+
+    **Sintoma:** numa instalação nova, quase toda seção está vazia — a pilha,
+    o diário, as buscas. E o vazio era sempre o mesmo: duas linhas de texto
+    cinza no meio de uma tela preta. A primeira impressão do sistema inteiro,
+    para quem acabou de instalar, era uma sequência de telas pretas.
+
+    Isso é exatamente o defeito que este sistema existe para não ter. Uma
+    prateleira vazia no mundo físico ainda é uma PRATELEIRA: você vê o móvel,
+    entende o que vai ali, e a falta vira convite. O equivalente digital de
+    uma tela preta é o balde de lixo, não a prateleira.
+
+    Então: um desenho fantasma do que está faltando, o nome do que é, e o que
+    apertar — com as teclas desenhadas como teclas (ver `tecla`).
+
+        desenhar(surf, caixa)   pinta o fantasma dentro de `caixa`
+        linhas                  frases; `[X]` vira tecla
+    """
+    caixa = pygame.Rect(0, 0, min(rect.w - 120, 420), alt)
+    bloco_h = alt + 34 + len(linhas) * 32
+    caixa.midtop = (rect.centerx, rect.centery - bloco_h // 2)
+    desenhar(surf, caixa)
+    y = caixa.bottom + 34
+    text(surf, titulo, (rect.centerx, y), 28, TEXT_DIM, anchor="midtop")
+    y += 44
+    for ln in linhas:
+        frase_com_teclas(surf, ln, (rect.centerx, y), 19, TEXT_FAINT,
+                         anchor="midtop")
+        y += 32
+
+
+def fantasma_pilha(surf, caixa):
+    """Uma pilha de três capas, vista de frente: a da frente inteira, as de
+    trás só espiando pela quina.
+
+    É o desenho mais direto do que a pilha É. Quem olha entende antes de ler.
+
+    Duas tentativas antes desta não funcionaram, e por um motivo que vale
+    anotar: contornos vazados que se cruzam pela metade não se leem como
+    "capas empilhadas", se leem como um emaranhado de riscos verticais — o
+    olho segue as linhas, não as caixas. Pilha só fica legível quando UMA
+    delas está inteira e as outras aparecem apenas pela borda, que é o que
+    de fato se vê num monte de disco em cima da mesa.
+    """
+    lado = int(min(caixa.h * 0.78, caixa.w * 0.42))
+    espia = max(8, lado // 11)
+    base = caixa.bottom - 14
+    cx = caixa.centerx - espia
+    # A mesa em que a pilha está: sem ela as capas flutuam no vazio.
+    pygame.draw.line(surf, lerp(INK, LINE, 0.42),
+                     (cx - lado // 2 - 22, base + 3),
+                     (cx + lado // 2 + espia * 2 + 22, base + 3), 2)
+    # De trás para a frente, para a da frente cobrir as outras.
+    for i in (2, 1, 0):
+        r = pygame.Rect(0, 0, lado, lado)
+        r.midbottom = (cx + i * espia, base - i * espia)
+        tom = lerp(INK, LINE, 0.30 + (2 - i) * 0.20)
+        # Preenchida com o próprio fundo: é isto que faz a da frente TAPAR as
+        # de trás em vez de deixar as linhas se cruzarem.
+        pygame.draw.rect(surf, INK, r, border_radius=3)
+        pygame.draw.rect(surf, tom, r, width=2, border_radius=3)
+        if i == 0:
+            # A lombada só na da frente: nas outras não caberia e viraria
+            # mais um risco solto.
+            lom = r.x + max(3, round(r.w / 20))
+            pygame.draw.line(surf, tom, (lom, r.y + 6), (lom, r.bottom - 6), 2)
+
+
+def fantasma_diario(surf, caixa):
+    """Um livro de registro em branco: coluna de data à esquerda, o disco à
+    direita, e nada escrito ainda.
+
+    Pautas soltas se leem como "texto", genérico. O que o diário é de fato é
+    um LIVRO-CAIXA — uma data e um disco por linha —, e desenhar as duas
+    colunas faz o fantasma dizer isso sem legenda.
+    """
+    larg = int(caixa.w * 0.72)
+    x = caixa.centerx - larg // 2
+    col = int(larg * 0.19)                 # a coluna da data
+    y = caixa.y + 18
+    passo = (caixa.h - 40) // 6
+    # A régua da margem, em âmbar apagado: o único fio vivo do desenho, e é
+    # o que separa a data do disco.
+    pygame.draw.line(surf, lerp(INK, AMBER, 0.34),
+                     (x + col + 10, caixa.y + 6),
+                     (x + col + 10, caixa.bottom - 10), 2)
+    for i in range(6):
+        yy = y + i * passo
+        tom = lerp(INK, LINE, 0.60 - i * 0.08)
+        # a data: sempre do mesmo tamanho, porque data tem tamanho fixo
+        pygame.draw.line(surf, tom, (x, yy), (x + col - 6, yy), 2)
+        # o disco: comprimento variado, porque nome de disco varia
+        resto = larg - col - 22
+        w = int(resto * (0.95, 0.72, 0.88, 0.61, 0.80, 0.45)[i])
+        pygame.draw.line(surf, tom, (x + col + 22, yy), (x + col + 22 + w, yy), 2)
+
+
+def fantasma_busca(surf, caixa):
+    """Uma lupa sobre uma grade de capas — o gesto de procurar num acervo
+    que não é o seu.
+
+    É o que separa as seções de loja da estante: na estante os discos são
+    seus e estão todos ali; na loja eles só existem depois que você procura.
+    """
+    lado = int(min(caixa.h * 0.34, caixa.w * 0.20))
+    gap = max(6, lado // 8)
+    larg = lado * 3 + gap * 2
+    x0 = caixa.centerx - larg // 2
+    y0 = caixa.y + 14
+    for i in range(6):
+        r = pygame.Rect(x0 + (i % 3) * (lado + gap),
+                        y0 + (i // 3) * (lado + gap), lado, lado)
+        pygame.draw.rect(surf, lerp(INK, LINE, 0.52 - (i // 3) * 0.16), r,
+                         width=2, border_radius=3)
+    # A lupa, em âmbar: é o único gesto vivo do desenho, e é o que se faz aqui.
+    raio = int(lado * 0.62)
+    cen = (x0 + larg - int(lado * 0.55), y0 + lado + gap + int(lado * 0.6))
+    pygame.draw.circle(surf, INK, cen, raio)
+    pygame.draw.circle(surf, lerp(INK, AMBER, 0.62), cen, raio, 3)
+    d = int(raio * 0.72)
+    pygame.draw.line(surf, lerp(INK, AMBER, 0.62),
+                     (cen[0] + d, cen[1] + d),
+                     (cen[0] + d + raio, cen[1] + d + raio), 4)
+
+
+# Alturas do cartão de passos. Ficam aqui, uma vez, porque a caixa precisa
+# ser medida ANTES de ser desenhada — e a primeira versão media com uma conta
+# e desenhava com outra, o que punha o rodapé em cima do último comando.
+_P_TOPO, _P_TIT, _P_POR = 26, 36, 42
+_P_PASSO, _P_CMD, _P_ROD, _P_BASE = 32, 36, 44, 14
+
+
+def passos(surf, rect, titulo, porque, lista, rodape=None):
+    """A tela de um recurso que ainda não foi ligado, com o que falta fazer.
+
+    **Sintoma:** a seção do Spotify, numa máquina sem nada configurado,
+    mostrava "spotifyd não encontrado" em cinza miúdo no canto superior
+    direito — o lugar de menos atenção da tela inteira — e no meio, sozinha,
+    uma linha de atalhos para funções que não funcionavam. A pessoa via uma
+    tela vazia, apertava as teclas que a própria tela sugeria, nada
+    acontecia, e nada em lugar nenhum dizia o que fazer.
+
+    Um recurso desligado não é um erro: é um passo que falta. Então mostra-se
+    a lista dos passos, quais já estão feitos, e o comando exato do primeiro
+    que não está — com o ✓ e o ○ dizendo de longe quanto falta.
+
+        lista   [(feito: bool, o que é, o comando ou None), ...]
+    """
+    larg = min(rect.w - 120, 720)
+    corpo = larg - 60
+    f_rod = font(16)
+    n_rod = 0
+    if rodape:
+        # Quantas linhas o rodapé vai ocupar de fato: ele é uma frase inteira
+        # e cortá-la com reticências apaga justamente o endereço que ela dá.
+        n_rod = max(1, -(-f_rod.size(rodape)[0] // corpo))
+    alt = (_P_TOPO + _P_TIT + _P_POR
+           + sum(_P_PASSO + (_P_CMD if d else 0) for _f, _t, d in lista)
+           + (_P_ROD + (n_rod - 1) * 22 if rodape else 0) + _P_BASE)
+    caixa = pygame.Rect(0, 0, larg, alt)
+    caixa.center = rect.center
+    panel(surf, caixa, INK_SOFT, radius=14, border=LINE)
+
+    x = caixa.x + 30
+    y = caixa.y + _P_TOPO
+    text(surf, titulo, (x, y), 26, TEXT, bold=True, maxw=corpo)
+    y += _P_TIT
+    text(surf, porque, (x, y), 18, TEXT_FAINT, maxw=corpo)
+    y += _P_POR
+
+    for feito, oque, fazer in lista:
+        # ✓ verde para o que já está de pé, ○ âmbar para o que falta: o âmbar
+        # é a cor viva (§5.5), e "o que falta" é a coisa viva desta tela.
+        text(surf, "✓" if feito else "○", (x, y), 20,
+             GREEN if feito else AMBER, bold=True)
+        text(surf, oque, (x + 30, y), 19, TEXT_DIM if feito else TEXT,
+             maxw=corpo - 30)
+        y += _P_PASSO
+        if fazer:
+            # O comando em painel próprio: é para ser lido por alguém que vai
+            # digitá-lo num terminal do outro lado do quarto.
+            cr = pygame.Rect(x + 30, y - 6, font(17).size(fazer)[0] + 24, 30)
+            panel(surf, cr, INK, radius=6, border=lerp(LINE, AMBER, 0.3))
+            text(surf, fazer, (cr.x + 12, cr.y + 6), 17, AMBER)
+            y += _P_CMD
+
+    if rodape:
+        paragrafo(surf, rodape, (x, y + 6), 16, TEXT_FAINT, maxw=corpo,
+                  entrelinha=1.35, limite=3)
+    return caixa
 
 
 # ── partículas atmosféricas ────────────────────────────────────────────────

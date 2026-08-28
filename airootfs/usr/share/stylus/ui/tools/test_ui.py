@@ -322,12 +322,25 @@ def main():
     secao("virar o lado aparece na tela, e só para frente")
     try:
         class _Disco:
+            # Os campos todos, não só os que o teste do lado usa: este objeto
+            # fica no app.playing pelo resto da rodada, e QUALQUER seção que
+            # desenhe depois vai perguntar por eles. Um fake incompleto vira
+            # AttributeError num teste que não tem nada a ver com este.
             folder = "/mentira/Artista/Disco"
             artist = "Artista"
             name = "Disco"
             total = 2400.0
+            cover = None
+            year = 1969
+            duration = 2400.0
+            plays = 0
+            last_played = 0.0
+            tracks = []
             sides = [{"label": "SIDE A", "start": 0, "end": 1200},
                      {"label": "SIDE B", "start": 1200, "end": 2400}]
+
+            def lyrics_for(self, *a, **k):
+                return None
 
             def side_for(self, t):
                 i = 1 if t >= 1200 else 0
@@ -423,6 +436,104 @@ def main():
         A.rodando_do_pendrive = real
     except Exception:                                       # noqa: BLE001
         bad("INSTALAR", traceback.format_exc())
+
+    secao("nenhum rótulo de ação cortado")
+    # As listas de ação da OFICINA e do CELULAR são frases curtas e fixas —
+    # cabem, ou o layout está errado. **Sintoma:** a coluna tinha 470 px
+    # fixos e três rótulos viravam "pôr a coleção do celular na es…", com o
+    # painel de saída ao lado ocupando 760 px e vazio.
+    #
+    # Nome de disco cortado é outra coisa e é correto; por isso a conferência
+    # é só destas duas telas, cujo texto o repositório escolheu.
+    try:
+        import theme as _T
+        original = _T.text
+        cortados = []
+
+        def espiao_corte(surf, txt, pos, size=20, colour=_T.TEXT, bold=False,
+                         anchor="topleft", maxw=None):
+            if maxw and _T.font(size, bold).size(str(txt))[0] > maxw:
+                cortados.append(str(txt))
+            return original(surf, txt, pos, size, colour, bold, anchor, maxw)
+
+        _T.text = espiao_corte
+        for i, tela in enumerate(app.screens):
+            if tela.name not in ("OFICINA", "CELULAR"):
+                continue
+            # Só os rótulos que o repositório escreveu. O painel de saída ao
+            # lado mostra o que o comando imprimiu, e ali cortar é o certo:
+            # linha de saída de programa não tem tamanho previsível.
+            rotulos = {a[0] for a in tela.ACOES}
+            app._goto(i)
+            cortados.clear()
+            # Em TODA largura de tela que o sistema pode encontrar: a de
+            # notebook é onde a coluna aperta primeiro.
+            for larg in (1280, 1600, 1920, 3840):
+                corpo_l = pygame.Rect(230, 0, larg - 230, 800)
+                app.screens[i].draw(app.surf, corpo_l)
+            cortados[:] = [c for c in cortados if c in rotulos]
+            if cortados:
+                bad(f"{tela.name}: {len(cortados)} rótulos cortados",
+                    "\n".join(sorted(set(cortados))[:4]))
+            else:
+                ok(f"{tela.name}: nada cortado de 1280 a 3840 px")
+        _T.text = original
+    except Exception:                                       # noqa: BLE001
+        bad("conferência de corte", traceback.format_exc())
+
+    secao("nenhum texto por cima de outro texto")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # Na tela SINAL, o nome do conversor entrava por cima do "pode trocar de
+    # taxa": a folga entre o texto da esquerda e o valor encostado à direita
+    # era um número fixo, e o valor mais largo passava dele. Colisão de texto
+    # não estoura, não vira traceback, não aparece em teste nenhum — ela só
+    # fica FEIA, e só na máquina de quem tem o nome de placa comprido.
+    #
+    # Então em vez de conferir uma tela, confere-se a CLASSE: espiona todo
+    # T.text de todas as seções e reclama de dois retângulos que se cruzam.
+    try:
+        import theme as _T
+        original = _T.text
+        caixas = []
+
+        def espiao(surf, txt, pos, size=20, colour=_T.TEXT, bold=False,
+                   anchor="topleft", maxw=None):
+            r = original(surf, txt, pos, size, colour, bold, anchor, maxw)
+            if str(txt).strip():
+                caixas.append((r.copy(), str(txt)))
+            return r
+
+        _T.text = espiao
+        # Um conversor de nome comprido, que é o caso que quebrava. Sem forçar
+        # isto o teste roda com o "—" de máquina sem áudio e não mede nada.
+        for tela in app.screens:
+            if tela.name == "SINAL":
+                tela.info = {"file": "faixa.flac", "frate": 44100,
+                             "graph": 48000, "fbits": 24, "codec": "FLAC",
+                             "dev": "Meteor Lake-P HD Audio Controller Speaker",
+                             "multi": True}
+        batidas = []
+        for i, tela in enumerate(app.screens):
+            app._goto(i)
+            caixas.clear()
+            app.screens[i].draw(app.surf, corpo)
+            for a in range(len(caixas)):
+                for b in range(a + 1, len(caixas)):
+                    ra, sa = caixas[a]
+                    rb, sb = caixas[b]
+                    cruz = ra.clip(rb)
+                    # Precisa cruzar de verdade: alguns px de sobra são só
+                    # acento de letra encostando na linha de cima.
+                    if cruz.w > 3 and cruz.h > ra.h * 0.4:
+                        batidas.append(f"{tela.name}: {sa[:30]!r} x {sb[:30]!r}")
+        _T.text = original
+        if batidas:
+            bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))
+        else:
+            ok(f"{len(app.screens)} seções, nenhum texto por cima de outro")
+    except Exception:                                       # noqa: BLE001
+        bad("conferência de colisão", traceback.format_exc())
 
     pygame.quit()
     print()
