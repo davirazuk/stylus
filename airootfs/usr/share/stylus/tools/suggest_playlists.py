@@ -76,7 +76,7 @@ def track_key(name):
 
 def main():
     if not os.path.exists(MANIFEST):
-        print("no manifest yet")
+        print("ainda não há manifesto do que entrou")
         return
 
     seen, entries = set(), []
@@ -113,16 +113,16 @@ def main():
         out = os.path.join(LIB, f"{pl} — sugestões.m3u")
         with open(out, "w", encoding="utf-8") as f:
             f.write("\n".join(fresh) + "\n")
-        print(f"{os.path.basename(out)}: {len(fresh)} tracks "
+        print(f"{os.path.basename(out)}: {len(fresh)} faixas "
               f"(existing playlist has {len(existing)})")
 
     if skipped:
-        print("\nno genre mapping, left out entirely:")
+        print("\nsem gênero conhecido, ficaram de fora:")
         for s in skipped:
             print(f"  {s}")
-    print("\nNothing existing was modified. To accept one:")
+    print("\nNada do que já existia foi mexido. Para aceitar uma:")
     print('  cat "Shoegaze & Dreampop — sugestões.m3u" >> "Shoegaze & Dreampop.m3u"')
-    print("Mood playlists (Suicidio, Heavy Rotation, Night Drive) deliberately untouched.")
+    print("As playlists de humor não foram tocadas, de propósito.")
 
 
 import sys

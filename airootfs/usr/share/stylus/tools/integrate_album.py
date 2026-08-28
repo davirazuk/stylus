@@ -11,7 +11,7 @@ PLAYLIST = os.path.join(LIB_ROOT, "coleção.m3u")
 def integrate(folder_name, artist, album_clean):
     src = os.path.join(QOBUZ_DIR, folder_name)
     if not os.path.isdir(src):
-        print(f"SKIP (not found): {folder_name}")
+        print(f"PULEI (não achei): {folder_name}")
         return []
 
     dest_dir = os.path.join(LIB_ROOT, artist, album_clean)
@@ -94,7 +94,7 @@ def integrate(folder_name, artist, album_clean):
 
         shutil.move(old_path, new_path)
         new_paths.append(new_path)
-        print(f"  moved: {os.path.relpath(new_path, dest_dir)}")
+        print(f"  movido: {os.path.relpath(new_path, dest_dir)}")
 
     cover_src = os.path.join(src, "cover.jpg")
     if os.path.exists(cover_src):
@@ -119,7 +119,7 @@ def integrate(folder_name, artist, album_clean):
         print(f"  aviso: {len(restou)} arquivo(s) de áudio ficaram em {src}; não apaguei nada.")
     else:
         shutil.rmtree(src, ignore_errors=True)
-    print(f"Integrated: {artist} - {album_clean} ({len(new_paths)} tracks) -> {dest_dir}")
+    print(f"Integrado: {artist} - {album_clean} ({len(new_paths)} faixas) -> {dest_dir}")
     return new_paths
 
 
@@ -142,8 +142,8 @@ def _embed_after(paths, cover_bytes):
             if changed:
                 au.save()
         except Exception as e:
-            print(f"  embed failed for {os.path.basename(pth)}: {e}")
-    print(f"  embedded: art {n_art}, lyrics {n_lyr}")
+            print(f"  não deu para embutir em {os.path.basename(pth)}: {e}")
+    print(f"  embutido: capa {n_art}, letra {n_lyr}")
 
 
 def fetch_lyrics(flac_paths, artist, album_clean):
@@ -169,8 +169,8 @@ def fetch_lyrics(flac_paths, artist, album_clean):
                         f.write(synced)
                     found += 1
         except Exception as e:
-            print(f"  lyrics lookup failed for {title}: {e}")
-    print(f"  lyrics found: {found}/{len(flac_paths)}")
+            print(f"  a busca de letra falhou para {title}: {e}")
+    print(f"  letras achadas: {found}/{len(flac_paths)}")
 
 
 def add_to_playlist(flac_paths):

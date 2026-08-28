@@ -935,27 +935,46 @@ fi
 # — o argparse o imprime como descrição do `--help`. Quatro ferramentas
 # alcançáveis pelo `stylus` tinham o seu em inglês, e uma delas falava do
 # dono da máquina na terceira pessoa e pelo nome.
-sec "a ajuda das ferramentas está em português"
+sec "o que as ferramentas escrevem está em português"
 ingles=$(python3 - <<'ENEOF'
 import ast, glob, os, re
 # Palavras que não existem em português. Nada de "files" ou "list", que
 # aparecem citando nome de arquivo ou de comando.
 ing = re.compile(r"\b(the|and|with|from|this|that|which|without|instead|"
-                 r"these|there|when|your|into|already|every)\b", re.I)
+                 r"these|there|when|your|into|already|every|would|wrote|"
+                 r"found|missing|scanned|entries|nothing|untouched)\b", re.I)
 for f in sorted(glob.glob("airootfs/usr/share/stylus/tools/*.py")):
     try:
-        d = ast.get_docstring(ast.parse(open(f, encoding="utf-8").read())) or ""
+        arv = ast.parse(open(f, encoding="utf-8").read())
     except Exception:                       # noqa: BLE001
         continue
+    # O docstring, que o argparse imprime como descrição do --help…
+    d = ast.get_docstring(arv) or ""
     n = len(ing.findall(d))
     if n >= 4:
-        print(f"{os.path.basename(f)} ({n} palavras)")
+        print(f"{os.path.basename(f)}: --help ({n} palavras)")
+    # …e o que o programa ESCREVE enquanto roda, que é texto que a pessoa lê
+    # do mesmo jeito. Só as strings dentro de print(): comentário e nome de
+    # variável seguem o arquivo, e isso a regra permite.
+    for no in ast.walk(arv):
+        if not (isinstance(no, ast.Call) and getattr(no.func, "id", "") == "print"):
+            continue
+        for arg in no.args:
+            pedacos = []
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                pedacos = [arg.value]
+            elif isinstance(arg, ast.JoinedStr):
+                pedacos = [v.value for v in arg.values
+                           if isinstance(v, ast.Constant) and isinstance(v.value, str)]
+            texto = " ".join(pedacos)
+            if len(ing.findall(texto)) >= 1:
+                print(f"{os.path.basename(f)}:{no.lineno}: {texto.strip()[:46]!r}")
 ENEOF
 )
 if [[ -z $ingles ]]; then
-    ok "os docstrings que viram --help estão em português"
+    ok "o --help e a saída das ferramentas estão em português"
 else
-    bad "o --help destas ferramentas sai em inglês:"
+    bad "estas ferramentas falam inglês com o usuário:"
     printf '%s\n' "$ingles" | sed 's/^/      /'
 fi
 

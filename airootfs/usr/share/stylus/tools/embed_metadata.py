@@ -213,23 +213,23 @@ def main(apply=False, fetch=True, root=None):
                 try:
                     a.save()
                 except Exception as e:
-                    print(f"  SAVE FAILED {path}: {e}", flush=True)
+                    print(f"  NÃO DEU PARA GRAVAR {path}: {e}", flush=True)
 
             if scanned % 250 == 0:
-                print(f"  ...{scanned} scanned "
+                print(f"  ...{scanned} lidos "
                       f"(art+{art_done}, lyrics+{lyr_sidecar + lyr_fetched})",
                       flush=True)
 
-    verb = "embedded" if apply else "would embed"
-    print(f"\nscanned {scanned} files")
-    print(f"{verb} cover art:  {art_done}")
-    print(f"{verb} lyrics:     {lyr_sidecar + lyr_fetched} "
-          f"({lyr_sidecar} from .lrc, {lyr_fetched} fetched from LRCLIB)")
-    print(f"still without art:    {art_missing} (no cover available anywhere)")
-    print(f"still without lyrics: {lyr_missing} (genuinely not found — "
-          f"instrumentals, bootlegs, obscure releases)")
+    verb = "embuti" if apply else "embutiria"
+    print(f"\n{scanned} arquivos lidos")
+    print(f"{verb} capa:    {art_done}")
+    print(f"{verb} letra:   {lyr_sidecar + lyr_fetched} "
+          f"({lyr_sidecar} do .lrc ao lado, {lyr_fetched} do LRCLIB)")
+    print(f"ainda sem capa:  {art_missing} (não há capa em lugar nenhum)")
+    print(f"ainda sem letra: {lyr_missing} (não achada mesmo — "
+          f"instrumental, bootleg, lançamento obscuro)")
     if not apply:
-        print("\ndry run — pass --apply to write tags")
+        print("\nisto foi só uma olhada — passe --apply para gravar as etiquetas")
 
 
 if __name__ == "__main__":

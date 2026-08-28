@@ -64,7 +64,7 @@ def main():
     """
     manifest = os.path.expanduser("~/.local/share/stylus-added.tsv")
     if not os.path.exists(manifest):
-        print(f"no manifest at {manifest}")
+        print(f"não há manifesto em {manifest}")
         return
 
     seen = set()
@@ -100,15 +100,15 @@ def main():
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
-    print(f"wrote {out}")
-    print(f"  {len(found)} albums, {len(lines)} tracks")
+    print(f"escrevi {out}")
+    print(f"  {len(found)} discos, {len(lines)} faixas")
     by_artist = {}
     for artist, album, n in found:
         by_artist.setdefault(artist, []).append(album)
     for artist in sorted(by_artist):
         print(f"    {artist}: {', '.join(sorted(by_artist[artist]))}")
     if missing:
-        print(f"  missing ({len(missing)}): {missing}")
+        print(f"  não achados ({len(missing)}): {missing}")
 
 
 if __name__ == "__main__":

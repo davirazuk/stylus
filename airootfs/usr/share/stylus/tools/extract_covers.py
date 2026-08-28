@@ -59,7 +59,7 @@ def main(apply=False):
                 break
         if not found:
             no_art += 1
-            print(f"  no embedded art: {os.path.relpath(dirpath, ROOT)}")
+            print(f"  sem capa embutida: {os.path.relpath(dirpath, ROOT)}")
             continue
 
         data, ext = found
@@ -68,13 +68,13 @@ def main(apply=False):
             with open(out, "wb") as fh:
                 fh.write(data)
         wrote += 1
-        print(f"{'wrote' if apply else 'would write'}: "
+        print(f"{'escreveu' if apply else 'escreveria'}: "
               f"{os.path.relpath(out, ROOT)} ({len(data)//1024} KiB)")
 
-    print(f"\n{wrote} covers {'written' if apply else 'to write'}; "
-          f"{skipped_have} folders already had one; {no_art} had no embedded art")
+    print(f"\n{wrote} capas {'escritas' if apply else 'a escrever'}; "
+          f"{skipped_have} pastas já tinham; {no_art} não têm capa embutida")
     if not apply:
-        print("dry run — pass --apply to write")
+        print("isto foi só uma olhada — passe --apply para escrever")
 
 
 if __name__ == "__main__":

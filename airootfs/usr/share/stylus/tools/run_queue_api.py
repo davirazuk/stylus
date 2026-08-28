@@ -206,7 +206,7 @@ def main():
     if limit:
         entries = entries[:limit]
 
-    print(f"{len(entries)} entries from {queue_file}\n", flush=True)
+    print(f"{len(entries)} linhas de {queue_file}\n", flush=True)
     counts = {"ok": 0, "skip": 0, "fail": 0}
 
     for i, (url, artist, album) in enumerate(entries, 1):
@@ -276,7 +276,7 @@ def main():
         fpath = os.path.join(QOBUZ_DIR, folder)
         n_disc = flatten_discs(folder)
         if n_disc:
-            print(f"  flattened {n_disc} tracks from disc subfolders", flush=True)
+            print(f"  {n_disc} faixas trazidas das subpastas de disco", flush=True)
         n_flac = len([f for f in os.listdir(fpath) if f.lower().endswith(".flac")])
         if not n_flac:
             counts["fail"] += 1
@@ -318,7 +318,7 @@ def main():
             quality = f"{m.group(1)}bit/{m.group(2)}kHz"
         record("OK", artist, album, f"{n_flac} tracks {quality}")
 
-    print(f"\n=== done: ok={counts['ok']} skip={counts['skip']} "
+    print(f"\n=== fim: ok={counts['ok']} pulados={counts['skip']} "
           f"fail={counts['fail']}", flush=True)
 
 
