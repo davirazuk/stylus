@@ -218,12 +218,24 @@ fi
 # leitura adiantada, um FLAC de 24/96 lido por FUSE engasga no meio da faixa —
 # e o sintoma parece defeito de áudio, não de rede. Local não precisa e não
 # ganha nada, então só quando é o caso.
-_fs=$(findmnt -no FSTYPE -T "$TARGET" 2>/dev/null || echo "")
-case "$_fs" in
-    fuse*|nfs*|cifs|smb*|sshfs|davfs*)
-        mpv_args+=(--cache=yes --demuxer-max-bytes=64MiB
-                   --demuxer-readahead-secs=20) ;;
-esac
+# E um disco que vem INTEIRO pela internet — o `stylus qobuz tocar`, que
+# monta uma pasta com um disco.json e endereços no lugar de arquivos. O
+# `findmnt` abaixo não vê nada disso: a pasta é local, o áudio é que não é.
+# Sem folga aqui, um FLAC de 24/192 num link doméstico engasga no meio da
+# faixa e o sintoma parece defeito de áudio, não de rede.
+if [[ -f $TARGET/disco.json ]]; then
+    mpv_args+=(--cache=yes --demuxer-max-bytes=192MiB
+               --demuxer-readahead-secs=40)
+else
+    # Coleção montada pela rede (o `stylus webdav` põe o celular na estante):
+    # mesma razão, folga menor. Local não precisa e não ganha nada.
+    _fs=$(findmnt -no FSTYPE -T "$TARGET" 2>/dev/null || echo "")
+    case "$_fs" in
+        fuse*|nfs*|cifs|smb*|sshfs|davfs*)
+            mpv_args+=(--cache=yes --demuxer-max-bytes=64MiB
+                       --demuxer-readahead-secs=20) ;;
+    esac
+fi
 
 # Os ARQUIVOS por último, depois de todas as opções. No mpv uma opção depois
 # do nome do arquivo não é erro — ela simplesmente não vale para a lista que

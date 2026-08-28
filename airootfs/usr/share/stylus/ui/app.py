@@ -1758,9 +1758,13 @@ class QobuzScreen(Screen):
             return
         artist = item.get("display_subtitle", "")
         title = item.get("display_title", "")
-        if spawn(["stylus-qobuz", "tocar", ident]):
+        # --deck: a cerimônia, igual à da estante. Um disco que veio pela
+        # assinatura não é menos disco — agora que o vinyl sabe ler o
+        # disco.json, ele gira na tela como qualquer outro.
+        if spawn(["stylus-qobuz", "tocar", "--deck", ident]):
             self.examing = None
-            self.app.toast(f"pondo pela rede: {artist} — {title}")
+            self.app.toast(f"pondo pela rede: {artist} — {title}",
+                           secs=8.0)
         else:
             self.app.toast("não deu para chamar o stylus-qobuz")
 
@@ -1960,7 +1964,7 @@ class QobuzScreen(Screen):
 
         # as duas coisas que dá para fazer com um disco que não é seu
         y = py + 214
-        T.frase_com_teclas(s, "[p] toca agora, sem ocupar disco",
+        T.frase_com_teclas(s, "[p] põe o disco — sem ocupar disco",
                            (px + 32, y), 16, T.GREEN)
         if self.job and not self.job.done:
             T.text(s, "já tem um disco baixando", (px + 32, y + 26), 16, T.AMBER)

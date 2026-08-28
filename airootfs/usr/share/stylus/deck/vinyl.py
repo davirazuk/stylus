@@ -705,8 +705,34 @@ def _collect_audio_recursive(folder, max_depth=4):
             uniq.append(p)
     return uniq
 
+def manifesto(folder):
+    """O disco.json de uma pasta, ou None. Um disco que não tem arquivos.
+
+    Escrito pelo `stylus qobuz tocar`: ordem, títulos, durações e endereços.
+    Fica aqui, e não dentro do Album, porque o lançador do deck precisa da
+    mesma lista sem construir um Album inteiro.
+    """
+    try:
+        with open(os.path.join(folder, "disco.json"), encoding="utf-8") as fh:
+            m = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return m if m.get("tracks") else None
+
+
 def track_paths(folder):
-    """Os arquivos de áudio da pasta, na ordem do disco — recursivo com subpastas."""
+    """Os arquivos de áudio da pasta, na ordem do disco — recursivo com subpastas.
+
+    Quando a pasta descreve um disco que vem pela rede (um disco.json, sem
+    arquivo de áudio nenhum), o que sai daqui são os ENDEREÇOS, na mesma
+    ordem. O mpv toca endereço, e é isso que faz o deck — a cerimônia
+    inteira, com o disco girando — funcionar igual para um disco da estante e
+    para um da assinatura. Sem esta linha o lançador não achava faixa nenhuma
+    e entregava a PASTA ao mpv, que tentava tocar a capa.
+    """
+    m = manifesto(folder)
+    if m:
+        return [t.get("url") or "" for t in m.get("tracks") or [] if t.get("url")]
     try:
         # tenta rápido direto antes de walk (caso comum 95%%)
         names = sorted((n for n in os.listdir(folder)
@@ -1110,11 +1136,8 @@ class Album:
 
     def _ler_manifesto(self):
         """disco.json no lugar dos arquivos. True quando havia um."""
-        arq = os.path.join(self.folder, "disco.json")
-        try:
-            with open(arq, encoding="utf-8") as fh:
-                m = json.load(fh)
-        except (OSError, ValueError):
+        m = manifesto(self.folder)
+        if not m:
             return False
         faixas = m.get("tracks") or []
         if not faixas:
@@ -1201,14 +1224,39 @@ class Album:
         target = self.total / n_sides
         sides, cur, cur_start = [], [], 0.0
         for i, tr in enumerate(self.tracks):
-            cur.append(i)
             end = tr["start"] + tr["duration"]
-            remaining_sides = n_sides - len(sides)
-            # Close this side when it has passed its share AND there is still
-            # material left for every side after it.
-            if (remaining_sides > 1
+
+            # ── 1. o teto, que é físico ───────────────────────────────────
+            # **Sintoma:** 69 dos 374 discos desta coleção tinham um lado
+            # passando dos 22 minutos, e o cabeçalho aqui em cima promete que
+            # nenhum passa. Sozinha, a regra de equilíbrio lá embaixo compara
+            # com a MÉDIA (total/n_lados) e fecha o lado DEPOIS de somar a
+            # faixa — então a última faixa entra inteira por cima do teto.
+            # Num disco de 44 minutos a média dá 22, o lado fecha aos 19, e a
+            # faixa seguinte o leva a 25.
+            #
+            # Importa porque um lado que não caberia num disco de verdade faz
+            # o aviso de virar chegar tarde, e o `stylus lado` prometer um
+            # "vira em X" de um lado que não existe.
+            #
+            # Fechar ANTES de pôr a faixa que estoura. Um lado vazio nunca
+            # fecha: uma faixa maior que o lado inteiro fica sozinha nele, que
+            # é o que acontece de verdade — não se corta uma música ao meio.
+            if cur and (end - cur_start) > SIDE_MAX_SECONDS:
+                sides.append({"start": cur_start, "end": tr["start"],
+                              "tracks": cur})
+                cur, cur_start = [], tr["start"]
+
+            cur.append(i)
+
+            # ── 2. o equilíbrio ───────────────────────────────────────────
+            # Lados parecidos em vez de encher o A até a boca e deixar o B com
+            # duas músicas. Fecha quando já passou da parte dele E ainda sobra
+            # material para todos os lados seguintes.
+            faltam = max(1, n_sides - len(sides))
+            if (faltam > 1
                     and (end - cur_start) >= target * 0.86
-                    and (len(self.tracks) - i - 1) >= (remaining_sides - 1)):
+                    and (len(self.tracks) - i - 1) >= (faltam - 1)):
                 sides.append({"start": cur_start, "end": end, "tracks": cur})
                 cur, cur_start = [], end
         if cur:

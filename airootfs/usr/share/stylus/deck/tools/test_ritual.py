@@ -85,8 +85,13 @@ def main():
     check("o envelope de intensidade ficou pronto", alb.envelope_snapshot() is not None)
     check("dividiu em pelo menos um lado", len(alb.sides) >= 1)
     # Um lado de LP não passa de ~22 min; é a regra que faz o disco ser disco.
-    check("nenhum lado passa do limite físico",
-          all(s["end"] - s["start"] <= vinyl.SIDE_MAX_SECONDS + 1 for s in alb.sides))
+    # Um lado só pode passar dos 22 minutos quando tem UMA faixa só — não se
+    # corta uma música ao meio, e uma faixa de 25 minutos ocupa o lado que
+    # ela ocupa. Com mais de uma faixa é defeito de empacotamento, e era: 69
+    # dos 374 discos desta coleção tinham um lado assim.
+    check("nenhum lado passa do limite físico com mais de uma faixa",
+          all(s["end"] - s["start"] <= vinyl.SIDE_MAX_SECONDS + 1
+              or len(s["tracks"]) == 1 for s in alb.sides))
     i0, s0 = alb.side_for(0.0)
     check("o instante 0 cai no primeiro lado", i0 == 0 and s0 is not None)
     iN, sN = alb.side_for(max(0.0, (alb.total or 0) - 1.0))
@@ -327,6 +332,48 @@ def main():
     ang_lead = vinyl.arm_angle_for_radius(vinyl.R_LEADIN)
     check("o cue percorre um arco que dá para ver",
           math.degrees(abs(ang_rest - ang_lead)) > 6.0)
+
+    # ── o empacotamento dos lados, com medidas exatas ─────────────────────
+    case("os lados nunca passam do que cabe num lado")
+
+    class _Falso:
+        """Um Album só com o que o _build_sides precisa."""
+        def __init__(self, duracoes):
+            self.tracks, t = [], 0.0
+            for d in duracoes:
+                self.tracks.append({"start": t, "duration": float(d)})
+                t += d
+            self.total = t
+            self.sides = []
+            vinyl.Album._build_sides(self)
+
+    # O caso que quebrava, e o motivo: a regra de equilíbrio só fecha um lado
+    # quando ainda FALTAM lados. O ÚLTIMO nunca era conferido — ele leva o
+    # que sobrou, seja quanto for. Quatro faixas curtas e uma longa: a regra
+    # nunca dispara (não há faixa sobrando para o lado seguinte), e os 26,7
+    # minutos inteiros viram um lado só.
+    _f = _Falso([100, 100, 100, 100, 1200])
+    check("o último lado também respeita o teto",
+          all(sd["end"] - sd["start"] <= vinyl.SIDE_MAX_SECONDS + 1
+              or len(sd["tracks"]) == 1 for sd in _f.sides))
+    check("e nenhuma faixa se perde no caminho",
+          sorted(i for sd in _f.sides for i in sd["tracks"]) == list(range(5)))
+    check("os lados são contíguos, sem buraco entre eles",
+          all(abs(_f.sides[i]["end"] - _f.sides[i + 1]["start"]) < 1e-6
+              for i in range(len(_f.sides) - 1)))
+    # Uma faixa maior que o lado inteiro fica sozinha nele.
+    _g = _Falso([300, 1900, 300])
+    check("uma faixa longa demais fica sozinha no lado dela",
+          any(len(sd["tracks"]) == 1
+              and sd["end"] - sd["start"] > vinyl.SIDE_MAX_SECONDS
+              for sd in _g.sides))
+    # Um disco curto continua sendo um lado só.
+    _i = _Falso([330] * 8)
+    check("44 min em 8 faixas dá dois lados parelhos",
+          len(_i.sides) == 2 and abs((_i.sides[0]["end"] - _i.sides[0]["start"])
+                                     - (_i.sides[1]["end"] - _i.sides[1]["start"])) < 60)
+    _h = _Falso([200] * 5)
+    check("disco curto continua com um lado só", len(_h.sides) == 1)
 
     # ── um disco que não tem arquivo nenhum ───────────────────────────────
     case("o disco que vem pela rede")
