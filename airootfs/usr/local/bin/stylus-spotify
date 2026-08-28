@@ -28,6 +28,7 @@ cat <<'EOF'
   stylus-spotify prev            faixa anterior
   stylus-spotify status          agora tocando (saída JSON)
   stylus-spotify daemon          verifica se spotifyd está rodando
+  stylus-spotify entrar          guarda as credenciais, conferindo antes
   stylus-spotify instalar        instala o spotipy (uma vez, na sua casa)
   stylus-spotify instalar --daemon  instala TAMBÉM o spotifyd, que é quem toca
 EOF
@@ -134,6 +135,31 @@ PYEOF
         playerctl -p spotifyd metadata \
             --format '{"title":"{{title}}","artist":"{{artist}}","album":"{{album}}","status":"{{status}}","position":"{{position(m)}}","duration":"{{duration(m)}}"}' \
             2>/dev/null || echo '{"status":"stopped"}'
+        ;;
+    entrar|login)
+        # --json: a tela cheia chama assim, para poder mostrar o erro DENTRO
+        # do formulário em vez de num terminal que ninguém está olhando.
+        if [[ ${1:-} == --json ]]; then
+            exec $PY "$SHARE/spotify_login.py"
+        fi
+        # Pelo STDIN, nunca por argumento: argumento de processo aparece no
+        # `ps` para qualquer usuário da máquina e fica no histórico do shell.
+        if [[ -t 0 ]]; then
+            echo "As credenciais saem de developer.spotify.com → criar um app."
+            printf 'client_id: '; read -r _cid
+            printf 'client_secret (não aparece): '; read -rs _seg; echo
+        else
+            read -r _cid; read -r _seg
+        fi
+        r=$(printf '%s\n%s\n' "$_cid" "$_seg" \
+            | $PY "$SHARE/spotify_login.py")
+        _cid=""; _seg=""
+        if grep -q '"ok": true' <<<"$r"; then
+            echo "pronto. \`stylus spotify buscar NOME\` já funciona."
+        else
+            sed -n 's/.*"erro": "\([^"]*\)".*/\1/p' <<<"$r" >&2
+            exit 1
+        fi
         ;;
     daemon)
         # Três estados, não dois. A tela de instalação mandava rodar

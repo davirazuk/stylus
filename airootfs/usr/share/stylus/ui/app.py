@@ -48,6 +48,16 @@ FPS = 60
 # ═══════════════════════════════════════════════════════════════════════════
 # Infraestrutura
 # ═══════════════════════════════════════════════════════════════════════════
+# Todo lançamento de processo desta interface passa por um destes três nomes
+# — `spawn`, `Job` e `rodar` — de propósito. O teste (`ui/tools/test_ui.py`)
+# aperta TODAS as teclas em TODAS as telas, e uma tecla que chegue a um
+# subprocess.run direto executa de verdade lá dentro. Já custou 13 GB de
+# Steam descompactado dentro de uma pasta temporária; o `rodar` é o terceiro
+# nome porque o formulário de conta precisa da SAÍDA do comando, que nem o
+# spawn nem o Job devolvem.
+rodar = subprocess.run
+
+
 def spawn(cmd):
     """Roda uma coisa e esquece dela.
 
@@ -133,6 +143,157 @@ class Job:
             self.rc = 127
         finally:
             self.done = True
+
+
+class Formulario:
+    """Entrar numa conta sem sair da tela cheia.
+
+    POR QUE ISTO EXISTE
+    -------------------
+    Para usar o Qobuz aqui, a máquina mandava abrir um navegador numa
+    interface web, entrar lá, e voltar — e o único motivo daquele navegador
+    existir era guardar um token num arquivo. Para o Spotify era pior: um
+    client_id e um client_secret escritos à mão num arquivo cujo caminho a
+    tela mostrava e mais nada. Num sistema feito para ser usado do sofá, com
+    um controle, "abra o navegador e edite um .conf" é o mesmo que "não dá
+    para fazer daqui".
+
+    O envio roda numa thread e recebe os valores pelo STDIN do programa que
+    autentica — nunca por argumento. Argumento de processo aparece no `ps`
+    para qualquer usuário da máquina.
+    """
+
+    def __init__(self, titulo, campos, comando, ao_terminar=None, rodape=""):
+        # campos: [(rótulo, dica, oculto), ...]
+        self.titulo = titulo
+        self.campos = campos
+        self.comando = comando
+        self.ao_terminar = ao_terminar
+        self.rodape = rodape
+        self.valores = ["" for _ in campos]
+        self.sel = 0
+        self.enviando = False
+        self.erro = None
+
+    # ── teclado ────────────────────────────────────────────────────────────
+    def key(self, ev):
+        """True quando a tecla foi consumida. Sempre consome: é um formulário
+        modal, e uma tecla que escapa daqui vai mexer na tela de trás."""
+        if self.enviando:
+            return True
+        if ev.key == pygame.K_TAB or ev.key == pygame.K_DOWN:
+            self.sel = (self.sel + 1) % len(self.campos)
+        elif ev.key == pygame.K_UP:
+            self.sel = (self.sel - 1) % len(self.campos)
+        elif ev.key == pygame.K_BACKSPACE:
+            self.valores[self.sel] = self.valores[self.sel][:-1]
+        elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if self.sel < len(self.campos) - 1:
+                self.sel += 1          # enter no meio anda, não envia
+            else:
+                self.enviar()
+        elif ev.unicode and ev.unicode.isprintable():
+            # Teto por campo: um segredo do Spotify tem 32 caracteres e um
+            # e-mail raramente passa de 60. Sem teto, uma tecla presa enche a
+            # memória e o desenho sai da caixa.
+            if len(self.valores[self.sel]) < 200:
+                self.valores[self.sel] += ev.unicode
+        return True
+
+    def enviar(self):
+        if any(not v.strip() for v in self.valores):
+            self.erro = "preencha os dois campos"
+            return
+        self.enviando = True
+        self.erro = None
+
+        def _vai():
+            try:
+                r = rodar(
+                    self.comando,
+                    input="\n".join(self.valores) + "\n",
+                    capture_output=True, text=True, timeout=90)
+                saida = (r.stdout or "").strip().splitlines()
+                dado = json.loads(saida[-1]) if saida else {}
+            except subprocess.TimeoutExpired:
+                dado = {"erro": "o serviço não respondeu a tempo"}
+            except Exception as e:                        # noqa: BLE001
+                dado = {"erro": str(e)}
+            if dado.get("ok"):
+                # Os valores não ficam na memória depois de servirem.
+                self.valores = ["" for _ in self.campos]
+                if self.ao_terminar:
+                    self.ao_terminar(True, dado)
+            else:
+                self.erro = dado.get("erro") or "não deu certo"
+                if self.ao_terminar:
+                    self.ao_terminar(False, dado)
+            self.enviando = False
+
+        threading.Thread(target=_vai, daemon=True).start()
+
+    # ── desenho ────────────────────────────────────────────────────────────
+    def draw(self, s, r):
+        dim = pygame.Surface(r.size)
+        dim.fill(T.INK)
+        dim.set_alpha(226)
+        s.blit(dim, r.topleft)
+
+        pw = min(560, r.w - 120)
+        ph = 150 + len(self.campos) * 74 + (28 if self.erro else 0) \
+            + (26 if self.rodape else 0)
+        caixa = pygame.Rect(0, 0, pw, ph)
+        caixa.center = r.center
+        T.panel(s, caixa, T.INK_SOFT, radius=16, border=T.LINE)
+
+        x = caixa.x + 30
+        corpo = pw - 60
+        y = caixa.y + 26
+        T.text(s, self.titulo, (x, y), 24, T.TEXT, bold=True, maxw=corpo)
+        y += 46
+
+        for i, (rotulo, dica, oculto) in enumerate(self.campos):
+            aceso = i == self.sel and not self.enviando
+            T.text(s, rotulo, (x, y), 14, T.AMBER if aceso else T.TEXT_FAINT)
+            cr = pygame.Rect(x, y + 20, corpo, 38)
+            T.panel(s, cr, T.INK_LIFT if aceso else T.INK, radius=6,
+                    border=T.BLUE_BRIGHT if aceso else T.LINE)
+            v = self.valores[i]
+            # Oculto vira bolinha por caractere: alguém pode estar olhando a
+            # tela de longe, que é o modo normal de usar esta interface.
+            mostra = ("•" * len(v)) if oculto else v
+            if not v and not aceso:
+                T.text(s, dica, (cr.x + 12, cr.y + 9), 17, T.TEXT_FAINT,
+                       maxw=corpo - 24)
+            else:
+                # Mostra o FIM do texto quando ele não cabe: quem está
+                # digitando quer ver o que acabou de escrever.
+                while mostra and T.largura(mostra, 17) > corpo - 30:
+                    mostra = mostra[1:]
+                T.text(s, mostra, (cr.x + 12, cr.y + 9), 17, T.TEXT,
+                       maxw=corpo - 24)
+                if aceso and int(time.time() * 2) % 2 == 0:
+                    cx = cr.x + 12 + T.largura(mostra, 17) + 2
+                    pygame.draw.line(s, T.AMBER, (cx, cr.y + 9),
+                                     (cx, cr.y + 29), 2)
+            y += 74
+
+        if self.erro:
+            T.text(s, self.erro, (x, y), 16, T.RED, maxw=corpo)
+            y += 28
+        if self.rodape:
+            T.text(s, self.rodape, (x, y), 14, T.TEXT_FAINT, maxw=corpo)
+            y += 24
+
+        pe = caixa.bottom - 40
+        if self.enviando:
+            T.text(s, "entrando…", (x, pe), 17, T.AMBER)
+        else:
+            # Curto porque tem que CABER: a versão longa encostava na borda
+            # direita do painel e o "desiste" saía por fora.
+            T.frase_com_teclas(s, "[tab] campo   ·   [enter] entra   ·   [esc] sai",
+                               (x, pe), 15, T.TEXT_FAINT)
+        return caixa
 
 
 class Screen:
@@ -1434,9 +1595,26 @@ class QobuzScreen(Screen):
         self.examing = None
         self.job = None
         self._montagem = None
+        self.entrada = None           # o formulário de login, quando aberto
 
     def enter(self):
         self._olhar()
+
+    def _entrar(self):
+        """Abre o formulário de conta. Ver a classe Formulario."""
+        def _pronto(deu, dado):
+            if deu:
+                self.app.toast("entrou no Qobuz (%s)"
+                               % (dado.get("assinatura") or "conta"))
+                self.entrada = None
+                self._olhar()
+        self.entrada = Formulario(
+            "entrar no Qobuz",
+            [("e-mail", "a conta da sua assinatura", False),
+             ("senha", "", True)],
+            ["stylus-qobuz", "entrar", "--json"],
+            ao_terminar=_pronto,
+            rodape="fica guardado só nesta máquina, em ~/.config/qobuz-dl")
 
     def _olhar(self):
         """O que a tela precisa saber para trabalhar, fora do fio do desenho.
@@ -1579,6 +1757,13 @@ class QobuzScreen(Screen):
             self.app.toast("não deu para chamar o stylus-qobuz")
 
     def key(self, ev):
+        # O formulário primeiro: enquanto ele está aberto, ele é a tela.
+        if self.entrada:
+            if ev.key == pygame.K_ESCAPE:
+                self.entrada = None
+                return True
+            return self.entrada.key(ev)
+
         # ── overlay de exame ────────────────────────────────────────────────
         if self.examing:
             if ev.key == pygame.K_ESCAPE:
@@ -1646,6 +1831,8 @@ class QobuzScreen(Screen):
             # cima de um disco não fazia rigorosamente nada, sem recado.
             if n:
                 self._download(self.results[self.sel])
+        elif ev.key == pygame.K_c:
+            self._entrar()
         elif ev.key == pygame.K_r:
             self._olhar()
             if self.query:
@@ -1782,6 +1969,19 @@ class QobuzScreen(Screen):
                            (px + 32, y), 15, T.TEXT_FAINT)
 
     def draw(self, s, r):
+        """O corpo primeiro, o formulário por cima — sempre.
+
+        O desenho do formulário estava espalhado pelos vários `return` do
+        corpo, e faltava justamente no que mais importa: a tela vazia, que é
+        onde alguém que ainda não entrou está quando aperta [c]. Apertar a
+        tecla não fazia nada visível. Com um invólucro não há saída do corpo
+        por onde o formulário possa escapar.
+        """
+        self._corpo(s, r)
+        if self.entrada:
+            self.entrada.draw(s, r)
+
+    def _corpo(self, s, r):
         pad, gap = 30, 14
         head = 58
         self.COLS = max(3, min(8, r.w // 200))
@@ -1832,8 +2032,7 @@ class QobuzScreen(Screen):
                     [(m["lib"], "o qobuz-dl, que procura, toca e baixa",
                       None if m["lib"] else "stylus qobuz instalar"),
                      (m["cred"], "a sua conta do Qobuz",
-                      None if m["cred"] else "stylus qobuz abrir  (entre uma "
-                                             "vez e feche)")],
+                      None if m["cred"] else "[c] entra aqui mesmo")],
                     rodape="precisa de assinatura Qobuz. tocar não ocupa "
                            "disco nenhum; o que você guardar vira arquivo "
                            "seu, na sua pasta, e aparece na estante junto "
@@ -1891,7 +2090,7 @@ class QobuzScreen(Screen):
         if self.results:
             item = self.results[self.sel]
             self.app.hint(
-                s, r, "[/] procura   [enter] examina   [p] toca   [d] baixa",
+                s, r, "[/] procura   [enter] examina   [p] toca   [d] baixa   [c] conta",
                 contexto=f"{item.get('display_subtitle', '')} — "
                          f"{item.get('display_title', '')}")
 
@@ -1924,6 +2123,7 @@ class SpotifyScreen(Screen):
         self.job = None
         self._daemon_ok = None
         self._daemon = None          # ausente | parado | ok
+        self.entrada = None          # o formulário de credenciais
         self._now_playing = None
         self._np_t = 0.0
         self._setup = None
@@ -1931,6 +2131,27 @@ class SpotifyScreen(Screen):
     def enter(self):
         self._check_daemon_threaded()
         self._refresh_now_playing()
+
+    def _entrar(self):
+        """As credenciais do app, aqui mesmo. Ver a classe Formulario.
+
+        Antes a tela mostrava o CAMINHO de um arquivo e mais nada — quem
+        estava no sofá com um controle não tinha como escrever nele. E
+        credencial errada não dizia nada: a busca só não achava disco
+        nenhum, para sempre.
+        """
+        def _pronto(deu, _dado):
+            if deu:
+                self.app.toast("credenciais do Spotify guardadas")
+                self.entrada = None
+                self._check_daemon_threaded()
+        self.entrada = Formulario(
+            "as credenciais do Spotify",
+            [("client_id", "de developer.spotify.com", False),
+             ("client_secret", "", True)],
+            ["stylus-spotify", "entrar", "--json"],
+            ao_terminar=_pronto,
+            rodape="criar um app em developer.spotify.com é de graça")
 
     def _check_daemon_threaded(self):
         def _probe():
@@ -2084,6 +2305,13 @@ class SpotifyScreen(Screen):
             pass
 
     def key(self, ev):
+        # O formulário primeiro: enquanto ele está aberto, ele é a tela.
+        if self.entrada:
+            if ev.key == pygame.K_ESCAPE:
+                self.entrada = None
+                return True
+            return self.entrada.key(ev)
+
         if self.searching:
             if ev.key == pygame.K_ESCAPE:
                 self.searching, self.query = False, ""
@@ -2097,7 +2325,9 @@ class SpotifyScreen(Screen):
             return True
 
         n = len(self.results)
-        if ev.key == pygame.K_SLASH:
+        if ev.key == pygame.K_c:
+            self._entrar()
+        elif ev.key == pygame.K_SLASH:
             self.searching, self.query = True, ""
         elif ev.key in (pygame.K_DOWN, pygame.K_j):
             if n:
@@ -2164,6 +2394,19 @@ class SpotifyScreen(Screen):
                    T.TEXT_FAINT, anchor="topright")
 
     def draw(self, s, r):
+        """O corpo primeiro, o formulário por cima — sempre.
+
+        O desenho do formulário estava espalhado pelos vários `return` do
+        corpo, e faltava justamente no que mais importa: a tela vazia, que é
+        onde alguém que ainda não entrou está quando aperta [c]. Apertar a
+        tecla não fazia nada visível. Com um invólucro não há saída do corpo
+        por onde o formulário possa escapar.
+        """
+        self._corpo(s, r)
+        if self.entrada:
+            self.entrada.draw(s, r)
+
+    def _corpo(self, s, r):
         pad, gap = 30, 14
         head = 58
         self.COLS = max(3, min(8, r.w // 200))
@@ -2228,8 +2471,7 @@ class SpotifyScreen(Screen):
                     [(m["spotipy"], "a biblioteca que procura (spotipy)",
                       None if m["spotipy"] else "stylus spotify instalar"),
                      (m["cred"], "as credenciais da sua conta de programador",
-                      None if m["cred"] else
-                      "~/.config/stylus/spotify.conf   →   [spotify]"),
+                      None if m["cred"] else "[c] entra aqui mesmo"),
                      (m["daemon"], "o spotifyd, que é quem toca",
                       None if m["daemon"] else
                       ("systemctl --user enable --now spotifyd"
@@ -2273,21 +2515,31 @@ class SpotifyScreen(Screen):
             if cy > clip.bottom or cy + ch < clip.top:
                 continue
             self._draw_track(s, pygame.Rect(cx, cy, cw, cw), item, i == self.sel)
+
+        # O mesmo aviso que a estante tem: sem ele a fileira cortada ao meio
+        # se lê como fileira com defeito, e a seguinte entra por um fio de um
+        # pixel atravessando a linha de legendas.
+        total_h = ((len(self.results) + self.COLS - 1) // self.COLS) * ch
+        T.borda_rolagem(s, clip,
+                        acima=self.scroll > 2,
+                        abaixo=self.scroll + view_h < total_h - 2)
         s.set_clip(old)
 
-        n_found = len(self.results)
-        T.text(s, f"{n_found} faixas", (r.right - pad, r.y + 20), 16,
+        # Sob o estado, não em cima dele: os dois eram desenhados no mesmo
+        # canto superior direito, um em y+20 e o outro em y+24.
+        T.text(s, f"{len(self.results)} faixas", (r.right - pad, r.y + 46), 15,
                T.TEXT_FAINT, anchor="topright")
 
         if self.results:
             item = self.results[self.sel]
             self.app.hint(
-                s, r, "[/] procura   [enter] toca   [space] pausa",
+                s, r, "[/] procura   [enter] toca   [space] pausa   [c] conta",
                 contexto=f"{item.get('artist', '')} — {item.get('name', '')}")
 
         if self.job:
             self.app.job_panel(s, pygame.Rect(r.right - 380, r.y + head + 8,
                                               360, 160), self.job)
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════

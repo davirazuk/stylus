@@ -132,10 +132,11 @@ def main():
               pygame.K_n, pygame.K_p, pygame.K_SLASH, pygame.K_DELETE,
               pygame.K_BACKSPACE, pygame.K_PAGEUP, pygame.K_PAGEDOWN,
               pygame.K_HOME, pygame.K_END,
-              # `d` baixa na loja do Qobuz. Só entrou na lista depois que o
-              # Job virou de mentira: antes, apertar `d` aqui teria começado
-              # um download de verdade dentro do teste.
-              pygame.K_d]
+              # `d` baixa na loja do Qobuz e `c` abre o formulário de conta.
+              # Só entraram na lista depois que o Job e o `rodar` viraram de
+              # mentira: antes, apertar `d` aqui teria começado um download de
+              # verdade, e `c` seguido de ENTER teria falado com o servidor.
+              pygame.K_d, pygame.K_c]
 
     secao("cada seção desenha e aguenta o teclado")
     # Nada aqui pode lançar processo de verdade. A varredura aperta ENTER em
@@ -171,6 +172,15 @@ def main():
             spawn_reais.append(cmd)
 
     A.Job = JobDeMentira
+
+    # E o `rodar`, que é por onde o formulário de conta chama o comando que
+    # autentica. Sem grampeá-lo, a varredura de teclas — que aperta `c` e
+    # depois ENTER em todas as telas — chegaria a rodar `stylus-qobuz entrar`
+    # de verdade contra o servidor do Qobuz.
+    class _Resposta:
+        def __init__(self, out): self.stdout, self.stderr, self.returncode = out, "", 0
+    A.rodar = lambda cmd, **k: (spawn_reais.append(cmd),
+                                _Resposta('{"ok": true}'))[1]
     for i, tela in enumerate(app.screens):
         try:
             app._goto(i)
@@ -203,6 +213,57 @@ def main():
     else:
         bad("o ENTER não chegou a nenhum Job conhecido — "
             "a interceptação pode ter parado de morder")
+
+    secao("entrar numa conta sem sair da tela")
+    try:
+        enviados = []
+
+        class _R:
+            stdout, stderr, returncode = '{"ok": true, "assinatura": "Studio"}', "", 0
+
+        A.rodar = lambda cmd, **k: (enviados.append((cmd, k.get("input", ""))), _R())[1]
+        loja = next(x for x in app.screens if x.name == "QOBUZ")
+        app._goto(app.screens.index(loja))
+        # A varredura anterior deixou a tela em modo de busca (ela aperta
+        # `/`), e ali `c` é letra, não atalho — que é o certo. Zera antes.
+        loja.entrada, loja.searching, loja.query = None, False, ""
+        loja.key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_c, unicode="c", mod=0))
+        if loja.entrada is None:
+            bad("o [c] não abriu o formulário")
+        else:
+            ok("o [c] abre o formulário")
+            for ch in "eu@exemplo.com":
+                loja.key(pygame.event.Event(pygame.KEYDOWN, key=0, unicode=ch, mod=0))
+            loja.key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB, unicode="", mod=0))
+            for ch in "segredo":
+                loja.key(pygame.event.Event(pygame.KEYDOWN, key=0, unicode=ch, mod=0))
+            # A tela de trás não pode reagir: o formulário é modal, e uma
+            # tecla que escape dali mexe na grade que está atrás dele.
+            if loja.query:
+                bad(f"a tela de trás recebeu o que foi digitado: {loja.query!r}")
+            else:
+                ok("o que se digita fica no formulário, não vaza para a tela")
+            loja.key(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, unicode="", mod=0))
+            for _ in range(40):
+                if enviados:
+                    break
+                time.sleep(0.05)
+            if not enviados:
+                bad("o ENTER não enviou nada")
+            else:
+                cmd, entrada = enviados[-1]
+                if "senha" in " ".join(cmd) or "segredo" in " ".join(cmd):
+                    bad(f"a senha foi por ARGUMENTO, visível no ps: {cmd}")
+                elif "segredo" not in entrada:
+                    bad("a senha não chegou pelo stdin")
+                else:
+                    ok("a senha vai pelo stdin, nunca por argumento")
+        # e desenhar com o formulário aberto não pode estourar
+        loja.draw(app.surf, corpo)
+        ok("desenha com o formulário aberto")
+        loja.entrada = None
+    except Exception:                                       # noqa: BLE001
+        bad("formulário de conta", traceback.format_exc())
 
     secao("o trilho e o aviso")
     try:

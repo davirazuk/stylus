@@ -10,6 +10,7 @@
 #
 #      stylus qobuz              o estado: instalado? no ar? em que porta?
 #      stylus qobuz instalar     instala o qobuz-dl (num venv, dentro da casa)
+#      stylus qobuz entrar       entra na sua conta, sem navegador nenhum
 #      stylus qobuz buscar TERMO procura discos e mostra id, ano e qualidade
 #      stylus qobuz baixar ID    baixa direto para a estante, sem navegador
 #      stylus qobuz tocar ID     TOCA sem baixar — o disco vem pela rede
@@ -639,6 +640,34 @@ if _TRADUTOR.tty:
     _ERRO_REAL.write(" " * 78 + "\r")         # apaga a última barra
 print("pronto. `stylus reindex` se a estante não mostrar na hora.")
 QOBUZDL
+        ;;
+    entrar|login)
+        precisa_ser_voce
+        # --json: a tela cheia chama assim. Ela precisa da resposta crua para
+        # mostrar o erro DENTRO do formulário, em vez de num terminal que
+        # ninguém está olhando.
+        if [[ ${2:-} == --json ]]; then
+            exec "$PY" "$SHARE/qobuz_login.py"
+        fi
+        # A senha entra pelo `read -s`, nunca por argumento: argumento de
+        # processo aparece no `ps` para qualquer usuário da máquina e fica no
+        # histórico do shell. E vai para o python pelo STDIN pelo mesmo
+        # motivo.
+        if [[ -t 0 ]]; then
+            printf 'e-mail do Qobuz: '; read -r _email
+            printf 'senha (não aparece): '; read -rs _senha; echo
+        else
+            read -r _email; read -r _senha
+        fi
+        resposta=$(printf '%s\n%s\n' "$_email" "$_senha" \
+                   | "$PY" "$SHARE/qobuz_login.py")
+        _email=""; _senha=""
+        if grep -q '"ok": true' <<<"$resposta"; then
+            ok "entrou: $(sed -n 's/.*"assinatura": "\([^"]*\)".*/\1/p' <<<"$resposta")"
+            printf '  %s`stylus qobuz buscar NOME` e `stylus qobuz tocar ID` já funcionam.%s\n' "$c_d" "$c_0"
+        else
+            die "$(sed -n 's/.*"erro": "\([^"]*\)".*/\1/p' <<<"$resposta")"
+        fi
         ;;
     tocar|play|stream)
         alvo="${2:-}"
