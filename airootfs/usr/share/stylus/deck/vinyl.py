@@ -918,7 +918,18 @@ def folder_names(folder):
     nome = os.path.basename(folder)
     pai = os.path.dirname(folder)
     if not _e_raiz(pai):
-        return os.path.basename(pai), nome
+        artista = os.path.basename(pai)
+        # Nenhum artista se chama "2008-04-02 - Radiohead - Maida Vale Studio
+        # 3, London, UK". Uma pasta com DATA na frente é um show, não um
+        # artista: nesta coleção os bootlegs são Songs/<data - banda - lugar>/
+        # <disco>, e a estante assinava o disco com a linha inteira, data e
+        # endereço — ilegível na grade e fora de ordem alfabética, porque
+        # ordena pelo ano.
+        if _DATA_NA_FRENTE.match(artista):
+            dentro = _DATA_NA_FRENTE.sub("", artista)
+            primeiro = re.split(r"\s+[-–—]\s+", dentro, maxsplit=1)[0].strip()
+            artista = primeiro or dentro.strip() or artista
+        return artista, nome
     # Solto na raiz: o artista, se houver, está no próprio nome.
     resto = _DATA_NA_FRENTE.sub("", nome)
     partes = re.split(r"\s+[-–—]\s+", resto, maxsplit=1)

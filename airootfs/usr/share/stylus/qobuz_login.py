@@ -3,7 +3,7 @@
 
 POR QUE ISTO EXISTE
 -------------------
-Para usar o Qubuz aqui, a máquina precisava que a pessoa abrisse um navegador
+Para usar o Qobuz aqui, a máquina precisava que a pessoa abrisse um navegador
 numa interface web, entrasse lá, e voltasse — e o único motivo de aquele
 navegador existir era guardar um token num arquivo. Num sistema feito para
 ser usado do sofá, com um controle, "abra o navegador" é o mesmo que "não dá
@@ -26,21 +26,87 @@ TRÊS COISAS QUE ISTO TEM QUE RESPEITAR
    de streaming de alguém; um config.ini legível por todo mundo é um
    descuido que não se percebe até tarde demais.
 """
-import configparser
 import hashlib
 import json
 import os
-import stat
 import sys
 import threading
 
-CONF = os.path.expanduser("~/.config/qobuz-dl/config.ini")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from qobuz_conta import guardar, ler_credenciais            # noqa: E402
 
 
 def responde(**campos):
     """Uma linha de JSON no stdout. Quem lê é a tela cheia e o shell."""
     print(json.dumps(campos, ensure_ascii=False))
     raise SystemExit(0 if campos.get("ok") else 1)
+
+
+def raspar_bundle(Bundle, prazo=45):
+    """O app_id e os segredos, do player web do Qobuz.
+
+    Eles não são fixáveis no código: o Qobuz os troca, e um app_id velho
+    responde "Invalid app id" — que, sem esta explicação, se lê como senha
+    errada. Quem os tem é o player web, e a única forma de obtê-los é raspar
+    o bundle.js dele.
+
+    Só que esse bundle.js é o ponto mais frágil de todo o caminho. Medido
+    aqui em dois dias diferentes: 7,6 s num, e no outro NÃO TERMINOU DE
+    BAIXAR em dois minutos — nem pelo requests nem pelo curl. E o `timeout`
+    do requests é por leitura, não total: um fluxo lento pinga um byte de vez
+    em quando e a chamada nunca volta. Por isso o prazo é de uma THREAD, que
+    é a única coisa que segura isso de verdade; ela fica para trás e o
+    processo sai sem ela.
+    """
+    colhido = {}
+
+    def _raspar():
+        try:
+            b = Bundle()
+            colhido["app_id"] = b.get_app_id()
+            colhido["segredos"] = [x for x in b.get_secrets().values() if x]
+            try:
+                colhido["chave"] = b.get_private_key() or ""
+            except Exception:                            # noqa: BLE001
+                colhido["chave"] = ""
+        except Exception as e:                           # noqa: BLE001
+            colhido["erro"] = str(e)
+
+    t = threading.Thread(target=_raspar, daemon=True)
+    t.start()
+    t.join(prazo)
+    if "app_id" not in colhido:
+        return None
+    return colhido["app_id"], colhido["segredos"], colhido.get("chave", "")
+
+
+def tentar(Client, app_id, segredos, email, md5):
+    """UMA tentativa de entrar com este app_id. Devolve (token, id, selo).
+
+    O user_id sai da MESMA chamada que autenticou. Antes ele vinha de um
+    segundo `user/login` embrulhado num `except: user_id = ""` — e quando
+    esse segundo pedido falhava, o login dizia "entrou" e gravava um user_id
+    vazio, com o qual nada mais funciona: o `qobuz_busca` olha o arquivo,
+    não vê user_id, e responde "o Qobuz ainda não tem conta aqui". Entrar e
+    continuar sem conta é a pior resposta possível.
+    """
+    cl = Client(None, None, app_id, segredos, skip_auth=True)
+    info = cl.api_call("user/login", email=email, pwd=md5)
+    usuario = info.get("user") or {}
+    cred = usuario.get("credential") or {}
+    if not cred.get("parameters"):
+        from qobuz_dl.exceptions import IneligibleError
+        raise IneligibleError("sem assinatura")
+    token = info.get("user_auth_token") or ""
+    uid = str(usuario.get("id") or "")
+    if not token or not uid:
+        raise RuntimeError("o Qobuz não devolveu token nem conta")
+    # Confere os SEGREDOS antes de gravar: o auth_with_token chama o
+    # cfg_setup, que experimenta um por um contra a API. Sem isto o login
+    # grava um segredo que só vai falhar mais tarde, na primeira busca, longe
+    # daqui — e aí parece defeito da busca.
+    cl.auth_with_token(uid, token)
+    return token, uid, (cred.get("parameters") or {}).get("short_label", "?")
 
 
 def main():
@@ -60,145 +126,88 @@ def main():
     logging.getLogger("qopy").setLevel(logging.WARNING)
     try:
         from qobuz_dl.bundle import Bundle
+        from qobuz_dl.exceptions import (AuthenticationError, IneligibleError,
+                                         InvalidAppIdError,
+                                         InvalidAppSecretError)
         from qobuz_dl.qopy import Client
     except ImportError:
         responde(ok=False,
                  erro="o qobuz-dl não está instalado. Rode: stylus qobuz instalar")
 
-    # ── o app_id e os segredos ────────────────────────────────────────────
-    # Eles não são fixáveis no código: o Qobuz os troca, e um app_id velho
-    # responde "Invalid app id" — que, sem esta explicação, se lê como senha
-    # errada. Quem os tem é o player web do Qobuz, e a única forma de obtê-los
-    # é raspar o bundle.js dele.
-    #
-    # Só que esse bundle.js é o ponto mais frágil de todo o caminho. Medido
-    # aqui: a página de login responde em 1,2 s, e o bundle.js NÃO TERMINA DE
-    # BAIXAR em dois minutos — nem pelo requests nem pelo curl. E o `timeout`
-    # do requests é por leitura, não total: um fluxo lento pinga um byte de vez
-    # em quando e a chamada nunca volta. Um login que depende disso é um login
-    # que pendura a tela para sempre, sem nada explicando.
-    #
-    # Então: primeiro o que a máquina JÁ TEM guardado, que funciona e é
-    # instantâneo; a raspagem só quando não há nada, e com prazo.
-    velho = configparser.ConfigParser()
-    if os.path.isfile(CONF):
+    # Primeiro o que a máquina JÁ TEM guardado: é instantâneo, e a raspagem é
+    # o pedaço lento e frágil do caminho.
+    app_id, segredos, chave = ler_credenciais()
+    md5 = hashlib.md5(senha.encode("utf-8")).hexdigest()
+
+    resultado = erro_guardado = None
+    if app_id and segredos:
         try:
-            velho.read(CONF, encoding="utf-8")
-        except Exception:                                # noqa: BLE001
-            pass
-    app_id = velho.get("DEFAULT", "app_id", fallback="").strip()
-    segredos = [x.strip() for x in
-                velho.get("DEFAULT", "secrets", fallback="").split(",") if x.strip()]
-    chave = velho.get("DEFAULT", "private_key", fallback="").strip()
+            resultado = tentar(Client, app_id, segredos, email, md5)
+        except (InvalidAppIdError, InvalidAppSecretError) as e:
+            # O caso que o comentário lá em cima previa e o código nunca
+            # tratava: o Qobuz TROCOU o app_id, o que estava guardado azedou,
+            # e a mensagem em inglês ("Invalid app id") se lê como senha
+            # errada. Não é. O conserto é jogar fora e raspar de novo — e
+            # como isso nunca acontecia, uma máquina com app_id velho não
+            # tinha caminho nenhum de volta.
+            erro_guardado = e
+            app_id = None
+        except AuthenticationError:
+            resultado = "senha"
+        except IneligibleError:
+            resultado = "sem-assinatura"
+        except Exception as e:                           # noqa: BLE001
+            responde(ok=False, erro=str(e) or type(e).__name__)
 
-    if not (app_id and segredos):
-        colhido = {}
-
-        def _raspar():
-            try:
-                b = Bundle()
-                colhido["app_id"] = b.get_app_id()
-                colhido["segredos"] = [x for x in b.get_secrets().values() if x]
-                try:
-                    colhido["chave"] = b.get_private_key() or ""
-                except Exception:                        # noqa: BLE001
-                    colhido["chave"] = ""
-            except Exception as e:                       # noqa: BLE001
-                colhido["erro"] = str(e)
-
-        # Em thread com prazo, e não com o timeout do requests: o do requests
-        # é por leitura e não segura um fluxo lento. A thread fica para trás;
-        # o processo sai e o sistema a leva junto.
-        t = threading.Thread(target=_raspar, daemon=True)
-        t.start()
-        t.join(45)
-        if "app_id" not in colhido:
+    if resultado is None:
+        novo = raspar_bundle(Bundle)
+        if novo is None:
             responde(ok=False, erro=(
                 "o Qobuz não respondeu a tempo (é a página do player deles que "
                 "está lenta, não a sua conexão). Tente de novo em alguns "
                 "minutos — ou entre uma vez pela interface web, que guarda o "
                 "mesmo dado:  stylus qobuz abrir"))
-        app_id = colhido["app_id"]
-        segredos = colhido["segredos"]
-        chave = colhido.get("chave", "")
-
-    md5 = hashlib.md5(senha.encode("utf-8")).hexdigest()
-    try:
-        cl = Client(email, md5, app_id, segredos)
-    except Exception as e:                               # noqa: BLE001
-        nome = type(e).__name__
-        if "Auth" in nome or "Credential" in nome:
-            # 401 da API com app_id válido: Qobuz recusou O QUE FOI DIGITADO,
-            # e quase nunca é a digitação. Conta criada pelo Google/Apple ou
-            # pela loja de aplicativo NÃO TEM senha de site — não existe senha
-            # que "confira". O caminho que funciona para ESSAS contas é o
-            # navegador, que aceita o Google/Apple do jeito que a conta pede.
-            responde(ok=False, erro=(
-                "e-mail ou senha não conferem. Se esta conta foi criada pelo "
-                "Google, pela Apple ou pela loja de aplicativo, ela não tem "
-                "senha de site e este login nunca vai aceitar — rode "
-                "`stylus qobuz abrir` e entre pelo navegador uma vez: é o "
-                "mesmo resultado e guarda o token."))
-        if "Ineligible" in nome:
-            responde(ok=False,
-                     erro="esta conta do Qobuz não tem assinatura de streaming")
-        responde(ok=False, erro=str(e) or nome)
-
-    token = getattr(cl, "uat", "") or ""
-    if not token:
-        responde(ok=False, erro="o Qobuz não devolveu token nenhum")
-
-    # O user_id não vem do Client; sai da mesma chamada de login.
-    try:
-        info = cl.api_call("user/login", email=email, pwd=md5)
-        user_id = str((info.get("user") or {}).get("id") or "")
-    except Exception:                                    # noqa: BLE001
-        user_id = ""
-
-    cfg = configparser.ConfigParser()
-    # Lê o que já existe e só TROCA o que é de conta: quem já tinha ajustado
-    # o formato das pastas, a qualidade ou as etiquetas não perde nada por
-    # ter entrado de novo.
-    if os.path.isfile(CONF):
+        app_id, segredos, chave_nova = novo
+        chave = chave_nova or chave
         try:
-            cfg.read(CONF, encoding="utf-8")
-        except Exception:                                # noqa: BLE001
-            cfg = configparser.ConfigParser()
-    d = cfg["DEFAULT"]
-    d["email"] = email
-    d["password"] = md5
-    d["app_id"] = str(app_id)
-    d["secrets"] = ",".join(segredos)
-    d["private_key"] = chave
-    d["user_auth_token"] = token
-    d["user_id"] = user_id
-    # Só quando o arquivo é novo: um valor destes já escolhido é escolha da
-    # pessoa, e sobrescrever seria desfazê-la.
-    for chave_p, valor in (("folder_format", "{artist}/{album}"),
-                           ("track_format", "{tracknumber} - {tracktitle}"),
-                           ("default_limit", "20"),
-                           ("no_m3u", "false"),
-                           ("albums_only", "false"),
-                           ("no_fallback", "false"),
-                           ("og_cover", "false"),
-                           ("embed_art", "true"),
-                           ("no_cover", "false"),
-                           ("no_database", "false")):
-        d.setdefault(chave_p, valor)
+            resultado = tentar(Client, app_id, segredos, email, md5)
+        except AuthenticationError:
+            resultado = "senha"
+        except IneligibleError:
+            resultado = "sem-assinatura"
+        except (InvalidAppIdError, InvalidAppSecretError) as e:
+            # Raspado agora e ainda recusado: aí não é credencial velha, é o
+            # Qobuz que mudou o formato do bundle. Diz isso, em vez de repetir
+            # "senha errada" para quem digitou a senha certa.
+            responde(ok=False, erro=(
+                "o Qobuz aceitou a conta mas recusou a chave do aplicativo "
+                "(%s). Costuma ser o player web deles ter mudado; o "
+                "`stylus qobuz instalar` traz a versão nova do qobuz-dl."
+                % (erro_guardado or e).__class__.__name__))
+        except Exception as e:                           # noqa: BLE001
+            responde(ok=False, erro=str(e) or type(e).__name__)
 
-    os.makedirs(os.path.dirname(CONF), exist_ok=True)
-    # Pelo temporário, e com o modo certo ANTES de ter conteúdo dentro: entre
-    # criar o arquivo e apertar as permissões existe uma janela, curta mas
-    # real, em que o token está legível por qualquer um.
-    tmp = CONF + ".novo"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-                 stat.S_IRUSR | stat.S_IWUSR)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        cfg.write(fh)
-    os.replace(tmp, CONF)
+    if resultado == "senha":
+        # 401 da API com app_id válido: Qobuz recusou O QUE FOI DIGITADO, e
+        # quase nunca é a digitação. Conta criada pelo Google/Apple ou pela
+        # loja de aplicativo NÃO TEM senha de site — não existe senha que
+        # "confira". O caminho que funciona para ESSAS contas é o navegador,
+        # que aceita o Google/Apple do jeito que a conta pede.
+        responde(ok=False, erro=(
+            "e-mail ou senha não conferem. Se esta conta foi criada pelo "
+            "Google, pela Apple ou pela loja de aplicativo, ela não tem "
+            "senha de site e este login nunca vai aceitar — rode "
+            "`stylus qobuz abrir` e entre pelo navegador uma vez: é o "
+            "mesmo resultado e guarda o token."))
+    if resultado == "sem-assinatura":
+        responde(ok=False,
+                 erro="esta conta do Qobuz não tem assinatura de streaming")
 
-    responde(ok=True, assinatura=getattr(cl, "label", "") or "?",
-             email=email)
+    token, user_id, selo = resultado
+    guardar(email=email, password=md5, app_id=str(app_id),
+            secrets=",".join(segredos), private_key=chave,
+            user_auth_token=token, user_id=user_id)
+    responde(ok=True, assinatura=selo or "?", email=email)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- O disco sem capa.
+  ~
+  ~ Quarenta e um discos desta coleção não têm capa em lugar nenhum, e na
+  ~ grade do Mod+M eles viravam buracos: a fileira quebrava, e o olho lia
+  ~ "faltou carregar" em vez de "este não tem". Um disco desenhado no lugar
+  ~ diz a verdade e mantém a grade inteira.
+  ~
+  ~ Fósforo, não foto: quase-preto, âmbar como única cor viva, o peso vem da
+  ~ LUZ na aresta e não de sombra — a mesma lei do deck. Sem madeira, sem
+  ~ plinto, sem sala.
+  ~
+  ~ E o `<svg` TEM que ser a primeira coisa do arquivo. Quem carrega isto é o
+  ~ gdk-pixbuf, pelo rofi, e ele fareja os cinco primeiros bytes: um
+  ~ comentário na frente — ou até a declaração `<?xml` — e ele responde "não
+  ~ foi possível reconhecer o formato", em silêncio, e o disco nunca aparece.
+  -->
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="55%" stop-color="#f0a030" stop-opacity="0"/>
+      <stop offset="88%" stop-color="#f0a030" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#f0a030" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="aresta" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0%"  stop-color="#ffc850" stop-opacity="0.55"/>
+      <stop offset="45%" stop-color="#f0a030" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#f0a030" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="10" fill="#0d0f14"/>
+  <!-- o halo respirando atrás do disco: é o que dá volume sem desenhar sombra -->
+  <circle cx="256" cy="256" r="230" fill="url(#halo)"/>
+
+  <circle cx="256" cy="256" r="176" fill="#07080b"/>
+  <circle cx="256" cy="256" r="176" fill="none" stroke="url(#aresta)" stroke-width="2.5"/>
+
+  <!-- os sulcos: finos, e cada um mais fraco que o de fora -->
+  <g fill="none" stroke="#f0a030">
+    <circle cx="256" cy="256" r="158" stroke-opacity="0.16" stroke-width="1"/>
+    <circle cx="256" cy="256" r="140" stroke-opacity="0.13" stroke-width="1"/>
+    <circle cx="256" cy="256" r="122" stroke-opacity="0.10" stroke-width="1"/>
+    <circle cx="256" cy="256" r="104" stroke-opacity="0.08" stroke-width="1"/>
+    <circle cx="256" cy="256" r="86"  stroke-opacity="0.06" stroke-width="1"/>
+  </g>
+
+  <!-- o selo: um degrau mais claro, não uma etiqueta de papel desenhada -->
+  <circle cx="256" cy="256" r="62" fill="#101319"/>
+  <circle cx="256" cy="256" r="62" fill="none" stroke="#f0a030" stroke-opacity="0.22" stroke-width="1"/>
+  <!-- o furo, e a única luz forte da imagem toda -->
+  <circle cx="256" cy="256" r="7" fill="#f0a030" fill-opacity="0.85"/>
+  <circle cx="256" cy="256" r="14" fill="none" stroke="#ffc850" stroke-opacity="0.25" stroke-width="1.5"/>
+</svg>

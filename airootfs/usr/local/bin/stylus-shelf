@@ -5,29 +5,83 @@
 # que você está fazendo: uma grade, não uma lista. Uma lista com trezentos
 # nomes é um índice, e a resposta honesta a um índice acaba sendo
 # "embaralha"; numa estante você passa o olho e alguma capa chama.
+#
+# E a estante não acaba no disco rígido. Os discos que você favoritou no
+# Qobuz entram na MESMA grade, marcados com ◆, e tocam pela rede sem baixar
+# nada — porque procurar disco em dois lugares diferentes, um deles dentro
+# de outro programa, é o mesmo que não ter o segundo.
+#
+#     Enter          toca
+#     Shift+Enter    toca COM o disco na tela (a cerimônia inteira)
+#     Alt+q          procura no Qobuz
+#     Alt+b          baixa para a estante (disco do Qobuz)
+#     Alt+r          refaz o índice
 set -uo pipefail
-command -v rofi >/dev/null 2>&1 || { echo "stylus-shelf: rofi não encontrado" >&2; exit 1; }
-PY=/usr/share/stylus/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
-export PYTHONPATH=/usr/share/stylus/deck
+SHARE=${STYLUS_SHARE:-/usr/share/stylus}
+PY=$SHARE/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
+export PYTHONPATH=$SHARE/deck
 CACHE="$HOME/.cache/stylus/shelf.tsv"
+CACHE_Q="$HOME/.cache/stylus/shelf-qobuz.tsv"
 mkdir -p "$(dirname "$CACHE")"
+TEMA=$SHARE/rofi-shelf.rasi
 
+# O python da CONTA do Qobuz é outro: o qobuz-dl mora no venv da pessoa, não
+# no venv do deck. Sem isto o `import qobuz_dl` falha e a estante nunca mostra
+# um disco do Qobuz — em silêncio, que é o pior jeito de não funcionar.
+PYQ=$PY
+# shellcheck source=/dev/null
+if source "$SHARE/venv.sh" 2>/dev/null && declare -F venv_python_ou_sistema >/dev/null; then
+    PYQ=$(venv_python_ou_sistema)
+fi
+
+# O `exec` lá embaixo TROCA o processo, e uma armadilha de EXIT não roda
+# quando isso acontece — os temporários ficariam para trás a cada disco
+# tocado. Por isso `sair_com` existe: limpa e só então entrega a vez.
+LIXO=()
+limpar() { [[ ${#LIXO[@]} -gt 0 ]] && rm -f "${LIXO[@]}"; }
+trap limpar EXIT
+sair_com() { limpar; trap - EXIT; exec "$@"; }
+
+# ── o índice do Qobuz ────────────────────────────────────────────────────────
+# Pelo temporário e só troca se saiu algo: sem conta, sem rede, ou com o
+# qobuz-dl fora do ar, um `> $CACHE_Q` direto ESVAZIA o índice que já
+# funcionava — e a grade perde os discos do Qobuz justamente no dia em que a
+# rede caiu, que é quando ninguém vai desconfiar do arquivo de cache.
+indexar_qobuz() {
+    [[ -f $SHARE/qobuz_shelf.py ]] || return 1
+    local tmp="$CACHE_Q.novo"
+    if timeout 40 "$PYQ" "$SHARE/qobuz_shelf.py" favoritos 100 > "$tmp" 2>/dev/null \
+       && [[ -s $tmp ]]; then
+        mv -f "$tmp" "$CACHE_Q"; return 0
+    fi
+    rm -f "$tmp"; return 1
+}
+
+# ANTES de qualquer outra coisa. Esta é a cópia que o próprio script lança em
+# segundo plano para refrescar o Qobuz; se ela cair no fluxo normal lá
+# embaixo, ela também vê o índice velho e lança OUTRA — e a máquina enche de
+# processos até alguém notar.
+if [[ ${1:-} == --so-indexar ]]; then
+    indexar_qobuz; exit $?
+fi
+
+# ── o índice local ───────────────────────────────────────────────────────────
 # TODAS as raízes, não só a primeira. Desde que a estante pode estar em mais
 # de um lugar (a de casa e a do celular, montada pelo `stylus webdav`), olhar
 # só para a primeira significa que disco novo no celular nunca refaz o índice
 # — a grade abriria sem ele até alguém mexer na pasta de casa.
-mapfile -t RAIZES < <("$PY" -c 'import vinyl; print("\n".join(vinyl.library_roots()))')
-# Refaz o índice quando alguma raiz mudou de data — varrer custa ~1s e fazer
-# isso a cada abertura deixaria o menu lento sem motivo.
-refazer=0
-[[ -s $CACHE ]] || refazer=1
-for _r in "${RAIZES[@]}"; do
-    [[ -n $_r && $_r -nt $CACHE ]] && refazer=1
-done
-if (( refazer )); then
-    "$PY" - <<'PYEOF' > "$CACHE"
+indexar_local() {
+    local refazer=${1:-0} _r
+    mapfile -t RAIZES < <("$PY" -c 'import vinyl; print("\n".join(vinyl.library_roots()))')
+    # Refaz o índice quando alguma raiz mudou de data — varrer custa ~1s e
+    # fazer isso a cada abertura deixaria o menu lento sem motivo.
+    [[ -s $CACHE ]] || refazer=1
+    for _r in "${RAIZES[@]}"; do
+        [[ -n $_r && $_r -nt $CACHE ]] && refazer=1
+    done
+    (( refazer )) || return 0
+    if "$PY" - <<'PYEOF' > "$CACHE.novo"
 import os, vinyl
-vistos = vinyl.last_played()
 for f in vinyl.shelf(min_tracks=1):
     art, nome = vinyl.folder_names(f)
     cap = ""
@@ -39,19 +93,173 @@ for f in vinyl.shelf(min_tracks=1):
         pass
     print(f"{art}\t{nome}\t{cap}\t{f}")
 PYEOF
+    then
+        mv -f "$CACHE.novo" "$CACHE"
+    else
+        # O mesmo motivo do Qobuz: um erro no meio da varredura não pode
+        # apagar o índice que abria a estante ontem.
+        rm -f "$CACHE.novo"
+    fi
+}
+
+# Seis horas: favoritar um disco no celular e querer ele aqui na hora é raro;
+# esperar a rede toda vez que se aperta Mod+M é o que se sente sempre.
+qobuz_velho() {
+    [[ -s $CACHE_Q ]] || return 0
+    local agora idade
+    agora=$(date +%s)
+    idade=$(stat -c %Y "$CACHE_Q" 2>/dev/null || echo 0)
+    (( agora - idade > 21600 ))
+}
+
+REFAZER=0
+[[ ${1:-} == --refazer || ${1:-} == -r ]] && REFAZER=1
+indexar_local "$REFAZER"
+if (( REFAZER )); then
+    indexar_qobuz || true
+elif [[ ! -s $CACHE_Q ]]; then
+    # A primeira vez é em primeiro plano: um recurso que só aparece na segunda
+    # vez que você abre o menu é um recurso que ninguém descobre que existe.
+    indexar_qobuz || true
+elif qobuz_velho; then
+    # Depois disso, nunca mais em primeiro plano. O menu abre com o que tem e
+    # a próxima abertura já vem fresca.
+    setsid "$0" --so-indexar >/dev/null 2>&1 &
 fi
 
-escolha=$(awk -F'\t' '{
-    if ($3 != "") printf "%s — %s\0icon\x1f%s\n", $1, $2, $3
-    else          printf "%s — %s\n", $1, $2 }' "$CACHE" |
-    rofi -dmenu -i -p "estante" -show-icons \
-         -theme /usr/share/stylus/rofi-shelf.rasi \
-         -kb-accept-alt "" -kb-custom-1 "Shift+Return") || exit 0
-[[ -n $escolha ]] || exit 0
-alvo=$(awk -F'\t' -v q="$escolha" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE")
-[[ -n $alvo ]] || exit 0
-# Shift+Enter (código 10 do rofi) abre com o disco na tela.
-if [[ ${ROFI_RETV:-0} -eq 10 ]]; then
-    exec stylus-deck "$alvo"
+# ── a grade ──────────────────────────────────────────────────────────────────
+# O ◆ na frente é o que separa os dois mundos no olho e no `awk`: sem ele, um
+# disco que você tem E favoritou aparece duas vezes com o mesmo nome, e a
+# volta do rofi não diz qual dos dois.
+#
+# E o menu vai por ARQUIVO, nunca por variável: as linhas trazem um \0 antes
+# do `icon`, que é como o rofi recebe capa, e `$( )` do bash come byte nulo
+# sem avisar. Guardar o menu numa variável tirava a capa de todo disco e
+# deixava a estante uma lista de texto — a única coisa que ela existe para
+# não ser.
+#
+# E disco sem capa ganha um disco DESENHADO. Quarenta e um álbuns desta
+# coleção não têm capa em lugar nenhum, e sem ícone a fileira quebra: fica um
+# buraco que o olho lê como "faltou carregar", não como "este não tem".
+SEM_CAPA=$SHARE/sem-capa.svg
+[[ -f $SEM_CAPA ]] || SEM_CAPA=""
+linhas_de() {
+    local arq=$1 marca=${2:-}
+    [[ -s $arq ]] || return 0
+    awk -F'\t' -v m="$marca" -v vazio="$SEM_CAPA" '{
+        cap = ($3 != "") ? $3 : vazio
+        if (cap != "") printf "%s%s — %s\0icon\x1f%s\n", m, $1, $2, cap
+        else           printf "%s%s — %s\n", m, $1, $2 }' "$arq"
+}
+
+MENU=$(mktemp) || exit 1
+LIXO+=("$MENU")
+montar() { { linhas_de "$CACHE"; linhas_de "$CACHE_Q" "◆ "; } > "$MENU"; }
+montar_qobuz() { linhas_de "$CACHE_Q" "◆ " > "$MENU"; }
+
+# O alvo de uma linha escolhida: caminho de pasta, ou `qobuz:ID`.
+alvo_de() {
+    local q=$1
+    if [[ $q == "◆ "* ]]; then
+        awk -F'\t' -v q="${q#◆ }" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE_Q"
+    else
+        awk -F'\t' -v q="$q" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE" 2>/dev/null
+    fi
+}
+
+DICA='<b>enter</b> toca · <b>shift+enter</b> com o disco na tela · <b>alt+q</b> Qobuz · <b>alt+b</b> baixa · <b>alt+r</b> refaz'
+grade() {
+    # As duas teclas soltas primeiro. O rofi RECUSA a abrir quando uma tecla
+    # já pertence a outra coisa — e o erro sai numa janelinha amarela em vez
+    # da estante, o que se lê como "a estante quebrou". O Shift+Return era do
+    # kb-accept-alt e o Alt+b é do kb-move-word-back (que continua no
+    # Control+Left, então nada se perde de verdade).
+    rofi -dmenu -i -p "$1" -show-icons -theme "$TEMA" -mesg "$DICA" \
+         -kb-accept-alt "" -kb-move-word-back "" \
+         -kb-custom-1 "Shift+Return" -kb-custom-2 "Alt+q" \
+         -kb-custom-3 "Alt+b" -kb-custom-4 "Alt+r" < "$MENU"
+}
+
+# Procurar no Qobuz: uma caixa vazia, porque aqui o que vale é o que se
+# digita, não o que está na lista. A grade some pelo -theme-str — o mesmo
+# tema, sem os seis por três.
+buscar_qobuz() {
+    local termo=$1 tsv
+    if [[ -z $termo ]]; then
+        termo=$(rofi -dmenu -p "Qobuz" -theme "$TEMA" \
+                     -theme-str 'listview { enabled: false; } window { height: 22%; }' \
+                     -mesg "o nome do disco, ou do artista" </dev/null) || return 1
+    fi
+    [[ -n $termo ]] || return 1
+    tsv=$(mktemp) || return 1
+    LIXO+=("$tsv")
+    if ! timeout 40 "$PYQ" "$SHARE/qobuz_shelf.py" buscar "$termo" > "$tsv" 2>/dev/null \
+       || [[ ! -s $tsv ]]; then
+        notify-send -a STYLUS "Qobuz" "nada encontrado para “$termo”" 2>/dev/null
+        return 1
+    fi
+    CACHE_Q=$tsv
+    return 0
+}
+
+montar
+PROMPT=estante
+while :; do
+    escolha=$(grade "$PROMPT"); rc=$?
+    case $rc in
+        0|10|11|12|13) ;;
+        *) exit 0 ;;
+    esac
+    # Alt+r: refaz os dois índices e volta para a grade.
+    if (( rc == 13 )); then
+        CACHE_Q="$HOME/.cache/stylus/shelf-qobuz.tsv"
+        indexar_local 1; indexar_qobuz || true
+        montar; PROMPT=estante; continue
+    fi
+    # Alt+q: procura no Qobuz. O que estava digitado vira o termo quando não
+    # casou disco nenhum; quando casou algo, pergunta numa caixa limpa.
+    if (( rc == 11 )); then
+        termo=""
+        [[ -z $(alvo_de "$escolha") ]] && termo=$escolha
+        buscar_qobuz "$termo" || continue
+        montar_qobuz; PROMPT="Qobuz"; continue
+    fi
+    [[ -n $escolha ]] || exit 0
+    alvo=$(alvo_de "$escolha")
+    # Digitou algo que não é disco nenhum daqui: em vez de sair calado — que é
+    # o que fazia antes — pergunta ao Qobuz. É a resposta honesta para "eu
+    # queria ESTE disco e ele não está aqui".
+    if [[ -z $alvo ]]; then
+        buscar_qobuz "$escolha" || exit 0
+        montar_qobuz; PROMPT="Qobuz"; continue
+    fi
+    break
+done
+
+if [[ $alvo == qobuz:* ]]; then
+    id=${alvo#qobuz:}
+    if (( rc == 12 )); then
+        sair_com stylus-term "baixando do Qobuz" stylus qobuz baixar "$id"
+    fi
+    # O disco vem pela rede e leva alguns segundos até o primeiro som. Sem
+    # este recado, Enter parece não ter feito nada e a pessoa aperta de novo.
+    notify-send -a STYLUS -h string:x-dunst-stack-tag:stylus-qobuz \
+        "Qobuz" "buscando o disco…" 2>/dev/null
+    (( rc == 10 )) && sair_com stylus qobuz tocar --deck "$id"
+    sair_com stylus qobuz tocar "$id"
 fi
-exec stylus-deck --no-scope "$alvo"
+# Alt+b num disco que já é seu não tem o que baixar.
+if (( rc == 12 )); then
+    notify-send -a STYLUS "STYLUS" "esse disco já é seu" 2>/dev/null
+    exit 0
+fi
+# Shift+Enter (código 10 do rofi) abre com o disco na tela.
+#
+# Era lido do $ROFI_RETV, que o rofi só exporta no modo SCRIPT — em -dmenu
+# ele nunca existe, e o `|| exit 0` na frente engolia o código 10 antes de
+# alguém olhar. Resultado: Shift+Enter não abria com a cerimônia; não fazia
+# NADA. O código de saída do rofi é o único lugar onde essa informação está.
+if (( rc == 10 )); then
+    sair_com stylus-deck "$alvo"
+fi
+sair_com stylus-deck --no-scope "$alvo"

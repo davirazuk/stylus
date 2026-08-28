@@ -2,13 +2,20 @@
  *
  * Uma lista com trezentos nomes é um índice, e a resposta honesta a um índice
  * acaba sendo "embaralha". Numa estante você passa o olho e alguma capa
- * chama. É por isso que isto é um tema separado do rofi normal do sistema. */
+ * chama. É por isso que isto é um tema separado do rofi normal do sistema.
+ *
+ * A cor viva aqui é ÂMBAR, e é a mesma do resto do STYLUS — a tela cheia, o
+ * disco, o polybar. Era azul, e o azul não era de lugar nenhum: abrir a
+ * estante pela área de trabalho parecia abrir outro programa. Âmbar contrasta
+ * com o quase-preto sem competir com as capas, que são o que se veio ver. */
 * {
-    bg:     #07080b;
-    bg-alt: #0d0f14;
-    fg:     #e2e7f0;
-    fg-dim: #7e899c;
-    accent: #5bcefa;
+    bg:     #07080b;   /* o mesmo INK da tela cheia */
+    bg-alt: #131720;
+    fg:     #e8ecf5;
+    fg-dim: #8a95aa;
+    accent: #f0a030;   /* T.AMBER */
+    accent-dim: #c08020;
+    line:   #343a48;   /* T.LINE */
     background-color: transparent;
     text-color: @fg;
 }
@@ -17,43 +24,69 @@ window {
     height: 76%;
     background-color: @bg;
     border: 1px;
-    border-color: #20232e;
+    border-color: @line;
     border-radius: 14px;
     padding: 22px;
 }
+mainbox { spacing: 0px; }
 inputbar {
     children: [ prompt, entry ];
-    padding: 6px 10px 16px 10px;
+    padding: 6px 10px 14px 10px;
     spacing: 12px;
 }
 prompt { text-color: @accent; }
 entry  { placeholder: "que disco?"; placeholder-color: @fg-dim; }
+/* A linha de teclas. Sem ela o Shift+Enter, o Alt+q e o Alt+b existiam e
+ * ninguém tinha como saber — atalho que não está escrito em lugar nenhum é
+ * atalho que só o autor usa. */
+message {
+    border: 1px 0px 0px 0px;
+    border-color: @line;
+    padding: 10px 10px 12px 10px;
+}
+textbox {
+    text-color: @fg-dim;
+    highlight: bold #c08020;   /* literal: o `highlight` do rofi não aceita
+                                * referência (@nome) e a estante inteira
+                                * deixa de abrir com erro de tema */
+}
 listview {
     columns: 6;
     lines: 3;
     cycle: false;
     scrollbar: false;
     spacing: 16px;
+    padding: 16px 0px 0px 0px;
 }
 element {
     orientation: vertical;
     padding: 8px;
     border-radius: 10px;
+    border: 1px;
+    border-color: transparent;   /* a borda existe sempre: sem isto o disco
+                                  * escolhido ganha 1px e EMPURRA a grade
+                                  * inteira meio pixel a cada seta */
     children: [ element-icon, element-text ];
 }
 element-icon {
     size: 9.5em;
     horizontal-align: 0.5;
+    border-radius: 4px;          /* o mesmo canto do T.sleeve */
 }
 element-text {
     horizontal-align: 0.5;
     vertical-align: 0.5;
     padding: 8px 2px 0px 2px;
     text-color: @fg-dim;
+    /* O padrão do rofi é `bold underline`, e com dezoito capas na tela isso
+     * põe um risco embaixo de cada nome ao digitar — o olho lê a grade como
+     * uma lista sublinhada. Âmbar em negrito diz a mesma coisa sem riscar.
+     * (Aqui e não no `textbox`: o element-text não herda daquele.) */
+    highlight: bold #f0a030;
 }
 element selected {
     background-color: @bg-alt;
-    border: 1px;
     border-color: @accent;
 }
 element selected element-text { text-color: @fg; }
+element urgent, element active { background-color: transparent; }

@@ -20,11 +20,24 @@ conta, e nenhum caminho até eles daqui.
 sem passar o `sec`, e o api_call estoura com KeyError ao assinar o pedido. A
 chamada crua abaixo é a mesma coisa, com o segredo no lugar.)
 """
-import configparser
 import json
 import logging
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from qobuz_conta import campo, ler                             # noqa: E402
+
+
+class Recusa(Exception):
+    """A loja não abre, e o motivo é para MOSTRAR.
+
+    Levanta em vez de imprimir porque `cliente()` tem dois chamadores com
+    saídas incompatíveis: aqui o stdout é uma linha de JSON, e no
+    `qobuz_shelf.py` é TSV para o rofi. Imprimir JSON de dentro da função
+    fazia a estante engolir `{"error": …}` como se fosse um disco chamado
+    assim.
+    """
 
 
 def responde(**campos):
@@ -41,25 +54,21 @@ def cliente():
     try:
         from qobuz_dl.qopy import Client
     except ImportError:
-        responde(error="o qobuz-dl não está instalado. "
-                       "Rode:  stylus qobuz instalar")
-    cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
-    if not os.path.isfile(cfg):
-        responde(error="o Qobuz ainda não tem conta aqui. [c] entra.")
-    c = configparser.ConfigParser()
-    c.read(cfg, encoding="utf-8")
+        raise Recusa("o qobuz-dl não está instalado. "
+                     "Rode:  stylus qobuz instalar")
+    c = ler()
 
     def g(k):
-        return c.get("DEFAULT", k, fallback="").strip()
+        return campo(c, k)
 
     segredos = [x.strip() for x in g("secrets").split(",") if x.strip()]
     if not (g("app_id") and segredos and g("user_id") and g("user_auth_token")):
-        responde(error="o Qobuz ainda não tem conta aqui. [c] entra.")
+        raise Recusa("o Qobuz ainda não tem conta aqui. [c] entra.")
     try:
         cl = Client(None, None, g("app_id"), segredos, skip_auth=True)
         cl.auth_with_token(g("user_id"), g("user_auth_token"))
     except Exception as e:                               # noqa: BLE001
-        responde(error="a conta do Qobuz não foi aceita: %s" % e)
+        raise Recusa("a conta do Qobuz não foi aceita: %s" % e)
     return cl
 
 
@@ -103,7 +112,10 @@ def disco(item):
 
 def main():
     modo = sys.argv[1] if len(sys.argv) > 1 else ""
-    cl = cliente()
+    try:
+        cl = cliente()
+    except Recusa as e:
+        responde(error=str(e))
     if modo in ("buscar", "search"):
         termo = " ".join(sys.argv[2:]).strip()
         if not termo:
