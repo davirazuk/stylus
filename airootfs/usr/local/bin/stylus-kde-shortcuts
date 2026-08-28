@@ -41,12 +41,19 @@ atalho() {                      # atalho <arquivo.desktop> <teclas> <nome>
 
 # Meta+M/D/Q/P são a música; Meta+Esc troca de mundo. Nada disso colide com
 # atalho de fábrica do Plasma (que usa Meta sozinho, Meta+E, Meta+L…).
-atalho stylus-shelf.desktop  "Meta+M"      "Estante"
-atalho stylus-deck.desktop   "Meta+D"      "Toca-discos"
-atalho stylus-qobuz.desktop  "Meta+Q"      "Qobuz"
-atalho stylus-phone.desktop  "Meta+P"      "Celular"
-atalho stylus-mode.desktop   "Meta+Escape" "Trocar de modo"
-atalho stylus-claude.desktop "Meta+T"      "Terminal"
+#
+# Meta+G é a tela cheia SEM trocar de sessão, e é o mesmo Mod+G do i3 de
+# propósito: quem aprende o atalho num modo não o perde no outro.
+atalho stylus-ui.desktop         "Meta+G"      "STYLUS em tela cheia"
+atalho stylus-shelf.desktop      "Meta+M"      "Estante"
+atalho stylus-deck.desktop       "Meta+D"      "Toca-discos"
+atalho stylus-qobuz.desktop      "Meta+Q"      "Qobuz"
+atalho stylus-phone.desktop      "Meta+P"      "Celular"
+# Antes isto apontava para stylus-mode.desktop, um interruptor sem lado: num
+# menu, "Trocar de modo" não diz se vai ligar ou desligar. Vindo do KDE só há
+# um destino que faz sentido, e agora o atalho diz qual é.
+atalho stylus-music-mode.desktop "Meta+Escape" "Modo música"
+atalho stylus-claude.desktop     "Meta+T"      "Terminal"
 
 # ── Konsole: o perfil Stylus como padrão ───────────────────────────────────
 # Antes isto só agia se o konsolerc JÁ falasse em Stylus — ou seja, nunca na
@@ -103,7 +110,39 @@ if command -v kvantummanager >/dev/null 2>&1 && [[ -d /usr/share/Kvantum/Stylus 
     kvantummanager --set Stylus >/dev/null 2>&1 || kvantummanager -x Stylus >/dev/null 2>&1
 fi
 
+# ── O cursor ───────────────────────────────────────────────────────────────
+# O SDDM usa Adwaita (está no stylus.conf dele). Sem esta linha o Plasma
+# entrava com o Breeze e o cursor MUDAVA de desenho no meio do login — um
+# detalhe pequeno que faz o sistema parecer duas coisas coladas.
+if command -v plasma-apply-cursortheme >/dev/null 2>&1; then
+    plasma-apply-cursortheme Adwaita >/dev/null 2>&1
+fi
+
 command -v numlockx >/dev/null 2>&1 && numlockx on >/dev/null 2>&1
+
+# ── Os dois ícones que fazem a máquina se explicar sozinha ─────────────────
+# Uma vez só, no primeiro login: "STYLUS" e "Modo música" na área de
+# trabalho. O friend que abre o KDE pela primeira vez não sabe que existe
+# Meta+G nem onde procurar no menu — mas vê a área de trabalho.
+#
+# O carimbo é o que impede isto de virar praga: quem apagar os ícones não
+# os vê voltar no login seguinte.
+CARIMBO="${XDG_DATA_HOME:-$HOME/.local/share}/stylus/kde-primeiro-login"
+if [[ ! -e $CARIMBO ]]; then
+    AREA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
+    if mkdir -p "$AREA" 2>/dev/null; then
+        for d in stylus-ui stylus-music-mode; do
+            origem="/usr/share/applications/$d.desktop"
+            [[ -f $origem ]] || continue
+            cp -f "$origem" "$AREA/" 2>/dev/null || continue
+            # O Plasma pergunta "confia neste arquivo?" para todo .desktop
+            # que não seja executável — e a resposta certa para um arquivo
+            # que o próprio sistema acabou de pôr ali é não perguntar.
+            chmod +x "$AREA/$d.desktop" 2>/dev/null
+        done
+    fi
+    mkdir -p "$(dirname "$CARIMBO")" 2>/dev/null && : > "$CARIMBO"
+fi
 
 # O dunst NÃO entra aqui. O KDE tem notificação própria (o Plasma), e os dois
 # disputam o mesmo nome no D-Bus: quem chega primeiro fica com ele e o outro

@@ -232,6 +232,16 @@ def main(apply=False, fetch=True, root=None):
 
 
 if __name__ == "__main__":
+    # `--help` tem que IMPRIMIR e sair, sempre. Sem esta guarda, um `--help`
+    # caía na execução normal: aqui não existe argparse, então a opção não
+    # casava com nada e virava "nenhum argumento" — que para estas ferramentas
+    # quer dizer "faça o trabalho inteiro". O `stylus tags --help` saía
+    # varrendo a coleção toda e consultando a rede faixa por faixa; quem só
+    # queria saber o que o comando faz esperava minutos e desistia.
+    if {"-h", "--help"} & set(sys.argv[1:]):
+        print((__doc__ or "sem ajuda").strip())
+        raise SystemExit(0)
+
     paths = [a for a in sys.argv[1:] if not a.startswith("--")]
     main("--apply" in sys.argv, "--no-fetch" not in sys.argv,
          paths[0] if paths else None)

@@ -1,8 +1,11 @@
 [Desktop Entry]
-Name=Stylus Shelf
-Comment=Browse your music collection
-Exec=/usr/local/bin/stylus-shelf
-Icon=audio-x-generic
-Terminal=false
 Type=Application
-Categories=Audio;Music;
+Name=Estante
+GenericName=A coleção
+Comment=Procura um disco na coleção e põe para tocar
+Exec=stylus-shelf
+Icon=stylus
+Terminal=false
+StartupNotify=false
+Categories=AudioVideo;Audio;Player;
+Keywords=estante;disco;album;álbum;coleção;procurar;tocar;

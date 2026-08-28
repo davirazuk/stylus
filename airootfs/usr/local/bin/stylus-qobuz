@@ -8,14 +8,23 @@
 #  que elas dirigem, e nada a punha no ar. Era uma fila inteira escrita para
 #  um programa que a máquina não tinha.
 #
-#      stylus qobuz              o estado: instalada? no ar? em que porta?
-#      stylus qobuz instalar     instala a interface (pip, dentro da casa)
-#      stylus qobuz abrir        põe no ar e abre no navegador
+#      stylus qobuz              o estado: instalado? no ar? em que porta?
+#      stylus qobuz instalar     instala o qobuz-dl (num venv, dentro da casa)
+#      stylus qobuz buscar TERMO procura discos e mostra id, ano e qualidade
+#      stylus qobuz baixar ID    baixa direto para a estante, sem navegador
+#      stylus qobuz abrir        põe a interface web no ar e abre no navegador
 #      stylus qobuz servir       põe no ar e fica em segundo plano
 #      stylus qobuz parar        derruba
 #      stylus qobuz log          acompanha o registro dela
 #      stylus qobuz fila ARQ     baixa a fila inteira e arquiva cada disco
 #                                  (linhas "url|artista|álbum")
+#
+#  O `buscar` e o `baixar` são o caminho de linha de comando e não precisam da
+#  interface web nem de navegador nenhum: buscar imprime os discos com o id ao
+#  lado, baixar recebe esse id e põe o disco na estante, no formato
+#  Artista/Álbum que o resto do sistema espera. A interface web continua aqui
+#  para quem a quiser, mas deixou de ser o único jeito de baixar — antes,
+#  buscar achava o disco e não havia o que fazer com o resultado.
 #
 #  A fila arquiva UM disco de cada vez, inteiro — baixa, move, retagueia,
 #  busca letra, atualiza a playlist — antes de começar o próximo. Assim uma
@@ -25,7 +34,17 @@ set -uo pipefail
 
 SHARE=/usr/share/stylus
 TOOLS=$SHARE/tools
-PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+
+# O qobuz-dl não existe nos repositórios do Arch, e o `pip install` do sistema
+# é recusado (PEP 668) — inclusive com --user. Quem resolve é o venv da
+# pessoa; o porquê inteiro está em /usr/share/stylus/venv.sh.
+# shellcheck source=/dev/null
+source "$SHARE/venv.sh" 2>/dev/null || true
+if declare -F venv_python_ou_sistema >/dev/null; then
+    PY=$(venv_python_ou_sistema)
+else
+    PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+fi
 
 REPO="${STYLUS_QOBUZ_GUI_REPO:-git+https://github.com/peykc/qobuz-dl-gui.git}"
 ESTADO="$HOME/.local/share/stylus"
@@ -56,6 +75,12 @@ precisa_ser_voce() {
 
 achar_binario() {
     local c
+    # O venv primeiro: é onde o `instalar` põe hoje. Os outros dois caminhos
+    # ficam para quem instalou na versão antiga, com --break-system-packages —
+    # tirar daqui faria o comando parar de achar o que já estava funcionando.
+    if declare -F venv_bin >/dev/null; then
+        c=$(venv_bin qobuz-dl-gui) && [[ -n $c ]] && { printf '%s\n' "$c"; return 0; }
+    fi
     for c in "$HOME/.local/bin/qobuz-dl-gui" /usr/local/bin/qobuz-dl-gui; do
         [[ -x $c ]] && { printf '%s\n' "$c"; return 0; }
     done
@@ -91,19 +116,33 @@ pid_vivo() {
 
 instalar() {
     precisa_ser_voce
-    command -v pip3 >/dev/null || command -v pip >/dev/null || \
-        die "falta o pip: sudo pacman -S --needed python-pip"
+    declare -F venv_instalar >/dev/null || die "falta o $SHARE/venv.sh"
+    # O qobuz-dl PRIMEIRO: é ele que o `buscar` e o `baixar` usam, e é o que
+    # faltava. Antes daqui só a interface web era instalada, então o caminho
+    # de linha de comando — o que esta máquina realmente quer — nunca tinha
+    # com o que funcionar.
+    info "Instalando o qobuz-dl…"
+    venv_instalar qobuz-dl || die "não deu para instalar o qobuz-dl (sem rede?)"
+    ok "qobuz-dl instalado"
+    if [[ ${1:-} != --interface ]]; then
+        printf '  %spara a interface web também:  stylus qobuz instalar --interface%s\n' "$c_d" "$c_0"
+        return 0
+    fi
     info "Instalando a interface do qobuz-dl…"
-    # --user para ficar na casa e --break-system-packages porque no Arch o
-    # /usr/lib/python é do pacman: sem isso o pip recusa e a mensagem dele não
-    # diz o que fazer.
-    "$PY" -m pip install --user --upgrade --break-system-packages "$REPO" \
-        || die "o pip falhou. Sem rede, ou o repositório mudou de lugar:
+    # Num venv da pessoa, e não mais com `--user --break-system-packages`.
+    # Aquilo funcionava no dia e quebrava depois: o pacote ia para
+    # ~/.local/lib/python3.13 e sumia inteiro na atualização para o 3.14, e o
+    # executável caía em ~/.local/bin, que pode nem estar no PATH — daí o
+    # "instalou e não achei" logo abaixo, que era o fim normal da história.
+    # Dentro do venv, nós chamamos o binário pelo caminho todo e nada disso
+    # depende de sorte.
+    venv_instalar "$REPO" \
+        || die "a instalação falhou. Sem rede, ou o repositório mudou de lugar:
        $REPO
        STYLUS_QOBUZ_GUI_REPO aponta para outro."
     achar_binario >/dev/null || die \
-        "instalou e não achei o \`qobuz-dl-gui\`. Ele costuma cair em
-       ~/.local/bin — confira se essa pasta está no seu PATH."
+        "instalou e o \`qobuz-dl-gui\` não apareceu em
+       $STYLUS_VENV/bin — o pacote pode ter mudado o nome do executável."
     ok "$(achar_binario)"
 }
 
@@ -157,7 +196,7 @@ estado() {
 
 case "${1:-}" in
     ""|estado|status) estado ;;
-    instalar|install) instalar ;;
+    instalar|install) shift; instalar "$@" ;;
     servir|serve)     servir >/dev/null ;;
     abrir|open)
         porta=$(servir | tail -1) || exit 1
@@ -192,12 +231,31 @@ case "${1:-}" in
         query="${2:-}"
         [[ -n $query ]] || die "uso: stylus qobuz buscar TERMOS"
         "$PY" - "$query" <<'PYEOF'
-import json, sys, os
+import contextlib, json, sys, os
+
+# ── Só JSON no stdout ──────────────────────────────────────────────────────
+# O qobuz_dl imprime "Logging..." e "Membership: Studio" no stdout ao
+# autenticar. Este comando promete JSON, e quem consome — a tela de Qobuz da
+# interface em tela cheia — fazia json.loads() em cima de
+# "Logging...\nMembership: Studio\n{...}" e estourava. De fora, a busca do
+# Qobuz simplesmente não funcionava, sem nada dizendo por quê.
+#
+# O barulho não é lixo: é útil para quem roda no terminal. Então ele vai para
+# o stderr, onde não atrapalha o JSON e continua visível.
+@contextlib.contextmanager
+def so_json():
+    with contextlib.redirect_stdout(sys.stderr):
+        yield
+
 
 try:
     from qobuz_dl.qopy import Client
 except ImportError:
-    print(json.dumps({"error": "qobuz-dl não instalado: pip install qobuz-dl"}))
+    # `pip install qobuz-dl` não funciona no Arch: o python é do pacman e o
+    # pip recusa (PEP 668). Mandar fazer o impossível é pior que não dizer
+    # nada — quem tentava concluía que o sistema estava quebrado.
+    print(json.dumps({"error": "o qobuz-dl não está instalado. "
+                               "Rode:  stylus qobuz instalar"}))
     sys.exit(1)
 
 cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
@@ -219,6 +277,7 @@ if not app_id or not token:
 
 secrets_list = [s.strip() for s in secrets.split(",") if s.strip()]
 try:
+  with so_json():
     client = Client(
         email="", pwd="",
         app_id=app_id,
@@ -232,7 +291,8 @@ except Exception as e:
 
 query = sys.argv[1]
 try:
-    data = client.search_albums(query, limit=25)
+    with so_json():
+        data = client.search_albums(query, limit=25)
 except Exception as e:
     print(json.dumps({"error": f"busca falhou: {e}"}))
     sys.exit(1)
@@ -272,6 +332,78 @@ for item in items:
 print(json.dumps({"results": results}))
 PYEOF
         ;;
-    -h|--help|help) sed -n '11,22p' "$0" | sed 's/^# \?//' ;;
+    baixar|download|get)
+        alvo="${2:-}"
+        [[ -n $alvo ]] || die "uso: stylus qobuz baixar ID|URL
+       o id sai do \`stylus qobuz buscar TERMOS\`"
+        "$PY" - "$alvo" <<'QOBUZDL'
+import json, os, re, sys
+
+try:
+    from qobuz_dl.core import QobuzDL
+except ImportError:
+    print("o qobuz-dl nao esta instalado. Rode:  stylus qobuz instalar", file=sys.stderr)
+    sys.exit(1)
+
+import configparser
+cfg = os.path.expanduser("~/.config/qobuz-dl/config.ini")
+if not os.path.isfile(cfg):
+    print("o qobuz-dl nao esta configurado. Rode `qobuz-dl` uma vez para "
+          "criar ~/.config/qobuz-dl/config.ini", file=sys.stderr)
+    sys.exit(1)
+c = configparser.ConfigParser(); c.read(cfg)
+
+
+def g(k):
+    return c.get("DEFAULT", k, fallback="")
+
+
+def segredos():
+    return [x.strip() for x in g("secrets").split(",") if x.strip()]
+
+
+# Baixar DIRETO na estante, no formato Artista/Album. E o mesmo desenho de
+# pasta que o vinyl.py le, entao o disco aparece na estante sem passo nenhum
+# de arquivamento -- que era onde a fila antiga precisava da interface web no
+# ar so para mover arquivo de lugar.
+sys.path.insert(0, "/usr/share/stylus/deck")
+try:
+    import vinyl
+    destino = vinyl.library_root()
+except Exception:                                        # noqa: BLE001
+    destino = os.path.expanduser("~/Musicas")
+
+alvo = sys.argv[1]
+# Aceita id puro ou URL colada do navegador.
+m = re.search(r"/album/(?:[^/]+/)?([A-Za-z0-9]+)/?$", alvo)
+item_id = m.group(1) if m else alvo
+
+q = QobuzDL(directory=destino, quality=6, embed_art=True,
+            folder_format="{artist}/{album}",
+            track_format="{tracknumber} - {tracktitle}")
+try:
+    q.get_tokens()
+    q.initialize_client_with_token(g("user_auth_token"), g("app_id"), segredos())
+except Exception:                                        # noqa: BLE001
+    # Versoes diferentes do qobuz-dl expoem inicializacoes diferentes.
+    try:
+        q.initialize_client(g("email"), g("password"), g("app_id"), segredos())
+    except Exception as e:                               # noqa: BLE001
+        print("nao deu para entrar no Qobuz: %s" % e, file=sys.stderr)
+        sys.exit(1)
+
+print("baixando para %s ..." % destino)
+try:
+    if alvo.startswith("http"):
+        q.handle_url(alvo)
+    else:
+        q.download_from_id(item_id, album=True)
+except Exception as e:                                   # noqa: BLE001
+    print("o download falhou: %s" % e, file=sys.stderr)
+    sys.exit(1)
+print("pronto. `stylus reindex` se a estante nao mostrar na hora.")
+QOBUZDL
+        ;;
+    -h|--help|help) sed -n '11,26p' "$0" | sed 's/^# \?//' ;;
     *) die "não conheço \"$1\". \`stylus qobuz --help\`" ;;
 esac

@@ -1,0 +1,13 @@
+# O caminho de volta. Aparece no menu do modo música (o rofi lê daqui) para
+# que sair não dependa de alguém lembrar de um atalho.
+[Desktop Entry]
+Type=Application
+Name=Área de trabalho
+GenericName=Trocar de modo
+Comment=Sai do modo música e abre a área de trabalho
+Exec=stylus-mode desktop
+Icon=preferences-desktop
+Terminal=false
+StartupNotify=false
+Categories=System;
+Keywords=modo;área de trabalho;desktop;trocar;sessão;kde;i3;sair;

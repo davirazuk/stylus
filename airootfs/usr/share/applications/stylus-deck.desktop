@@ -1,8 +1,11 @@
 [Desktop Entry]
-Name=Stylus Deck
-Comment=Vinyl record visualizer
-Exec=/usr/local/bin/stylus-deck
-Icon=audio-x-generic
-Terminal=false
 Type=Application
-Categories=Audio;Music;
+Name=Toca-discos
+GenericName=O disco na tela
+Comment=O disco girando, com agulha, lado e tempo
+Exec=stylus-deck
+Icon=stylus
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;Player;
+Keywords=disco;vinil;deck;agulha;tocando;lado;

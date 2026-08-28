@@ -34,6 +34,7 @@ cat <<EOF
     ${b}stylus record${o} ${d}[DISCO]${o}    sorteia um da estante e mostra os lados,
                               puxando para o que faz tempo que não toca
     ${b}stylus shelf${o}              a estante em grade de capas
+    ${b}stylus ui${o}                 a tela cheia, do jeito que ela abre no sofá
     ${b}stylus lado${o}               em que lado do disco você está, e quanto falta
     ${b}stylus virar${o}              põe a agulha no começo do próximo lado
                               ${d}(stylus voltar faz o contrário)${o}
@@ -65,6 +66,8 @@ cat <<EOF
     ${b}stylus apps${o} ${d}[NOME]${o}       instala o que não vem em pacote
     ${b}stylus ch${o} ${d}[...]${o}          Clone Hero: buscar, baixar e sincronizar songs
     ${b}stylus gpu${o}                driver de vídeo
+    ${b}stylus kde${o}                por que a área de trabalho não abriu
+    ${b}stylus aur${o}                instala o yay, para o que só existe no AUR
     ${b}stylus fontes${o}             por que apareceu caixinha no lugar do ícone
     ${b}stylus mode${o} ${d}[música|área]${o} troca entre a tela cheia e a área de trabalho
     ${b}stylus claude${o} ${d}[...]${o}      o Claude Code aqui dentro, com a fonte do
@@ -75,6 +78,7 @@ cat <<EOF
     ${b}stylus backup${o}             salva configuração e memória da coleção
 
   ${d}sem argumento nenhum, responde a pergunta que se faz mais vezes.${o}
+  ${d}também atende por: now, app, install, wallpaper.${o}
 
 EOF
 }
@@ -96,7 +100,7 @@ case "$cmd" in
             (( rc == 76 )) || exit $rc
         fi
         exec "$PY" "$TOOLS/now.py" "$@" ;;
-    ui|big|launch|abrir) exec stylus-ui "$@" ;;
+    ui)          exec stylus-ui "$@" ;;
     deck)        exec stylus-deck "$@" ;;
     play)        exec stylus-deck --no-scope "$@" ;;
     scope)       exec "$PY" "$DECK/scope.py" "$@" ;;
@@ -104,7 +108,7 @@ case "$cmd" in
     shelf)       exec stylus-shelf "$@" ;;
     library)     exec "$PY" "$TOOLS/library.py" "$@" ;;
     diary)       exec "$PY" "$TOOLS/diary.py" "$@" ;;
-    stats|numeros|números) exec "$PY" "$TOOLS/stats.py" "$@" ;;
+    stats)       exec "$PY" "$TOOLS/stats.py" "$@" ;;
     check)       exec "$PY" "$TOOLS/check_library.py" "$@" ;;
     gaps)        exec "$PY" "$TOOLS/discover.py" "$@" ;;
     covers)      exec "$PY" "$TOOLS/extract_covers.py" "$@" ;;
@@ -139,12 +143,12 @@ case "$cmd" in
         ;;
     mode)        exec stylus-mode "$@" ;;
     # O papel de parede desenhado a partir do disco que está tocando.
-    wallpaper|parede|fundo) exec stylus-wallpaper "$@" ;;
+    parede|wallpaper) exec stylus-wallpaper "$@" ;;
     # Em que lado do disco você está, agora.
-    side|lado)   exec stylus-side-watch --once "$@" ;;
+    lado)        exec stylus-side-watch --once "$@" ;;
     # Dava para pular FAIXA desde sempre e não dava para pular LADO — a única
     # coisa que este sistema pede que você faça com as mãos.
-    virar|flip)  exec stylus-side-watch --virar "$@" ;;
+    virar)       exec stylus-side-watch --virar "$@" ;;
     voltar)      exec stylus-side-watch --voltar "$@" ;;
     # Estes três existiam como uma FUNÇÃO do fish chamada `stylus`, que ficava
     # na frente deste arquivo no shell padrão do sistema e respondia "comando
@@ -155,12 +159,11 @@ case "$cmd" in
         command -v stylus-install >/dev/null || {
             echo "stylus: o instalador só existe no medium ao vivo." >&2; exit 1; }
         exec sudo stylus-install "$@" ;;
-    atalhos|keys|teclas)
-        exec less -R /usr/share/stylus/keybindings.txt ;;
+    atalhos)     exec less -R /usr/share/stylus/keybindings.txt ;;
     # O Claude Code, nesta máquina. Editar a fonte e VER acontecer é a coisa
     # que nenhuma sessão remota consegue fazer.
-    claude|ia)   exec stylus-claude "$@" ;;
-    aur|yay)     exec install-yay "$@" ;;
+    claude)      exec stylus-claude "$@" ;;
+    aur)         exec install-yay "$@" ;;
     phone)       exec stylus-phone "$@" ;;
     webdav)      exec stylus-webdav "$@" ;;
     audio)       exec stylus-audio "$@" ;;
@@ -168,15 +171,15 @@ case "$cmd" in
     # aceitava `stylus apps` e foi removida daqui — o que quebrou o comando
     # para quem já o usava, sem nada dizer o que tinha acontecido. Um alias
     # custa uma linha; quebrar o dedo de quem já digitava custa mais.
-    app|apps|software|loja) exec stylus-app "$@" ;;
-    ch|clonehero-ch) exec stylus-ch "$@" ;;
+    app|apps)    exec stylus-app "$@" ;;
+    ch)          exec stylus-ch "$@" ;;
     gpu)         exec stylus-gpu "$@" ;;
     # Por que a área de trabalho não abriu. Quando o pré-voo do
     # stylus-session recusa o Plasma, ele entrega o i3 e não diz nada na
     # tela — este é o lugar onde o motivo fica escrito.
-    kde|area|área) exec stylus-kde "$@" ;;
+    kde)         exec stylus-kde "$@" ;;
     # Caixinha vazia na tela não diz nada sobre a causa, e as causas são quatro.
-    fontes|fonts|glifos) exec stylus-fontes "$@" ;;
+    fontes)      exec stylus-fontes "$@" ;;
     update)      exec stylus-update "$@" ;;
     -h|--help|help) usage ;;
     *)

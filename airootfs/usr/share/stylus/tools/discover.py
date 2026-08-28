@@ -99,6 +99,16 @@ def discover(artist, min_tracks=7):
 
 
 if __name__ == "__main__":
+    # `--help` tem que IMPRIMIR e sair, sempre. Sem esta guarda, um `--help`
+    # caía na execução normal: aqui não existe argparse, então a opção não
+    # casava com nada e virava "nenhum argumento" — que para estas ferramentas
+    # quer dizer "faça o trabalho inteiro". O `stylus tags --help` saía
+    # varrendo a coleção toda e consultando a rede faixa por faixa; quem só
+    # queria saber o que o comando faz esperava minutos e desistia.
+    if {"-h", "--help"} & set(sys.argv[1:]):
+        print((__doc__ or "sem ajuda").strip())
+        raise SystemExit(0)
+
     artists = [a.strip() for a in sys.argv[1:]]
     all_found = []
     for a in artists:

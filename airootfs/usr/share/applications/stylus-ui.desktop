@@ -1,0 +1,15 @@
+# A tela cheia SEM sair da área de trabalho. É a resposta para "quero ouvir
+# um disco agora": abre na hora, e fechar devolve o KDE exatamente como
+# estava. Trocar de sessão (o Modo música ao lado) é a outra coisa, e é mais
+# cara — encerra tudo que está aberto.
+[Desktop Entry]
+Type=Application
+Name=STYLUS
+GenericName=Tela cheia
+Comment=A estante inteira em tela cheia, para usar do sofá
+Exec=stylus-ui
+Icon=stylus
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;Player;
+Keywords=musica;música;disco;vinil;estante;tela cheia;stylus;

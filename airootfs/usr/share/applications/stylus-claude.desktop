@@ -8,5 +8,5 @@ Comment=Abre a fonte do STYLUS com o Claude Code, nesta máquina
 Exec=stylus-term "Claude Code" stylus-claude
 Icon=utilities-terminal
 Terminal=false
-Categories=Development;System;
+Categories=Development;
 Keywords=claude;ia;consertar;fonte;stylus;

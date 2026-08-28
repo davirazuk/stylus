@@ -5,7 +5,17 @@
 set -uo pipefail
 
 SHARE=/usr/share/stylus
-PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+
+# O spotipy não existe nos repositórios do Arch e o `pip install` do sistema
+# é recusado (PEP 668). Quem resolve isso é o venv da pessoa; veja o porquê
+# inteiro em /usr/share/stylus/venv.sh.
+# shellcheck source=/dev/null
+source "$SHARE/venv.sh" 2>/dev/null || true
+if declare -F venv_python_ou_sistema >/dev/null; then
+    PY=$(venv_python_ou_sistema)
+else
+    PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+fi
 
 usage() {
 cat <<'EOF'
@@ -16,6 +26,7 @@ cat <<'EOF'
   stylus-spotify prev            faixa anterior
   stylus-spotify status          agora tocando (saída JSON)
   stylus-spotify daemon          verifica se spotifyd está rodando
+  stylus-spotify instalar        instala o spotipy (uma vez, na sua casa)
 EOF
 }
 
@@ -69,7 +80,12 @@ def buscar(query):
         import spotipy
         from spotipy.oauth2 import SpotifyClientCredentials
     except ImportError:
-        return {"error": "o spotipy não está instalado (pip install --user spotipy)"}
+        # A mensagem antiga mandava `pip install --user spotipy`, que no Arch
+        # falha sempre: o python é do pacman e o pip recusa mexer nele. Ficava
+        # a pior combinação possível — o recurso não funciona e a instrução
+        # para consertar também não.
+        return {"error": "o spotipy não está instalado. "
+                         "Rode:  stylus spotify instalar"}
     try:
         sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
             client_id=cid, client_secret=seg))
@@ -119,6 +135,17 @@ PYEOF
     daemon)
         playerctl -p spotifyd status >/dev/null 2>&1 && echo "ok" || echo "down"
         ;;
+    instalar|install)
+        declare -F venv_instalar >/dev/null || {
+            echo "stylus-spotify: falta o $SHARE/venv.sh" >&2; exit 1; }
+        if venv_tem spotipy; then
+            echo "o spotipy já está instalado."
+        else
+            echo "Instalando o spotipy no ambiente Python do STYLUS…"
+            venv_instalar spotipy || {
+                echo "stylus-spotify: a instalação falhou (sem rede?)" >&2; exit 1; }
+        fi
+        venv_tem spotipy && echo "pronto. \`stylus spotify buscar NOME\` já funciona." ;;
     -h|--help|help) usage ;;
     *) echo "stylus-spotify: \"$cmd\" não existe" >&2; usage >&2; exit 1 ;;
 esac

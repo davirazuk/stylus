@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Programas
+GenericName=Instalar programas
+Comment=Navegador, jogos, drivers — o que não vem instalado
+Exec=stylus-term "Programas" stylus-app
+Icon=system-software-install
+Terminal=false
+StartupNotify=true
+Categories=Settings;PackageManager;
+Keywords=instalar;programas;loja;pacote;navegador;jogos;aplicativos;

@@ -1,8 +1,11 @@
 [Desktop Entry]
-Name=Stylus Phone
-Comment=Sync music with your phone
-Exec=/usr/local/bin/stylus-phone status
+Type=Application
+Name=Celular
+GenericName=Levar a coleção
+Comment=Manda discos para o celular e traz o que tocou de volta
+Exec=stylus-term "Celular" stylus-phone
 Icon=phone
 Terminal=false
-Type=Application
-Categories=Audio;Music;
+StartupNotify=true
+Categories=AudioVideo;Audio;
+Keywords=celular;telefone;android;sincronizar;levar;fone;

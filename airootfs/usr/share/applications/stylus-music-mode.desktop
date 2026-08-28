@@ -1,0 +1,15 @@
+# Trocar a MÁQUINA para o modo música: encerra a sessão gráfica e volta na
+# tela cheia. Um item só, com um nome que diz para onde vai — o "Trocar de
+# modo" de antes era um interruptor sem lado, e num menu ninguém sabe se vai
+# ligar ou desligar.
+[Desktop Entry]
+Type=Application
+Name=Modo música
+GenericName=Trocar de modo
+Comment=Sai da área de trabalho e liga a máquina no modo música
+Exec=stylus-mode music
+Icon=stylus
+Terminal=false
+StartupNotify=false
+Categories=AudioVideo;Audio;
+Keywords=modo;musica;música;trocar;sessão;tela cheia;sofá;

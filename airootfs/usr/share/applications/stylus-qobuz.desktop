@@ -1,8 +1,13 @@
+# Pelo stylus-term: é programa de terminal, e aberto direto pelo menu do KDE
+# ou pelo rofi ele roda sem janela nenhuma — parece que o clique não fez nada.
 [Desktop Entry]
-Name=Stylus Qobuz
-Comment=Search and download from Qobuz
-Exec=/usr/local/bin/stylus-qobuz abrir
-Icon=audio-x-generic
-Terminal=false
 Type=Application
-Categories=Audio;Music;
+Name=Qobuz
+GenericName=Comprar e baixar
+Comment=Procura e baixa discos em qualidade de estúdio
+Exec=stylus-term "Qobuz" stylus-qobuz
+Icon=stylus
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;
+Keywords=qobuz;baixar;comprar;flac;hires;alta resolução;loja;

@@ -414,6 +414,11 @@ sec "o que os comandos chamam em /usr/share/stylus"
 #   lock/stylus-  é prefixo de nome montado em tempo de execução, não arquivo.
 faltando=()
 while read -r caminho; do
+    # Ponto final colado no fim é pontuação, não nome de arquivo. Um comentário
+    # que termina com "…em /usr/share/stylus/venv.sh." fazia esta conferência
+    # procurar por "venv.sh." e acusar de faltar um arquivo que está lá — ou
+    # seja, o preço de escrever uma frase bem pontuada era um teste vermelho.
+    caminho=${caminho%%[.,;:)]}
     case $caminho in
         /usr/share/stylus/deck/venv/*|/usr/share/stylus/lock/stylus-) continue ;;
     esac
@@ -629,6 +634,31 @@ done < <(sed -n '/stylus-configure.sh/,/^CHROOT$/p' airootfs/usr/local/bin/stylu
          grep -E '\.(service|socket|timer|target)$' | sort -u)
 if (( ${#faltando[@]} == 0 )); then ok "toda unidade que a instalação liga vem de um pacote instalado"
 else bad "a instalação liga o que pode não existir:"; printf '      %s\n' "${faltando[@]}"; fi
+
+sec "o `stylus --help` diz tudo que o `stylus` aceita"
+# O despachante tinha 63 nomes no `case` e 34 no texto de ajuda. Vinte e nove
+# comandos que existiam e que ninguém tinha como descobrir: `stylus big`,
+# `stylus loja`, `stylus glifos`, `stylus números`… Cada um deles é uma linha
+# que precisa continuar funcionando para sempre e que nunca é usada, porque
+# nunca foi anunciada.
+#
+# A regra agora é simples: se o `case` atende, a ajuda diz. Ou documenta, ou
+# apaga — o que não pode é existir escondido.
+naodoc=()
+ajuda=$(sed -n '/^usage()/,/^EOF$/p' airootfs/usr/local/bin/stylus)
+while read -r tok; do
+    [[ -z $tok ]] && continue
+    # -h/--help/help se explicam sozinhos e não entram na própria lista.
+    case $tok in -h|--help|help) continue ;; esac
+    grep -qE "(^|[^a-z-])${tok}([^a-z-]|$)" <<<"$ajuda" || naodoc+=("$tok")
+done < <(grep -oE '^    [a-z|áéíóúâê-]+\)' airootfs/usr/local/bin/stylus |
+         tr -d ' )' | tr '|' '\n' | sort -u)
+if (( ${#naodoc[@]} == 0 )); then
+    ok "os $(grep -oE '^    [a-z|áéíóúâê-]+\)' airootfs/usr/local/bin/stylus | tr -d ' )' | tr '|' '\n' | grep -vc '^$') nomes que o stylus aceita estão todos na ajuda"
+else
+    bad "o stylus aceita nomes que a ajuda não menciona:"
+    printf '      %s\n' "${naodoc[@]}"
+fi
 
 sec "a sessão X11 do KDE tem gerenciador de janelas"
 # **Sintoma:** o KDE instala, abre, mostra o painel e a área de trabalho — e

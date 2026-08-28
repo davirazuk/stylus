@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Stylus Mode
-Comment=Switch between music and desktop mode
-Exec=/usr/local/bin/stylus-mode toggle
-Icon=preferences-system
-Terminal=false
-Type=Application
-Categories=System;
