@@ -194,6 +194,38 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
 - **A ISO liga no MODO MÚSICA.** Então é lá que o instalador precisa estar:
   a interface mostra a seção INSTALAR quando existe `/run/archiso`, e só
   nesse caso. Antes não havia caminho nenhum do pendrive até o instalador.
+- **O `sync.sh` preserva o `~/.config` — de propósito, e isso tem preço.**
+  Nada que você acrescentar ao `etc/skel/.config/i3/config` chega em quem já
+  instalou: aquele arquivo é do usuário agora, e o novo padrão fica ao lado
+  como `.novo`. Foi assim que o `stylus-side-watch` nunca subiu nesta
+  máquina. O que precisa alcançar máquina existente vai em `/usr/local/bin`
+  ou em `~/.config/autostart`, que o sync sobrescreve.
+- **O i3 não lê `~/.config/autostart`; o KDE lê.** É por isso que o
+  `stylus-fundo` existe e é seguro rodar duas vezes: o i3 chama pelas linhas
+  `exec` dele, o KDE pelo autostart, e o `stylus-session` chama para os dois.
+- **`git` recusa ler repositório de outro dono.** O `/var/lib/stylus/repo` é
+  do root, e um `git -C` ali, rodando como usuário, falha com "detected
+  dubious ownership" — pelo **stderr**, com stdout vazio. Quem só olha o
+  stdout acha que não tem versão e cai calado num plano B. Precisa de
+  `git -c safe.directory=/var/lib/stylus/repo`.
+- **Procurar processo por pedaço de linha de comando encontra você mesmo.**
+  Não é só o `pkill -f`: o `pgrep -f "stylus-side-watch"` casa com o shell
+  que está rodando o próprio comando, porque o padrão está na linha dele.
+  Um teste inteiro passou verde assim, sem nunca ter subido o processo.
+  Compare argumento por argumento, pelo basename, lendo `/proc/*/cmdline`.
+- **`done < arquivo 2>/dev/null` deixa o erro escapar.** As redireções valem
+  na ordem em que aparecem, e "arquivo inexistente" acontece antes de o
+  `2>/dev/null` existir. Ao varrer `/proc`, onde processos morrem no meio da
+  varredura, isso vira ruído no journal a cada login. `2>/dev/null` primeiro.
+- **Sombra preta não desenha nada sobre o INK.** O fundo é (7,8,11): não há
+  para onde escurecer. Medido, a sombra que existia mudava no máximo 7
+  unidades somando os três canais. Num fundo escuro, peso vem de LUZ — uma
+  aresta iluminada, uma lombada. Ver `T.sleeve` no `ui/theme.py`.
+- **Folga fixa entre dois textos na mesma linha sempre quebra na máquina do
+  outro.** O `- 300` reservado para o valor à direita não cabia o valor mais
+  largo, e o nome do aparelho entrava por cima — só em quem tem placa de nome
+  comprido. Meça com `T.largura`. O `test_ui.py` espiona todo `T.text` e
+  reclama de retângulos que se cruzam.
 
 ---
 
