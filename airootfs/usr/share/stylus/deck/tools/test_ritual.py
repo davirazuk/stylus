@@ -328,6 +328,55 @@ def main():
     check("o cue percorre um arco que dá para ver",
           math.degrees(abs(ang_rest - ang_lead)) > 6.0)
 
+    # ── um disco que não tem arquivo nenhum ───────────────────────────────
+    case("o disco que vem pela rede")
+    # O `stylus qobuz tocar` monta uma pasta com capa, lista do mpv e um
+    # disco.json. Sem o disco.json, o vinyl tentaria descobrir a ordem lendo
+    # arquivos de áudio que não existem — e o aviso de virar o lado, que é a
+    # única coisa que esta máquina faz e mais nenhuma faz, não acontecia para
+    # quem estava ouvindo pela assinatura.
+    import json as _json
+    import shutil as _shutil
+    import tempfile as _tempfile
+    _tmp = _tempfile.mkdtemp(prefix="stylus-stream-")
+    try:
+        _pasta = os.path.join(_tmp, "Alguém", "Um Disco")
+        os.makedirs(_pasta)
+        _url = "https://exemplo.invalid/file?uid=1&eid=%d&hmac=xyz"
+        with open(os.path.join(_pasta, "disco.json"), "w", encoding="utf-8") as fh:
+            _json.dump({"fonte": "qobuz", "artist": "Alguém", "album": "Um Disco",
+                        "year": "1994",
+                        "tracks": [{"title": "faixa %d" % i, "duration": 420,
+                                    "url": _url % (600 + i)}
+                                   for i in range(1, 9)]}, fh)
+        with open(os.path.join(_pasta, "lista.m3u"), "w", encoding="utf-8") as fh:
+            fh.write("#EXTM3U\n" + "\n".join(_url % (600 + i) for i in range(1, 9)))
+        _al = vinyl.Album(_pasta, envelope=False)
+        check("lê o disco.json em vez de procurar arquivo", len(_al.tracks) == 8)
+        check("o artista e o disco vêm do manifesto",
+              _al.artist == "Alguém" and _al.name == "Um Disco")
+        check("as durações vêm do manifesto, sem ffprobe",
+              abs(_al.total - 8 * 420) < 1)
+        # 56 minutos não cabem num lado: tem que virar mais de um.
+        check("e ele TEM LADOS", len(_al.sides) >= 2)
+        check("nenhum lado passa do limite de um lado de verdade",
+              all(sd["end"] - sd["start"] <= vinyl.SIDE_MAX_SECONDS + 1
+                  for sd in _al.sides))
+        # E o caminho de volta: do endereço que está tocando para a pasta.
+        _cache = vinyl.CACHE_QOBUZ
+        vinyl.CACHE_QOBUZ = _tmp
+        try:
+            _achou = vinyl.resolve_album(_url % 604, "", "")
+            check("do endereço tocando de volta para a pasta",
+                  _achou == _pasta)
+            check("um endereço que não é nosso não casa com nada",
+                  vinyl.resolve_album("https://outro.invalid/x?eid=999", "", "")
+                  is None)
+        finally:
+            vinyl.CACHE_QOBUZ = _cache
+    finally:
+        _shutil.rmtree(_tmp, ignore_errors=True)
+
     print(f"\n  \033[1;32m{PASS} passaram\033[0m" + (f", \033[1;31m{FAIL} falharam\033[0m" if FAIL else "") + "\n")
     return 1 if FAIL else 0
 

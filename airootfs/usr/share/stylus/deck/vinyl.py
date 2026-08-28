@@ -405,6 +405,21 @@ class Session:
         self._track_pos = 0.0   # position within the current TRACK
         self._track_dur = 0.0
         self._stamp = 0.0       # monotonic time that position was measured
+        # UMA leitura antes de largar a thread.
+        #
+        # **Sintoma:** `stylus lado` dizia "nada tocando" com um disco
+        # tocando na frente da pessoa. Quem só pergunta uma vez — os comandos
+        # de terminal, um script de polybar — construía a Session, lia o
+        # snapshot no instante seguinte e recebia o estado ZERADO, porque a
+        # primeira volta da thread ainda não tinha acontecido. Ficava certo
+        # meio segundo depois, quando o processo já tinha saído.
+        #
+        # Custa um round-trip no socket do mpv (milissegundos) ou um
+        # playerctl (dezenas). Para quem fica de pé — o deck, a tela cheia —
+        # isso é invisível na abertura; para quem pergunta uma vez, é a
+        # diferença entre responder e mentir.
+        if not self._poll_mpv():
+            self._poll_mpris()
         self.thread = threading.Thread(target=self._run, args=(poll_interval,), daemon=True)
         self.thread.start()
 
@@ -1067,6 +1082,18 @@ class Album:
 
     # -- structure ---------------------------------------------------------
     def _scan(self):
+        # Um disco que não tem arquivo nenhum: o que vem pela rede.
+        #
+        # O `stylus qobuz tocar` monta uma pasta em ~/.cache/stylus/qobuz com
+        # a capa, a lista do mpv e um disco.json — ordem, títulos e durações,
+        # que o Qobuz manda de graça junto com o álbum. Com isso este objeto
+        # fica completo sem tocar em arquivo de áudio nenhum, e tudo que já
+        # sabe ler um Album passa a saber ler um disco transmitido: os LADOS,
+        # que é o que importa. Sem isto o aviso de virar o lado — a única
+        # coisa que este sistema faz e mais nenhum faz — simplesmente não
+        # acontecia para quem estava ouvindo pela assinatura.
+        if self._ler_manifesto():
+            return
         # usa o mesmo coletor que track_paths para garantir índice idêntico
         for p in _collect_audio_recursive(self.folder):
             n = os.path.basename(p)
@@ -1080,6 +1107,35 @@ class Album:
                 break
         if self.tracks:
             self._read_tags(self.tracks[0]["path"])
+
+    def _ler_manifesto(self):
+        """disco.json no lugar dos arquivos. True quando havia um."""
+        arq = os.path.join(self.folder, "disco.json")
+        try:
+            with open(arq, encoding="utf-8") as fh:
+                m = json.load(fh)
+        except (OSError, ValueError):
+            return False
+        faixas = m.get("tracks") or []
+        if not faixas:
+            return False
+        for t in faixas:
+            self.tracks.append({
+                "path": t.get("url") or "",
+                "title": t.get("title") or "",
+                # A duração vem daqui e não do ffprobe: medir um arquivo que
+                # está do outro lado da internet custa uma conexão por faixa,
+                # e o Qobuz já disse quanto dura cada uma.
+                "duration": float(t.get("duration") or 0.0),
+                "start": 0.0,
+            })
+        self.artist = m.get("artist") or self.artist
+        self.name = m.get("album") or self.name
+        self.year = str(m.get("year") or "")
+        capa = os.path.join(self.folder, "cover.jpg")
+        if os.path.isfile(capa):
+            self.cover = capa
+        return True
 
     def _read_tags(self, path):
         # mutagen primeiro, mesma razão de _probe_duration: um processo a menos
@@ -1122,7 +1178,13 @@ class Album:
         t = 0.0
         for tr in self.tracks:
             tr["start"] = t
-            tr["duration"] = _probe_duration(tr["path"])
+            # Só mede o que ainda não tem medida: um disco vindo do
+            # disco.json já traz a duração de cada faixa, e o ffprobe num
+            # endereço http abre uma conexão por faixa para redescobrir o que
+            # já se sabe — segundos de espera antes de a tela mostrar
+            # qualquer coisa.
+            if not tr.get("duration"):
+                tr["duration"] = _probe_duration(tr["path"])
             t += tr["duration"]
         self.total = t
 
@@ -1302,6 +1364,10 @@ def resolve_album(path=None, artist="", album=""):
         folder = os.path.dirname(os.path.abspath(path))
         if any(n.lower().endswith(AUDIO_EXT) for n in os.listdir(folder)):
             return folder
+    if path and path.startswith(("http://", "https://")):
+        f = _pasta_da_transmissao(path)
+        if f:
+            return f
     if not album:
         return None
     want_a, want_al = _norm(artist), _norm(album)
@@ -1320,6 +1386,48 @@ def resolve_album(path=None, artist="", album=""):
                         return os.path.join(ap, album_dir)
         except OSError:
             continue
+    return None
+
+
+CACHE_QOBUZ = os.path.expanduser("~/.cache/stylus/qobuz")
+
+
+def _pasta_da_transmissao(url):
+    """De um endereço tocando de volta para a pasta que o descreve.
+
+    O `stylus qobuz tocar` guarda a lista do mpv e um disco.json numa pasta
+    de cache por álbum. Aqui se procura, entre elas, a que contém ESTE
+    endereço — e a partir dela um disco transmitido vira um Album igual aos
+    outros, com lados e tudo.
+
+    A busca é pelo `eid=` (o identificador da faixa dentro do endereço) e não
+    pelo endereço inteiro: o resto dele carrega uma assinatura com prazo, e
+    comparar a linha toda daria erro no dia em que o mpv pedisse o endereço
+    de novo.
+    """
+    m = re.search(r"[?&]eid=(\d+)", url)
+    alvo = "eid=%s" % m.group(1) if m else url
+    try:
+        artistas = os.listdir(CACHE_QOBUZ)
+    except OSError:
+        return None
+    for a in artistas:
+        ap = os.path.join(CACHE_QOBUZ, a)
+        try:
+            discos = os.listdir(ap)
+        except OSError:
+            continue
+        for d in discos:
+            dp = os.path.join(ap, d)
+            lista = os.path.join(dp, "lista.m3u")
+            if not os.path.isfile(lista):
+                continue
+            try:
+                with open(lista, encoding="utf-8") as fh:
+                    if alvo in fh.read():
+                        return dp
+            except OSError:
+                continue
     return None
 
 

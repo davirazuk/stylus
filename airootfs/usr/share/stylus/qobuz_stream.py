@@ -137,6 +137,7 @@ def main():
     capa(meta, destino)
 
     linhas = ["#EXTM3U"]
+    manifesto = []
     tocaveis = 0
     for t in faixas:
         if not t.get("streamable", True):
@@ -165,6 +166,7 @@ def main():
         rotulo = "%s - %s" % (artista, nome.replace("\n", " ").replace(",", " "))
         linhas.append("#EXTINF:%d,%s" % (dur, rotulo))
         linhas.append(url)
+        manifesto.append({"title": nome, "duration": dur, "url": url})
         tocaveis += 1
 
     if not tocaveis:
@@ -173,6 +175,18 @@ def main():
     lista = os.path.join(destino, "lista.m3u")
     with open(lista, "w", encoding="utf-8") as fh:
         fh.write("\n".join(linhas) + "\n")
+
+    # O disco.json é o que faz um disco transmitido virar um Album de
+    # verdade para o resto do sistema — com LADOS, e portanto com o aviso de
+    # virar o lado, que é a única coisa que esta máquina faz e mais nenhuma
+    # faz. Sem ele, o vinyl.py tentaria descobrir a ordem lendo arquivos de
+    # áudio que não existem.
+    ano = str(meta.get("release_date_original")
+              or meta.get("release_date_stream") or "")[:4]
+    with open(os.path.join(destino, "disco.json"), "w", encoding="utf-8") as fh:
+        json.dump({"fonte": "qobuz", "id": album_id, "artist": artista,
+                   "album": titulo, "year": ano, "tracks": manifesto},
+                  fh, ensure_ascii=False, indent=1)
 
     prof = faixas[0].get("maximum_bit_depth") or 16
     taxa = faixas[0].get("maximum_sampling_rate") or 44.1
