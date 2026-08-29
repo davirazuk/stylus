@@ -1102,6 +1102,107 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── o sorteio não pode ler a coleção inteira ──────────────────────────────
+# **Sintoma:** apertar [r] na estante travava a interface por segundos.
+#
+# O empurrãozinho da hora do dia (manhã pede faixa curta, noite pede longa —
+# 15% de variação, e o comentário original diz "não é ditadura") precisa da
+# duração média das faixas, e para isso abria um `Album` de CADA candidato.
+# Numa coleção de 374 discos com uma dúzia de faixas cada, isso é o mutagen
+# abrindo quatro mil e quinhentos arquivos — e um ffprobe por faixa que ele
+# não souber ler — para aplicar um ajuste de quinze por cento.
+#
+# Duas coisas conferidas, e as duas sobre o RESULTADO: quantos álbuns o
+# sorteio abre, e se ele continua puxando para o esquecido.
+sec "o sorteio de disco é barato e continua puxando para o esquecido"
+sorteio=$(python3 - <<'SORTEOF'
+import collections
+import os
+import random
+import struct
+import sys
+import tempfile
+import shutil
+import time
+import wave
+
+casa = tempfile.mkdtemp(prefix="stylus-sorteio-casa-")
+os.environ["HOME"] = casa
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+import vinyl                                              # noqa: E402
+
+base = tempfile.mkdtemp(prefix="stylus-sorteio-")
+erros = []
+try:
+    N = 40
+    for i in range(N):
+        d = os.path.join(base, "Art%03d" % i, "Disco")
+        os.makedirs(d)
+        for k in range(4):
+            with wave.open(os.path.join(d, "%02d f.wav" % k), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(8000)
+                w.writeframes(struct.pack("<h", 0) * 8000 * 60)
+    cands = sorted(vinyl.shelf(root=base, min_tracks=1))
+    if len(cands) != N:
+        erros.append("a estante de mentira deu %d discos" % len(cands))
+
+    # 1. quantos ÁLBUNS ele abre
+    abertos = {"n": 0}
+    real = vinyl.Album
+
+    class _Conta(real):
+        def __init__(self, *a, **k):
+            abertos["n"] += 1
+            super().__init__(*a, **k)
+
+    vinyl.Album = _Conta
+    try:
+        vinyl.draw_record(cands, rng=random.Random(1))
+    finally:
+        vinyl.Album = real
+    # O teto é escrito AQUI, e não lido do `vinyl._FINALISTAS`: uma
+    # conferência que pergunta o limite ao próprio código não confere nada —
+    # subir a constante para 999 passaria verde. Vinte é o que se aceita
+    # abrir sem a interface parecer travada.
+    TETO = 20
+    if abertos["n"] > TETO:
+        erros.append("o sorteio abriu %d álbuns de %d (o teto aqui é %d)"
+                     % (abertos["n"], N, TETO))
+
+    # 2. e continua puxando para o que faz mais tempo que não toca
+    alvo = getattr(vinyl, "PLAYS", None)
+    if alvo:
+        os.makedirs(os.path.dirname(alvo), exist_ok=True)
+        with open(alvo, "w", encoding="utf-8") as fh:
+            for c in cands[:10]:
+                fh.write("%d\tA\tB\t%s\n" % (int(time.time()), c))
+        recentes = set(cands[:10])
+        rng = random.Random(3)
+        conta = collections.Counter()
+        for _ in range(300):
+            conta["recente" if vinyl.draw_record(cands, rng=rng) in recentes
+                  else "esquecido"] += 1
+        # Uniforme daria 25% de recentes; o peso quadrático tem que derrubar
+        # isso para quase zero.
+        if conta["recente"] > 15:
+            erros.append("o esquecimento parou de pesar: %d de 300 sorteios "
+                         "caíram num disco ouvido hoje" % conta["recente"])
+finally:
+    shutil.rmtree(base, ignore_errors=True)
+    shutil.rmtree(casa, ignore_errors=True)
+for e in erros:
+    print(e)
+SORTEOF
+)
+if [[ -z $sorteio ]]; then
+    ok "abre no máximo uma dúzia de discos, e o esquecido ganha"
+else
+    bad "o sorteio de disco:"
+    printf '%s\n' "$sorteio" | sed 's/^/      /'
+fi
+
 # ── "1 faixas" ────────────────────────────────────────────────────────────
 # **Sintoma:** "1 faixas", "1 discos", "posto há 1 meses", "1 discos · 1
 # vezes". Não derruba nada, não aparece em teste nenhum e não some sozinho —

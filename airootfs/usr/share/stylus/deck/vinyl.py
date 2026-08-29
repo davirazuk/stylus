@@ -1130,6 +1130,11 @@ def last_played():
     return out
 
 
+# Quantos discos chegam à final do sorteio — ou seja, quantos ÁLBUNS são
+# abertos para o empurrãozinho da hora do dia. Ver `draw_record`.
+_FINALISTAS = 12
+
+
 def draw_record(candidates=None, exclude=(), rng=None):
     """Sorteia um disco puxando para o que faz mais tempo que não toca,
     com um toque de consciência temporal — a manhã pede uma coisa, a noite outra.
@@ -1145,27 +1150,56 @@ def draw_record(candidates=None, exclude=(), rng=None):
     cands = [c for c in cands if os.path.normpath(c) not in fora]
     if not cands:
         return None
+    _rng = rng or random
     vistos = last_played()
     agora = time.time()
-    hora = time.localtime(agora).tm_hour
 
-    # Peso base do esquecimento: quadrático
-    pesos = []
+    # ── 1. o esquecimento, que não custa arquivo nenhum ───────────────────
+    # Peso quadrático nos dias desde a última vez. Só o registro de escutas
+    # é lido, e ele é um arquivo só.
+    base = []
     for d in cands:
         quando = vistos.get(os.path.normpath(d))
         dias = 400.0 if quando is None else max(0.0, (agora - quando) / 86400.0)
-        peso = 1.0 + dias * dias
+        base.append(1.0 + dias * dias)
 
-        # Ajuste temporal suave: manhã (6-12) favorece energético,
-        # tarde (12-18) favorece variado, noite (18-24) favorece suave,
-        # madrugada (0-6) favorece experimental/silencioso.
-        # Isso é intencionalmente sutil — 15% de variação, não ditadura.
+    # ── 2. a hora do dia, só entre os FINALISTAS ──────────────────────────
+    # **Sintoma:** apertar [r] na estante travava a interface por segundos.
+    #
+    # O empurrãozinho da hora (manhã pede faixa curta, noite pede longa —
+    # 15% de variação, e o comentário original diz "não é ditadura") precisa
+    # da duração média das faixas, e para isso abria um `Album` de CADA
+    # candidato. Numa coleção de 374 discos com uma dúzia de faixas cada,
+    # isso é o mutagen abrindo quatro mil e quinhentos arquivos — e um
+    # ffprobe por faixa que ele não souber ler — para aplicar um ajuste de
+    # quinze por cento. O sorteio é a única coisa neste sistema que a pessoa
+    # espera ser instantânea.
+    #
+    # Então sorteia-se primeiro pelo esquecimento, tira-se uma dúzia de
+    # finalistas, e só neles se paga o preço de abrir o disco. O resultado é
+    # o mesmo tipo de escolha; o custo passa de 374 leituras para 12.
+    hora = time.localtime(agora).tm_hour
+    if len(cands) > _FINALISTAS:
+        idx = set()
+        for _ in range(_FINALISTAS * 2):
+            if len(idx) >= _FINALISTAS:
+                break
+            idx.add(_rng.choices(range(len(cands)), weights=base, k=1)[0])
+        indices = sorted(idx)
+    else:
+        indices = list(range(len(cands)))
+
+    finalistas, pesos = [], []
+    for i in indices:
+        d = cands[i]
+        peso = base[i]
         try:
             alb = Album(d, envelope=False)
             total = alb.total if alb.total else 2400
             avg_track = total / max(1, len(alb.tracks))
-            # manhã: médias rápidas ganham leve bonus
-            # noite: médias longas ganham leve bonus
+            # manhã (6-12): médias rápidas ganham um leve bônus
+            # noite (18-24): médias longas ganham um leve bônus
+            # madrugada (0-6): disco comprido ganha um leve bônus
             if 6 <= hora < 12:
                 if avg_track < 300:
                     peso *= 1.15
@@ -1175,11 +1209,11 @@ def draw_record(candidates=None, exclude=(), rng=None):
             elif 0 <= hora < 6:
                 if total > 3600:
                     peso *= 1.10
-        except Exception:
+        except Exception:                                  # noqa: BLE001
             pass
-
+        finalistas.append(d)
         pesos.append(peso)
-    return (rng or random).choices(cands, weights=pesos, k=1)[0]
+    return _rng.choices(finalistas, weights=pesos, k=1)[0]
 
 
 def record_seed(folder):
@@ -1373,8 +1407,9 @@ class Album:
         self.total = t
 
     def _build_sides(self):
-        """Pack the running order into <=22-minute sides at real track
-        boundaries — a side never cuts a song in half, which is exactly the
+        """Reparte a ordem do disco em lados de no máximo SIDE_MAX_SECONDS
+        (26 min — o comentário aqui dizia 22, de uma versão anterior), sempre
+        em fronteira de faixa — a side never cuts a song in half, which is exactly the
         constraint that decided the running order of every album pressed to
         vinyl. Aims for even sides rather than filling A to the brim and
         leaving B with two songs on it."""
