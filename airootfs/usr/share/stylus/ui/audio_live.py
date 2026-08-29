@@ -12,7 +12,8 @@ fazia desde sempre (ler o monitor do PipeWire pelo PortAudio) era o dado
 certo; faltava uma versão pequena sem GL para a interface de tela cheia.
 
 O que esta thread mantém pronto:
-    level     o nível suavizado, 0..1 — para o brilho e o giro
+    level     a energia carregada, 0..1 — para o brilho e o giro
+    pulse     a energia crua do momento, 0..1 — respira na batida
     spectrum  N_BANDS faixas logarítmicas — para a coluna ao lado da capa
     wave      os últimos ~1000 samples monofônicos — para o sulco vivo
 
@@ -59,7 +60,14 @@ def find_monitor_source():
     """O monitor que está com som agora, ou o primeiro que houver.
 
     O mesmo critério do deck (scope.py): um sink com o monitor RUNNING é o
-    que alguém está ouvindo. SOURCE_RUNNING no pactl é o campo 3.
+    que alguém está ouvindo. O teste é por SUBSTRING (e não por coluna fixa):
+    o `pactl list sources short` não tem colunas fixas — INDEX NAME DRIVER
+    SAMPLE_SPEC STATE com a SAMPLE_SPEC em TRÊS palavras ("s32le 2ch 48000Hz").
+    Uma versão que conferia `col[4] == "RUNNING"` nunca acertava: ele caía
+    no "2ch", e o fallback escolhia o PRIMEIRO monitor da lista — que pode
+    ser um HDMI na parede, SUSPENDED, e a AGORA capturava silêncio enquanto
+    o som tocava na caixa ao lado (achado fora do display: com a tela real
+    só o speaker existe, e o fallback mascarava o defeito).
     """
     forced = os.environ.get("STYLUS_DECK_SOURCE")
     if forced:
@@ -70,11 +78,8 @@ def find_monitor_source():
     except Exception:                   # noqa: BLE001
         return None
     for linha in out.splitlines():
-        col = linha.split()
-        # pactl list sources short: INDEX NAME DRIVER SAMPLE_SPEC STATE
-        if len(col) >= 5 and ".monitor" in col[1]:
-            if col[4] == "RUNNING":
-                return col[1]
+        if ".monitor" in linha and "RUNNING" in linha:
+            return linha.split()[1]
     for linha in out.splitlines():
         col = linha.split()
         if len(col) >= 2 and ".monitor" in col[1]:
@@ -88,6 +93,7 @@ class AudioMonitor:
     def __init__(self):
         self.ok = False
         self.level = 0.0
+        self.pulse = 0.0
         # A ORDEM aqui é o conserto: o guarda do numpy vem ANTES de qualquer
         # `np.`. Estas duas linhas eram `np.zeros(...)` DUAS linhas acima do
         # `if np is None`, e numa máquina sem python-pyaudio (que derruba o
@@ -171,9 +177,15 @@ class AudioMonitor:
             pass
 
     def _process(self, a):
+        # Pulso: a energia crua do bloco, sem suavização — é o que sobe na
+        # batida e cai antes da próxima. O brilho da capa respira nele
+        # (transiente), e no level (a energia carregada); são "ritmo" e
+        # "volume".
+        raw = min(1.0, float(np.sqrt(np.mean(np.square(a)))) * 3.0)
+        self.pulse = max(raw, self.pulse * 0.955)
+
         # Nível: RMS do bloco, suavizado com ataque rápido, queda lenta.
-        rms = float(np.sqrt(np.mean(np.square(a)))) * 3.0
-        rms = min(1.0, rms)
+        rms = raw
         if rms >= self.level:
             self.level += ATK * (rms - self.level)
         else:
@@ -209,15 +221,18 @@ class AudioMonitor:
             spec = self.spectrum.copy()
         stale = time.time() - self._last_block
         level = self.level
+        pulse = self.pulse
         if stale > 0.6:
-            # Sem música (pausado, sink suspenso), nível E onda escorrem para
-            # o zero — uma sessão congelada não pode deixar o brilho aceso nem
-            # o sulco desenhando o último instante para sempre. A onda
-            # ressurge inteira na primeira leitura depois do som voltar.
+            # Sem música (pausado, sink suspenso), nível, pulso E onda
+            # escorrem para o zero — uma sessão congelada não pode deixar o
+            # brilho aceso nem o sulco desenhando o último instante para
+            # sempre. A onda ressurge inteira na primeira leitura depois do
+            # som voltar.
             decai = max(0.0, 1.0 - (stale - 0.6) * 2.2)
             level *= decai
+            pulse *= decai
             wave *= decai
-        return level, wave, spec
+        return level, wave, spec, pulse
 
 
 _monitor = None
