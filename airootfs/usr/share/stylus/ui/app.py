@@ -5128,7 +5128,14 @@ class App:
                        (24, ty + 74), 12, T.TEXT_FAINT)
 
     # ── virar o lado ───────────────────────────────────────────────────────
-    FLIP_DUR = 7.0
+    # Meio minuto, e não sete segundos, pelo mesmo motivo do aviso da área de
+    # trabalho (ESPERA_LADO no stylus-side-watch): quem está ouvindo um disco
+    # é justamente quem não está na frente do computador, e um acontecimento
+    # que some antes de você voltar da cozinha vira um contador de novo.
+    # Qualquer tecla dispensa, então ficar mais tempo não custa nada a quem
+    # está ali — e este aviso, com a tela cheia no ar, é o ÚNICO: o vigia não
+    # manda notificação quando a interface está aberta.
+    FLIP_DUR = 30.0
 
     def _watch_side(self):
         """Quando o LADO vira, a tela inteira diz.

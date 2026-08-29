@@ -3491,7 +3491,9 @@ sec "o aviso de virar o disco dura mais que um aviso de volume"
 # volume — e quem está ouvindo um disco é justamente quem não está na frente
 # do computador. Da cozinha, o recado já era.
 #
-# Duas listas que se referem uma à outra: o tempo do dunst e o do vigia.
+# Três lugares, na verdade: o tempo do dunst, o do vigia e o do aviso da tela
+# cheia (FLIP_DUR) — que é o ÚNICO quando a interface está aberta, porque
+# nesse caso o vigia não manda notificação nenhuma.
 saida=$(python3 - <<'ESPERAEOF' 2>&1
 import re
 try:
@@ -3514,13 +3516,22 @@ espera = int(mv.group(1).replace("_", "")) / 1000.0
 # chama. Só linha de código, nunca comentário.
 usa = any("avisar(titulo, corpo, espera=" in ln
           for ln in vigia.splitlines() if not ln.lstrip().startswith("#"))
+try:
+    app = open("airootfs/usr/share/stylus/ui/app.py", encoding="utf-8").read()
+    cheia = float(re.search(r"^\s*FLIP_DUR\s*=\s*([\d.]+)", app, re.M).group(1))
+except (OSError, AttributeError):
+    cheia = 0.0
 if espera <= padrao:
     print("ERRO o aviso do lado dura %gs e o padrão do dunst é %gs"
           % (espera, padrao))
 elif not usa:
     print("ERRO o ESPERA_LADO existe e o aviso do fim do lado não o usa")
+elif cheia < espera / 2000.0:
+    print("ERRO na tela cheia o mesmo aviso dura %gs (o da área de trabalho, %gs)"
+          % (cheia, espera))
 else:
-    print("OK %gs contra os %gs de um aviso qualquer" % (espera, padrao))
+    print("OK %gs na área de trabalho e %gs na tela cheia, contra os %gs de "
+          "um aviso qualquer" % (espera, cheia, padrao))
 ESPERAEOF
 )
 case "$saida" in
