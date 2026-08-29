@@ -10,7 +10,7 @@
 desktop-image: "background.png"
 desktop-color: "#07080b"
 title-text: ""
-message-color: "#e2e7f0"
+message-color: "#e8ecf5"
 message-bg-color: "#07080b"
 terminal-font: "Unifont Regular 16"
 terminal-left: "8%"
@@ -27,7 +27,10 @@ terminal-border: "0"
     height             = 44%
 
     item_font          = "Unifont Regular 16"
-    item_color         = "#b9d4c6"
+    # Cinza da paleta, e não um verde-menta que não existe em lugar
+    # nenhum deste sistema. As entradas que NÃO estão escolhidas são
+    # mobília; quem tem cor é a escolhida, logo abaixo.
+    item_color         = "#8a95aa"
     item_height        = 34
     item_padding       = 6
     item_spacing       = 8
@@ -36,12 +39,15 @@ terminal-border: "0"
     icon_height        = 0
 
     selected_item_font  = "Unifont Regular 16"
-    selected_item_color = "#5bcefa"
+    # Âmbar: "é este que vai subir". É a mesma palavra que o resto do
+    # sistema usa para "é este" — e esta é a PRIMEIRA tela da máquina,
+    # onde ela ainda estava toda em azul.
+    selected_item_color = "#f0a030"
 
     scrollbar          = true
     scrollbar_width    = 4
-    scrollbar_thumb_color = "#5bcefa"
-    scrollbar_frame_color = "#0d0f14"
+    scrollbar_thumb_color = "#c08020"
+    scrollbar_frame_color = "#101219"
 }
 
 # ── Countdown ────────────────────────────────────────────────────────────────
@@ -53,12 +59,12 @@ terminal-border: "0"
     height    = 12
     show_text = true
     text      = "Iniciando em %d s"
-    text_color = "#7e899c"
+    text_color = "#8a95aa"
     font      = "Unifont Regular 16"
     bar_style = "none"
-    fg_color  = "#5bcefa"
-    bg_color  = "#0d0f14"
-    border_color = "#0d0f14"
+    fg_color  = "#f0a030"
+    bg_color  = "#101219"
+    border_color = "#101219"
 }
 
 # ── Hints ────────────────────────────────────────────────────────────────────
@@ -67,7 +73,7 @@ terminal-border: "0"
     top   = 90%
     width = 100%
     align = "center"
-    color = "#7e899c"
+    color = "#8a95aa"
     font  = "Unifont Regular 16"
     text  = "↑↓ escolher     Enter iniciar     E editar     C linha de comando"
 }

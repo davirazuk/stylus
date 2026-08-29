@@ -765,7 +765,14 @@ LIMITE = 22.0        # abaixo disto, duas cores sao a mesma intencao
 # a paleta VELHA dentro (#e2e7f0, #5c6478, #b090f0, #70c8e8 — as cores que o
 # cabecalho do arquivo `palette` cita pelo nome como exemplo de deriva). Ela
 # passou verde por anos porque esta conferencia so olhava o /etc/skel.
+# E as DUAS TELAS QUE VÊM ANTES DA ÁREA DE TRABALHO: o GRUB e o login. Elas
+# estavam inteiras na paleta velha — #e2e7f0, #7e899c, #0d0f14 — mais um
+# amarelo e um rosa do Catppuccin (#f9e2af, #f38ba8) e um verde-menta que não
+# existe em lugar nenhum deste sistema. E o nome STYLUS, que é âmbar em todo
+# canto, aparecia em AZUL na primeira tela que alguém vê da máquina.
 RAIZES = ["airootfs/etc",
+          "airootfs/usr/share/sddm",
+          "airootfs/usr/share/grub",
           "airootfs/usr/share/color-schemes",
           "airootfs/usr/share/Kvantum",
           "airootfs/usr/share/qt5ct",
@@ -963,7 +970,7 @@ fi
 # A conferência é sobre o RESULTADO, não sobre a cor escolhida: texto e fundo
 # do mesmo par têm que estar longe um do outro. Quem escrever outra paleta
 # amanhã pode escolher o que quiser, menos escrever no escuro.
-sec "os aplicativos Qt dão para ler"
+sec "os aplicativos Qt e o KDE dão para ler"
 ilegivel=$(python3 - <<'QTEOF'
 import pathlib
 
@@ -1007,11 +1014,53 @@ for arq in sorted(pathlib.Path("airootfs/usr/share").glob("qt*ct/colors/*.conf")
                          m[frente], fundo, m[fundo], d))
 QTEOF
 )
-if [[ -z $ilegivel ]]; then
-    ok "as 3 linhas do qt5ct e do qt6ct têm texto legível sobre o fundo"
+# E o esquema do KDE junto. Ali as cores TÊM nome, o que é o motivo de ele
+# estar certo — mas nada conferia, e "as cores têm nome" não é garantia:
+# quem escrever um `[Colors:Selection]` novo com o âmbar no fundo e o âmbar
+# na frente não vê nada de errado lendo o que escreveu.
+ilegivel_kde=$(python3 - <<'KDEEOF'
+import pathlib, re
+
+PISO = 90.0
+
+
+def rgb(v):
+    return tuple(int(x) for x in v.split(",")[:3])
+
+
+for arq in sorted(pathlib.Path("airootfs/usr/share/color-schemes").glob("*.colors")):
+    secao, fundo = None, {}
+    frente = {}
+    for linha in arq.read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        m = re.match(r"^\[(Colors:[A-Za-z]+)\]$", linha)
+        if m:
+            secao = m.group(1)
+            continue
+        if secao and "=" in linha and not linha.startswith("#"):
+            chave, valor = linha.split("=", 1)
+            if chave == "BackgroundNormal":
+                fundo[secao] = rgb(valor)
+            elif chave in ("ForegroundNormal", "ForegroundLink",
+                           "ForegroundActive"):
+                frente.setdefault(secao, {})[chave] = rgb(valor)
+    for secao, papeis in sorted(frente.items()):
+        b = fundo.get(secao)
+        if b is None:
+            print("%s %s: sem BackgroundNormal" % (arq.name, secao))
+            continue
+        for chave, a in sorted(papeis.items()):
+            d = sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+            if d < PISO:
+                print("%s %s: %s sobre o fundo — distância %.0f"
+                      % (arq.name, secao, chave, d))
+KDEEOF
+)
+if [[ -z $ilegivel && -z $ilegivel_kde ]]; then
+    ok "qt5ct, qt6ct e o esquema do KDE: texto legível sobre o fundo"
 else
-    bad "aplicativo Qt escrevendo no escuro:"
-    printf '%s\n' "$ilegivel" | sed 's/^/      /'
+    bad "tema escrevendo no escuro:"
+    printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
 # ── a lei do desenho do vinil, escrita em números ─────────────────────────

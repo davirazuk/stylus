@@ -63,7 +63,7 @@ Rectangle {
         height: form.implicitHeight + 56
         radius: 16
         color: "#07080b"
-        border.color: "#0d0f14"
+        border.color: "#101219"
         border.width: 1
 
         Column {
@@ -77,7 +77,11 @@ Rectangle {
                 font.pixelSize: 38
                 font.bold: true
                 font.family: "JetBrainsMono Nerd Font"
-                color: "#5bcefa"
+                // Âmbar, como o nome do sistema é em todo lugar: o título do
+                // trilho da tela cheia, o logotipo da AJUSTES, o botão do
+                // menu na barra. Aqui ele era AZUL — na primeira tela que
+                // alguém vê da máquina.
+                color: "#f0a030"
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
@@ -88,7 +92,7 @@ Rectangle {
             Text {
                 text: "a agulha é o único ponto em que um objeto vira som"
                 font.pixelSize: 11
-                color: "#7e899c"
+                color: "#8a95aa"
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
@@ -113,16 +117,22 @@ Rectangle {
                         radius: 8
                         height: 34
                         width: Math.max(72, nameText.implicitWidth + 26)
-                        color: current ? "#5bcefa"
-                             : (userMouse.containsMouse ? "#141820" : "#0d0f14")
-                        border.color: current ? "#5bcefa" : "#141820"
+                        // Âmbar para a conta escolhida: é a mesma palavra
+                        // que o resto do sistema usa para "é esta" — a seção
+                        // atual no trilho, a área de trabalho na barra, o
+                        // disco que está no prato na estante. O azul fica
+                        // para o FOCO do teclado (os dois campos abaixo),
+                        // que é o papel que a paleta dá a ele.
+                        color: current ? "#f0a030"
+                             : (userMouse.containsMouse ? "#1a1e28" : "#101219")
+                        border.color: current ? "#f0a030" : "#1a1e28"
                         border.width: 1
 
                         Text {
                             id: nameText
                             anchors.centerIn: parent
                             text: model.realName !== "" ? model.realName : model.name
-                            color: parent.current ? "#07080b" : "#e2e7f0"
+                            color: parent.current ? "#07080b" : "#e8ecf5"
                             font.pixelSize: 12
                             elide: Text.ElideRight
                         }
@@ -149,12 +159,12 @@ Rectangle {
                 placeholderText: "Usuário"
                 text: userModel.lastUser
                 font.pixelSize: 13
-                color: "#e2e7f0"
+                color: "#e8ecf5"
                 leftPadding: 14
                 background: Rectangle {
-                    color: "#0d0f14"
+                    color: "#101219"
                     radius: 8
-                    border.color: userField.activeFocus ? "#5bcefa" : "#141820"
+                    border.color: userField.activeFocus ? "#5bcefa" : "#1a1e28"
                     border.width: 1
                 }
                 KeyNavigation.tab: passField
@@ -168,13 +178,13 @@ Rectangle {
                 placeholderText: "Senha"
                 echoMode: revealPass.checked ? TextInput.Normal : TextInput.Password
                 font.pixelSize: 13
-                color: "#e2e7f0"
+                color: "#e8ecf5"
                 leftPadding: 14
                 rightPadding: 44
                 background: Rectangle {
-                    color: "#0d0f14"
+                    color: "#101219"
                     radius: 8
-                    border.color: passField.activeFocus ? "#5bcefa" : "#141820"
+                    border.color: passField.activeFocus ? "#5bcefa" : "#1a1e28"
                     border.width: 1
                 }
                 Keys.onReturnPressed: root.attemptLogin()
@@ -192,7 +202,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: revealPass.checked ? "ocultar" : "mostrar"
                     font.pixelSize: 11
-                    color: revealMouse.containsMouse ? "#5bcefa" : "#7e899c"
+                    color: revealMouse.containsMouse ? "#5bcefa" : "#8a95aa"
                     MouseArea {
                         id: revealMouse
                         anchors.fill: parent
@@ -212,7 +222,7 @@ Rectangle {
                 width: parent.width
                 visible: keyboard.capsLock
                 text: "Caps Lock está ligado"
-                color: "#f9e2af"
+                color: "#ffc850"
                 font.pixelSize: 12
                 horizontalAlignment: Text.AlignHCenter
             }
@@ -225,7 +235,7 @@ Rectangle {
                 // card carried a permanent blank gap where an error might one
                 // day go.
                 visible: text !== ""
-                color: "#f38ba8"
+                color: "#ee7a82"
                 font.pixelSize: 12
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
@@ -236,7 +246,7 @@ Rectangle {
                 width: parent.width
                 height: 42
                 radius: 8
-                color: loginMouse.pressed ? "#00c47d" : "#5bcefa"
+                color: loginMouse.pressed ? "#ffc850" : "#f0a030"
 
                 Text {
                     anchors.centerIn: parent
@@ -269,14 +279,14 @@ Rectangle {
             font.pixelSize: 42
             font.bold: true
             font.family: "JetBrainsMono Nerd Font"
-            color: "#e2e7f0"
+            color: "#e8ecf5"
         }
 
         Text {
             id: dateText
             anchors.horizontalCenter: parent.horizontalCenter
             font.pixelSize: 14
-            color: "#7e899c"
+            color: "#8a95aa"
         }
     }
 
@@ -303,7 +313,7 @@ Rectangle {
         text: keyboard.layouts.length > 0
               ? keyboard.layouts[keyboard.currentLayout].shortName.toUpperCase()
               : ""
-        color: "#7e899c"
+        color: "#8a95aa"
         font.pixelSize: 11
     }
 
@@ -321,13 +331,13 @@ Rectangle {
         font.pixelSize: 11
 
         background: Rectangle {
-            color: "#0d0f14"
+            color: "#101219"
             radius: 6
         }
         contentItem: Text {
             leftPadding: 10
             text: sessionSelect.displayText
-            color: "#e2e7f0"
+            color: "#e8ecf5"
             font: sessionSelect.font
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
@@ -348,12 +358,12 @@ Rectangle {
 
         Rectangle {
             width: shutLabel.implicitWidth + 28; height: 36; radius: 8
-            color: shutMouse.pressed ? "#f38ba8" : "#0d0f14"
+            color: shutMouse.pressed ? "#ee7a82" : "#101219"
             Text {
                 id: shutLabel
                 anchors.centerIn: parent
                 text: "Desligar"
-                color: shutMouse.pressed ? "#07080b" : "#f38ba8"
+                color: shutMouse.pressed ? "#07080b" : "#ee7a82"
                 font.pixelSize: 12
             }
             MouseArea {
@@ -366,12 +376,12 @@ Rectangle {
 
         Rectangle {
             width: rebootLabel.implicitWidth + 28; height: 36; radius: 8
-            color: rebootMouse.pressed ? "#f9e2af" : "#0d0f14"
+            color: rebootMouse.pressed ? "#ffc850" : "#101219"
             Text {
                 id: rebootLabel
                 anchors.centerIn: parent
                 text: "Reiniciar"
-                color: rebootMouse.pressed ? "#07080b" : "#f9e2af"
+                color: rebootMouse.pressed ? "#07080b" : "#ffc850"
                 font.pixelSize: 12
             }
             MouseArea {
