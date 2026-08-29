@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
-"""STYLUS — vinyl ritual, rebuilt standalone. Not a scope reskin.
+"""STYLUS — o ritual do vinil, à parte do scope. Não é um scope repintado.
 
-Standalone turntable app: real plinth, real disc, real needle.
-Scope is phosphor (additive, bloom, scanline). Vinyl is wood+plastic
-(forward, Phong, soft shadow). No shared shaders, no shared FBO.
+O disco na tela: prato, sulco que conta faixa, agulha que anda pelo lado.
+Shaders e FBO próprios, nada compartilhado com o scope.
+
+O QUE ESTE ARQUIVO NÃO É
+------------------------
+Dizia aqui "real plinth, real disc, real needle" e "vinyl is wood+plastic
+(forward, Phong, soft shadow)" — e era verdade: havia um braço de metal com
+contrapeso e poeira flutuando no fundo. O CLAUDE.md §5.5 proíbe as duas
+coisas pelo nome, e avisa que isso já custou semanas de volta.
+
+A lei, em uma linha: **o RITUAL é o analógico, o DESENHO é fósforo.** A
+cerimônia (spinup→cue→drop), o raio que é tempo, o sulco que conta faixa, a
+agulha que anda pelo lado, virar o disco — isso é sagrado. Madeira, plinto,
+parafuso, sala, poeira de ambiente e braço de metal com contrapeso, não:
+quando quiser melhorar o visual, a direção é sempre mais VIDA e mais reação
+ao som, nunca mais realismo.
 """
 import argparse, math, os, time, subprocess, threading, json
 import numpy as np, pygame
@@ -47,44 +60,11 @@ void main(){
     frag=vec4(col, 1.0);
 }
 """
-PLINTH_FS = """
-#version 330
-in vec2 uv; out vec4 frag;
-uniform vec2 u_res;
-uniform float u_time;
-void main(){
-    vec2 p = uv*2.0-1.0;
-    // Dark surface — matte, round
-    float g1 = sin(p.x*18.0 + p.y*2.0)*0.5+0.5;
-    float g2 = sin(p.x*42.0 - p.y*7.0)*0.5+0.5;
-    float grain = mix(g1, g2, 0.35) * 0.012;
-    vec3 surface = vec3(0.018,0.016,0.022) + vec3(grain);
-    // Subtle circular surface under disc
-    float surfDist = length(p - vec2(-0.08, -0.06));
-    surface *= 1.0 + smoothstep(0.9, 0.3, surfDist) * 0.08;
-    float vig = 1.0 - dot(p,p)*0.16;
-    vig = pow(vig, 0.92);
-    // warm highlight top-left
-    float hl = max(0.0, dot(normalize(vec2(-0.6,0.5)), p)) * 0.04;
-    hl *= (1.0 - length(p)*0.4);
-    vec3 col = surface*vig + vec3(hl*0.9, hl*0.7, hl*0.5);
-    // warm disc glow
-    float disc = length(p - vec2(-0.08, -0.06));
-    col += vec3(0.12, 0.07, 0.03) * exp(-disc*disc*4.0) * 0.18;
-    // Floating dust particles
-    for(int i=0; i<6; i++){
-        float fi = float(i);
-        vec2 offs = vec2(
-            sin(u_time*0.06+fi*2.3)*0.5-0.08,
-            cos(u_time*0.04+fi*3.1)*0.4-0.06
-        );
-        float dust = exp(-length(p-offs)*120.0)*0.08;
-        float twinkle = 0.5+0.5*sin(u_time*1.1+fi*4.7);
-        col += vec3(0.06,0.055,0.05)*dust*twinkle;
-    }
-    frag = vec4(col, 1.0);
-}
-"""
+# Não há PLINTH_FS aqui, e não é esquecimento: havia um, com plinto, brilho
+# de móvel e seis partículas de poeira flutuando — e ele NUNCA foi compilado.
+# O fundo que roda é o shader escrito à mão dentro do `main()` (procure por
+# `prog_plinth`). Duas telas de GLSL que ninguém desenhava, e que custaram
+# uma rodada de conserto no lugar errado antes de alguém notar.
 TEXT_VS = """
 #version 330
 layout(location=0) in vec2 pos; layout(location=1) in vec2 uv; out vec2 vuv;
@@ -423,16 +403,11 @@ class RitualScene:
             vr_a = 0.015 - vr * 0.004
             vr_cols = np.full((vr_n, 4), [0.04, 0.035, 0.05, vr_a], dtype=np.float32)
             strips.insert(2 + vr, build_strip(vr_pts, 0.008 * radius, W, H, vr_cols))
-        # Ambient dust — floating particles in the void (matching phone)
-        _dust_t = time.time()
-        for di in range(6):
-            dx = cx + math.sin(_dust_t * 0.07 + di * 2.1) * radius * 0.4
-            dy = cy + math.cos(_dust_t * 0.05 + di * 3.7) * radius * 0.3
-            dtwinkle = 0.5 + 0.5 * math.sin(_dust_t * 1.3 + di * 5.3)
-            da = 0.12 * dtwinkle
-            dp = np.array([[dx, dy]], dtype=np.float32)
-            dc = np.array([[0.08, 0.07, 0.06, da]], dtype=np.float32)
-            strips.append(build_strip(dp, 0.005 * radius, W, H, dc))
+        # Havia aqui uma TERCEIRA poeira de ambiente — seis partículas
+        # flutuando, com piscar próprio. Fora proibida pelo §5.5 ("poeira de
+        # ambiente"), ela nem desenhava: `build_strip` devolve zero vértices
+        # para menos de dois pontos (`if n<2`), e cada partícula era um ponto
+        # só. Seis por quadro, nenhuma na tela, e nada avisando.
         tris=[]
         wm=vinyl.wear_marks(cx,cy,radius,iso,rot,seed=al.seed,plays=al.plays,crackle=self.deck.crackle)
         if wm is not None and len(wm[0]): tris.append(build_segs(wm[0],1.2,W,H,wm[1]))
@@ -615,17 +590,11 @@ void main(){
   float audioBloom=u_audio*0.18;
   col+=vec3(0.30,0.18,0.08)*exp(-dd*dd*3.2)*0.20*breathe*(1.0+audioBloom);
   col+=vec3(0.15,0.09,0.04)*exp(-dd*dd*1.0)*0.08*breathe*(1.0+audioBloom*0.6);
-  // Ambient dust particles (matching phone)
-  for(int i=0;i<5;i++){
-    float fi=float(i);
-    vec2 offs=vec2(
-      sin(u_time*0.07+fi*2.1)*0.4,
-      cos(u_time*0.05+fi*3.7)*0.3
-    );
-    float dust=exp(-length(p-offs)*80.0)*0.12;
-    float twinkle=0.5+0.5*sin(u_time*1.3+fi*5.3);
-    col+=vec3(0.08,0.07,0.06)*dust*twinkle;
-  }
+  // Aqui flutuavam cinco partículas de POEIRA, cada uma com seu piscar. O
+  // CLAUDE.md §5.5 proíbe "poeira de ambiente" pelo nome, junto com a sala e
+  // o plinto: é o que existe numa FOTO de toca-discos e não diz nada sobre a
+  // música. O que ficou de vivo no fundo é o halo logo acima, que respira
+  // com o áudio — vida vinda do SOM, que é o que a lei manda.
   // Vignette (matching phone)
   col*=1.0-dot(p,p)*0.32;
   // Film grain (matching phone)
