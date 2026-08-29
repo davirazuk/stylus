@@ -2348,9 +2348,13 @@ class Deck:
         self.rotation = 0.0
         self.speed = 0.0          # revolutions per second, ramped
         self.crackle = 0.0
-        self.side_index = 0
-        self.pending_side = None
-        self.message = None
+        # Havia aqui `side_index`, `pending_side` e `message`: três campos
+        # escritos uma vez no construtor e nunca lidos por linha nenhuma do
+        # sistema. Eles parecem o encanamento do aviso de virar o lado — que
+        # é a tese do projeto — e não são: quem diz o gesto é o
+        # `Album.gesto_do_lado`, e quem o desenha é o `legendas` do ritual.
+        # Estado morto com nome de recurso é pior do que estado nenhum: da
+        # próxima vez alguém liga o fio no lugar errado.
         # Para onde este levantar vai dar. BREAK é a virada de lado (o prato
         # continua girando, esperando você virar o disco); STOP é o fim do
         # disco. Quem sabe a diferença é o RitualScene, que é quem enxerga o

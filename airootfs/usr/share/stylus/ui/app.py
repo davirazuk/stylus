@@ -3535,7 +3535,6 @@ class GamesScreen(Screen):
         self.results = []
         self.downloaded = []
         self.downloaded_ids = set()
-        self.syncing = False
         self.job = None
         self.page = 1
         self.total_pages = 1
@@ -3643,7 +3642,6 @@ class GamesScreen(Screen):
                 self.sel = 0
             elif self.sel == n_games + 2:  # sync
                 self.app.toast("sincronizando pro celular…")
-                self.syncing = True
                 self.job = Job(["stylus-ch", "sync"], "sync clone hero")
             else:  # stats
                 self.sub = "stats"
@@ -4400,7 +4398,6 @@ class App:
         self._toast_t = 0.0       # momento em que o toast apareceu
         # Transição entre seções: fade rápido ao trocar de tela.
         self._trans_alpha = 0.0
-        self._trans_target = 0.0
         # Sleep timer: minutes remaining, 0 = off
         self._sleep_minutes = 0
         self._sleep_end = 0.0
@@ -4445,7 +4442,6 @@ class App:
         self.auto_deck = bool(_load_prefs().get("auto_deck", True))
         self._born = time.time()
         self.pads = []
-        self._pad_ax = 0.0
         self._pad_t = 0.0
         self._init_pads()
         self.screens[self.cur].enter()

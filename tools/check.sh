@@ -3158,6 +3158,59 @@ else
     printf '%s\n' "$achados" | sed 's/^/      /'
 fi
 
+sec "estado escrito e nunca lido"
+# A irmã da conferência de função órfã, e pela mesma razão: um campo com nome
+# de recurso, escrito e nunca lido, LÊ como recurso que existe. O `Deck`
+# guardava `side_index`, `pending_side` e `message` — que parecem o
+# encanamento do aviso de virar o lado, a tese do projeto — e nenhum dos três
+# era lido por linha nenhuma do sistema. É a família do `set_text` que
+# ninguém chamava no deck e do `Nx` do diário: quando a peça está lá e o fio
+# não, ler o arquivo não denuncia nada.
+#
+# Só `self.X = …`. Atribuir a atributo de OUTRO objeto (um pygame.Rect, um
+# módulo grampeado no teste) tem efeito e não é estado morto.
+saida=$(python3 - <<'MORTOEOF'
+import ast
+import collections
+import os
+lidos, escritos = set(), collections.defaultdict(list)
+alvos = []
+for d, _s, fs in os.walk("airootfs"):
+    if "__pycache__" in d or "/venv" in d:
+        continue
+    for n in fs:
+        if n.endswith(".py") or (n.startswith("stylus") and "." not in n):
+            alvos.append(os.path.join(d, n))
+for cam in alvos:
+    try:
+        with open(cam, encoding="utf-8") as fh:
+            arv = ast.parse(fh.read())
+    except (OSError, SyntaxError):
+        continue
+    for no in ast.walk(arv):
+        if isinstance(no, ast.Attribute):
+            eh_self = isinstance(no.value, ast.Name) and no.value.id == "self"
+            if isinstance(no.ctx, ast.Store):
+                if eh_self:
+                    escritos[no.attr].append("%s:%d" % (cam, no.lineno))
+            else:
+                lidos.add(no.attr)
+        elif isinstance(no, ast.Constant) and isinstance(no.value, str):
+            # getattr("nome") e afins: uma string com o nome do campo conta
+            # como leitura, senão a conferência acusa o que é lido por reflexo.
+            lidos.add(no.value)
+for k in sorted(escritos):
+    if k not in lidos:
+        print("self.%s  (%s)" % (k, ", ".join(escritos[k][:3])))
+MORTOEOF
+)
+if [[ -z $saida ]]; then
+    ok "nenhum campo de objeto escrito e nunca lido"
+else
+    bad "estado morto (escrito, nunca lido em lugar nenhum):"
+    printf '%s\n' "$saida" | sed 's/^/      /'
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

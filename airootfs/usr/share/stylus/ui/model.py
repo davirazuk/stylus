@@ -136,7 +136,6 @@ class Thumbs:
         self.mem = {}
         self.pending = set()
         self.lock = threading.Lock()
-        self.placeholder = None
 
     def _thumb_path(self, cover):
         return os.path.join(THUMBS, f"{_key(cover)}-{self.px}.jpg")

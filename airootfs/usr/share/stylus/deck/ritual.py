@@ -305,7 +305,7 @@ class RitualScene:
     def __init__(self, view=False):
         self.view=view; self.session=vinyl.Session(); self.deck=vinyl.Deck()
         if view: self.deck.phase=vinyl.PLAY; self.deck.speed=vinyl.REV_PER_SEC
-        self.album=None; self._key=None; self._resolving=False; self._side=None; self._was_paused=False; self._rearm=False; self._ended=False; self._last_phase=None; self._banner=None; self._banner_until=0; self._last_t_abs=0; self._ti_cache=[None,0]
+        self.album=None; self._key=None; self._resolving=False; self._side=None; self._was_paused=False; self._rearm=False; self._ended=False; self._last_phase=None; self._banner=None; self._banner_until=0; self._ti_cache=[None,0]
     def close(self):
         try: self.session.close()
         except: pass
@@ -339,7 +339,6 @@ class RitualScene:
                         self._side=idx
                         if self.deck.phase==vinyl.PLAY:
                             self.deck.after_lift=vinyl.BREAK; self.deck.go(vinyl.LIFT); self.session.pause(True)
-                self._last_t_abs=t_abs
                 if not self._ended and self.deck.phase==vinyl.PLAY and t_abs>=self.album.total-0.4:
                     self._ended=True; self.deck.after_lift=vinyl.STOP; self.deck.go(vinyl.LIFT)
             elif not self._ended and self.deck.phase==vinyl.PLAY:
