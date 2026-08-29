@@ -1102,6 +1102,134 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── o scrobble conta o que você OUVIU ─────────────────────────────────────
+# Dois defeitos que se escondiam um no outro, e os dois no mesmo formato de
+# playerctl:
+#
+#   1. A DURAÇÃO ERA SEMPRE ZERO. O formato pedido era
+#      `{{duration(mpris:length)}}`, e `duration()` é o ajudante que FORMATA
+#      microssegundos em "3:42" — o `isdigit()` logo abaixo dava falso e a
+#      duração virava 0. Com ela zerada, o limiar caía sempre nos 4 minutos
+#      fixos: nenhuma música de menos de quatro minutos era scroblada nunca,
+#      que é metade do que se ouve.
+#   2. O CONTADOR ERA RELÓGIO DE PAREDE. `time.time() - track_start`, e o
+#      docstring prometendo que "pausar e voltar não reseta o contador" —
+#      o que acontecia era pior: pausar não PARAVA o contador. Almoço com a
+#      música pausada scroblava a faixa sem ninguém ter ouvido nada.
+#
+# O `get_position`, que responderia isso, existia e NUNCA era chamado — e
+# estava quebrado do mesmo jeito (`{{position(mpris:position)}}` devolve
+# "2:05"). Helper que ninguém chama costuma ser um recurso inteiro faltando.
+sec "o scrobble conta o que você ouviu"
+scr=$(python3 - <<'SCROBEOF'
+import importlib.machinery as _im
+import importlib.util as _iu
+import sys
+import types
+
+falso = types.ModuleType("subprocess")
+falso.SubprocessError = type("SubprocessError", (Exception,), {})
+_resp = {"saida": "", "rc": 0}
+
+
+class _R:
+    def __init__(self):
+        self.stdout, self.returncode, self.stderr = _resp["saida"], _resp["rc"], ""
+
+
+falso.run = lambda *a, **k: _R()
+sys.modules["subprocess"] = falso
+
+spec = _iu.spec_from_loader("scrob", _im.SourceFileLoader(
+    "scrob", "airootfs/usr/local/bin/stylus-scrobble"))
+mod = _iu.module_from_spec(spec)
+spec.loader.exec_module(mod)
+del sys.modules["subprocess"]
+
+erros = []
+
+# ── a duração: uma faixa de 3:42 tem que valer 222 s, não 0 ──────────────
+_resp["saida"] = "Radiohead\nOK Computer\nLet Down\n222000000\n"
+t = mod.get_now_playing()
+if not t or t["duration"] != 222:
+    erros.append("duração de 3:42 veio %r" % (t and t.get("duration"),))
+# E o limiar que sai dela: metade, não os 4 minutos fixos.
+d = (t or {}).get("duration", 0)
+limiar = min(240, max(0, d // 2)) if d else 240
+if limiar != 111:
+    erros.append("o limiar de uma faixa de 3:42 deu %s (esperado 111)" % limiar)
+
+# Formato antigo ("3:42") não pode virar um número enorme por acidente.
+_resp["saida"] = "A\nB\nC\n3:42\n"
+if (mod.get_now_playing() or {}).get("duration") != 0:
+    erros.append("um texto formatado virou duração")
+
+# ── a posição: segundos com decimal, e None quando não dá ────────────────
+_resp["saida"] = "125.32\n"
+if mod.get_position() != 125.32:
+    erros.append("posição veio %r" % (mod.get_position(),))
+_resp["saida"] = "sem posição\n"
+if mod.get_position() is not None:
+    erros.append("posição ilegível não devolveu None")
+_resp["saida"], _resp["rc"] = "12.0\n", 1
+if mod.get_position() is not None:
+    erros.append("playerctl falhando não devolveu None")
+_resp["rc"] = 0
+
+# ── quanto se ouviu entre duas voltas ────────────────────────────────────
+P = mod.PASSO
+casos = [
+    ("tocando normal", 10.0, 10.0 + P, P),
+    ("pausado", 10.0, 10.0, 0.0),
+    ("busca para frente", 10.0, 200.0, 0.0),
+    ("busca para trás", 200.0, 10.0, 0.0),
+    ("sem posição", None, None, P),
+    ("posição sumiu no meio", 10.0, None, P),
+]
+for nome, antes, agora, esperado in casos:
+    got = mod.ouviu_quanto(antes, agora)
+    if abs(got - esperado) > 1e-6:
+        erros.append("%s: %.2f (esperado %.2f)" % (nome, got, esperado))
+
+# E o que se PEDE ao playerctl, que um subprocess de mentira não tem como
+# conferir: ele devolve o mesmo texto seja qual for o formato pedido. Os
+# dois defeitos deste arquivo estavam justamente no formato, então esta
+# metade é lida da fonte.
+# Pela ÁRVORE e não por um grep no texto: os comentários deste arquivo
+# citam a forma errada de propósito, para explicar o defeito. O que se
+# confere é o que vai dentro das chamadas ao subprocess.run.
+import ast
+
+pedidos = []
+for no in ast.walk(ast.parse(
+        open("airootfs/usr/local/bin/stylus-scrobble", encoding="utf-8").read())):
+    if not isinstance(no, ast.Call):
+        continue
+    alvo = no.func
+    if not (isinstance(alvo, ast.Attribute) and alvo.attr == "run"):
+        continue
+    for a in ast.walk(no):
+        if isinstance(a, ast.Constant) and isinstance(a.value, str):
+            pedidos.append(a.value)
+juntos = " ".join(pedidos)
+if "duration(mpris:length)" in juntos:
+    erros.append("a duração ainda é pedida FORMATADA (devolve '3:42')")
+if "{{mpris:length}}" not in juntos:
+    erros.append("a duração não é pedida crua ({{mpris:length}})")
+if "position(mpris:position)" in juntos:
+    erros.append("a posição ainda é pedida FORMATADA (devolve '2:05')")
+
+for e in erros:
+    print(e)
+SCROBEOF
+)
+if [[ -z $scr ]]; then
+    ok "duração lida em microssegundos, e o contador congela na pausa"
+else
+    bad "o scrobbler conta errado:"
+    printf '%s\n' "$scr" | sed 's/^/      /'
+fi
+
 # ── a barra fala do disco também quando ele vem da rede ───────────────────
 # **Sintoma:** com uma playlist do Qobuz tocando, o módulo do disco na barra
 # ficava em BRANCO — nada de "LADO A · 3/5 · vira em 12 min", que é o motivo

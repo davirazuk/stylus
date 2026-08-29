@@ -10,9 +10,10 @@ Requer:
   - Login uma vez: stylus-scrobble login
 
 Scrobla automaticamente quando:
-  - A faixa tocou pelo menos 4 minutos OU metade da duração (o que vier primeiro)
+  - A faixa foi OUVIDA por pelo menos 4 minutos OU metade da duração (o que
+    vier primeiro). Ouvida, não decorrida: pausar congela o contador, e
+    pular para a frente não conta o pedaço que você pulou.
   - Não scrobla a mesma faixa duas vezes seguidas
-  - Pausar e voltar não reseta o contador
 """
 import hashlib
 import json
@@ -70,11 +71,24 @@ def api_call(method, params, config):
 
 
 def get_now_playing():
-    """Pega o que está tocando via playerctl."""
+    """O que está tocando, via playerctl.
+
+    **A duração vinha SEMPRE zero.** O formato pedido era
+    `{{duration(mpris:length)}}`, e o `duration()` do playerctl é o ajudante
+    que FORMATA microssegundos em "3:42" — daí o `isdigit()` logo abaixo
+    dava falso e a duração virava 0 em toda faixa. Com ela zerada, o limiar
+    de scrobble caía sempre nos 4 minutos fixos, e a metade "ou metade da
+    duração" da regra do last.fm nunca acontecia: **nenhuma música de menos
+    de quatro minutos era scroblada, nunca**, que é metade do que se ouve.
+
+    Agora vem o `mpris:length` cru. Ele é em MICROssegundos — a variável
+    antiga se chamava `duration_ms` e dividia por mil, o que teria dado um
+    número mil vezes maior se algum dia tivesse chegado a ser lido.
+    """
     try:
         r = subprocess.run(
             ["playerctl", "metadata", "--format",
-             "{{artist}}\n{{album}}\n{{title}}\n{{duration(mpris:length)}}"],
+             "{{artist}}\n{{album}}\n{{title}}\n{{mpris:length}}"],
             capture_output=True, text=True, timeout=3
         )
         if r.returncode != 0:
@@ -83,30 +97,76 @@ def get_now_playing():
         if len(lines) < 3:
             return None
         artist, album, title = lines[0], lines[1], lines[2]
-        duration_ms = int(lines[3]) if len(lines) > 3 and lines[3].isdigit() else 0
+        micros = 0
+        if len(lines) > 3:
+            try:
+                micros = int(float(lines[3].strip()))
+            except (TypeError, ValueError):
+                micros = 0
         return {
             "artist": artist,
             "album": album,
             "title": title,
-            "duration": duration_ms // 1000,  # para segundos
+            "duration": max(0, micros // 1_000_000),   # microssegundos → s
         }
     except Exception:
         return None
 
 
 def get_position():
-    """Posição atual em segundos."""
+    """A posição da agulha, em segundos — ou None quando não dá para saber.
+
+    Mesma armadilha do `get_now_playing`: pedia
+    `--format {{position(mpris:position)}}`, que é o ajudante que FORMATA em
+    "2:05", e o `isdigit()` embaixo nunca era verdade — devolvia 0 sempre.
+    O `playerctl position` sem formato já escreve segundos com decimal.
+
+    Devolve None e não 0 quando não sabe: zero é uma posição válida (o
+    começo da faixa) e confundir as duas fazia o contador de escuta andar
+    sozinho.
+    """
     try:
-        r = subprocess.run(
-            ["playerctl", "position", "--format", "{{position(mpris:position)}}"],
-            capture_output=True, text=True, timeout=3
-        )
-        pos = r.stdout.strip()
-        if pos.isdigit():
-            return int(pos) // 1000000  # microssegundos → segundos
-    except Exception:
-        pass
-    return 0
+        r = subprocess.run(["playerctl", "position"],
+                           capture_output=True, text=True, timeout=3)
+        if r.returncode != 0:
+            return None
+        return float(r.stdout.strip())
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return None
+
+
+# De quanto em quanto tempo o laço olha o tocador.
+PASSO = 5.0
+
+
+def ouviu_quanto(antes, agora):
+    """Quanto de MÚSICA passou entre duas voltas do laço, em segundos.
+
+    POR QUE ISTO EXISTE
+    -------------------
+    O contador era `time.time() - track_start`: relógio de parede desde que a
+    faixa apareceu. O docstring deste arquivo promete "pausar e voltar não
+    reseta o contador", e o que acontecia era pior do que resetar — **pausar
+    não PARAVA o contador**. Sair para o almoço com a música pausada
+    scroblava a faixa inteira sem ninguém ter ouvido nada, e é justamente
+    isso que um scrobble não pode fazer: ele é o registro do que você ouviu.
+
+    Aqui a conta é sobre a AGULHA. Um passo do laço são cinco segundos, então
+    um avanço plausível está entre zero e dois passos:
+
+      · pausado, a posição não anda   → zero, e o contador congela;
+      · busca para frente             → salto grande, não conta (você não
+                                        ouviu o pedaço que pulou);
+      · busca para trás / repetiu     → salto negativo, não conta, e a
+                                        próxima volta continua de onde está.
+
+    Sem posição nenhuma (tocador sem MPRIS de posição), volta ao relógio de
+    parede — um scrobbler que desiste é pior do que um impreciso.
+    """
+    if antes is None or agora is None:
+        return PASSO
+    d = agora - antes
+    return d if 0.0 < d <= PASSO * 2.0 else 0.0
 
 
 def scrobble(track, config):
@@ -209,37 +269,38 @@ def main():
         f.write(str(os.getpid()))
 
     last_track = None
-    last_scrobble_key = None
-    track_start = 0
-    notified = False
+    ouvido = 0.0            # segundos de música que REALMENTE passaram
+    anterior = None         # a posição da agulha na volta passada
     scrobbled = False
 
     try:
         while True:
-            time.sleep(5)
+            time.sleep(PASSO)
             track = get_now_playing()
             if not track or not track["artist"] or not track["title"]:
                 last_track = None
-                notified = False
+                anterior = None
                 scrobbled = False
                 continue
 
             # Nova faixa?
             key = f"{track['artist']}|{track['album']}|{track['title']}"
+            pos = get_position()
             if key != last_track:
                 last_track = key
-                track_start = time.time()
-                notified = False
+                ouvido, anterior = 0.0, pos
                 scrobbled = False
                 # Atualizar now playing
                 update_now_playing(track, config)
+            else:
+                ouvido += ouviu_quanto(anterior, pos)
+                anterior = pos
 
-            elapsed = time.time() - track_start
             duration = track.get("duration", 0)
 
             # Scrobble: 4min OU metade da duração (o que vier primeiro)
             threshold = min(240, max(0, duration // 2)) if duration else 240
-            if not scrobbled and elapsed >= threshold and threshold > 0:
+            if not scrobbled and ouvido >= threshold and threshold > 0:
                 result = scrobble(track, config)
                 if result and result.get("scrobbles"):
                     accepted = result["scrobbles"].get("@attr", {}).get("accepted", 0)
