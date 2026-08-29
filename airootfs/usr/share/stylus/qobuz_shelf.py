@@ -151,27 +151,30 @@ TETO_FAVORITOS = int(os.environ.get("STYLUS_QOBUZ_FAVORITOS", "1000"))
 POR_PAGINA = 100
 
 
-def favoritos_todos(cl, teto=TETO_FAVORITOS):
-    """TODOS os discos favoritados, e não os cem primeiros.
+# E quantas playlists. Mesmo raciocínio: teto da coleção, não da chamada.
+TETO_LISTAS = int(os.environ.get("STYLUS_QOBUZ_LISTAS", "500"))
+
+
+def _paginado(pedir, chave, teto):
+    """(itens, total) — TODAS as páginas, e não a primeira.
 
     **Sintoma:** a loja mostrava 100 discos e parava. Sem recado, sem
     "mostrando 100 de 340" — os outros simplesmente não existiam ali, e a
-    pessoa que favoritou 200 discos no celular via metade da própria estante.
-    A chamada tinha `offset=0` escrito à mão e nunca uma segunda página.
+    pessoa que favoritou 200 discos no celular via metade da própria
+    estante. A chamada tinha `offset=0` escrito à mão e nunca uma segunda
+    página.
 
     Para de verdade em quatro situações, porque um laço que fala com a rede
     não pode depender de uma só: chegou ao total que o Qobuz declarou, veio
     uma página curta, veio uma página vazia, ou bateu no teto.
+
+    `pedir(offset, limite)` devolve o JSON cru; `chave` é onde a lista mora
+    dentro dele ("albums", "playlists").
     """
     itens, total = [], None
     while len(itens) < teto:
-        # Assinado à mão porque o get_favorite_albums do qobuz-dl chama o
-        # api_call sem o `sec` e estoura com KeyError ao assinar.
-        dados = cl.api_call("favorite/getUserFavorites", type="albums",
-                            offset=len(itens),
-                            limit=min(POR_PAGINA, teto - len(itens)),
-                            sec=cl.sec)
-        bloco = (dados or {}).get("albums") or {}
+        dados = pedir(len(itens), min(POR_PAGINA, teto - len(itens)))
+        bloco = (dados or {}).get(chave) or {}
         pagina = bloco.get("items") or []
         if total is None:
             try:
@@ -186,6 +189,38 @@ def favoritos_todos(cl, teto=TETO_FAVORITOS):
         if len(pagina) < POR_PAGINA:
             break
     return itens, total
+
+
+def favoritos_todos(cl, teto=TETO_FAVORITOS):
+    """Todos os discos favoritados. Ver `_paginado`."""
+    # Assinado à mão porque o get_favorite_albums do qobuz-dl chama o
+    # api_call sem o `sec` e estoura com KeyError ao assinar.
+    return _paginado(
+        lambda off, lim: cl.api_call("favorite/getUserFavorites",
+                                     type="albums", offset=off, limit=lim,
+                                     sec=cl.sec),
+        "albums", teto)
+
+
+def listas_todas(cl, teto=TETO_LISTAS):
+    """Todas as suas playlists. Ver `_paginado`.
+
+    Tinha o MESMO defeito dos favoritos, escrito ao lado dele: um
+    `limit=100` fixo e nenhuma segunda página. Passou despercebido porque
+    cem playlists é muita playlist — mas é o mesmo defeito, e quem tem
+    passa a ver metade da própria lista sem nada explicando.
+
+    O `offset` vai num try: se a versão do qobuz-dl instalada não aceitar o
+    argumento, é melhor voltar ao comportamento de antes (a primeira página)
+    do que o comando inteiro estourar.
+    """
+    def pedir(off, lim):
+        try:
+            return cl.get_user_playlists(limit=lim, offset=off)
+        except TypeError:
+            return None if off else cl.get_user_playlists(limit=lim)
+
+    return _paginado(pedir, "playlists", teto)
 
 
 def main():
@@ -216,10 +251,13 @@ def main():
     elif modo in ("listas", "playlists"):
         os.makedirs(CAPAS, exist_ok=True)
         try:
-            dados = cl.get_user_playlists(limit=100)
+            pls, total = listas_todas(cl)
         except Exception as e:                           # noqa: BLE001
             morre("não deu para ler as suas playlists: %s" % e)
-        pls = (dados.get("playlists") or {}).get("items") or []
+        if total and len(pls) < total:
+            print("  · mostrando %d das %d listas "
+                  "(STYLUS_QOBUZ_LISTAS muda o teto)" % (len(pls), total),
+                  file=sys.stderr)
         # Os mosaicos em paralelo: quatro capas cada, e em série cinco
         # playlists já são vinte downloads seguidos.
         with ThreadPoolExecutor(max_workers=4) as pool:

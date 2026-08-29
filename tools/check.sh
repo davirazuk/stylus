@@ -1936,7 +1936,7 @@ esac
 # Um laço que fala com a rede tem que ter mais de uma saída, senão um dia ele
 # não sai: a conferência põe um Qobuz de mentira e cobra as quatro (total
 # alcançado, página curta, página vazia, teto).
-sec "os favoritos do Qobuz vêm todos"
+sec "os favoritos e as listas do Qobuz vêm todos"
 saida=$(python3 - <<'FAVEOF' 2>/dev/null
 import importlib.machinery as _im, importlib.util as _iu, sys, types, traceback
 sys.path.insert(0, "airootfs/usr/share/stylus")
@@ -1990,10 +1990,39 @@ try:
         erros.append("sem 'total' declarado, parou cedo")
     if qs.favoritos_todos(Vazio(10), 1000)[0]:
         erros.append("resposta vazia devolveu disco")
+
+    # E as PLAYLISTS, que tinham o mesmo `limit=100` fixo escrito ao lado
+    # dos favoritos. Passou despercebido porque cem playlists é muita
+    # playlist — mas é o mesmo defeito.
+    class CliLista:
+        def __init__(self, total, aceita_offset=True):
+            self.total, self.aceita_offset = total, aceita_offset
+
+        def get_user_playlists(self, limit=100, offset=None):
+            if offset is None:
+                if not self.aceita_offset:
+                    return {"playlists": {"items": [{"id": i}
+                                                    for i in range(limit)],
+                                          "total": self.total}}
+                offset = 0
+            elif not self.aceita_offset:
+                raise TypeError("offset não existe nesta versão")
+            itens = [{"id": i}
+                     for i in range(offset, min(offset + limit, self.total))]
+            return {"playlists": {"items": itens, "total": self.total}}
+
+    if len(qs.listas_todas(CliLista(240), 500)[0]) != 240:
+        erros.append("as playlists pararam antes das 240")
+    # Sem `offset` na versão instalada, volta ao de antes em vez de estourar.
+    velho = qs.listas_todas(CliLista(240, aceita_offset=False), 500)[0]
+    if len(velho) != qs.POR_PAGINA:
+        erros.append("sem offset, as playlists deviam voltar à 1ª página")
+
     if erros:
         print("ERRO %s" % "; ".join(erros))
     else:
-        print("OK 340 favoritos saem em 4 páginas, e o teto corta com recado")
+        print("OK 340 favoritos em 4 páginas e 240 listas em 3, "
+              "com o teto cortando com recado")
 except BaseException:                                    # noqa: BLE001
     print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
 FAVEOF
