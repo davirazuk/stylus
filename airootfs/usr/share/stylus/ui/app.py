@@ -1199,7 +1199,11 @@ class ShelfScreen(Screen):
         self.COLS = max(3, min(8, r.w // 230))
         cw = (r.w - pad * 2 - gap * (self.COLS - 1)) // self.COLS
         ch = cw + 62
-        head = 58
+        # 78 e não 58: a contagem ("14 discos") é escrita em 22 px a partir
+        # de r.y+18, ou seja termina em r.y+46 — com o corte da grade em 58 a
+        # primeira fileira de capas encostava nela, e uma parede de capas
+        # encostada no título lê como se tivesse sido cortada pela borda.
+        head = 78
 
         if not self.app.shelf.ready:
             T.text(s, "lendo a estante…", (r.centerx, r.centery), 26,
@@ -1833,7 +1837,7 @@ class DiaryScreen(Screen):
         # entrava por cima da lista. O -70 reserva a legenda dele e a linha
         # de dicas, que foi o defeito que a posição fixa existia para evitar.
         topo = y + 18
-        alt = min(170, r.bottom - topo - 70)
+        alt = min(240, r.bottom - topo - 70)
         if alt >= 60:
             self._calendar(s, pygame.Rect(x, topo, r.w - 88, alt))
         self.app.hint(s, r, "[enter] põe de novo   ·   [↑][↓] anda   ·   [s] o formato")
@@ -2001,8 +2005,14 @@ class DiaryScreen(Screen):
         # O quadradinho cabe nas SEMANAS QUE EXISTEM, não nas 53 de um ano:
         # com o divisor fixo, um diário de quatro semanas desenhava quatro
         # colunas minúsculas encolhidas para um ano que ainda não aconteceu.
+        # E ele ocupa a LARGURA que tem. O teto era 22 px por quadradinho:
+        # num ano inteiro isso são 53×24 = 1272 px dentro de um retângulo de
+        # 1600, e o ano terminava trezentos pixels antes da lista de discos
+        # que ele acompanha — lendo como um enfeite solto no canto em vez de
+        # como o resumo da página. O teto que sobrou (30) existe só para um
+        # diário de quatro semanas não virar oito quadrados gigantes.
         semanas = dias // 7 + 1
-        cell = max(4, min(22, rect.w // semanas - gap, rect.h // 7 - gap))
+        cell = max(4, min(30, rect.w // semanas - gap, rect.h // 7 - gap))
         base = time.time() - dias * 86400
         maxi = max(self.by_day.values()) if self.by_day else 1
         for d in range(dias + 1):
@@ -3529,8 +3539,14 @@ class GamesScreen(Screen):
         else:
             self._draw_menu(s, r)
 
-        self.app.job_panel(s, pygame.Rect(r.right - 340, r.bottom - 120,
-                                          300, 80), self.job)
+        # A saída só aparece quando existe. Um painel de 300x80 escrito "a
+        # saída aparece aqui" pendurado no canto de baixo à direita não é
+        # informação: é uma caixa vazia num canto, e ela ficava lá o tempo
+        # todo. Quando há o que mostrar, ela é grande o bastante para caber
+        # linha de terminal — que é o que o `stylus-ch` e o `yay` cospem.
+        if self.job is not None:
+            self.app.job_panel(s, pygame.Rect(r.right - 560, r.bottom - 230,
+                                              516, 170), self.job)
 
     def _draw_menu(self, s, r):
         # O título ocupa até ~r.y+98 (30px de "jogos" + o subtítulo em y+40).
@@ -3546,9 +3562,15 @@ class GamesScreen(Screen):
         # invisíveis — e como a seta continua andando por eles, a seleção
         # sumia no nada. A fileira de baixo já se ajustava (o `cw2` logo
         # adiante); metade desta tela era elástica e a outra metade não.
+        # E quantas colunas vem da tela também. Eram QUATRO fixas com teto de
+        # 220 px cada: numa tela de 1920 a grade somava 940 px num corpo de
+        # 1645 e sobravam setecentos pixels de nada à direita, com dois dos
+        # rótulos ("Keyboard Wa…", "sincronizar pro ce…") cortados dentro de
+        # quadros estreitos enquanto o espaço para eles estava vazio ao lado.
         gap = 20
-        cols = min(4, n_games)
-        cw = min(220, max(120, (r.w - 88 - gap * (cols - 1)) // cols))
+        cols = max(3, min(6, (r.w - 88) // 250))
+        cols = min(cols, n_games)
+        cw = max(120, (r.w - 88 - gap * (cols - 1)) // cols)
         for i, (nome, _cmd, binario, icon, kind, de_onde) in enumerate(self.ACOES):
             col = i % cols
             row = i // cols
@@ -3558,7 +3580,13 @@ class GamesScreen(Screen):
             tem = self._is_installed(binario)
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=14,
                     border=T.AMBER if sel else T.LINE)
-            T.text(s, f"{icon}  {nome}", bx.center, 22,
+            # Quem cede é o TAMANHO DA LETRA, não o nome: "Keyboard Warri…"
+            # não diz que jogo é. Mesma regra do `lista_com_saida`.
+            rot = f"{icon}  {nome}"
+            fs = 22
+            while fs > 15 and T.largura(rot, fs) > bx.w - 24:
+                fs -= 1
+            T.text(s, rot, bx.center, fs,
                    T.TEXT if tem else T.TEXT_FAINT, bold=sel, anchor="center",
                    maxw=bx.w - 24)
             # kind badge
@@ -3593,7 +3621,11 @@ class GamesScreen(Screen):
             ("sincronizar pro celular", "󰢶", "sync"),
             ("estatísticas", "󰎛", "stats"),
         ]
-        cw2 = min(cw, (r.w - 88 - gap * 3) // 4)
+        # A fileira de baixo acompanha a LARGURA da grade, não a largura de
+        # um quadro dela: com `min(cw, …)` as quatro ações paravam no meio da
+        # tela enquanto a grade acima ia até a borda, e duas coisas alinhadas
+        # pela esquerda com fins diferentes leem como erro de layout.
+        cw2 = (r.w - 88 - gap * 3) // 4
         for i, (label, icon, _sub) in enumerate(ch_actions):
             bx = pygame.Rect(x + i * (cw2 + gap), y2, cw2, 60)
             sel = i + n_games == self.sel
@@ -3903,10 +3935,15 @@ class SettingsScreen(Screen):
         # cortá-la na coluna das opções tirava justamente o fim dela.
         T.text(s, "a agulha é o único ponto em que um objeto vira som.",
                (x, y_info + 108), 19, T.TEXT_DIM, maxw=r.right - x - 44)
-        # job panel: right side if wide enough, otherwise below options
-        jp_w = min(340, r.w - opt_w - 120)
+        # A saída fica com TODO o resto da linha. Era `min(340, …)`: numa tela
+        # de 1920 sobravam seiscentos e sessenta pixels de nada à direita de
+        # um painel estreito, e é nele que sai a saída do atualizador — texto
+        # de terminal, que num painel de 340 px quebra em toda linha. O mesmo
+        # raciocínio do `lista_com_saida`, que já fazia isto certo.
+        jp_x = x + opt_w + 40
+        jp_w = r.right - jp_x - 44
         if jp_w > 120:
-            jp = pygame.Rect(x + opt_w + 40, r.y + 100, jp_w, r.h - 200)
+            jp = pygame.Rect(jp_x, r.y + 100, jp_w, r.h - 200)
         else:
             jp = pygame.Rect(x, y + 20, opt_w, r.bottom - y - 100)
         self.app.job_panel(s, jp, self.job)
