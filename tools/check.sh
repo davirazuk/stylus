@@ -1124,8 +1124,15 @@ import pathlib, re
 # conta como música.
 padrao = re.compile(r'\(\s*"\.(?:flac|mp3|ogg|opus|m4a|wav|aac|wma|shn)"'
                     r'(?:\s*,\s*"\.[a-z0-9]+")+\s*,?\s*\)')
+# E os comandos do /usr/local/bin junto: o `stylus-phone` tinha a QUINTA
+# cópia da lista, sem o .shn — uma coleção de gravação ao vivo no celular
+# era invisível para o `stylus phone`.
 livres = {"_raiz.py"}
-for arq in sorted(pathlib.Path("airootfs/usr/share/stylus/tools").glob("*.py")):
+alvos = list(pathlib.Path("airootfs/usr/share/stylus/tools").glob("*.py"))
+for a in sorted(pathlib.Path("airootfs/usr/local/bin").iterdir()):
+    if a.is_file() and a.read_bytes()[:21].startswith(b"#!/usr/bin/env python"):
+        alvos.append(a)
+for arq in sorted(alvos):
     if arq.name in livres:
         continue
     for n, linha in enumerate(arq.read_text(encoding="utf-8").splitlines(), 1):

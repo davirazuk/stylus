@@ -58,7 +58,7 @@ def raiz():
 
 # Sem o vinyl, a mesma lista escrita à mão — e SÓ aqui.
 _EXT_PADRAO = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac",
-               ".wma", ".shn")
+               ".wma", ".shn", ".ape")
 
 
 def audio_ext():

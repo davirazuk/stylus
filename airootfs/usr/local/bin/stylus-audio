@@ -35,8 +35,6 @@ import time
 D = "\033[2m"; B = "\033[1m"; A = "\033[38;5;117m"
 OK = "\033[38;5;114m"; WARN = "\033[38;5;215m"; BAD = "\033[38;5;210m"; O = "\033[0m"
 
-AUDIO_EXT = (".flac", ".wav", ".mp3", ".ogg", ".opus", ".m4a", ".aac", ".wma", ".ape")
-
 # O deck fala com o mpv por socket; é de lá que sai o que o TOCADOR está
 # fazendo. Guardado porque este comando também tem que responder numa máquina
 # onde o deck nunca foi aberto.
@@ -45,6 +43,13 @@ try:
     import vinyl
 except Exception:                                         # noqa: BLE001
     vinyl = None
+
+# O que conta como música vem do vinyl. Havia SEIS cópias desta lista no
+# sistema e elas já discordavam: esta trazia o .ape e não o .shn, a do
+# stylus-phone o contrário. A tupla abaixo é só o que sobra sem o vinyl.
+AUDIO_EXT = tuple(getattr(vinyl, "AUDIO_EXT", ()) or ()) or (
+    ".flac", ".wav", ".mp3", ".ogg", ".opus", ".m4a", ".aac", ".wma",
+    ".shn", ".ape")
 
 MPV_CONF = os.path.expanduser("~/.config/mpv/mpv.conf")
 # O que, posto no mpv.conf, desfaz a tese do sistema antes de o som chegar ao

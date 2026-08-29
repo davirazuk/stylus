@@ -222,10 +222,11 @@ MUSIC_ROOTS = _Roots()
 # ALAC ou Opus, `stylus covers`, `stylus suggest` e o gerador de playlist
 # não achavam faixa nenhuma e diziam que estava tudo bem.
 #
-# O .shn (Shorten) veio das listas do check_library/discover: é o formato
-# das coleções de gravação ao vivo, e não estava aqui.
+# O .shn (Shorten) veio das listas do check_library/discover e o .ape
+# (Monkey's Audio) da do stylus-audio: os dois são formatos sem perda de
+# coleção antiga, e nenhum dos dois estava aqui.
 AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac",
-             ".wma", ".shn")
+             ".wma", ".shn", ".ape")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

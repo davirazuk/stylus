@@ -52,11 +52,17 @@ STATE = os.path.expanduser("~/.local/share/stylus")
 MANIFEST = os.path.join(STATE, "phone-manifest.json")
 CONF = os.path.expanduser("~/.config/stylus/phone")
 DEFAULT_REMOTE = "/sdcard/Music"
-AUDIO = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
+# O que conta como música vem do vinyl — havia CINCO cópias desta lista no
+# sistema e elas já discordavam. Esta não tinha .shn, então uma coleção de
+# gravação ao vivo no celular era invisível para o `stylus phone`. A tupla
+# abaixo é só o que sobra quando o vinyl não pôde ser importado.
+AUDIO = tuple(getattr(vinyl, "AUDIO_EXT", ()) or ()) or (
+    ".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma",
+    ".shn", ".ape")
 # Formato mais alto ganha. É a única regra de qualidade que dá para aplicar
 # sem abrir o arquivo, e cobre o caso que acontece de verdade: você
 # substituiu um MP3 por um FLAC do mesmo álbum e quer que o celular receba.
-RANK = {".flac": 4, ".wav": 4, ".m4a": 3, ".ogg": 2, ".opus": 2,
+RANK = {".flac": 4, ".wav": 4, ".shn": 4, ".ape": 4, ".m4a": 3, ".ogg": 2, ".opus": 2,
         ".aac": 2, ".mp3": 1, ".wma": 1}
 # Onde procurar NÃO faz sentido. /sdcard/Android é dado privado de
 # aplicativo — num celular de verdade ele tem dezenas de milhares de arquivos
