@@ -4979,6 +4979,22 @@ class App:
                 self._sleep_minutes = 0
             self.clock.tick(FPS)
 
+    def _pasta_tocando(self):
+        """A pasta do disco que está tocando — a do ÁLBUM quando ela é sabida.
+
+        `os.path.dirname` do que o tocador diz não serve sozinho: um disco da
+        rede tem endereço no lugar de caminho, e o dirname de
+        `https://x.invalid/123.flac` é `https:/x.invalid` — a MESMA string
+        para todas as playlists do Qobuz. Quem compara isso acha que nunca
+        trocou de disco. O `Album.folder` é a pasta de cache da lista, que é
+        diferente por lista.
+        """
+        al = self.playing.album
+        if al is not None and getattr(al, "folder", ""):
+            return os.path.normpath(al.folder)
+        caminho = (self.playing.session.snapshot().get("path") or "")
+        return os.path.dirname(caminho) if caminho else ""
+
     def _disco_novo(self):
         """Disco trocou: a ordem volta a ser a do disco, e o repetir vale.
 
@@ -4994,11 +5010,7 @@ class App:
         Embaralhar NÃO se guarda de propósito: é uma escolha sobre a lista
         que está tocando, não sobre a pessoa. Disco novo, ordem do disco.
         """
-        snap = self.playing.session.snapshot()
-        path = snap.get("path") or ""
-        if not path:
-            return
-        pasta = os.path.dirname(path)
+        pasta = self._pasta_tocando()
         if not pasta or pasta == self._disco_anterior:
             return
         self._disco_anterior = pasta
@@ -5028,10 +5040,12 @@ class App:
         if time.time() - self._ultima_entrada < self.IDLE_DECK_SECS:
             return
         snap = self.playing.session.snapshot()
-        path = snap.get("path") or ""
-        if not path or snap.get("paused", True):
+        if not (snap.get("path") or "") or snap.get("paused", True):
             return
-        chave = os.path.dirname(path)
+        # Pelo ÁLBUM quando dá: ver _pasta_tocando. Com o dirname do endereço,
+        # duas playlists diferentes do Qobuz eram a mesma chave, e a tela
+        # chamava o disco uma vez só para as duas.
+        chave = self._pasta_tocando()
         if chave and chave != self._deck_auto:
             self._deck_auto = chave
             self.open_deck()
