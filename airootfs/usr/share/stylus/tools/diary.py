@@ -22,11 +22,13 @@ def quando(ts):
         return "hoje"
     if d < 2:
         return "ontem"
+    # "há 1 dias" / "há 1 meses": o caso do 1 estava esquecido aqui e no
+    # ui/model.py, cada um com a sua cópia da mesma frase.
     if d < 30:
-        return f"há {int(d)} dias"
+        return "há %d dia%s" % (int(d), "" if int(d) == 1 else "s")
     if d < 365:
-        return f"há {int(d / 30)} meses"
-    return f"há {int(d / 365)} anos"
+        return "há %d %s" % (int(d / 30), "mês" if int(d / 30) == 1 else "meses")
+    return "há %d ano%s" % (int(d / 365), "" if int(d / 365) == 1 else "s")
 
 
 def main():

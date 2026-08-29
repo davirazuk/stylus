@@ -268,6 +268,22 @@ class Playing:
         return snap, al, track, side, t_abs, frac
 
 
+def plural(n, um, muitos=None):
+    """"1 disco", "2 discos" — o `s` que faltava em quinze lugares.
+
+    **Sintoma:** "1 faixas", "1 discos", "posto há 1 meses", "1 discos · 1
+    vezes". Não derruba nada e não aparece em teste nenhum; só faz o sistema
+    parecer traduzido por máquina, e o texto que a pessoa vê é a única parte
+    dele que ela lê inteira.
+
+    Estava escrito à mão em cada lugar (`f"{n} faixas"`), que é a mesma
+    doença das cores e das listas de extensão: a regra existe uma vez e é
+    copiada quinze — e basta uma cópia esquecer o caso do 1.
+    """
+    muitos = muitos or (um + "s")
+    return "%d %s" % (n, um if abs(n) == 1 else muitos)
+
+
 def humano(seg):
     seg = int(max(0, seg))
     h, m = divmod(seg // 60, 60)
@@ -296,7 +312,7 @@ def ha_quanto(ts):
     if d < 2:
         return "posto ontem"
     if d < 30:
-        return f"posto há {int(d)} dias"
+        return "posto há %s" % plural(int(d), "dia")
     if d < 365:
-        return f"posto há {int(d / 30)} meses"
-    return f"posto há {int(d / 365)} anos"
+        return "posto há %s" % plural(int(d / 30), "mês", "meses")
+    return "posto há %s" % plural(int(d / 365), "ano")

@@ -136,12 +136,16 @@ def anunciar(alb):
     em lados. É o equivalente digital de olhar a capa enquanto a agulha
     desce, que é metade do motivo de um disco não ser chato.
     """
+    def _faixas(n):
+        return "%d faixa%s" % (n, "" if n == 1 else "s")
+
     lados = []
     for sd in alb.sides:
         mins = int((sd["end"] - sd["start"]) // 60)
-        lados.append(f"{sd['label'].replace('SIDE', 'Lado')}: "
-                     f"{len(sd.get('tracks', []))} faixas, {mins} min")
-    corpo = "\n".join(lados) or f"{len(alb.tracks)} faixas"
+        lados.append("%s: %s, %d min"
+                     % ((sd.get("label") or "LADO").replace("SIDE", "Lado"),
+                        _faixas(len(sd.get("tracks", []))), mins))
+    corpo = "\n".join(lados) or _faixas(len(alb.tracks))
     args = ["notify-send", "--app-name=STYLUS", "--urgency=low",
             "--hint=string:x-dunst-stack-tag:stylus-album",
             f"{alb.artist} — {alb.name}", corpo]

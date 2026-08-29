@@ -1102,6 +1102,78 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── "1 faixas" ────────────────────────────────────────────────────────────
+# **Sintoma:** "1 faixas", "1 discos", "posto há 1 meses", "1 discos · 1
+# vezes". Não derruba nada, não aparece em teste nenhum e não some sozinho —
+# só faz o sistema parecer traduzido por máquina, e o texto que a pessoa vê
+# é a única parte dele que ela lê inteira.
+#
+# A regra do plural estava escrita à mão em quinze lugares (`f"{n} faixas"`),
+# que é a mesma doença das cores e das listas de extensão: basta uma cópia
+# esquecer o caso do 1. Agora sai do `model.plural`, e a conferência é sobre
+# o RESULTADO — pede a frase com n=1 e n=2 e olha o que volta.
+sec "o plural não mente quando é um só"
+plur=$(python3 - <<'PLUREOF'
+import sys
+import time
+
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/ui")
+try:
+    import model
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+erros = []
+casos = [
+    (1, "disco", None, "1 disco"),
+    (2, "disco", None, "2 discos"),
+    (0, "disco", None, "0 discos"),
+    (1, "faixa", None, "1 faixa"),
+    (1, "vez", "vezes", "1 vez"),
+    (3, "vez", "vezes", "3 vezes"),
+    (1, "mês", "meses", "1 mês"),
+]
+for n, um, muitos, esperado in casos:
+    got = model.plural(n, um, muitos) if muitos else model.plural(n, um)
+    if got != esperado:
+        erros.append("plural(%d, %r) = %r, esperado %r" % (n, um, got, esperado))
+
+# E o `ha_quanto`, que tinha o mesmo defeito em três das cinco frases.
+agora = time.time()
+for dias, esperado in ((0.5, "posto hoje"), (1.5, "posto ontem"),
+                       (3, "posto há 3 dias"), (35, "posto há 1 mês"),
+                       (70, "posto há 2 meses"), (400, "posto há 1 ano"),
+                       (800, "posto há 2 anos")):
+    got = model.ha_quanto(agora - dias * 86400)
+    if got != esperado:
+        erros.append("ha_quanto(%s dias) = %r, esperado %r"
+                     % (dias, got, esperado))
+if model.ha_quanto(0) != "nunca posto":
+    erros.append("ha_quanto(0) = %r" % model.ha_quanto(0))
+
+# Ninguém pode voltar a escrever a regra à mão nas telas.
+import pathlib
+import re
+
+for arq in (pathlib.Path("airootfs/usr/share/stylus/ui/app.py"),):
+    for n_l, linha in enumerate(arq.read_text(encoding="utf-8").splitlines(), 1):
+        nu = linha.split("#", 1)[0]
+        if re.search(r'\{[^{}]*\}\s*(faixas|discos|vezes)\b', nu):
+            erros.append("%s:%d escreve o plural à mão: %s"
+                         % (arq.name, n_l, linha.strip()[:60]))
+for e in erros:
+    print(e)
+PLUREOF
+)
+case "$plur" in
+    "")    ok "\"1 disco\", \"2 discos\", \"posto há 1 mês\" — o caso do 1 existe" ;;
+    PULA*) printf '  %s—%s sem o model aqui: %s\n' "$y" "$z" "${plur#PULA }" ;;
+    *)     bad "o plural mente:"
+           printf '%s\n' "$plur" | sed 's/^/      /' ;;
+esac
+
 # ── o celular reparte o disco como o computador ───────────────────────────
 # **Sintoma:** o MESMO disco saía com lados diferentes nos dois lados do
 # sistema, e o "vira em X" dizia coisas diferentes. O celular tinha uma regra

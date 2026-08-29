@@ -43,7 +43,7 @@ import vinyl                                            # noqa: E402
 import theme as T                                       # noqa: E402
 import audio_live                                       # noqa: E402
 from model import (THUMB_HI, Playing, Shelf, Thumbs,     # noqa: E402
-                   ha_quanto, humano, relogio)
+                   ha_quanto, humano, plural, relogio)
 
 FPS = 60
 
@@ -722,7 +722,7 @@ class NowScreen(Screen):
             icones.append(f"{T.icon('󰅐')}{faltam_min}m")  # nf-md-timer
         txt_icones = "  ".join(icones)
         larg_icones = (T.largura(txt_icones, 20) + 28) if icones else 0
-        T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
+        T.text(s, f"{hist}  ·  {plural(len(al.tracks), 'faixa')}  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
                (x, y_rodape), 19, T.TEXT_FAINT,
                maxw=max(60, w - larg_icones))
@@ -1361,7 +1361,7 @@ class ShelfScreen(Screen):
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
                    (r.x + pad, r.y + 16), 24, T.AMBER)
         else:
-            rotulo = f"{len(its)} discos"
+            rotulo = plural(len(its), "disco")
             if self.artist:
                 rotulo += f"  ·  {self.artist}   (a limpa o filtro)"
             T.text(s, rotulo, (r.x + pad, r.y + 18), 22, T.TEXT_DIM)
@@ -1660,7 +1660,7 @@ class StackScreen(Screen):
                 partes.append("%d lado%s" % (it["lados"],
                                              "s" if it["lados"] > 1 else ""))
             if it.get("discos", 1) > 1:
-                partes.append("%d discos" % it["discos"])
+                partes.append(plural(it["discos"], "disco"))
             if partes:
                 T.text(s, "  ·  ".join(partes), (row.right - 8, row.y + 20),
                        19, T.TEXT_DIM if sel else T.TEXT_FAINT,
@@ -1953,7 +1953,8 @@ class DiaryScreen(Screen):
             return
         x, y = r.x + 44, r.y + 30
         total = sum(self.by_day.values())
-        T.text(s, f"{len(self.rows)} discos  ·  {total} vezes", (x, y), 24,
+        T.text(s, f"{plural(len(self.rows), 'disco')}  ·  {plural(total, 'vez', 'vezes')}",
+               (x, y), 24,
                T.TEXT_DIM)
         y += 46
         # Quantas linhas cabem, em vez de sete sempre. Sete linhas de 84 px
@@ -2107,7 +2108,7 @@ class DiaryScreen(Screen):
         self._voltam(s, pygame.Rect(x, topo_capas, r.w - 120, bloco_capas))
 
         if self.total_estante:
-            T.text(s, f"{self.nunca} dos {self.total_estante} discos da estante "
+            T.text(s, f"{self.nunca} dos {plural(self.total_estante, 'disco')} da estante "
                       f"nunca foram postos  ·  o SORTEIO puxa para eles",
                    (x, r.bottom - rodape + 4), 17,
                    T.AMBER if self.nunca else T.GREEN)
@@ -2745,7 +2746,7 @@ class QobuzScreen(Screen):
         if year:
             info_parts.append(str(year))
         if tracks:
-            info_parts.append(f"{tracks} faixas")
+            info_parts.append(plural(tracks, "faixa"))
         if quality:
             info_parts.append(quality)
         info = "  ·  ".join(info_parts)
@@ -2800,7 +2801,7 @@ class QobuzScreen(Screen):
         # sumia.
         if year or tracks:
             partes = ([str(year)] if year else []) + \
-                     ([f"{tracks} faixas"] if tracks else [])
+                     ([plural(tracks, "faixa")] if tracks else [])
             T.text(s, "  ·  ".join(partes), (tx, cap.y + 78), 16, T.TEXT_DIM,
                    maxw=tw)
         if quality:
@@ -2957,7 +2958,7 @@ class QobuzScreen(Screen):
         # canto superior direito, um em y+20 e o outro em y+24, e "pronto"
         # saía escrito por dentro de "25 discos".
         T.text(s, (f"{len(self.results)} que você marcou" if self.favoritos
-                   else f"{len(self.results)} discos"),
+                   else plural(len(self.results), "disco")),
                (r.right - pad, r.y + 46), 15, T.TEXT_FAINT, anchor="topright")
 
         if self.results:
@@ -3414,7 +3415,7 @@ class SpotifyScreen(Screen):
 
         # Sob o estado, não em cima dele: os dois eram desenhados no mesmo
         # canto superior direito, um em y+20 e o outro em y+24.
-        T.text(s, f"{len(self.results)} faixas", (r.right - pad, r.y + 46), 15,
+        T.text(s, plural(len(self.results), "faixa"), (r.right - pad, r.y + 46), 15,
                T.TEXT_FAINT, anchor="topright")
 
         if self.results:
@@ -4547,7 +4548,7 @@ class App:
         self.stack_save()
         for it in escolhidos:
             self._medir_da_pilha(it)
-        self.toast(f"{len(escolhidos)} discos para hoje à noite")
+        self.toast("%s para hoje à noite" % plural(len(escolhidos), "disco"))
 
     # ── ações ──────────────────────────────────────────────────────────────
     def _deck_bin(self):
