@@ -16,6 +16,7 @@
 #     Alt+q          procura no Qobuz
 #     Alt+b          baixa para a estante (disco do Qobuz)
 #     Alt+r          refaz o índice
+#     Alt+s          toca a playlist do Qobuz em ordem SORTEADA
 #
 # Na grade: sem marca é seu, ◆ é disco do Qobuz, ▤ é playlist do Qobuz.
 set -uo pipefail
@@ -183,7 +184,7 @@ alvo_de() {
     fi
 }
 
-DICA='<b>enter</b> toca · <b>shift+enter</b> com o disco na tela · <b>alt+q</b> Qobuz · <b>alt+b</b> baixa · <b>alt+r</b> refaz'
+DICA='<b>enter</b> toca · <b>shift+enter</b> com o disco na tela · <b>alt+s</b> sorteia a playlist · <b>alt+q</b> Qobuz · <b>alt+b</b> baixa · <b>alt+r</b> refaz'
 grade() {
     # As duas teclas soltas primeiro. O rofi RECUSA a abrir quando uma tecla
     # já pertence a outra coisa — e o erro sai numa janelinha amarela em vez
@@ -193,7 +194,8 @@ grade() {
     rofi -dmenu -i -p "$1" -show-icons -theme "$TEMA" -mesg "$DICA" \
          -kb-accept-alt "" -kb-move-word-back "" \
          -kb-custom-1 "Shift+Return" -kb-custom-2 "Alt+q" \
-         -kb-custom-3 "Alt+b" -kb-custom-4 "Alt+r" < "$MENU"
+         -kb-custom-3 "Alt+b" -kb-custom-4 "Alt+r" \
+         -kb-custom-5 "Alt+s" < "$MENU"
 }
 
 # Procurar no Qobuz: uma caixa vazia, porque aqui o que vale é o que se
@@ -263,8 +265,21 @@ if [[ $alvo == qobuz-lista:* ]]; then
     # assinados. Sem recado, o Enter parece não ter feito nada por meio minuto.
     notify-send -a STYLUS -h string:x-dunst-stack-tag:stylus-qobuz \
         "Qobuz" "montando a playlist… isso leva alguns segundos" 2>/dev/null
+    # Alt+s: sorteada. Com teto de 200 faixas, "as primeiras 200" de uma lista
+    # de 853 são sempre as mesmas — o sorteio acontece antes do corte, então
+    # cada vez vem uma amostra diferente da lista inteira.
+    (( rc == 14 )) && sair_com stylus qobuz tocar --deck --sortear "playlist:$id"
     (( rc == 10 )) && sair_com stylus qobuz tocar --deck "playlist:$id"
     sair_com stylus qobuz tocar "playlist:$id"
+fi
+# Alt+s fora de uma playlist não é um comando sem efeito: é um recado. Um
+# disco tem a ordem que quem o fez escolheu, e tocar sorteado do nada seria
+# justamente a coisa que este sistema não quer ser.
+if (( rc == 14 )); then
+    notify-send -a STYLUS -h string:x-dunst-stack-tag:stylus-qobuz \
+        "só playlist se sorteia" \
+        "um disco tem a ordem que tem. Na tela cheia, [s] na AGORA embaralha o que está tocando." 2>/dev/null
+    exit 0
 fi
 if [[ $alvo == qobuz:* ]]; then
     id=${alvo#qobuz:}
