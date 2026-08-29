@@ -369,7 +369,12 @@ class RitualScene:
         if side is None: return [],None
         span=max(1e-6,side["end"]-side["start"]); frac=float(np.clip((t_abs-side["start"])/span,0,1))
         strips=[v for v in vinyl.disc_body(cx,cy,radius,iso,light)]
-        # Disc shadow — dark ring behind disc for depth
+        # O aro escuro em volta do disco. Chamava-se "disc shadow", e sombra
+        # é o que ele não pode ser: o acumulador é ADITIVO, então esta cor só
+        # tem como CLAREAR o que está embaixo — é a mesma lição do "sombra
+        # preta não desenha nada sobre o INK" na §4. O que ele faz de fato, e
+        # bem, é dar ao disco uma aresta quente que o separa do fundo, que é
+        # de onde vem o peso num quadro escuro (§5.5).
         n_sh = 48
         sh_thetas = np.linspace(0, 2 * np.pi, n_sh, endpoint=False)
         sh_x = cx + np.cos(sh_thetas) * radius * 1.04
@@ -380,12 +385,14 @@ class RitualScene:
         # Disc glow ring — warm light bleeding from edge
         n_glow = 48
         glow_thetas = np.linspace(0, 2 * np.pi, n_glow, endpoint=False)
+        # A circunferência por onde o traço passa; a largura dele é o
+        # `0.035 * radius` do build_strip lá embaixo. Havia aqui um
+        # `glow_outer` e um par glow_x_out/glow_y_out calculados a partir
+        # dele e nunca usados — o traço tem UMA linha de centro e uma
+        # espessura, não duas bordas.
         glow_inner = radius * 0.98
-        glow_outer = radius * 1.08
         glow_x_in = cx + np.cos(glow_thetas) * glow_inner
         glow_y_in = cy + np.sin(glow_thetas) * glow_inner * iso[1]
-        glow_x_out = cx + np.cos(glow_thetas) * glow_outer
-        glow_y_out = cy + np.sin(glow_thetas) * glow_outer * iso[1]
         glow_pts = np.column_stack([glow_x_in, glow_y_in])
         glow_cols = np.column_stack([
             np.full(n_glow, 0.96 * 0.04),
@@ -394,9 +401,9 @@ class RitualScene:
             np.ones(n_glow)
         ]).astype(np.float32)
         strips.insert(1, build_strip(glow_pts, 0.035 * radius, W, H, glow_cols))
-        # Void rings — faint concentric circles in the dark (matching phone)
-        import random as _rnd
-        _vrng = _rnd.Random(42)
+        # Os anéis do vazio: circunferências fracas em volta, no escuro.
+        # (Havia um `random.Random(42)` criado aqui e nunca usado — sobra da
+        # poeira de ambiente que saiu.)
         for vr in range(3):
             vr_r = radius * (1.15 + vr * 0.08)
             vr_n = 64
@@ -516,23 +523,35 @@ class RitualScene:
             rem_pts[1::2] = np.column_stack([rem_x_out, rem_y_out])
             rem_cols = np.full((rem_n * 2, 4), [0.04, 0.035, 0.03, 0.15], dtype=np.float32)
             strips.append(build_strip(rem_pts, 0.003 * radius, W, H, rem_cols))
-        # ── power LED — small amber dot on plinth ──
-        led_x = cx - radius * 1.35
-        led_y = cy + radius * 0.85 * iso[1]
-        led_pulse = 0.7 + 0.3 * math.sin(time.time() * 2.0)
-        led_pts = np.array([[led_x, led_y]], dtype=np.float32)
-        led_col = np.array([[0.96 * led_pulse, 0.56 * led_pulse, 0.13 * led_pulse, 0.9]], dtype=np.float32)
-        strips.append(build_strip(led_pts, 0.012 * radius, W, H, led_col))
+        # Aqui havia um "power LED — small amber dot on plinth": uma
+        # lâmpada de aparelho, pulsando com o relógio, no canto de baixo à
+        # esquerda. Duas coisas de uma vez.
+        #
+        # A primeira é a §5.5: um LED de força num plinto é o vocabulário da
+        # FOTO de toca-discos, que a lei proíbe pelo nome — e ele não dizia
+        # nada sobre a música, só piscava sozinho a duas batidas por segundo.
+        #
+        # A segunda é que ele NUNCA existiu na tela. Era um `build_strip` de
+        # UM ponto, e o build_strip devolve zero vértices abaixo de dois (é a
+        # mesma armadilha das faíscas da agulha e da poeira, na §4 do
+        # CLAUDE.md). Móvel proibido que também não desenhava.
         # ── side label glow — faint "LADO A/B" position marker ──
         # small dot at the start of the current side's time range
         side_start_frac = 0.0
         if side:
             side_start_frac = (side["start"] / al.total) if al.total else 0
+        # Um TRAÇO e não um ponto. Este marcador também era um `build_strip`
+        # de um ponto só — zero vértices, nada na tela — e, ao contrário do
+        # LED acima, ele DIZ alguma coisa: é onde este lado começa no aro, e
+        # o aro é o tempo. Vale consertar, não apagar.
         marker_angle = arc_start + 2 * math.pi * side_start_frac
-        mk_x = cx + math.cos(marker_angle) * radius * 1.03
-        mk_y = cy + math.sin(marker_angle) * radius * 1.03 * iso[1]
-        mk_pts = np.array([[mk_x, mk_y]], dtype=np.float32)
-        mk_col = np.array([[0.96, 0.56, 0.13, 0.35]], dtype=np.float32)
+        mk_n, mk_arco = 8, math.radians(5.0)
+        mk_th = np.linspace(marker_angle - mk_arco * 0.5,
+                            marker_angle + mk_arco * 0.5, mk_n)
+        mk_pts = np.column_stack([
+            cx + np.cos(mk_th) * radius * 1.03,
+            cy + np.sin(mk_th) * radius * 1.03 * iso[1]]).astype(np.float32)
+        mk_col = np.full((mk_n, 4), [0.96, 0.56, 0.13, 0.35], dtype=np.float32)
         strips.append(build_strip(mk_pts, 0.008 * radius, W, H, mk_col))
         return strips, arm
     def banner(self):

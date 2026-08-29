@@ -641,6 +641,67 @@ def main():
 
         cena.album = _Alb()
 
+        # ── nada é montado com menos de dois pontos ───────────────────────
+        # **Sintoma:** peças inteiras do desenho que não aparecem, e nada
+        # avisando. O `build_strip` devolve ZERO vértices para menos de dois
+        # pontos (`if n<2`) e o `build_segs` para menos de um par — e isso
+        # não é erro, é uma lista vazia que o desenho aceita sem reclamar.
+        #
+        # Já aconteceu quatro vezes neste arquivo: as faíscas da agulha (um
+        # ponto duplicado "to make a tiny segment"), duas poeiras de
+        # ambiente, o "power LED" no plinto, e a marca de onde o LADO começa
+        # no aro — esta última DIZENDO alguma coisa e nunca desenhada.
+        #
+        # Ler não pega: `build_strip(np.array([[x, y]]), ...)` tem exatamente
+        # a cara de uma chamada boa. Então o teste monta um quadro de verdade
+        # e olha o que CHEGA nos dois montadores.
+        try:
+            import numpy as _np
+
+            cena_g = R.RitualScene.__new__(R.RitualScene)
+            cena_g.deck = vinyl.Deck()
+            cena_g.deck.phase = vinyl.PLAY
+            cena_g._banner, cena_g._banner_until = None, 0
+            cena_g._side, cena_g._ti_cache = 0, [None, 0]
+            cena_g.album = alb
+
+            class _SessaoParada:
+                def snapshot(self): return {"source": "none", "path": ""}
+                def position(self): return (alb.total * 0.3, None)
+
+            cena_g.session = _SessaoParada()
+
+            curtos = []
+            _bs, _bg = R.build_strip, R.build_segs
+
+            def _espia_strip(pts, *a, **k):
+                if len(pts) < 2:
+                    curtos.append("build_strip com %d ponto(s)" % len(pts))
+                return _bs(pts, *a, **k)
+
+            def _espia_segs(pares, *a, **k):
+                if len(pares) < 2:
+                    curtos.append("build_segs com %d ponto(s)" % len(pares))
+                return _bg(pares, *a, **k)
+
+            R.build_strip, R.build_segs = _espia_strip, _espia_segs
+            try:
+                buf = _np.zeros((512, 2), dtype=_np.float32)
+                for _lift in (0.0, 0.5, 1.0):
+                    cena_g.deck.cue_ramp = _lift
+                    cena_g.build({"source": "none", "path": ""}, buf,
+                                 1920, 1080, (1.0, 0.42))
+            finally:
+                R.build_strip, R.build_segs = _bs, _bg
+            if curtos:
+                print("      %s" % "; ".join(sorted(set(curtos))[:4]))
+            check("todo pedaço do quadro tem pontos que bastam para desenhar",
+                  not curtos)
+        except Exception as _e:                          # noqa: BLE001
+            print("      %r" % (_e,))
+            check("todo pedaço do quadro tem pontos que bastam para desenhar",
+                  False)
+
         cena.deck.phase = vinyl.BREAK
         esq, dire = cena.legendas({})
         check("no fim do lado ele manda virar o disco",

@@ -149,6 +149,45 @@ else
     printf '  %s—%s pygame não instalado aqui; a interface não foi exercitada\n' "$y" "$z"
 fi
 
+sec "o ritual, sem GL"
+# **O deck tinha 119 conferências que nada rodava.** O `test_ritual.py` quer
+# um álbum de verdade (`--album PASTA`) e, sem ele, escolhe um da estante
+# configurada — que num contêiner de construção não existe. Resultado: o
+# arquivo que guarda a cerimônia, a contagem de lados, a agulha no sulco e a
+# lei do desenho ficava de fora de toda conferência automática, incluindo a
+# da nuvem, e só rodava quando alguém lembrava de chamar à mão.
+#
+# O álbum de mentira sai daqui mesmo: oito WAVs de silêncio escritos pelo
+# módulo `wave` do próprio Python. Não precisa de ffmpeg, não toca em coleção
+# de ninguém, e some no fim.
+RITTEST=airootfs/usr/share/stylus/deck/tools/test_ritual.py
+if [[ -f $RITTEST ]] && python3 -c 'import pygame, numpy' 2>/dev/null; then
+    RITDIR=$(mktemp -d)
+    if python3 - "$RITDIR" <<'WAVEOF'
+import os, struct, sys, wave
+d = os.path.join(sys.argv[1], "Artista", "Disco")
+os.makedirs(d, exist_ok=True)
+quadro = struct.pack("<h", 0) * 8000        # um segundo de silêncio
+for i in range(1, 9):
+    with wave.open(os.path.join(d, "%02d faixa.wav" % i), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+        w.writeframes(quadro * 180)         # três minutos por faixa
+WAVEOF
+    then
+        if out=$(python3 "$RITTEST" --album "$RITDIR/Artista/Disco" 2>&1); then
+            ok "$(grep -oE '[0-9]+ passaram' <<<"$out" | tail -1) no ritual"
+        else
+            bad "o ritual tem conferência quebrada:"
+            grep -E '✗' <<<"$out" | head -6 | sed 's/^/      /'
+        fi
+    else
+        bad "não deu para montar o disco de mentira do teste do ritual"
+    fi
+    rm -rf "$RITDIR"
+else
+    printf '  %s—%s pygame/numpy não instalados aqui; o ritual não foi exercitado\n' "$y" "$z"
+fi
+
 sec "links simbólicos"
 # Link absoluto aponta para dentro da ISO, não para este computador: /etc/x
 # tem que ser conferido como airootfs/etc/x. Sem isso metade dos links do

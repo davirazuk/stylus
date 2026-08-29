@@ -123,16 +123,29 @@ if [[ -f $SDDM_CONF ]]; then
 else
     # Criar do zero
     mkdir -p /mnt/etc/sddm.conf.d
-    cat > "$SDDM_CONF" <<'SDDM'
+    # O bloco de autologin vem COMENTADO — quem está recuperando uma máquina
+    # decide se quer entrar sem senha — mas vem com o nome de usuário de
+    # verdade dentro. Estava escrito `#User=TODO`, e um TODO num arquivo que
+    # a pessoa vai descomentar é um arquivo que não funciona quando ela
+    # descomentar. O `$REAL_USER` este script já sabe.
+    #
+    # E o `Relogin=true` não é enfeite: o `stylus-mode` troca de modo
+    # DERRUBANDO a sessão e contando com o SDDM reentrar sozinho. Sem ele a
+    # troca cai no login pedindo senha.
+    cat > "$SDDM_CONF" <<SDDM
 [General]
 DisplayServer=x11
 Numlock=on
 
 [Theme]
 Current=stylus
+CursorTheme=Adwaita
+CursorSize=24
 
+# O stylus.desktop é o despachante do "último escolhido": o Exec dele é
+# \`stylus-session\` sem argumento, que lê o ~/.config/stylus/mode.
 #[Autologin]
-#User=TODO
+#User=$REAL_USER
 #Session=stylus.desktop
 #Relogin=true
 SDDM
