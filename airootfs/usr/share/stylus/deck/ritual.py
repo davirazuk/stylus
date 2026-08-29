@@ -176,8 +176,12 @@ class TextOSD:
         glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,16,ctypes.c_void_p(0)); glEnableVertexAttribArray(0)
         glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,16,ctypes.c_void_p(8)); glEnableVertexAttribArray(1)
         glBindVertexArray(0); self._text=None; self._surfs={}; self._t0=0; self.w=0
-    def set_text(self,t,W,H):
+    def set_text(self,t,W,H,persist=None):
+        # `persist` por MENSAGEM e não só por camada: "LADO A acabou — vire o
+        # disco" é um ESTADO (fica até alguém virar o disco) e "3ª VEZ" é um
+        # acontecimento (aparece e sai). Os dois moram no mesmo canto.
         self._text=t; self._t0=time.monotonic(); self._surfs={}; self.w=0
+        if persist is not None: self.persist=persist
         if t:
             s=self.font.render(t,True,(255,255,255)); self._surfs[W]=s; self.w=s.get_width()
     def alpha(self):
@@ -535,6 +539,64 @@ class RitualScene:
         if self._banner and time.monotonic()<self._banner_until: return self._banner
         return None
     def caption_is_state(self): return self.deck.phase in (vinyl.BREAK,vinyl.STOP) or self.banner() is not None
+    def lado_rotulo(self,i):
+        """LADO A, LADO B… — o mesmo vocabulário do resto do sistema."""
+        try: return (self.album.sides[i].get("label") or "LADO").replace("SIDE","LADO")
+        except Exception: return "LADO"
+    def legendas(self,snap):
+        """(canto esquerdo, canto direito) — o que o deck diz agora.
+
+        POR QUE ISTO EXISTE
+        -------------------
+        As duas camadas de texto do deck eram criadas no `main()` e
+        desenhadas em TODO quadro, e ninguém nunca chamava `set_text` nelas:
+        só a das letras era alimentada. Ou seja, o deck nunca disse nada —
+        nem "LADO A acabou, vire o disco", que é a tese inteira deste
+        sistema, nem "PRIMEIRA VEZ" no instante em que a agulha desce, nem
+        que faixa está tocando.
+
+        A peça que faltava era esta: as partes todas já existiam (o
+        `play_banner`, o `banner()`, o `caption_is_state()`, e até uma cor
+        ALARM guardada para o fim do lado) e ninguém tinha ligado o último
+        fio. Ela fica AQUI e não no laço de desenho porque é decisão, não
+        desenho: assim dá para conferi-la sem GL, sem janela e sem áudio.
+        """
+        ban=self.banner()
+        if self.deck.phase==vinyl.BREAK:
+            # O `_side` já é o lado NOVO quando o LIFT começa: quem acabou é
+            # o de trás. Mesmo texto que a notificação do stylus-side-watch,
+            # de propósito — é o mesmo acontecimento visto de dois lugares.
+            return ("%s acabou — vire o disco para o %s"
+                    % (self.lado_rotulo(max(0,(self._side or 0)-1)),
+                       self.lado_rotulo(self._side or 0)), None)
+        if self.deck.phase==vinyl.STOP: return ("o disco acabou", None)
+        if ban: return (ban[0] or None, ban[1] or None)
+        return (None, self.faixa_agora(snap))
+    def legenda_cor(self):
+        """A cor do canto esquerdo.
+
+        O fim do lado é a única coisa que este aparelho PEDE de você, e por
+        isso tem cor própria: o `vinyl.ALARM`, que estava na paleta com o
+        comentário "side break — muted red, not bloom" e nunca havia sido
+        usado em lugar nenhum — a cor existia para este recado e o recado
+        não existia. O instante da agulha descendo é âmbar; o resto, branco.
+        """
+        if self.deck.phase in (vinyl.BREAK,vinyl.STOP): return vinyl.ALARM
+        if self.banner(): return (0.98,0.70,0.30)
+        return (1.0,1.0,1.0)
+    def faixa_agora(self,snap):
+        """O nome da faixa, do jeito que o disco a chama.
+
+        Do ÁLBUM e não do `snap` quando dá: numa playlist do Qobuz o título
+        do manifesto é "quem — o quê", e o do tocador é só "o quê" — que
+        numa lista de artistas diferentes não diz nada.
+        """
+        if self.album is not None and self.album.tracks:
+            i=vinyl.track_index_for(self.album,snap,self._ti_cache)
+            if 0<=i<len(self.album.tracks):
+                t=(self.album.tracks[i].get("title") or "").strip()
+                if t: return t
+        return (snap.get("title") or "").strip() or None
     def current_lyric(self,snap):
         if self.album is None: return None
         idx=vinyl.track_index_for(self.album,snap,self._ti_cache)
@@ -670,8 +732,16 @@ void main(){
         ly=ritual.current_lyric(snap)
         if ly != getattr(main,"_last_ly",None):
             lyric.set_text(ly,W,H); main._last_ly=ly
+        # As legendas. Só quando MUDAM: `set_text` rerenderiza a fonte, e
+        # fazer isso 60 vezes por segundo para escrever a mesma frase é o
+        # tipo de coisa que não aparece na tela e aparece no ventilador.
+        esq,dire=ritual.legendas(snap)
+        if esq != getattr(main,"_last_osd",None):
+            osd.set_text(esq,W,H,persist=ritual.caption_is_state()); main._last_osd=esq
+        if dire != getattr(main,"_last_mpris",None):
+            mpris.set_text(dire,W,H); main._last_mpris=dire
         glUseProgram(prog_text); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA)
-        osd.draw(prog_text,(1,1,1)); mpris.draw(prog_text,(1,1,1)); lyric.draw(prog_text,(1,1,1))
+        osd.draw(prog_text,ritual.legenda_cor()); mpris.draw(prog_text,(1,1,1)); lyric.draw(prog_text,(1,1,1))
         glDisable(GL_BLEND)
         pygame.display.flip(); clock.tick(60)
     cap.close(); ritual.close(); pygame.quit()

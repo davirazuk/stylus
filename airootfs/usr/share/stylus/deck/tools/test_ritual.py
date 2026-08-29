@@ -508,6 +508,79 @@ def main():
     finally:
         _shutil.rmtree(_tmp, ignore_errors=True)
 
+    case("o deck DIZ o que está acontecendo")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # As duas camadas de texto do deck eram criadas no `main()` e desenhadas
+    # em todo quadro, e ninguém nunca chamava `set_text` nelas — só a das
+    # letras era alimentada. O deck nunca disse nada: nem "LADO A acabou,
+    # vire o disco", que é a tese inteira deste sistema, nem "PRIMEIRA VEZ"
+    # no instante em que a agulha desce, nem que faixa está tocando. As peças
+    # todas já existiam (play_banner, banner(), caption_is_state(), e uma cor
+    # ALARM guardada na paleta para o fim do lado); faltava o último fio.
+    #
+    # A decisão do texto mora no `RitualScene.legendas`, fora do laço de
+    # desenho, exatamente para poder ser conferida sem GL: o OpenGL entra
+    # aqui como um módulo de mentira.
+    from unittest.mock import MagicMock as _MM
+    for _n in ("OpenGL", "OpenGL.GL"):
+        sys.modules.setdefault(_n, _MM())
+    try:
+        import importlib.machinery as _im
+        import importlib.util as _iu
+        _aqui = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _spec = _iu.spec_from_loader("ritualmod", _im.SourceFileLoader(
+            "ritualmod", os.path.join(_aqui, "ritual.py")))
+        R = _iu.module_from_spec(_spec)
+        _spec.loader.exec_module(R)
+    except Exception as e:                               # noqa: BLE001
+        print(f"    \033[2m—\033[0m sem o ritual.py aqui: {e}")
+        R = None
+    if R is not None:
+        cena = R.RitualScene.__new__(R.RitualScene)
+        cena.deck = vinyl.Deck()
+        cena._banner = None
+        cena._banner_until = 0
+        cena._side = 1
+        cena._ti_cache = [None, 0]
+
+        class _Alb:
+            sides = [{"label": "SIDE A"}, {"label": "SIDE B"}]
+            tracks = [{"title": "Come Together", "path": "/x/1.flac"}]
+
+        cena.album = _Alb()
+
+        cena.deck.phase = vinyl.BREAK
+        esq, dire = cena.legendas({})
+        check("no fim do lado ele manda virar o disco",
+              esq == "LADO A acabou — vire o disco para o LADO B")
+        check("e o recado do fim do lado tem a cor que a paleta guardou",
+              cena.legenda_cor() == vinyl.ALARM)
+        check("um recado de ESTADO fica na tela",
+              cena.caption_is_state() is True)
+
+        cena.deck.phase = vinyl.STOP
+        check("no fim do disco ele diz que acabou",
+              cena.legendas({})[0] == "o disco acabou")
+
+        cena.deck.phase = vinyl.PLAY
+        cena._banner = ("PRIMEIRA VEZ", "The Beatles — Abbey Road")
+        cena._banner_until = time.monotonic() + 5
+        check("a agulha descendo anuncia a vez",
+              cena.legendas({}) == ("PRIMEIRA VEZ", "The Beatles — Abbey Road"))
+
+        cena._banner = None
+        _snap = {"source": "mpv", "path": "/x/1.flac", "track_index": 0}
+        check("tocando, o canto diz a faixa",
+              cena.legendas(_snap) == (None, "Come Together"))
+        # O título sai do ÁLBUM e não do tocador: numa playlist do Qobuz o
+        # manifesto diz "quem — o quê" e o mpv diz só "o quê", que numa lista
+        # de artistas diferentes não diz nada.
+        check("e o nome vem do disco, não do tocador",
+              cena.faixa_agora({"source": "mpv", "path": "/x/1.flac",
+                                "track_index": 0, "title": "outro nome"})
+              == "Come Together")
+
     print(f"\n  \033[1;32m{PASS} passaram\033[0m" + (f", \033[1;31m{FAIL} falharam\033[0m" if FAIL else "") + "\n")
     return 1 if FAIL else 0
 
