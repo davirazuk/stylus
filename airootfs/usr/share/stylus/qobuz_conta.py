@@ -56,12 +56,20 @@ def ler_credenciais(caminho=None):
     return campo(cfg, "app_id"), segredos, campo(cfg, "private_key")
 
 
-def tem_conta(caminho=None):
-    """Dá para falar com o Qobuz com o que está gravado aqui?"""
-    app_id, segredos, _ = ler_credenciais(caminho)
-    cfg = ler(caminho)
-    return bool(app_id and segredos and campo(cfg, "user_id")
-                and campo(cfg, "user_auth_token"))
+# Havia aqui um `tem_conta()` — "dá para falar com o Qobuz com o que está
+# gravado?" — e ele NUNCA foi chamado. Saiu, e o motivo vale escrever: ele
+# era a TERCEIRA resposta para essa pergunta e discordava das outras duas.
+#
+# Exigia app_id, segredos, user_id e token, o que reprova quem entrou pela
+# interface web com e-mail e senha — que é como quase todo mundo entra, e é
+# justamente o caso que a tela cheia teve que consertar (ela dizia "a loja
+# ainda não está ligada" numa máquina perfeitamente logada). E, do outro
+# lado, ficava muito aquém do `qobuz_estado.py`, que é onde essa pergunta
+# mora de verdade: lá se PERGUNTA ao Qobuz, em seis etapas, porque "existe um
+# token gravado" nunca foi a mesma coisa que "isto funciona".
+#
+# Função escrita e nunca chamada costuma ser um recurso inteiro faltando.
+# Quando não é, é uma opinião a mais sobre algo que já tem dono.
 
 
 # Só quando o arquivo é novo: um valor destes já escolhido é escolha da

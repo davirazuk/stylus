@@ -1102,6 +1102,101 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── função escrita e nunca chamada ────────────────────────────────────────
+# É a armadilha mais cara deste repositório, e ela já apareceu cinco vezes:
+#
+#   · o `set_text` das duas legendas do deck — as camadas eram criadas e
+#     desenhadas em todo quadro, e ninguém as alimentava: o deck nunca disse
+#     "vire o disco", que é a tese do sistema;
+#   · o `Nx` do diário e a fileira "OS QUE VOLTAM" que dependia dele;
+#   · o "X min encostado no móvel" da pilha, atrás de um `if` nunca verdadeiro;
+#   · o `get_position` do scrobbler, que era a resposta para "quanto disso
+#     você ouviu de verdade" e nunca era chamado (e estava quebrado);
+#   · o `tem_conta` do Qobuz, que era uma TERCEIRA opinião sobre uma pergunta
+#     que já tinha dono.
+#
+# Quando achar um ajudante que ninguém chama, desconfie de um recurso inteiro
+# faltando. Ler não pega: a função existe, tem nome bom e faz alguma coisa.
+sec "nenhuma função escrita e nunca chamada"
+orfas=$(python3 - <<'ORFAEOF'
+import ast
+import os
+import re
+
+# Onde procurar as definições.
+alvos = []
+for raiz, ds, fs in os.walk("airootfs"):
+    ds[:] = [d for d in ds if d != "__pycache__"]
+    for f in fs:
+        p = os.path.join(raiz, f)
+        if f.endswith(".py"):
+            alvos.append(p)
+        elif "/bin/" in p:
+            try:
+                if open(p, "rb").read(30).startswith(b"#!/usr/bin/env python"):
+                    alvos.append(p)
+            except OSError:
+                pass
+
+# E o repositório INTEIRO onde procurar os usos: uma função pode ser chamada
+# de um script de shell, de um teste ou de um `python3 -c`.
+#
+# Contado UMA vez, num Counter, e não com um `re.findall` por função: são
+# mais de mil funções contra alguns megabytes de texto, e a forma ingênua
+# fazia o check.sh inteiro passar de dez segundos para quase dois minutos.
+import collections
+
+BINARIOS = (".png", ".jpg", ".jpeg", ".webp", ".ico", ".gz", ".xz", ".zip",
+            ".jar", ".ttf", ".otf", ".pyc", ".so", ".bin", ".img", ".pdf")
+usos = collections.Counter()
+for raiz, ds, fs in os.walk("."):
+    ds[:] = [d for d in ds if d not in (".git", "__pycache__", "work", "out",
+                                        "node_modules", "build", ".gradle")]
+    for f in fs:
+        if f.lower().endswith(BINARIOS):
+            continue
+        try:
+            conteudo = open(os.path.join(raiz, f), encoding="utf-8",
+                            errors="ignore").read()
+        except OSError:
+            continue
+        # `\w+` e não `[A-Za-z_]\w*`: há função com acento no nome
+        # (`coleção_de_mentira`), e o recorte ASCII a partia em dois — o
+        # nome inteiro nunca aparecia na contagem e ela era acusada de órfã.
+        usos.update(re.findall(r"\w+", conteudo))
+
+# Nomes que existem para serem chamados de fora e por isso podem aparecer
+# uma vez só: pontos de entrada e ganchos que o Python chama sozinho.
+LIVRES = {"main", "test"}
+
+for p in sorted(alvos):
+    try:
+        fonte = open(p, encoding="utf-8").read()
+        arv = ast.parse(fonte)
+    except (OSError, SyntaxError):
+        continue
+    linhas = fonte.splitlines()
+    for no in ast.walk(arv):
+        if not isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        n = no.name
+        if n.startswith("__") or n in LIVRES:
+            continue
+        # `# noqa: orfa` na linha do def: para o dia em que uma função for
+        # chamada de um jeito que este texto não vê.
+        if "noqa: orfa" in linhas[no.lineno - 1]:
+            continue
+        if usos[n] <= 1:
+            print("%s:%d  %s()" % (p.replace("airootfs/", ""), no.lineno, n))
+ORFAEOF
+)
+if [[ -z $orfas ]]; then
+    ok "toda função definida é chamada em algum lugar"
+else
+    bad "função escrita e nunca chamada (recurso faltando?):"
+    printf '%s\n' "$orfas" | sed 's/^/      /'
+fi
+
 # ── o scrobble conta o que você OUVIU ─────────────────────────────────────
 # Dois defeitos que se escondiam um no outro, e os dois no mesmo formato de
 # playerctl:
