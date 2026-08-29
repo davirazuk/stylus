@@ -1412,7 +1412,20 @@ class DiaryScreen(Screen):
             art = vinyl.folder_names(fold)[0]
             if art:
                 self.by_artist[art] = self.by_artist.get(art, 0) + 1
-        postos = {os.path.normpath(f) for _ts, f in rows}
+        # Quantas vezes cada disco foi posto, contado DAQUI — do mesmo
+        # registro que a lista está lendo, numa passada só.
+        #
+        # **Sintoma:** o `Nx` de cada linha vinha do `plays` da ESTANTE, que é
+        # contado uma vez, na varredura. O diário lia o registro fresco e
+        # mostrava a escuta de dois minutos atrás — com um número ao lado que
+        # não a incluía, e que só mudava quando a estante fosse varrida de
+        # novo. A linha mais nova da tela com o número mais velho dela.
+        vezes = {}
+        postos = set()
+        for _ts, f in rows:
+            k = os.path.normpath(f)
+            postos.add(k)
+            vezes[k] = vezes.get(k, 0) + 1
         itens = self.app.shelf.items or []
         self.total_estante = len(itens)
         self.nunca = sum(1 for i in itens
@@ -1431,7 +1444,7 @@ class DiaryScreen(Screen):
                         "name": (it or {}).get("name")
                                 or vinyl.folder_names(fold)[1],
                         "cover": (it or {}).get("cover"),
-                        "plays": (it or {}).get("plays", 1)})
+                        "plays": vezes.get(k, 1)})
         self.rows = out
 
     def key(self, ev):

@@ -724,6 +724,16 @@ def main():
                     fh.write(f"{int(agora - (i * 5 + k) * 86400)}\t"
                              f"{it['artist']}\t{it['name']}\t{it['folder']}\n")
         diario.enter()
+        # Três escutas por disco foram escritas ali em cima; o `Nx` da linha
+        # tem que dizer três. **Sintoma:** ele vinha do `plays` da ESTANTE,
+        # que é contado uma vez, na varredura — o diário mostrava a escuta de
+        # dois minutos atrás com um número ao lado que não a incluía, e que
+        # só mudava quando a estante fosse varrida de novo.
+        if diario.rows and diario.rows[0].get("plays") != 3:
+            bad("o diário conta as escutas pela estante, não pelo registro",
+                "esperava 3, veio %s" % diario.rows[0].get("plays"))
+        elif diario.rows:
+            ok("o Nx de cada linha vem do registro que a tela acabou de ler")
         if not diario.rows:
             bad("o diário não leu o registro que acabamos de escrever")
         else:

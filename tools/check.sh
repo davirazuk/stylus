@@ -1290,7 +1290,11 @@ import json, os, re, shutil, sys, tempfile, traceback
 sys.path.insert(0, "airootfs/usr/share/stylus")
 try:
     import qobuz_stream as q
-except Exception as e:                                   # noqa: BLE001
+except BaseException as e:                               # noqa: BLE001
+    # BaseException pelo mesmo motivo da conferência do side-watch logo
+    # adiante: um módulo que responde a dependência faltando com `sys.exit`
+    # levanta SystemExit, que não é Exception — e a conferência ficaria
+    # VERMELHA numa máquina onde ela nem chegou a rodar.
     print("PULA %s" % e)
     raise SystemExit(0)
 
