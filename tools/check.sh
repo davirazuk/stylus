@@ -3485,6 +3485,51 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "o aviso de virar o disco dura mais que um aviso de volume"
+# O padrão do dunst para urgência normal são OITO SEGUNDOS, e o fim do lado é
+# o aviso de que a coisa toda existe. Oito segundos é tempo de aviso de
+# volume — e quem está ouvindo um disco é justamente quem não está na frente
+# do computador. Da cozinha, o recado já era.
+#
+# Duas listas que se referem uma à outra: o tempo do dunst e o do vigia.
+saida=$(python3 - <<'ESPERAEOF' 2>&1
+import re
+try:
+    dunst = open("airootfs/etc/skel/.config/dunst/dunstrc",
+                 encoding="utf-8").read()
+    vigia = open("airootfs/usr/local/bin/stylus-side-watch",
+                 encoding="utf-8").read()
+except OSError as e:
+    print("PULA %s" % e)
+    raise SystemExit(0)
+m = re.search(r"\[urgency_normal\](.*?)(\n\[|\Z)", dunst, re.S)
+padrao = int(re.search(r"^\s*timeout\s*=\s*(\d+)", m.group(1), re.M).group(1))
+mv = re.search(r"^ESPERA_LADO\s*=\s*([\d_]+)", vigia, re.M)
+if not mv:
+    print("ERRO o vigia não define ESPERA_LADO")
+    raise SystemExit(0)
+espera = int(mv.group(1).replace("_", "")) / 1000.0
+# E a chamada do fim do lado tem que USAR isso — não adianta a constante
+# existir e o aviso sair no padrão, que é a família do helper que ninguém
+# chama. Só linha de código, nunca comentário.
+usa = any("avisar(titulo, corpo, espera=" in ln
+          for ln in vigia.splitlines() if not ln.lstrip().startswith("#"))
+if espera <= padrao:
+    print("ERRO o aviso do lado dura %gs e o padrão do dunst é %gs"
+          % (espera, padrao))
+elif not usa:
+    print("ERRO o ESPERA_LADO existe e o aviso do fim do lado não o usa")
+else:
+    print("OK %gs contra os %gs de um aviso qualquer" % (espera, padrao))
+ESPERAEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o aviso de virar o disco some rápido demais"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

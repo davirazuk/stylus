@@ -97,17 +97,32 @@ def tela_cheia_no_ar():
     return False
 
 
-def avisar(titulo, corpo, urgencia="normal"):
+# Quanto tempo o aviso de fim de lado fica na tela.
+#
+# O padrão do dunst para urgência normal são OITO SEGUNDOS, e este é o aviso
+# de que a coisa toda existe: "o LADO A acabou, vire o disco". Oito segundos
+# é tempo de aviso de volume — e quem está ouvindo um disco é justamente
+# quem não está na frente do computador. Da cozinha, o recado já era.
+#
+# Não é "para sempre" de propósito: com a etiqueta de pilha, o aviso do lado
+# seguinte substitui este, mas entre um e outro pode ficar um recado velho na
+# tela por quarenta minutos. Meio minuto é ida e volta da cozinha.
+ESPERA_LADO = 30_000     # milissegundos
+
+
+def avisar(titulo, corpo, urgencia="normal", espera=None):
     # A pausa continua valendo com a tela cheia no ar: quem ligou o --pause
     # quer o som parando, e isso a interface não faz.
     if tela_cheia_no_ar():
         return
+    cmd = ["notify-send", "--app-name=STYLUS", f"--urgency={urgencia}",
+           f"--hint=string:x-dunst-stack-tag:{TAG}", "--icon=stylus"]
+    if espera is not None:
+        cmd += ["-t", str(espera)]
     try:
-        subprocess.run(
-            ["notify-send", "--app-name=STYLUS", f"--urgency={urgencia}",
-             f"--hint=string:x-dunst-stack-tag:{TAG}",
-             "--icon=stylus", titulo, corpo],
-            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(cmd + [titulo, corpo],
+                       check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
     except OSError:
         pass
 
@@ -445,7 +460,7 @@ def main():
                 # faixa, e avisar ali seria puro ruído.
                 if i > olho.lado:
                     titulo, corpo = recado(al, olho.lado, i)
-                    avisar(titulo, corpo)
+                    avisar(titulo, corpo, espera=ESPERA_LADO)
                     if args.pause and pausar():
                         avisar(titulo, f"{al.name} — pausado. Levante e vire.",
                                urgencia="critical")
