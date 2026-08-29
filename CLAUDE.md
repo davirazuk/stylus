@@ -323,6 +323,36 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   calendário do DIÁRIO parava trezentos pixels antes da lista que acompanha;
   o disco da tela cheia empurrava o nome da faixa para fora da tela. Nenhum
   estoura. Todos leem como página montada para outro monitor.
+- **Cópia inteira de uma pasta de configuração, esquecida.** Havia DUAS
+  árvores da polybar — `/etc/skel/.config/polybar` e `/etc/polybar` — com
+  nove dos dez arquivos diferentes, e a de baixo com a paleta velha dentro.
+  E ela nem podia funcionar: o polybar procura no `~/.config` antes do
+  `/etc`, então a de baixo só valeria para quem NÃO tem `~/.config/polybar`
+  — e todo `exec` dela aponta para `~/.config/polybar/scripts/…`, que nesse
+  caso não existe. Caminho de reserva quebrado nos dois lados.
+- **Lista de cores SEM NOME é onde os papéis se embaralham.** O
+  `qt5ct/colors/stylus.conf` são vinte hexadecimais numa linha, na ordem do
+  enum `QPalette::ColorRole`. Estavam trocados: `WindowText` tinha a MESMA
+  cor de `Window` (todo rótulo de todo aplicativo Qt era preto sobre preto) e
+  `Base` — o fundo de campo de texto e de lista — era o âmbar da seleção.
+  Ler o arquivo não pega nada. A conferência tem que ser sobre o RESULTADO:
+  texto e fundo do mesmo par têm que estar longe um do outro.
+- **A paleta valia para a área de trabalho e não para o que vem ANTES dela.**
+  O GRUB e o login do SDDM — a primeira e a segunda tela da máquina —
+  estavam inteiros na paleta velha, mais um amarelo e um rosa do Catppuccin,
+  porque a conferência de deriva varria o `/etc/skel` e o `/usr/share` do KDE
+  e não aqueles dois. E o nome STYLUS, âmbar em todo o resto do sistema,
+  aparecia em AZUL no login.
+- **Varredura de teclado que desenha só no fim não vê quase nada.** A última
+  tecla desfaz o estado que a anterior criou, e uma tecla que põe a tela num
+  sub-estado quebrado não estoura ao ser apertada — estoura no quadro
+  seguinte. E ela precisa rodar com o prato CHEIO também: com nada tocando,
+  metade da AGORA nem é desenhada (o `draw` sai cedo pelo `_nothing`).
+  Medido com um `raise` posto de propósito: a versão antiga passava verde.
+- **Teste que ninguém roda é teste que não existe.** As 119 conferências do
+  `test_ritual.py` ficaram de fora de tudo por precisarem de um `--album`
+  que num contêiner não existe. O `check.sh` agora monta oito WAVs de
+  silêncio com o módulo `wave` e roda.
 - **Folga fixa entre dois textos na mesma linha sempre quebra na máquina do
   outro.** O `- 300` reservado para o valor à direita não cabia o valor mais
   largo, e o nome do aparelho entrava por cima — só em quem tem placa de nome
@@ -490,6 +520,26 @@ reação ao som, mais luz com propósito — nunca mais realismo.
 - **O `stylus-switch-kde` escrevia uma segunda versão do GTK** por cima da do
   `/etc/skel`: trocar para o KDE mudava o corpo da letra de 10 para 11 e
   apagava o `gtk-application-prefer-dark-theme`.
+
+### Quinta leva (o que estava escrito e ninguém via)
+- **Duas polybars, uma paleta velha, um terminal que não existe.** Ver as
+  lições na §4. Junto: o rofi ainda abria `xfce4-terminal`, consertado no i3
+  meses antes com o motivo escrito ao lado.
+- **Todo aplicativo Qt escrevia preto sobre preto** e tinha campo de texto
+  com fundo âmbar. Os dois arquivos (qt5ct e qt6ct) foram reescritos com a
+  ordem dos papéis documentada em cima.
+- **O GRUB e o login ganharam a paleta e o âmbar.** O nome STYLUS deixou de
+  ser azul na primeira tela da máquina, e o âmbar passa a dizer "é este" na
+  conta escolhida, no botão de entrar e na entrada do GRUB que vai subir.
+- **O "power LED" do deck nunca desenhou nada** (um `build_strip` de um
+  ponto), e era móvel proibido pela §5.5. A marca de onde o LADO começa no
+  aro tinha o mesmo defeito e essa foi consertada, porque DIZ alguma coisa.
+- **`stylus-mouse` e `stylus-controller` vazavam erro para o journal** com o
+  `done < arquivo 2>/dev/null`, que é a lição da §4 sobrando em dois lugares.
+- Cinco conferências novas no `check.sh`: todo `[module/…]` da polybar
+  desenhado; as 18 cores do Konsole iguais às do alacritty; a §5.5 do disco
+  em números; texto legível sobre o fundo no Qt e no KDE; e o ritual
+  rodando de verdade.
 
 ### Futuras Melhorias
 - **Ritual vinyl:** o rework do composto CRT (disco como OBJETO, `u_disc`/
