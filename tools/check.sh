@@ -1102,6 +1102,81 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── a barra fala do disco também quando ele vem da rede ───────────────────
+# **Sintoma:** com uma playlist do Qobuz tocando, o módulo do disco na barra
+# ficava em BRANCO — nada de "LADO A · 3/5 · vira em 12 min", que é o motivo
+# de aquele arquivo existir.
+#
+# O `playing_path` recusava o endereço com um `os.path.isfile` antes de
+# qualquer outra coisa. E o caminho já existia inteiro do outro lado: o
+# `vinyl.resolve_album` trata `http(s)://` desde sempre, achando pelo `eid=`
+# a pasta de cache que descreve a lista. Faltava deixar o endereço CHEGAR
+# nele — as duas metades prontas, o fio entre elas faltando.
+sec "a barra reconhece o disco que vem da rede"
+barra=$(python3 - <<'BARRAEOF'
+import importlib.machinery as _im
+import importlib.util as _iu
+import os
+import sys
+import types
+
+# Um vinyl de mentira: o album.py sai na hora se não conseguir importar um.
+falso = types.ModuleType("vinyl")
+falso.Session = lambda: None
+falso.resolve_album = lambda p: None
+falso.Album = lambda *a, **k: None
+falso.track_index_for = lambda *a, **k: -1
+falso.log_play = lambda *a, **k: None
+sys.modules["vinyl"] = falso
+
+alvo = "airootfs/etc/skel/.config/polybar/scripts/album.py"
+spec = _iu.spec_from_loader("albmod", _im.SourceFileLoader("albmod", alvo))
+mod = _iu.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+except SystemExit:
+    print("o album.py saiu ao ser carregado")
+    raise SystemExit(0)
+
+
+class _Sessao:
+    def __init__(self, caminho):
+        self.caminho = caminho
+
+    def snapshot(self):
+        return {"path": self.caminho}
+
+
+casos = [
+    ("https://streaming.qobuz.com/file?eid=123", True, "endereço do Qobuz"),
+    ("/nao/existe/faixa.flac", False, "arquivo que não existe"),
+    ("", False, "nada tocando"),
+    (os.path.abspath(alvo), True, "arquivo que existe"),
+]
+for caminho, esperado, nome in casos:
+    mod._session = _Sessao(caminho)
+    tem = mod.playing_path() is not None
+    if tem != esperado:
+        print("%s: playing_path devolveu %s" % (nome, mod.playing_path()))
+
+# E o rótulo do lado não pode ser lido com colchete: o lado único de uma
+# playlist já derrubou a tela cheia por isso.
+# (linhas de comentário fora: esta conferência é sobre o código, e o
+# comentário que explica o defeito cita a forma errada de propósito.)
+for n_l, linha in enumerate(open(alvo, encoding="utf-8"), 1):
+    nu = linha.split("#", 1)[0]
+    if 'side["label"]' in nu or "side['label']" in nu:
+        print("linha %d: o rótulo do lado é lido com colchete (use .get)"
+              % n_l)
+BARRAEOF
+)
+if [[ -z $barra ]]; then
+    ok "o disco da rede chega ao módulo da barra, e o lado usa .get"
+else
+    bad "o módulo do disco na barra:"
+    printf '%s\n' "$barra" | sed 's/^/      /'
+fi
+
 # ── o que conta como música é UMA lista ───────────────────────────────────
 # **Sintoma:** `stylus covers`, `stylus suggest` e o gerador de playlist não
 # achavam faixa nenhuma numa coleção em ALAC, Opus ou Vorbis — e não davam

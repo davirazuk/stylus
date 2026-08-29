@@ -58,9 +58,26 @@ def sessao():
 
 
 def playing_path():
+    """O que está tocando: um arquivo daqui OU um endereço de transmissão.
+
+    **Sintoma:** com uma playlist do Qobuz tocando, este módulo da barra
+    ficava em BRANCO. O `os.path.isfile` recusava o endereço antes de
+    qualquer outra coisa, e "LADO A · 3/5 · vira em 12 min" — que é o motivo
+    de este arquivo existir — nunca aparecia.
+
+    E o caminho já existia inteiro do outro lado: o `vinyl.resolve_album`
+    trata `http(s)://` desde sempre, achando pelo `eid=` a pasta de cache que
+    descreve a lista. Faltava só deixar o endereço CHEGAR nele. (É o mesmo
+    defeito do `set_text` que ninguém chamava no deck: as duas metades
+    prontas, o fio entre elas faltando.)
+    """
     snap = sessao().snapshot()
     path = snap.get("path") or ""
-    return path if path and os.path.isfile(path) else None
+    if not path:
+        return None
+    if path.startswith(("http://", "https://")):
+        return path
+    return path if os.path.isfile(path) else None
 
 
 def position_s():
@@ -170,7 +187,11 @@ def line():
     # "vira em" é a informação que só um disco dá. No último lado não há o que
     # virar, então vira "acaba em" — dizer "vira" ali seria mentira bonita.
     cauda = f"fim {humano(restam)}" if ultimo else f"vira {humano(restam)}"
-    return (f"%{{F{ACCENT}}}󰀥%{{F-}} {side['label'].replace('SIDE', 'LADO')} "
+    # `.get` e não `side['label']`: o lado único de uma playlist já derrubou
+    # a tela cheia por isto (§4 do CLAUDE.md). Aqui o `main` engoliria a
+    # exceção e a barra ficaria muda, que é ainda mais difícil de descobrir.
+    rotulo = (side.get("label") or "LADO").replace("SIDE", "LADO")
+    return (f"%{{F{ACCENT}}}󰀥%{{F-}} {rotulo} "
             f"%{{F{DIM}}}·%{{F-}} {pos_in_side}/{n_side} "
             f"%{{F{DIM}}}·%{{F-}} {cauda}")
 
