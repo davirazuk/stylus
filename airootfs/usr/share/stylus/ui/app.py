@@ -330,6 +330,11 @@ class NowScreen(Screen):
         # A volta do disco, acumulada. Ver o desenho: pausar pára o disco, e
         # para parar é preciso guardar onde ele estava.
         self._ang = None
+        # A retenção de picos do espectro (ver `_spectrum`): por faixa, o
+        # máximo recente. Se ficar aqui como atributo de classe, dois testes
+        # de tela dividem o mesmo estado e os picos "vazam" de um desenho
+        # para o outro.
+        self._spec_pico = None
 
     def key(self, ev):
         if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -462,9 +467,12 @@ class NowScreen(Screen):
         # corte reto no meio da imagem.
         dx = max(r.x + 20 + rm, cr.centerx - desl)
         dy = cr.centery
-        # O som do momento em três números — esta tela inteira é desenhada a
-        # partir deles, e o monitor (audio_live) já os calculou no fundo.
-        level, wave, spec = self.app.audio_now()
+        # O som do momento em quatro números — esta tela inteira é desenhada
+        # a partir deles, e o monitor (audio_live) já os calculou no fundo.
+        # O `pulse` é o transiente (o ritmo) e o `level` é a energia
+        # carregada (o volume): brilho que empurra na batida em vez de só
+        # seguir o volume médio.
+        level, wave, spec, pulse = self.app.audio_now()
 
         # ── o halo, no disco ───────────────────────────────────────────────
         # O T.halo, e não um círculo CHEIO de alfa uniforme como era antes.
@@ -477,7 +485,8 @@ class NowScreen(Screen):
         # metade da imagem, e um disco preto sobre um fundo quase preto lê
         # como buraco. A luz é o que faz dele um objeto (§5.5) — o áudio
         # empurra a partir daí, não a partir do escuro.
-        hal = T.halo(int(rm * 1.06), forca=int(150 + min(1.0, level) * 105))
+        hal = T.halo(int(rm * 1.06),
+                     forca=int(150 + (level * 0.75 + pulse * 0.25) * 105))
         s.blit(hal, (dx - hal.get_width() // 2, dy - hal.get_height() // 2))
 
         # ── o disco, girando ───────────────────────────────────────────────
@@ -512,7 +521,11 @@ class NowScreen(Screen):
         for i in range(n):
             f = i / (n - 1)
             aa = ang + (f - 0.5) * arco
-            a = int((26 + level * 44) * math.sin(f * math.pi) ** 2)
+            # Reflete o SINAL, não o volume médio: o pulso é o que passa no
+            # reflexo quando a batida chega — sem ele o brilho sobe junto com
+            # o nível e o reflexo só muda de claro para mais claro.
+            a = int((26 + (level * 0.7 + pulse * 0.3) * 44)
+                    * math.sin(f * math.pi) ** 2)
             if a <= 0:
                 continue
             pygame.draw.line(
@@ -548,12 +561,16 @@ class NowScreen(Screen):
             # Apertada e quente, não uma bolha grande e fraca: cinco
             # círculos de alfa baixo sobre o disco escuro somam um disco
             # ACINZENTADO com aresta, que é o contrário de um ponto de luz.
+            # Respira no PULSO (o transiente, a batida) e não no nível
+            # médio: é a batida que deve piscar aqui. Na pausa o pulso
+            # escorre e sobra a base — o "ainda há música".
             fr = max(5, int(rm * 0.055))
             faisca = T.rascunho(fr * 2, fr * 2, "agulha")
             for k in range(4, 0, -1):
-                pygame.draw.circle(faisca,
-                                   (*T.AMBER_GLOW, int(30 + level * 34)),
-                                   (fr, fr), int(fr * k / 4))
+                pygame.draw.circle(
+                    faisca,
+                    (*T.AMBER_GLOW, int((30 + pulse * 40) * k / 4)),
+                    (fr, fr), int(fr * k / 4))
             s.blit(faisca, (ax - fr, ay - fr))
             pygame.draw.circle(s, T.AMBER, (int(ax), int(ay)),
                                max(2, int(rm * 0.018)))
@@ -608,7 +625,7 @@ class NowScreen(Screen):
             # SINAL, e ela vale toda vez que dois textos dividem uma linha.
             T.text(s, ("acaba em " if ultimo else "vira em ") + humano(resta),
                    (r_lado.right + 24, y + 5), 22, T.TEXT_DIM, maxw=w - (r_lado.width + 24))
-            self._groove(s, pygame.Rect(x, y + 48, w, 14), frac, wave)
+            self._groove(s, pygame.Rect(x, y + 48, w, 14), frac, wave, pulse)
             y += 84
 
         if track:
@@ -684,16 +701,29 @@ class NowScreen(Screen):
 
         Um traço só, fechado — não vinte e quatro peças —, o que também o
         torna mais barato do que a coluna que ele substitui.
+
+        E ele tem RETENÇÃO: um segundo anel, mais fraco, no máximo recente de
+        cada faixa, descendo aos poucos. Sem ele o espectro desaba junto com a
+        nota e o aro inteiro "lê" igual; o pico é o eco da energia que passou,
+        e é a peça que fecha a ilusão de um instrumento. (É a mesma ideia do
+        acento no topo das barras da coluna que este anel substituiu — mudou
+        a forma, não o que ela diz.)
         """
         if level < 0.015 or spec is None or len(spec) == 0:
             return
         nb = len(spec)
+        # A retenção, por faixa: sobe com a banda e desce 3% por quadro.
+        pico = self._spec_pico
+        if pico is None or len(pico) != nb:
+            pico = self._spec_pico = [0.0] * nb
+        for i in range(nb):
+            pico[i] = max(float(spec[i]), pico[i] - 0.03)
         n = 96                      # pontos do anel: liso a 60 fps, e barato
         lado = int(rm * 2.4)
         aro = T.rascunho(lado, lado, "espectro")
         c = lado // 2
         cx_d, cy_d = centro
-        pts = []
+        pts, pts_pico = [], []
         for k in range(n):
             a = -math.pi / 2 + 2 * math.pi * k / n
             # A distância ao TOPO, de 0 (12 h) a 1 (6 h), igual dos dois
@@ -705,28 +735,38 @@ class NowScreen(Screen):
             i0 = int(f)
             i1 = min(nb - 1, i0 + 1)
             v = float(spec[i0]) + (float(spec[i1]) - float(spec[i0])) * (f - i0)
+            vp = pico[i0] + (pico[i1] - pico[i0]) * (f - i0)
             # Colado no aro, não flutuando em volta: a onda é pequena de
             # propósito. Com muita amplitude o anel perde a circunferência e
             # o disco deixa de ter silhueta — vira uma mancha com contorno.
-            r = rm * (0.99 + 0.075 * v * (0.45 + 0.55 * min(1.0, level)))
+            ganho = 0.075 * (0.45 + 0.55 * min(1.0, level))
+            r = rm * (0.99 + ganho * v)
             pts.append((c + math.cos(a) * r, c + math.sin(a) * r))
+            rp = rm * (0.99 + ganho * vp)
+            pts_pico.append((c + math.cos(a) * rp, c + math.sin(a) * rp))
         # Três passadas: larga e fraca por fora, fina e forte no meio. É o
         # jeito barato de um traço virar LUZ em vez de contorno vetorial —
         # sem desfoque, que a esta altura custaria o quadro inteiro.
         base = min(1.0, level)
+        # O eco primeiro, por baixo: um traço fino e apagado por onde a
+        # energia passou.
+        pygame.draw.lines(aro, (*T.TEXT, int(60 * (0.35 + 0.65 * base))),
+                          True, pts_pico, 1)
         for larg, alfa in ((5, 22), (3, 55), (1, 150)):
             pygame.draw.lines(aro, (*T.AMBER, int(alfa * (0.35 + 0.65 * base))),
                               True, pts, larg)
         s.blit(aro, (cx_d - c, cy_d - c))
 
-    def _groove(self, s, rect, frac, wave=None):
+    def _groove(self, s, rect, frac, wave=None, pulse=0.0):
         """Barra de progresso como sulco — e o sulco desenha a música.
 
         O traço âmbar é a própria onda dos últimos ~21 ms, lida do monitor do
         PipeWire (audio_live) — o sulco é onde o som está, é justo que o som
         o desenhe. Sem monitor (máquina sem PortAudio, teste de tela sem
         áudio) a barra volta ao traço clássico: nenhum desenho pode depender
-        de um hardware que não existe."""
+        de um hardware que não existe. A ponta da reprodução pulsa com o
+        `pulse` (o transiente) por cima do traço parado — a batida passa
+        aqui, na marca exata onde o prato está agora."""
         pygame.draw.rect(s, T.LINE, rect, border_radius=6)
         if wave is not None and len(wave) >= 2:
             y0 = rect.centery
@@ -741,8 +781,9 @@ class NowScreen(Screen):
             glow = T.rascunho(18, rect.h + 6, "sulco")
             pygame.draw.circle(glow, (*T.AMBER_GLOW, 60), (9, rect.h // 2 + 3), 8)
             s.blit(glow, (rect.x + int(rect.w * frac) - 9, rect.y - 3))
-            pygame.draw.circle(s, T.TEXT, (rect.x + int(rect.w * frac),
-                                           rect.centery), 6)
+            pygame.draw.circle(s, T.TEXT,
+                               (rect.x + int(rect.w * frac), rect.centery),
+                               6 + int(3 * (pulse or 0.0)))
 
     def _nothing(self, s, r):
         """Nada tocando: o disco parado no escuro, e onde a agulha cairia.
@@ -4361,15 +4402,22 @@ class App:
         return mon.snapshot()[0] if mon is not None else 0.0
 
     def audio_now(self):
-        """(level, wave, spectrum) do momento, prontos para desenhar.
+        """(level, wave, spectrum, pulse) do momento, prontos para desenhar.
 
-        A AGORA precisa das três peças, e pedi-las por getters separados
-        faria três snapshots no mesmo quadro. As duas matrizes são cópias
+        A AGORA precisa das quatro peças, e pedi-las por getters separados
+        faria quatro snapshots no mesmo quadro. As duas matrizes são cópias
         protegidas da thread; desenhar sem ela é meio-quadro com uma faixa
-        pela metade."""
+        pela metade.
+
+        O `pulse` é o transiente, a energia crua da batida — é o "ritmo", e
+        o `level` é o "volume". O brilho respira nos dois: volume dá peso,
+        ritmo dá vida.
+        O monitor é caro de abrir e fracassa com graça: sem ele a AGORA
+        desenha tudo menos o que respira com o som (os Nones).
+        """
         mon = audio_live.get_monitor()
         if mon is None:
-            return 0.0, None, None
+            return 0.0, None, None, 0.0
         return mon.snapshot()
 
     # ── desenho comum ──────────────────────────────────────────────────────
