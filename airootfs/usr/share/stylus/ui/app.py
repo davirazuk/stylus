@@ -1343,14 +1343,28 @@ class ShelfScreen(Screen):
                    T.TEXT_DIM, anchor="center")
             return
         if not its:
-            msg = (f'nada com "{self.query}"' if self.query
-                   else "a estante está vazia")
+            # Vazio por QUATRO motivos diferentes, e o recado errado manda a
+            # pessoa consertar o que não está quebrado: com a ordem em
+            # "favoritos" e nenhum favorito, ou com um filtro de artista sem
+            # resultado, a tela dizia "a estante está vazia" e mandava rodar
+            # `stylus library` — numa coleção de trezentos discos.
+            if self.query:
+                msg = 'nada com "%s"' % self.query
+                saida = "[esc] limpa a busca"
+            elif self.order == "favoritos":
+                msg = "nenhum disco favoritado ainda"
+                saida = ("[f] marca o disco escolhido   ·   "
+                         "[o] volta para a estante inteira")
+            elif self.artist:
+                msg = "nada de %s por aqui" % self.artist
+                saida = "[a] tira o filtro de artista"
+            else:
+                msg = "a estante está vazia"
+                saida = "`stylus library ~/Music` diz onde ela fica"
             T.text(s, msg, (r.centerx, r.centery), 26, T.TEXT_DIM,
-                   anchor="center")
-            if not self.query:
-                T.text(s, "`stylus library ~/Music` diz onde ela fica",
-                       (r.centerx, r.centery + 36), 19, T.TEXT_FAINT,
-                       anchor="center")
+                   anchor="center", maxw=r.w - 80)
+            T.frase_com_teclas(s, saida, (r.centerx, r.centery + 36), 19,
+                               T.TEXT_FAINT, anchor="center")
             return
 
         # ── cabeçalho: contagem, ordem, busca ──────────────────────────────
@@ -1465,6 +1479,10 @@ class ShelfScreen(Screen):
         # o cartão TOCANDO com capa, nome, artista e progresso; a grade tem o
         # halo âmbar atrás da capa e o nome em âmbar. Um sistema que responde
         # quatro vezes à mesma pergunta não está informando, está enchendo.
+        # A estante revarre numa thread enquanto a grade desenha: entre o
+        # `items()` do começo deste quadro e aqui, a lista pode ter
+        # encolhido. Um índice velho vira IndexError e a tela cai.
+        self.sel = max(0, min(self.sel, len(its) - 1))
         sel = its[self.sel]
         self.app.hint(
             s, r,

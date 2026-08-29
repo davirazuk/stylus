@@ -473,6 +473,59 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("teclas anunciadas", traceback.format_exc())
 
+    secao("a estante vazia diz POR QUE está vazia")
+    # **Sintoma:** com a ordem em "favoritos" e nenhum disco favoritado — ou
+    # com um filtro de artista sem resultado — a estante dizia "a estante
+    # está vazia" e mandava rodar `stylus library ~/Music`. Numa coleção de
+    # trezentos discos. O recado errado manda a pessoa consertar o que não
+    # está quebrado, e o que ela precisava era de uma tecla para desfazer o
+    # filtro que ela mesma pôs.
+    try:
+        import theme as _T
+        est = next(s for s in app.screens if s.name == "ESTANTE")
+        app._goto(app.screens.index(est))
+        _g = (est.order, est.query, est.artist)
+        vistos = []
+        o_t, o_f = _T.text, _T.frase_com_teclas
+
+        def _et(surf, txt, *a, **k):
+            vistos.append(str(txt))
+            return o_t(surf, txt, *a, **k)
+
+        def _ef(surf, txt, *a, **k):
+            vistos.append(str(txt))
+            return o_f(surf, txt, *a, **k)
+
+        casos = [
+            ("favoritos", "", None, "favoritado", "[f]"),
+            ("artista", "zzzznadaaqui", None, "zzzznadaaqui", "[esc]"),
+            ("artista", "", "Ninguém Com Esse Nome", "Ninguém", "[a]"),
+        ]
+        ruins = []
+        try:
+            for ordem, busca, artista, quer, tecla in casos:
+                est.order, est.query, est.artist = ordem, busca, artista
+                vistos.clear()
+                _T.text, _T.frase_com_teclas = _et, _ef
+                est.draw(app.surf, corpo)
+                _T.text, _T.frase_com_teclas = o_t, o_f
+                junto = " | ".join(vistos)
+                if quer not in junto or tecla not in junto:
+                    ruins.append("%s/%s/%s → %s" % (ordem, busca, artista,
+                                                    junto[:70]))
+                if "stylus library" in junto:
+                    ruins.append("%s/%s/%s manda arrumar a biblioteca"
+                                 % (ordem, busca, artista))
+        finally:
+            _T.text, _T.frase_com_teclas = o_t, o_f
+            est.order, est.query, est.artist = _g
+        if ruins:
+            bad("a estante vazia dá o recado errado", "\n".join(ruins[:3]))
+        else:
+            ok("filtro sem resultado diz qual filtro, e a tecla que o desfaz")
+    except Exception:                                       # noqa: BLE001
+        bad("a estante vazia", traceback.format_exc())
+
     secao("a pilha embaralha e muda de ordem")
     # A pilha é a ordem da NOITE, e mudá-la era coisa de esvaziar e empilhar
     # tudo de novo. Duas teclas resolvem: [e] embaralha, ←/→ sobe e desce o
