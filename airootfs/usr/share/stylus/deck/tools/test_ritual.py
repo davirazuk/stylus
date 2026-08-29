@@ -473,6 +473,55 @@ def main():
     check("o que cabe num lado só continua sendo um lado só",
           len(_um.sides) == 1)
 
+    # ── e em TODA forma de disco, não só nas quatro escolhidas a dedo ─────
+    # **Sintoma:** um disco de 90 minutos em 18 faixas de 5 saía com CINCO
+    # lados. Número ímpar é um objeto que não existe — disco tem dois lados
+    # sempre — e o teste acima já cobria 90 minutos e passava VERDE, porque
+    # ele usa faixas de 3min45 e a granularidade mais fina escondia o
+    # defeito. A causa: o alvo do equilíbrio era fixo (`total / n_lados`)
+    # com folga de 14% para baixo, então os lados fechavam cedo, o resto não
+    # cabia no último, e o teto físico cortava de novo.
+    #
+    # Uma forma escolhida a dedo prova o caso escolhido a dedo. Isto varre a
+    # grade: de 20 a 130 minutos, com faixas de 2 a 9 minutos.
+    impares, estouros, discos_errados = [], [], []
+    for minutos in range(20, 131, 5):
+        for dur_min in (2, 3, 4, 5, 7, 9):
+            n = int(minutos * 60 // (dur_min * 60))
+            if n < 1:
+                continue
+            a = _Falso([dur_min * 60.0] * n)
+            forma = "%dmin em %d faixas de %d" % (minutos, n, dur_min)
+            if len(a.sides) > 1 and len(a.sides) % 2:
+                impares.append("%s → %d lados" % (forma, len(a.sides)))
+            # O teto só vale para lado com mais de uma faixa: não se corta
+            # uma música ao meio.
+            for sd in a.sides:
+                if (len(sd["tracks"]) > 1
+                        and sd["end"] - sd["start"] > vinyl.SIDE_MAX_SECONDS + 1):
+                    estouros.append("%s → lado de %.1f min"
+                                    % (forma, (sd["end"] - sd["start"]) / 60))
+            if a.discos != max(1, (len(a.sides) + 1) // 2):
+                discos_errados.append("%s → %d lados mas %d discos"
+                                      % (forma, len(a.sides), a.discos))
+    if impares:
+        print("      %s" % "; ".join(impares[:3]))
+    check("nenhuma forma de disco dá um número ÍMPAR de lados", not impares)
+    if estouros:
+        print("      %s" % "; ".join(estouros[:3]))
+    check("e nenhum lado de várias faixas passa do teto físico", not estouros)
+    if discos_errados:
+        print("      %s" % "; ".join(discos_errados[:3]))
+    check("o número de DISCOS bate com o de lados", not discos_errados)
+
+    # Uma faixa única maior que um lado: um lado, e UM disco. O número de
+    # discos vinha do plano (quatro lados para uma hora) e não do que foi
+    # cortado de verdade — a tela escrevia "DISCO 2 · LADO A" de um disco
+    # que tem um lado só.
+    _gigante = _Falso([3600.0])
+    check("uma faixa de uma hora é um lado e um disco",
+          len(_gigante.sides) == 1 and _gigante.discos == 1)
+
     # ── faixa que não deu para medir ──────────────────────────────────────
     # **Sintoma:** uma faixa que nem o mutagen nem o ffprobe sabem ler entrava
     # com duração ZERO — e zero não é "não sei", é "não dura nada". Três

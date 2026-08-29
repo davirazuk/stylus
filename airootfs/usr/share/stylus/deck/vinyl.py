@@ -1419,50 +1419,93 @@ class Album:
             n_sides = 1
         else:
             n_sides = 2 * math.ceil(self.total / (2.0 * SIDE_MAX_SECONDS))
-        # Quantos DISCOS este álbum seria. Não é usado no corte — é o que a
-        # tela precisa para dizer "disco 2 de 2, lado C" em vez de só "LADO
-        # C", que numa caixa de quatro lados não diz onde você está.
-        self.discos = max(1, (n_sides + 1) // 2)
-        target = self.total / n_sides
-        sides, cur, cur_start = [], [], 0.0
-        for i, tr in enumerate(self.tracks):
-            end = tr["start"] + tr["duration"]
 
-            # ── 1. o teto, que é físico ───────────────────────────────────
-            # **Sintoma:** 69 dos 374 discos desta coleção tinham um lado
-            # passando dos 22 minutos, e o cabeçalho aqui em cima promete que
-            # nenhum passa. Sozinha, a regra de equilíbrio lá embaixo compara
-            # com a MÉDIA (total/n_lados) e fecha o lado DEPOIS de somar a
-            # faixa — então a última faixa entra inteira por cima do teto.
-            # Num disco de 44 minutos a média dá 22, o lado fecha aos 19, e a
-            # faixa seguinte o leva a 25.
-            #
-            # Importa porque um lado que não caberia num disco de verdade faz
-            # o aviso de virar chegar tarde, e o `stylus lado` prometer um
-            # "vira em X" de um lado que não existe.
-            #
-            # Fechar ANTES de pôr a faixa que estoura. Um lado vazio nunca
-            # fecha: uma faixa maior que o lado inteiro fica sozinha nele, que
-            # é o que acontece de verdade — não se corta uma música ao meio.
-            if cur and (end - cur_start) > SIDE_MAX_SECONDS:
-                sides.append({"start": cur_start, "end": tr["start"],
+        def cortar(quantos):
+            """Reparte as faixas em `quantos` lados. Pode devolver mais.
+
+            O teto físico (regra 1) corta quando precisa, e não pede licença
+            ao plano: um disco cujas faixas não se deixam repartir em
+            `quantos` pedaços abaixo do teto sai com mais lados do que se
+            pediu. Quem lida com isso é o laço logo abaixo.
+            """
+            sides, cur, cur_start = [], [], 0.0
+            for i, tr in enumerate(self.tracks):
+                end = tr["start"] + tr["duration"]
+
+                # ── 1. o teto, que é físico ───────────────────────────────
+                # **Sintoma:** 69 dos 374 discos desta coleção tinham um lado
+                # passando dos 22 minutos, e o cabeçalho aqui em cima promete
+                # que nenhum passa. Sozinha, a regra de equilíbrio lá embaixo
+                # compara com a MÉDIA e fecha o lado DEPOIS de somar a faixa
+                # — então a última faixa entra inteira por cima do teto. Num
+                # disco de 44 minutos a média dá 22, o lado fecha aos 19, e a
+                # faixa seguinte o leva a 25.
+                #
+                # Importa porque um lado que não caberia num disco de verdade
+                # faz o aviso de virar chegar tarde, e o `stylus lado`
+                # prometer um "vira em X" de um lado que não existe.
+                #
+                # Fechar ANTES de pôr a faixa que estoura. Um lado vazio
+                # nunca fecha: uma faixa maior que o lado inteiro fica
+                # sozinha nele, que é o que acontece de verdade — não se
+                # corta uma música ao meio.
+                if cur and (end - cur_start) > SIDE_MAX_SECONDS:
+                    sides.append({"start": cur_start, "end": tr["start"],
+                                  "tracks": cur})
+                    cur, cur_start = [], tr["start"]
+
+                cur.append(i)
+
+                # ── 2. o equilíbrio ───────────────────────────────────────
+                # Lados parecidos em vez de encher o A até a boca e deixar o
+                # B com duas músicas.
+                #
+                # O alvo é recalculado a partir do que RESTA — divida o que
+                # falta pelos lados que faltam — e não fixo em
+                # `total / n_lados`. Com o alvo fixo (e uma folga de 14% para
+                # baixo) os lados fechavam cedo, o que sobrava não cabia no
+                # último, e a regra 1 cortava de novo: um disco de 90 minutos
+                # saía com CINCO lados, que é um objeto que não existe.
+                faltam = max(1, quantos - len(sides))
+                alvo = cur_start + (self.total - cur_start) / faltam
+                if (faltam > 1
+                        and end >= alvo
+                        and (len(self.tracks) - i - 1) >= (faltam - 1)):
+                    sides.append({"start": cur_start, "end": end,
+                                  "tracks": cur})
+                    cur, cur_start = [], end
+            if cur:
+                sides.append({"start": cur_start, "end": self.total,
                               "tracks": cur})
-                cur, cur_start = [], tr["start"]
+            return sides
 
-            cur.append(i)
-
-            # ── 2. o equilíbrio ───────────────────────────────────────────
-            # Lados parecidos em vez de encher o A até a boca e deixar o B com
-            # duas músicas. Fecha quando já passou da parte dele E ainda sobra
-            # material para todos os lados seguintes.
-            faltam = max(1, n_sides - len(sides))
-            if (faltam > 1
-                    and (end - cur_start) >= target * 0.86
-                    and (len(self.tracks) - i - 1) >= (faltam - 1)):
-                sides.append({"start": cur_start, "end": end, "tracks": cur})
-                cur, cur_start = [], end
-        if cur:
-            sides.append({"start": cur_start, "end": self.total, "tracks": cur})
+        # E se o corte devolver um número ÍMPAR de lados, tente de novo
+        # pedindo o par seguinte.
+        #
+        # **Sintoma:** 45 minutos em cinco faixas de nove saía com TRÊS
+        # lados. O plano pedia dois; o teto físico não deixa três faixas de
+        # nove no mesmo lado (27 > 26), então a regra 1 cortava por conta
+        # própria e o resto sobrava num terceiro. Um plano maior deixa a
+        # regra do equilíbrio distribuir antes de o teto precisar cortar.
+        #
+        # Poucas voltas, e a última resposta vale mesmo se ainda for ímpar:
+        # há discos que simplesmente não se repartem em par abaixo do teto
+        # (uma faixa maior que um lado, por exemplo), e inventar um lado
+        # vazio para fechar a conta seria pior do que a contagem estranha.
+        sides = cortar(n_sides)
+        for _ in range(3):
+            if len(sides) <= 1 or len(sides) % 2 == 0:
+                break
+            n_sides = len(sides) + 1
+            sides = cortar(n_sides)
+        # Quantos DISCOS este álbum é — contado dos lados que EXISTEM, e não
+        # dos que foram planejados.
+        #
+        # **Sintoma:** uma faixa única de uma hora dava "DISCO 2 · LADO A".
+        # O plano pedia quatro lados (uma hora não cabe em dois), mas não se
+        # corta uma música ao meio: sobra UM lado, e um lado é um disco. O
+        # número vinha do plano e mentia sobre o objeto que está no prato.
+        self.discos = max(1, (len(sides) + 1) // 2)
         for i, s in enumerate(sides):
             s["label"] = "SIDE " + chr(ord("A") + i)
         self.sides = sides
