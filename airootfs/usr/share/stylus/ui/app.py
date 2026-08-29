@@ -3532,7 +3532,10 @@ class SettingsScreen(Screen):
 
         # O rodapé, com a altura de cada linha respeitada. Uma linha de 40px
         # ocupa ~48 na tela: escrever a próxima 46 abaixo é escrever em cima.
-        y_info = r.bottom - 152
+        #
+        # 186 e não 152: a linha de dicas mora nos últimos 34 px da tela, e
+        # com 152 a frase da agulha caía em cima dela.
+        y_info = r.bottom - 186
         T.text(s, "STYLUS", (x, y_info), 40, T.AMBER, bold=True)
         # O assunto do commit é texto de tamanho livre — corta no painel.
         T.text(s, f"build: {self._stylus_version()}", (x, y_info + 54), 16,
@@ -3556,6 +3559,15 @@ class SettingsScreen(Screen):
         else:
             jp = pygame.Rect(x, y + 20, opt_w, r.bottom - y - 100)
         self.app.job_panel(s, jp, self.job)
+        # **Esta era a única seção sem linha de dicas.** Todas as outras
+        # dizem o que as teclas fazem; justamente a que troca a pasta da
+        # coleção, o driver de vídeo e roda o atualizador não dizia nada — e
+        # duas das seis linhas dela são informação, não botão, o que torna
+        # "não aconteceu nada" um resultado ainda mais confuso.
+        cmd_sel = self.opcoes()[self.sel][1]
+        self.app.hint(s, r, "[↑][↓] anda   " + ("[enter] faz este"
+                                                if cmd_sel else
+                                                "(esta linha é só informação)"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════

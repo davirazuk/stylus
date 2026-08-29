@@ -368,6 +368,49 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("artista", traceback.format_exc())
 
+    secao("toda seção diz o que as teclas fazem")
+    # **Sintoma:** a AJUSTES não tinha linha de dicas. Todas as outras têm, e
+    # justamente a seção que troca a pasta da coleção, o driver de vídeo e
+    # roda o atualizador não dizia nada — com duas das seis linhas sendo
+    # informação e não botão, "não aconteceu nada" ao apertar ENTER era um
+    # resultado ainda mais confuso.
+    #
+    # Ler não pega: nenhuma seção é obrigada a chamar o `hint`, e a falta não
+    # é erro em lugar nenhum. A pergunta é sobre o RESULTADO: esta tela
+    # desenhou alguma TECLA — o quadradinho do `frase_com_teclas`, que é como
+    # este sistema escreve atalho — ou é uma tela vazia, que se explica
+    # sozinha pelo `T.vazio`?
+    try:
+        import theme as _T
+        original_f, original_v = _T.frase_com_teclas, _T.vazio
+        visto = {"teclas": 0, "vazio": 0}
+
+        def espia_f(*a, **k):
+            visto["teclas"] += 1
+            return original_f(*a, **k)
+
+        def espia_v(*a, **k):
+            visto["vazio"] += 1
+            return original_v(*a, **k)
+
+        _T.frase_com_teclas, _T.vazio = espia_f, espia_v
+        quadro_h = pygame.Rect(230, 0, app.W - 230, app.H)
+        mudas = []
+        for i, tela in enumerate(app.screens):
+            app._goto(i)
+            visto["teclas"] = visto["vazio"] = 0
+            tela.draw(app.surf, quadro_h)
+            if not visto["teclas"] and not visto["vazio"]:
+                mudas.append(tela.name)
+        _T.frase_com_teclas, _T.vazio = original_f, original_v
+        if mudas:
+            bad("%d seções não mostram tecla nenhuma" % len(mudas),
+                ", ".join(mudas))
+        else:
+            ok("as %d seções dizem o que as teclas fazem" % len(app.screens))
+    except Exception:                                       # noqa: BLE001
+        bad("linha de dicas", traceback.format_exc())
+
     secao("a pilha embaralha e muda de ordem")
     # A pilha é a ordem da NOITE, e mudá-la era coisa de esvaziar e empilhar
     # tudo de novo. Duas teclas resolvem: [e] embaralha, ←/→ sobe e desce o

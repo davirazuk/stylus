@@ -785,9 +785,24 @@ def passos(surf, rect, titulo, porque, lista, rodape=None):
         if fazer:
             # O comando em painel próprio: é para ser lido por alguém que vai
             # digitá-lo num terminal do outro lado do quarto.
-            cr = pygame.Rect(x + 30, y - 6, font(17).size(fazer)[0] + 24, 30)
+            #
+            # E nem todo passo é um comando: a loja do Qobuz manda "[c] entra
+            # aqui mesmo", que é uma TECLA. Ela vinha desenhada com os
+            # colchetes literais, do lado de uma interface inteira em que
+            # `[X]` vira quadradinho — a única tecla do sistema escrita como
+            # texto, e justamente numa tela cujo trabalho é dizer o que fazer
+            # agora. Quem tem marcação vira tecla; quem não tem continua
+            # sendo o comando que se digita.
+            import re as _re
+            e_tecla = bool(_re.search(r"\[[^\]]{1,6}\]", fazer))
+            larg_f = (frase_largura(fazer, 17) if e_tecla
+                      else font(17).size(fazer)[0])
+            cr = pygame.Rect(x + 30, y - 6, larg_f + 24, 30)
             panel(surf, cr, INK, radius=6, border=lerp(LINE, AMBER, 0.3))
-            text(surf, fazer, (cr.x + 12, cr.y + 6), 17, AMBER)
+            if e_tecla:
+                frase_com_teclas(surf, fazer, (cr.x + 12, cr.y + 6), 17, AMBER)
+            else:
+                text(surf, fazer, (cr.x + 12, cr.y + 6), 17, AMBER)
             y += _P_CMD
 
     if rodape:
