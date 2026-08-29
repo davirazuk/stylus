@@ -39,21 +39,29 @@ atalho() {                      # atalho <arquivo.desktop> <teclas> <nome>
     } >> "$KGSC"
 }
 
-# Meta+M/D/Q/P são a música; Meta+Esc troca de mundo. Nada disso colide com
-# atalho de fábrica do Plasma (que usa Meta sozinho, Meta+E, Meta+L…).
+# AS MESMAS TECLAS DO i3. O arquivo já dizia o porquê na linha do Meta+G —
+# "quem aprende o atalho num modo não o perde no outro" — e então quebrava a
+# regra em quatro das sete: Meta+D abria o toca-discos aqui e o menu de
+# programas lá; Meta+Escape era o modo música aqui e o btop lá; Meta+T era um
+# "Terminal" que na verdade abre o Claude Code, e no i3 o T reorganiza a
+# janela. Tecla que significa uma coisa em metade do sistema e outra na outra
+# metade é pior do que tecla nenhuma: a mão aprende e erra.
 #
-# Meta+G é a tela cheia SEM trocar de sessão, e é o mesmo Mod+G do i3 de
-# propósito: quem aprende o atalho num modo não o perde no outro.
-atalho stylus-ui.desktop         "Meta+G"      "STYLUS em tela cheia"
-atalho stylus-shelf.desktop      "Meta+M"      "Estante"
-atalho stylus-deck.desktop       "Meta+D"      "Toca-discos"
-atalho stylus-qobuz.desktop      "Meta+Q"      "Qobuz"
-atalho stylus-phone.desktop      "Meta+P"      "Celular"
+# (Só vale para quem ainda não tem a seção no kglobalshortcutsrc — o `atalho`
+# nunca reescreve o que já está lá, que é o que preserva quem remapeou.)
+atalho stylus-ui.desktop         "Meta+G"        "STYLUS em tela cheia"
+atalho stylus-shelf.desktop      "Meta+M"        "Estante"
+atalho stylus-deck.desktop       "Meta+O"        "Toca-discos"
+atalho stylus-record.desktop     "Meta+Shift+O"  "Sortear um disco"
+atalho stylus-claude.desktop     "Meta+C"        "Claude Code"
 # Antes isto apontava para stylus-mode.desktop, um interruptor sem lado: num
 # menu, "Trocar de modo" não diz se vai ligar ou desligar. Vindo do KDE só há
 # um destino que faz sentido, e agora o atalho diz qual é.
-atalho stylus-music-mode.desktop "Meta+Escape" "Modo música"
-atalho stylus-claude.desktop     "Meta+T"      "Terminal"
+atalho stylus-music-mode.desktop "Meta+Ctrl+M"   "Modo música"
+# O Qobuz e o celular perderam a tecla de propósito: eram Meta+Q e Meta+P,
+# que no i3 fecham a janela e organizam as telas — e o Meta+P é o trocador de
+# tela do próprio Plasma. Os dois são uma seção do lançador (Meta+G) e estão
+# no menu de programas; nenhum dos dois vale uma tecla que mente.
 
 # ── Konsole: o perfil Stylus como padrão ───────────────────────────────────
 # Antes isto só agia se o konsolerc JÁ falasse em Stylus — ou seja, nunca na

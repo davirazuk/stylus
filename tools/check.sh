@@ -3257,6 +3257,83 @@ else
     printf '  %s—%s sem config do i3 ou sem keybindings.txt\n' "$y" "$z"
 fi
 
+sec "a mesma tecla faz a mesma coisa nos dois modos"
+# O stylus-kde-shortcuts já dizia o porquê na linha do Meta+G — "quem aprende
+# o atalho num modo não o perde no outro" — e quebrava a própria regra em
+# quatro das sete: Meta+D abria o toca-discos no KDE e o menu de programas no
+# i3; Meta+Escape era o modo música num e o btop no outro. A mão aprende e
+# erra, e ninguém desconfia da tecla: desconfia do programa.
+saida=$(python3 - <<'DOISMODOSEOF'
+import os
+import re
+cfg = "airootfs/etc/skel/.config/i3/config"
+ksc = "airootfs/usr/local/bin/stylus-kde-shortcuts"
+apps = "airootfs/usr/share/applications"
+if not (os.path.isfile(cfg) and os.path.isfile(ksc)):
+    print("PULA sem o config do i3 ou o stylus-kde-shortcuts")
+    raise SystemExit(0)
+
+
+def programa(cmd):
+    """O comando de verdade por trás de uma linha do i3 ou de um Exec."""
+    cmd = re.sub(r"^exec\s+(--no-startup-id\s+)?", "", cmd.strip())
+    cmd = re.sub(r"^\$?termrun\s+\S+\s+|^stylus-term\s+\S+\s+", "", cmd)
+    cmd = re.sub(r'^"[^"]*"\s+', "", cmd)
+    cmd = cmd.replace("sudo ", "")
+    partes = cmd.split()
+    if not partes:
+        return ""
+    # `stylus record` e `stylus-record` são a mesma coisa para esta pergunta.
+    nome = partes[0]
+    if nome == "stylus" and len(partes) > 1 and not partes[1].startswith("-"):
+        nome = "stylus-" + partes[1]
+    return os.path.basename(nome)
+
+
+i3 = {}
+with open(cfg, encoding="utf-8") as fh:
+    for ln in fh:
+        m = re.match(r"^bindsym\s+\$mod\+(\S+)\s+(.*)$", ln)
+        if m:
+            tecla = "+".join(p.capitalize() if p.lower() in ("shift", "control", "ctrl")
+                             else p for p in m.group(1).split("+"))
+            tecla = tecla.replace("Control", "Ctrl")
+            i3.setdefault(tecla.lower(), programa(m.group(2)))
+
+problemas = []
+with open(ksc, encoding="utf-8") as fh:
+    for ln in fh:
+        m = re.match(r'^atalho\s+(\S+)\s+"Meta\+(\S+)"', ln)
+        if not m:
+            continue
+        desk, tecla = m.group(1), m.group(2).replace("Control", "Ctrl")
+        caminho = os.path.join(apps, desk)
+        if not os.path.isfile(caminho):
+            problemas.append("%s: o %s não existe" % (tecla, desk))
+            continue
+        alvo = ""
+        with open(caminho, encoding="utf-8") as dh:
+            for dl in dh:
+                if dl.startswith("Exec="):
+                    alvo = programa(dl[5:])
+                    break
+        outro = i3.get(tecla.lower())
+        if outro and alvo and outro != alvo:
+            problemas.append("Meta+%s abre %s no KDE e %s no i3"
+                             % (tecla, alvo, outro))
+if problemas:
+    print("ERRO " + " | ".join(problemas))
+else:
+    print("OK as teclas do KDE não contradizem as do i3")
+DOISMODOSEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o mesmo atalho faz coisas diferentes em cada modo"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

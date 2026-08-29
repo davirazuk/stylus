@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Sortear um disco
+GenericName=Põe um disco para tocar
+# O sorteio não é aleatório: puxa para o que faz mais tempo que não toca, com
+# um empurrãozinho conforme a hora do dia. É a resposta do sistema para "não
+# sei o que ouvir", que é o que uma estante grande faz com a gente.
+Comment=Escolhe um disco esquecido da estante e põe para tocar
+Exec=stylus record --play
+Icon=stylus
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;Player;
+Keywords=sortear;aleatório;disco;esquecido;tocar;
