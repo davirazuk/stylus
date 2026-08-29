@@ -85,11 +85,16 @@ fi
 NEW=$($SUDO git -C "$REPO_DIR" rev-parse --short HEAD)
 QUANDO=$($SUDO git -C "$REPO_DIR" log -1 --format=%cd --date=short)
 
+# O GALHO no recado, sempre. "Atualizei e a sua correção não veio" foi
+# exatamente o que aconteceu: o `--branch` estava quebrado e o comando dizia
+# "pronto" depois de trazer o código de outro galho. Consertado o defeito, o
+# recado ainda não dizia de ONDE veio o que ele trouxe — e quem tem duas
+# máquinas, ou quem experimenta um galho, não tinha como saber.
 echo
 if [[ $OLD == "$NEW" ]]; then
-    ok "o STYLUS já está no $NEW ($QUANDO)"
+    ok "o STYLUS já está no $NEW ($BRANCH, $QUANDO)"
 else
-    ok "STYLUS ${OLD:-—} → $NEW ($QUANDO)"
+    ok "STYLUS ${OLD:-—} → $NEW ($BRANCH, $QUANDO)"
     echo
     if [[ -n $OLD ]]; then
         $SUDO git -C "$REPO_DIR" log --oneline "$OLD..$NEW" 2>/dev/null | head -25 \
