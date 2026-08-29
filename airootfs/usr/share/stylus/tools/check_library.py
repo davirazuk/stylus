@@ -20,7 +20,7 @@ import re
 import sys
 from collections import defaultdict
 
-from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
+from _raiz import raiz, audio_ext, find_cover   # a coleção, a música, a capa
 
 # A lista vem do _raiz, que a pega do vinyl: havia quatro cópias dela
 # neste diretório e elas já discordavam (esta não tinha .wma).
@@ -34,7 +34,7 @@ c_red = "\033[1;31m"; c_grn = "\033[1;32m"; c_off = "\033[0m"
 
 
 def scan(root):
-    no_audio, empty, tiny, gaps = [], [], [], []
+    no_audio, empty, tiny, gaps, sem_capa = [], [], [], [], []
     albums = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -44,6 +44,20 @@ def scan(root):
         rel = os.path.relpath(dirpath, root)
         if audio:
             albums[dirpath] = audio
+            # SEM CAPA é o defeito que se VÊ. A estante, a AGORA, o deck e a
+            # notificação de disco novo mostram capa; esta ferramenta se
+            # chama "saúde da biblioteca" e era a única que não olhava para
+            # a única coisa que a pessoa enxerga o dia inteiro — enquanto o
+            # `stylus covers`, que conserta, mora na linha de baixo do menu.
+            #
+            # A pasta de CIMA também conta: um álbum de dois discos guarda as
+            # faixas em "Disc 01"/"Disc 02" e a capa no álbum. Sem isto, todo
+            # disco duplo apareceria aqui como problema.
+            if not find_cover(dirpath, filenames):
+                pai = os.path.dirname(dirpath)
+                if not (pai and pai != dirpath and os.path.isdir(pai)
+                        and find_cover(pai)):
+                    sem_capa.append(rel)
         elif rel != "." and not dirnames:
             # Pasta-folha com material de álbum e nenhuma música. Duas
             # ressalvas para não gritar à toa:
@@ -83,7 +97,7 @@ def scan(root):
         missing = [n for n in range(nums[0], nums[-1] + 1) if n not in nums]
         if missing:
             gaps.append((os.path.relpath(d, root), missing, len(nums), nums[-1]))
-    return no_audio, empty, tiny, gaps, len(albums)
+    return no_audio, empty, tiny, gaps, sem_capa, len(albums)
 
 
 def main():
@@ -95,7 +109,7 @@ def main():
         print(f"não existe: {root}", file=sys.stderr)
         return 1
 
-    no_audio, empty, tiny, gaps, n_albums = scan(root)
+    no_audio, empty, tiny, gaps, sem_capa, n_albums = scan(root)
     print(f"\n  {c_b}STYLUS — saúde da biblioteca{c_off}\n"
           f"  {c_dim}{root}{c_off}\n")
 
@@ -114,6 +128,18 @@ def main():
         for r, sz in sorted(tiny)[:40]:
             print(f"    {c_yel}!{c_off} {sz/1024:6.1f} KB  {r}")
 
+    print(f"\n  {c_b}Discos sem capa{c_off}")
+    print(f"  {c_dim}é o que você vê na estante, na tela cheia e no deck{c_off}")
+    if sem_capa:
+        for rel in sorted(sem_capa)[:40]:
+            print(f"    {c_yel}!{c_off} {rel}")
+        if len(sem_capa) > 40:
+            print(f"    {c_dim}… e mais {len(sem_capa) - 40}{c_off}")
+        print(f"    {c_dim}`stylus covers --apply` tira a capa de dentro dos "
+              f"arquivos, quando há uma lá.{c_off}")
+    else:
+        print(f"    {c_grn}✓{c_off} nenhum")
+
     print(f"\n  {c_b}Álbuns com buraco na numeração{c_off}")
     print(f"  {c_dim}pode ser download pela metade, pode ser só ter querido "
           f"essas faixas — quem sabe é você{c_off}")
@@ -127,7 +153,9 @@ def main():
 
     total = len(no_audio) + len(empty)
     print(f"\n  {c_dim}{n_albums} pastas com áudio varridas · "
-          f"{total} problema(s) claro(s) · {len(gaps)} álbum(ns) para você olhar{c_off}\n")
+          f"{total} problema(s) claro(s) · "
+          f"{len(sem_capa)} sem capa · "
+          f"{len(gaps)} álbum(ns) para você olhar{c_off}\n")
     return 0
 
 

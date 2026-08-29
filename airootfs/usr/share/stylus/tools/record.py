@@ -111,19 +111,41 @@ def main():
         corpo = " · ".join(
             f"{sd['label'].replace('SIDE','Lado')} {int((sd['end']-sd['start'])//60)}min"
             for sd in alb.sides)
-        subprocess.run(["notify-send", "--app-name=STYLUS", "--urgency=low",
-                        f"--icon={alb.cover}",
-                        "--hint=string:x-dunst-stack-tag:stylus-album",
-                        f"{alb.artist} — {alb.name}", corpo or ""],
-                       stderr=subprocess.DEVNULL)
+        try:
+            subprocess.run(["notify-send", "--app-name=STYLUS",
+                            "--urgency=low", f"--icon={alb.cover}",
+                            "--hint=string:x-dunst-stack-tag:stylus-album",
+                            f"{alb.artist} — {alb.name}", corpo or ""],
+                           stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            # Sem libnotify — por ssh, num contêiner — o `stderr=DEVNULL` não
+            # ajuda: quem estoura é o Popen, com FileNotFoundError. O comando
+            # imprimia o disco inteiro, bonito, e terminava com um traceback.
+            pass
 
     if args.ritual or args.play:
-        v = os.path.expanduser("~/.local/bin/vinyl")
-        if not os.path.isfile(v):
-            sys.exit("o lançador `vinyl` não está instalado")
-        cmd = [v, folder] + ([] if args.ritual else ["--no-scope"])
+        # O `stylus-deck`, que é quem põe disco neste sistema — a estante do
+        # rofi, o lançador e o `stylus play` todos passam por ele.
+        #
+        # **Sintoma:** aqui estava `~/.local/bin/vinyl`, um lançador que não
+        # existe em máquina nenhuma: não é instalado por este repositório e
+        # nunca foi. `stylus record --play` respondia "o lançador `vinyl` não
+        # está instalado" e parava — e o atalho `Mod+Shift+O` do i3, que é
+        # justamente "sorteia um disco e põe para tocar", roda esse comando
+        # sem terminal: apertar a tecla não fazia absolutamente nada, sem uma
+        # palavra em lugar nenhum.
+        deck = "stylus-deck"
+        for cand in ("/usr/local/bin/stylus-deck",
+                     "/usr/share/stylus/stylus-deck"):
+            if os.path.isfile(cand):
+                deck = cand
+                break
+        cmd = [deck] + ([] if args.ritual else ["--no-scope"]) + [folder]
         print(f"  {c_dim}tocando o lado inteiro, na ordem…{c_off}\n")
-        os.execv(v, cmd)
+        try:
+            os.execvp(cmd[0], cmd)
+        except OSError as e:
+            sys.exit(f"não consegui abrir o stylus-deck: {e}")
     else:
         # O disco pode ter vindo de OUTRA estante que não a de casa — a do
         # celular, montada pelo stylus webdav. Um relpath contra a raiz errada

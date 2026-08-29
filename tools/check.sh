@@ -3334,6 +3334,58 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "sortear um disco põe o disco para tocar"
+# **Sintoma:** `stylus record --play` respondia "o lançador `vinyl` não está
+# instalado" e parava. O `~/.local/bin/vinyl` não é instalado por este
+# repositório e nunca foi — era o lançador da máquina de quem escreveu. Pior:
+# o atalho `Mod+Shift+O` do i3 roda exatamente esse comando SEM terminal, e
+# apertar a tecla não fazia absolutamente nada, sem uma palavra em lugar
+# nenhum.
+#
+# Esta conferência RODA o comando com um `stylus-deck` de mentira no PATH e
+# olha o que chegou nele. Ler não pega: o caminho estava escrito com todas as
+# letras e parecia um lançador plausível.
+RECTEST=airootfs/usr/share/stylus/tools/record.py
+if [[ -f $RECTEST ]] && python3 -c 'import mutagen' 2>/dev/null; then
+    RECDIR=$(mktemp -d)
+    mkdir -p "$RECDIR/bin" "$RECDIR/casa"
+    cat > "$RECDIR/bin/stylus-deck" <<'DECKEOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$FALSO/chamou"
+DECKEOF
+    chmod +x "$RECDIR/bin/stylus-deck"
+    python3 - "$RECDIR" <<'WAVRECEOF'
+import os, struct, sys, wave
+d = os.path.join(sys.argv[1], "estante", "Artista", "Disco")
+os.makedirs(d, exist_ok=True)
+quadro = struct.pack("<h", 0) * 8000
+for i in range(1, 7):
+    with wave.open(os.path.join(d, "%02d faixa.wav" % i), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+        w.writeframes(quadro * 200)
+WAVRECEOF
+    saida=$(env PATH="$RECDIR/bin:/usr/bin:/bin" HOME="$RECDIR/casa" \
+            FALSO="$RECDIR" STYLUS_LIBRARY="$RECDIR/estante" \
+            PYTHONPATH="airootfs/usr/share/stylus/deck:airootfs/usr/share/stylus/tools" \
+            python3 "$RECTEST" --play 2>&1)
+    if [[ ! -f $RECDIR/chamou ]]; then
+        bad "\`stylus record --play\` não chegou a pôr disco nenhum:"
+        # Sem as linhas em branco e sem a lista de faixas, que é o grosso da
+        # saída: o que interessa é a última coisa que ele DISSE.
+        printf '%s\n' "$saida" | grep -vE '^\s*$|faixa' | tail -3 |
+            sed 's/^/      /'
+    elif ! grep -q "Disco" "$RECDIR/chamou"; then
+        bad "o disco sorteado não chegou ao tocador: $(tr '\n' ' ' < "$RECDIR/chamou")"
+    elif ! grep -q -- "--no-scope" "$RECDIR/chamou"; then
+        bad "--play abriu o deck com tela (era para ser --no-scope)"
+    else
+        ok "o disco sorteado chega ao stylus-deck, sem tela"
+    fi
+    rm -rf "$RECDIR"
+else
+    printf '  %s—%s sem mutagen aqui; o sorteio não foi exercitado\n' "$y" "$z"
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
