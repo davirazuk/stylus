@@ -331,6 +331,50 @@ def rotulo(lado):
     return (lado or {}).get("label", "LADO").replace("SIDE", "LADO")
 
 
+def recado(al, de, para):
+    """(título, corpo) do aviso quando o lado `de` acaba e começa o `para`.
+
+    POR QUE ISTO É UMA FUNÇÃO
+    -------------------------
+    Porque a decisão estava errada e ninguém tinha como ver. Ela morava
+    dentro do laço, e era:
+
+        ultimo = i >= len(al.sides) - 1
+        if ultimo and i == len(al.sides) - 1:   # ← a mesma coisa duas vezes
+            "vire o disco para o LADO X"
+        else:
+            "agora o LADO X"
+
+    Ou seja: só o ÚLTIMO lado mandava virar. Num LP comum de dois lados isso
+    dá certo por acidente. Num disco DUPLO, não:
+
+      · A → B  dizia "agora o LADO B", e ali você tem que virar o disco;
+      · B → C  dizia "agora o LADO C", e ali você tem que TROCAR de disco,
+               que é outro gesto e outro objeto;
+      · C → D  dizia "vire o disco", que era o único certo dos três.
+
+    A pergunta não é "este é o último lado?", é "que gesto o objeto pede
+    agora?". E o objeto responde pelo índice: lado ÍMPAR (B, D, F) é o verso
+    do disco que já está no prato — vire. Lado PAR (C, E) é o começo de
+    outro disco — troque.
+    """
+    n_sides = len(getattr(al, "sides", ()) or ())
+    anterior = al.sides[de] if 0 <= de < n_sides else None
+    titulo = "%s acabou" % rotulo(anterior)
+    nome = getattr(al, "name", "") or ""
+    if para % 2 == 1:
+        return titulo, "%s — vire o disco para o %s" % (nome, rotulo(para_lado(al, para)))
+    if para > 0 and getattr(al, "discos", 1) > 1:
+        return titulo, "%s — ponha o DISCO %d, %s" % (
+            nome, para // 2 + 1, rotulo(para_lado(al, para)))
+    return titulo, "%s — agora o %s" % (nome, rotulo(para_lado(al, para)))
+
+
+def para_lado(al, i):
+    lados = getattr(al, "sides", ()) or ()
+    return lados[i] if 0 <= i < len(lados) else None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
@@ -399,18 +443,10 @@ def main():
                 # para trás não é o disco virando, é a pessoa procurando uma
                 # faixa, e avisar ali seria puro ruído.
                 if i > olho.lado:
-                    ultimo = i >= len(al.sides) - 1
-                    anterior = al.sides[olho.lado]
-                    if ultimo and i == len(al.sides) - 1:
-                        avisar(f"{rotulo(anterior)} acabou",
-                               f"{al.name} — vire o disco para o "
-                               f"{rotulo(lado)}")
-                    else:
-                        avisar(f"{rotulo(anterior)} acabou",
-                               f"{al.name} — agora o {rotulo(lado)}")
+                    titulo, corpo = recado(al, olho.lado, i)
+                    avisar(titulo, corpo)
                     if args.pause and pausar():
-                        avisar(f"{rotulo(anterior)} acabou",
-                               f"{al.name} — pausado. Levante e vire.",
+                        avisar(titulo, f"{al.name} — pausado. Levante e vire.",
                                urgencia="critical")
             olho.lado = i
         else:

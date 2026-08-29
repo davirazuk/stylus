@@ -1102,6 +1102,89 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── o aviso do fim do lado pede o GESTO certo ─────────────────────────────
+# **Sintoma:** num disco DUPLO o aviso mandava a coisa errada em dois dos
+# três casos.
+#
+# A decisão morava dentro do laço e perguntava "este é o último lado?":
+#
+#     ultimo = i >= len(al.sides) - 1
+#     if ultimo and i == len(al.sides) - 1:      ← a mesma coisa duas vezes
+#         "vire o disco para o LADO X"
+#     else:
+#         "agora o LADO X"
+#
+# Num LP de dois lados isso acerta por acidente. Num duplo: A→B dizia "agora
+# o LADO B" (e ali se vira o disco), B→C dizia "agora o LADO C" (e ali se
+# TROCA de disco, que é outro gesto e outro objeto), e só C→D acertava.
+#
+# A pergunta certa é "que gesto o objeto pede agora?", e o objeto responde
+# pelo índice: lado ÍMPAR é o verso do que já está no prato — vire; lado PAR
+# é o começo de outro disco — troque. Isto é a tese do sistema inteiro, e
+# estava errado justamente no disco que mais precisa dela.
+sec "o aviso do fim do lado pede o gesto certo"
+gesto=$(python3 - <<'GESTOEOF'
+import importlib.machinery as _im
+import importlib.util as _iu
+import sys
+
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+spec = _iu.spec_from_loader("sw", _im.SourceFileLoader(
+    "sw", "airootfs/usr/local/bin/stylus-side-watch"))
+mod = _iu.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+except BaseException as e:                               # noqa: BLE001
+    print("não deu para carregar o stylus-side-watch: %s" % e)
+    raise SystemExit(0)
+
+
+class _Alb:
+    name = "Disco"
+
+    def __init__(self, n, discos):
+        self.sides = [{"label": "SIDE " + chr(65 + i)} for i in range(n)]
+        self.discos = discos
+
+
+# (lados, discos, índice de destino, o que TEM que aparecer no corpo)
+casos = [
+    (2, 1, 1, "vire o disco"),
+    (4, 2, 1, "vire o disco"),          # A→B: virar o disco 1
+    (4, 2, 2, "DISCO 2"),               # B→C: trocar de disco
+    (4, 2, 3, "vire o disco"),          # C→D: virar o disco 2
+    (6, 3, 4, "DISCO 3"),
+    (6, 3, 5, "vire o disco"),
+]
+for n, discos, para, esperado in casos:
+    al = _Alb(n, discos)
+    titulo, corpo = mod.recado(al, para - 1, para)
+    if esperado not in corpo:
+        print("%d lados, %s → %s: %r não tem %r"
+              % (n, al.sides[para - 1]["label"], al.sides[para]["label"],
+                 corpo, esperado))
+    esperado_t = al.sides[para - 1]["label"].replace("SIDE", "LADO") + " acabou"
+    if titulo != esperado_t:
+        print("título %r, esperado %r" % (titulo, esperado_t))
+
+# E não pode estourar com um álbum sem lados nenhum.
+class _Vazio:
+    name, sides, discos = "X", [], 1
+
+
+try:
+    mod.recado(_Vazio(), 0, 1)
+except Exception as e:                                   # noqa: BLE001
+    print("um álbum sem lados derruba o aviso: %r" % e)
+GESTOEOF
+)
+if [[ -z $gesto ]]; then
+    ok "vira o disco no lado ímpar, troca de disco no par"
+else
+    bad "o aviso do fim do lado manda a coisa errada:"
+    printf '%s\n' "$gesto" | sed 's/^/      /'
+fi
+
 # ── unidade de usuário que ninguém liga ───────────────────────────────────
 # **Sintoma:** o scrobbler do last.fm e o botão do fone não existiam. Não
 # "não funcionavam": não SUBIAM. As duas unidades estavam escritas em
