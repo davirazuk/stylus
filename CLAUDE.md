@@ -427,6 +427,69 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   largo, e o nome do aparelho entrava por cima — só em quem tem placa de nome
   comprido. Meça com `T.largura`. O `test_ui.py` espiona todo `T.text` e
   reclama de retângulos que se cruzam.
+- **"O outro lado resolve" e ninguém escreveu a resolução.** O agente do
+  celular escreve a quarta coluna do scrobble — a PASTA — vazia de propósito,
+  com um comentário dizendo "o PC resolve para a pasta dele". Essa resolução
+  nunca existiu: as linhas iam para o `plays.tsv` com pasta vazia, que não é
+  disco nenhum, e com o carimbo de AGORA em vez do do celular. E o comando
+  terminava com "memória da coleção atualizada". É a família do `set_text`:
+  a peça está lá, o fio não — e aqui o fio estava até DESCRITO no comentário
+  do outro lado.
+- **Agrupar por NOME o que sobra descarta o que sobra.** No plano de
+  sincronia do celular, o que não casou com nada do outro lado era agrupado
+  por nome de arquivo e só o melhor de cada grupo ia: de duas faixas
+  chamadas "01 - Intro.flac", em álbuns diferentes, uma sumia sem aparecer em
+  lista nenhuma. Agrupar por nome é a resposta certa para a pergunta "qual
+  dos meus é AQUELE do outro lado?" e a errada para "o que falta lá?" — na
+  segunda não há ambiguidade nenhuma para resolver.
+- **Comparar nome de arquivo com maiúscula descarta meia coleção.** Um acervo
+  passado por um Windows guarda `Folder.jpg` e `Cover.jpg`: o deck ficava sem
+  capa NENHUMA e a estante caía no "primeira imagem em ordem alfabética", que
+  ali é `AlbumArtSmall.jpg` ou `Back.jpg`. Eram cinco listas de nome de capa,
+  e discordavam entre si — a mesma doença das seis listas de extensão. A
+  resposta é uma só: `vinyl.find_cover` (e o `_raiz.find_cover` para as
+  ferramentas).
+- **Tela medida VAZIA não é tela medida.** As duas lojas eram exercitadas com
+  `results` em [] — sem rede é o que acontece — então a grade, que é a tela
+  inteira das duas, nunca tinha sido medida nem apertada por ninguém. Com
+  disco dentro apareceram quatro colisões na primeira volta. É a mesma lição
+  da AGORA com o prato vazio, e a mesma da estante de mentira com dois discos
+  de nome curto: "Abbey Road" cabe em qualquer canto.
+- **Ao medir o desenho, o RECORTE conta.** As grades desenham a fileira que
+  está meio para fora e deixam o pygame cortar. Medindo o retângulo cru, a
+  conferência acusou 182 textos "fora da tela" que na tela não aparecem — e
+  uma conferência que grita sobre o que está certo é uma que se aprende a
+  ignorar. Idem o painel de saída e o formulário, que são desenhados POR CIMA
+  de propósito: feche-os antes de medir colisão.
+- **`read` sem terminal volta na hora, vazio.** O `stylus webdav sozinho` roda
+  como serviço: o `read` da senha voltava vazio e o `rclone config create`
+  logo abaixo reescrevia o remoto SEM a senha guardada — apagando a que
+  estava lá. Montava na primeira vez e nunca mais, com 401 inclusive à mão.
+  Onde não há terminal, não pergunte: use o que já está guardado, ou pare com
+  um recado.
+- **Metade do sistema seguia o `XDG_CONFIG_HOME` e metade não.** Quem ESCREVE
+  a configuração do STYLUS usa `~/.config` literal (o vinyl, o `stylus-mode`,
+  o `stylus-wallpaper`, o `stylus-scrobble`); cinco leitores montavam o
+  caminho com a variável. Numa máquina que a define, montar o celular não
+  punha nada na estante, o scrobbler nunca subia e o papel de parede
+  escolhido era trocado por cima. Dois lugares para a mesma coisa, e a metade
+  que ninguém lê some em silêncio.
+- **Campo escrito e nunca lido LÊ como recurso que existe.** O `Deck` tinha
+  `side_index`, `pending_side` e `message` — que parecem o encanamento do
+  aviso de virar o lado, a tese do projeto — e nenhum dos três era lido em
+  lugar nenhum. Estado morto com nome de recurso é pior do que estado nenhum:
+  da próxima vez alguém liga o fio no lugar errado.
+- **A mesma tecla com dois significados nos dois modos.** O
+  `stylus-kde-shortcuts` escrevia a regra ("quem aprende o atalho num modo não
+  o perde no outro") e a quebrava em quatro das sete teclas: Meta+D abria o
+  toca-discos no KDE e o menu de programas no i3. A mão aprende e erra, e
+  ninguém desconfia da tecla — desconfia do programa.
+- **Ferramenta de medir que não enxerga o tocador do sistema.** O `stylus
+  audio` perguntava por MPRIS qual arquivo estava tocando, e o deck e o
+  lançador tocam com mpv por SOCKET. Quem punha um disco e ia conferir o
+  caminho do sinal recebia "nada tocando — ponha um disco e rode de novo".
+  Quem pergunta o que está tocando pergunta ao socket primeiro; foi o mesmo
+  defeito do módulo do disco na barra.
 
 ---
 
@@ -606,6 +669,31 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   achou de cara uma divisão por zero no rastro do sulco (`passos` valia 0 e
   o laço dividia por ele). Custa nada e cobre os três momentos em que a
   agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
+
+### Décima leva (a outra metade da coleção, e as listas que discordavam)
+- **A metade que mora no celular:** faixa com nome repetido nunca era
+  sincronizada, o que você ouviu no celular não chegava à memória da coleção,
+  `--deep` era aceito e nunca lido, o `remote_root` varria o aparelho inteiro
+  em toda execução, duas playlists de mesmo nome viravam uma só lá, e montar
+  o celular de novo apagava a senha do WebDAV. Ver as lições na §4.
+- **A capa vinda do Windows.** Cinco listas de nome de capa, duas delas
+  comparando maiúscula. Agora é o `vinyl.find_cover`, e o `check.sh` recusa a
+  sexta cópia — lendo só linha de código, porque a versão anterior desta
+  família casava com o próprio comentário que a explicava.
+- **As duas lojas eram medidas vazias**, e com disco dentro se sobrepunham em
+  quatro lugares. O teste agora enche as duas antes da varredura de teclado e
+  da medição, e a estante de mentira ganhou dois discos de nome comprido —
+  foi assim que apareceu o "posto há 11 meses" por baixo do nome do disco no
+  DIÁRIO.
+- **A configuração do STYLUS voltou a morar num lugar só** (§4), e o `stylus
+  audio` passou a enxergar o tocador do sistema.
+- **Estado morto** no Deck, no ritual, no lançador e no cache de miniaturas.
+- **Os atalhos:** o `Mod+Shift+O`, que sorteia um disco, não estava escrito em
+  lugar nenhum; e o KDE deixou de contradizer o i3 em quatro teclas.
+- Conferências novas: o plano de sincronia, o registro do celular, a senha do
+  WebDAV, a capa (onze casos), a sexta lista de capa, o caminho do sinal, a
+  configuração fora do lugar, o estado morto, o atalho não documentado e a
+  mesma tecla nos dois modos.
 
 ### Nona leva (texto, custo e o celular)
 - **"1 faixas" em quinze lugares**, e o `ha_quanto` com o mesmo defeito em
