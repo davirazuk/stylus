@@ -774,6 +774,19 @@ def main():
         cena.album, cena._side = _antes_al, _antes_side
         check("num disco duplo, o fim do lado B manda TROCAR de disco",
               _esq_dup == "LADO B acabou — ponha o DISCO 2, LADO C")
+        # E um disco de UM lado só — que é toda playlist do Qobuz, com o
+        # lado "CONTÍNUO" — não tem para onde virar. O deck dizia "CONTÍNUO
+        # acabou — agora o CONTÍNUO": o mesmo lado duas vezes, porque o `i` e
+        # o `i-1` são o mesmo quando só existe um.
+        _cont = vinyl.Album.__new__(vinyl.Album)
+        _cont.sides = [{"label": "CONTÍNUO"}]
+        _cont.tracks = _alb_falso.tracks
+        _cont.discos = 1
+        cena.album, cena._side = _cont, 0
+        _esq_cont = cena.legendas({})[0]
+        cena.album, cena._side = _antes_al, _antes_side
+        check("num lado só, não há o que virar — ele diz que acabou",
+              _esq_cont == "o disco acabou")
         check("um recado de ESTADO fica na tela",
               cena.caption_is_state() is True)
 

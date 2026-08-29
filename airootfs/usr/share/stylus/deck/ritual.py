@@ -590,12 +590,19 @@ class RitualScene:
             # própria e este aqui mandava "vire o disco" mesmo quando o
             # objeto pedia TROCAR de disco (o lado B→C de um duplo).
             i = self._side or 0
+            # Um disco de UM lado só — que é toda playlist do Qobuz, com o
+            # lado "CONTÍNUO" — não tem para onde virar. Sem esta guarda o
+            # deck dizia "CONTÍNUO acabou — agora o CONTÍNUO", que é o mesmo
+            # lado duas vezes: o `i` e o `i-1` são o mesmo quando só existe
+            # um. Dado que falta pode virar "LADO"; não pode virar bobagem.
+            if i <= 0 or len(self.album.sides or ()) < 2:
+                return ("o disco acabou", None)
             try:
                 gesto = self.album.gesto_do_lado(i)
             except Exception:                              # noqa: BLE001
                 gesto = "agora o %s" % self.lado_rotulo(i)
             return ("%s acabou — %s"
-                    % (self.lado_rotulo(max(0, i - 1)), gesto), None)
+                    % (self.lado_rotulo(i - 1), gesto), None)
         if self.deck.phase==vinyl.STOP: return ("o disco acabou", None)
         if ban: return (ban[0] or None, ban[1] or None)
         return (None, self.faixa_agora(snap))
