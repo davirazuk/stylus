@@ -364,6 +364,16 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   a desenhar `[c]` como TECLA e não como colchete literal, e a estante passou
   a anunciar o `[r]` (sorteia) e o `[f]` (favorito), que existiam desde
   sempre e não apareciam em lugar nenhum.
+- **O `track_index_for` passou a preferir o CAMINHO ao número também sob
+  mpv.** Embaralhar reordena a lista, e o `playlist-pos` deixa de ser a faixa
+  do disco: o nome na AGORA, o LADO, o "vira em 6 min", a agulha no sulco e o
+  índice da agulha.tsv saíam todos errados juntos. O número continua sendo a
+  resposta quando o caminho não casa (disco da rede reassinado).
+- **O `Nx` do diário vinha da estante**, que conta uma vez na varredura: a
+  linha mais nova da tela com o número mais velho dela. E como a fileira de
+  capas "OS QUE VOLTAM" filtra por esse número, ela não desenhava NADA — meia
+  página faltando sem aviso. Agora a contagem sai do registro que a própria
+  tela acabou de ler.
 
 ### Futuras Melhorias
 - **Ritual vinyl:** o rework do composto CRT (disco como OBJETO, `u_disc`/
