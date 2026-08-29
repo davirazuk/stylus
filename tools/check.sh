@@ -1102,6 +1102,63 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── o celular reparte o disco como o computador ───────────────────────────
+# **Sintoma:** o MESMO disco saía com lados diferentes nos dois lados do
+# sistema, e o "vira em X" dizia coisas diferentes. O celular tinha uma regra
+# própria — teto de 22 minutos (aqui são 26) e enchia cada lado até a boca —
+# que ainda por cima podia dar um número ÍMPAR de lados, que é um objeto que
+# não existe.
+#
+# A coleção é a mesma dos dois lados, e a promessa do sistema é que ela SE
+# PARECE a mesma. Agora o `buildSides` do VinylActivity.kt é a transliteração
+# do `Album._build_sides`, conferida contra ele em 192 formas de disco antes
+# de entrar.
+#
+# ATENÇÃO: nada neste repositório COMPILA o app do celular — não há gradle no
+# check.sh nem na construção da nuvem. O que dá para conferir daqui é que os
+# NÚMEROS e as peças da lei continuam os mesmos; a sintaxe não.
+sec "o celular reparte o disco como o computador"
+cel=$(python3 - <<'CELEOF'
+import pathlib
+import re
+import sys
+
+kt = pathlib.Path(
+    "android/app/src/main/kotlin/io/stylus/player/VinylActivity.kt")
+if not kt.is_file():
+    raise SystemExit(0)
+fonte = kt.read_text(encoding="utf-8")
+
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+import vinyl                                              # noqa: E402
+
+# O teto, em minutos, dos dois lados.
+m = re.search(r"sideMaxMs\s*=\s*(\d+)\s*\*\s*60\s*\*\s*1000L", fonte)
+if m is None:
+    print("não achei o teto do lado no VinylActivity.kt")
+else:
+    daqui = int(vinyl.SIDE_MAX_SECONDS // 60)
+    de_la = int(m.group(1))
+    if de_la != daqui:
+        print("o teto do lado é %d min no celular e %d min aqui"
+              % (de_la, daqui))
+
+# As duas peças da lei que o celular não tinha.
+if "nSides = " not in fonte or "2 *" not in fonte:
+    print("o celular não arredonda o número de DISCOS (lados em par)")
+if "sides.size % 2 == 1" not in fonte:
+    print("o celular não refaz o corte quando dá um número ímpar de lados")
+if "total - curStart" not in fonte:
+    print("o alvo do equilíbrio no celular não vem do que RESTA")
+CELEOF
+)
+if [[ -z $cel ]]; then
+    ok "o teto do lado e a lei do corte são os mesmos nos dois lados"
+else
+    bad "o celular reparte o disco de outro jeito:"
+    printf '%s\n' "$cel" | sed 's/^/      /'
+fi
+
 # ── o aviso do fim do lado pede o GESTO certo ─────────────────────────────
 # **Sintoma:** num disco DUPLO o aviso mandava a coisa errada em dois dos
 # três casos.

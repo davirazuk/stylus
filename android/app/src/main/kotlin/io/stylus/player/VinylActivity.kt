@@ -193,21 +193,7 @@ class VinylActivity : AppCompatActivity() {
                         }
                         else -> 0L
                     }
-                    val sideMaxMs = 22 * 60 * 1000L
-                    val sides = mutableListOf<Pair<Long, Long>>()
-                    var curStart = 0L; var curDur = 0L
-                    for (t in tracks) {
-                        if (curDur + t.duration > sideMaxMs && curDur > 0) {
-                            sides.add(curStart to curStart + curDur)
-                            curStart += curDur; curDur = 0L
-                        }
-                        curDur += t.duration
-                    }
-                    if (curDur > 0) sides.add(curStart to curStart + curDur)
-                    if (sides.isEmpty()) {
-                        var tot = 0L; for (tt in tracks) tot += tt.duration
-                        sides.add(0L to maxOf(1L, tot))
-                    }
+                    val sides = buildSides(tracks.map { it.duration })
                     var sideStart = sides[0].first; var sideEnd = sides[0].second
                     for ((s, e) in sides) {
                         if (posMs in s until e) { sideStart = s; sideEnd = e; break }
@@ -1104,6 +1090,85 @@ class VinylActivity : AppCompatActivity() {
         glView.onPause()
         glView.removeCallbacks(frameCallback)
         player?.pause()
+    }
+
+    /**
+     * Reparte as faixas em LADOS — a mesma lei do `vinyl.Album._build_sides`
+     * do computador.
+     *
+     * POR QUE ISTO MUDOU
+     * ------------------
+     * O que havia aqui era uma regra própria e diferente: teto de 22 minutos
+     * (o computador usa 26) e enchia cada lado até a boca. Duas
+     * consequências, e as duas o usuário vê:
+     *
+     *  - o MESMO disco saía repartido de um jeito no celular e de outro no
+     *    computador, com "vira em X" diferente nos dois. A coleção é a mesma
+     *    dos dois lados, e a promessa do sistema é que ela SE PARECE a mesma;
+     *  - e podia dar um número ÍMPAR de lados, que é um objeto que não
+     *    existe: disco tem dois lados sempre, e disco duplo tem quatro.
+     *
+     * A lei, então, igual à do computador: o número de DISCOS é que se
+     * arredonda para cima; o alvo do equilíbrio é recalculado a partir do que
+     * RESTA (o que falta dividido pelos lados que faltam), senão um corte
+     * forçado pelo teto empurra o excesso até estourar num lado a mais; e um
+     * resultado ímpar é refeito pedindo o par seguinte.
+     *
+     * ATENÇÃO: nada neste repositório COMPILA o app do celular — não há
+     * gradle no check.sh nem na construção da nuvem. O que o check.sh
+     * confere é que o teto daqui é o mesmo do vinyl.py.
+     */
+    private fun buildSides(durs: List<Long>): List<Pair<Long, Long>> {
+        val sideMaxMs = 26 * 60 * 1000L
+        var total = 0L
+        for (d in durs) total += d
+        if (total <= 0L) return listOf(0L to 1L)
+
+        var nSides = if (total <= sideMaxMs) 1
+                     else 2 * (((total + 2L * sideMaxMs - 1L) / (2L * sideMaxMs)).toInt())
+
+        var sides = cutSides(durs, total, nSides, sideMaxMs)
+        var tries = 0
+        while (tries < 3 && sides.size > 1 && sides.size % 2 == 1) {
+            nSides = sides.size + 1
+            sides = cutSides(durs, total, nSides, sideMaxMs)
+            tries++
+        }
+        if (sides.isEmpty()) sides = mutableListOf(0L to maxOf(1L, total))
+        return sides
+    }
+
+    /** Um corte em `nSides` lados. Pode devolver mais: o teto é físico. */
+    private fun cutSides(
+        durs: List<Long>, total: Long, nSides: Int, sideMaxMs: Long
+    ): MutableList<Pair<Long, Long>> {
+        val sides = mutableListOf<Pair<Long, Long>>()
+        var curStart = 0L
+        var curCount = 0
+        var start = 0L
+        for (i in durs.indices) {
+            val end = start + durs[i]
+            // 1. o teto, que é físico: fecha ANTES de pôr a faixa que
+            //    estoura. Um lado vazio nunca fecha — não se corta uma
+            //    música ao meio.
+            if (curCount > 0 && end - curStart > sideMaxMs) {
+                sides.add(curStart to start)
+                curStart = start
+                curCount = 0
+            }
+            curCount++
+            // 2. o equilíbrio, com o alvo vindo do que RESTA.
+            val faltam = maxOf(1, nSides - sides.size)
+            val alvo = curStart + (total - curStart) / faltam
+            if (faltam > 1 && end >= alvo && (durs.size - i - 1) >= (faltam - 1)) {
+                sides.add(curStart to end)
+                curStart = end
+                curCount = 0
+            }
+            start = end
+        }
+        if (curCount > 0) sides.add(curStart to total)
+        return sides
     }
 
     override fun onDestroy() {
