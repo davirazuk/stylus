@@ -141,7 +141,24 @@ if [[ -d $SKEL ]]; then
             if [[ ! -e $alvo ]]; then
                 mkdir -p "$(dirname "$alvo")"
                 cp -a --no-preserve=ownership "$novo" "$alvo"
-                chown -R "$usuario": "$(dirname "$alvo")" 2>/dev/null || true
+                # O arquivo e as pastas ATÉ ele, uma a uma — não um
+                # `chown -R` na pasta de cima.
+                #
+                # **Sintoma:** o /etc/skel tem seis arquivos na RAIZ da casa
+                # (.bashrc, .xinitrc, .dialogrc…). Para qualquer um deles que
+                # ainda não existisse, o `dirname` é a casa inteira, e o
+                # `chown -R` saía andando por ela: a coleção de música com
+                # cem mil arquivos, os caches, o .git de quem clonou o
+                # repositório — e o celular montado por WebDAV, atravessado
+                # arquivo por arquivo pela rede. Minutos de espera no meio de
+                # um `stylus-update`, sem uma linha na tela dizendo o que
+                # estava acontecendo.
+                chown "$usuario": "$alvo" 2>/dev/null || true
+                d=$(dirname "$alvo")
+                while [[ $d == "$casa"/* ]]; do
+                    chown "$usuario": "$d" 2>/dev/null || true
+                    d=$(dirname "$d")
+                done
                 continue
             fi
             cmp -s "$novo" "$alvo" && continue

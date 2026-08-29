@@ -3658,6 +3658,33 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "o sync não sai andando pela casa inteira"
+# **Sintoma:** o /etc/skel tem seis arquivos na RAIZ da casa (.bashrc,
+# .xinitrc, .dialogrc…). Para qualquer um deles que ainda não existisse, o
+# `chown -R "$usuario": "$(dirname "$alvo")"` do sync.sh recebia a CASA
+# inteira: ele saía andando pela coleção de música com cem mil arquivos, pelos
+# caches, pelo .git de quem clonou o repositório — e pelo celular montado por
+# WebDAV, atravessado arquivo por arquivo pela rede. Minutos de espera no meio
+# de um `stylus-update`, sem uma linha na tela dizendo o que era.
+#
+# A regra: `chown -R` no sync.sh só sobre caminho ESCRITO (uma pasta nossa,
+# pequena e conhecida), nunca sobre um `dirname` calculado.
+SYNC=airootfs/usr/share/stylus/sync.sh
+if [[ -f $SYNC ]]; then
+    ruim=$(grep -n 'chown -R' "$SYNC" | grep -v '^\s*#' | grep 'dirname' || true)
+    if [[ -z $ruim ]]; then
+        # E o /etc/skel tem MESMO arquivo na raiz? Se um dia não tiver, a
+        # conferência continua valendo — mas é bom o motivo estar à vista.
+        n=$(find airootfs/etc/skel -maxdepth 1 -type f | wc -l)
+        ok "nenhum chown -R sobre pasta calculada ($n arquivos na raiz do skel)"
+    else
+        bad "chown -R sobre uma pasta calculada (pode ser a casa inteira):"
+        printf '%s\n' "$ruim" | sed 's/^/      /'
+    fi
+else
+    printf '  %s—%s sem o sync.sh\n' "$y" "$z"
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
