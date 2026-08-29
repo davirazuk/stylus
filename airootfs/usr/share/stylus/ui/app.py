@@ -1320,21 +1320,18 @@ class ShelfScreen(Screen):
                         abaixo=self.scroll + view_h < total_h - 2)
         s.set_clip(old)
 
-        # Now-playing bar — thin amber strip at the bottom if music is playing
-        snap = self.app.playing.session.snapshot()
-        if snap.get("path") or snap.get("source") != "none":
-            bar_h = 36
-            bar = pygame.Rect(r.x, r.bottom - bar_h - 48, r.w, bar_h)
-            pygame.draw.rect(s, T.INK_LIFT, bar, border_radius=8)
-            pygame.draw.rect(s, T.AMBER_DIM, bar, 1, border_radius=8)
-            np_title = snap.get("title", "") or ""
-            np_artist = snap.get("artist", "") or ""
-            if np_title:
-                label = f"▶ {np_artist} — {np_title}" if np_artist else f"▶ {np_title}"
-                T.text(s, label, (bar.x + 14, bar.centery - 9), 16, T.AMBER, maxw=bar.w - 100)
-            T.text(s, "enter = ver o disco", (bar.right - 14, bar.centery - 9), 14,
-                   T.TEXT_FAINT, anchor="topright")
-
+        # ── a tarja de "tocando agora" saiu daqui ─────────────────────────
+        # Havia uma faixa âmbar atravessando o rodapé com "▶ artista —
+        # faixa" e, à direita, "enter = ver o disco".
+        #
+        # Duas coisas erradas com ela. A primeira é que ENTER na estante PÕE
+        # o disco escolhido — a linha de dicas logo abaixo diz isso com todas
+        # as letras — então a tarja anunciava um atalho que faz outra coisa,
+        # a dois centímetros de quem diz a verdade. A segunda é que ela virou
+        # a QUARTA resposta para a mesma pergunta na mesma tela: o trilho tem
+        # o cartão TOCANDO com capa, nome, artista e progresso; a grade tem o
+        # halo âmbar atrás da capa e o nome em âmbar. Um sistema que responde
+        # quatro vezes à mesma pergunta não está informando, está enchendo.
         sel = its[self.sel]
         self.app.hint(
             s, r,

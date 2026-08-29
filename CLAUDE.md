@@ -293,6 +293,36 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   acontece de verdade, o que é o caso do contêiner Arch da construção na
   nuvem. Ela ficava vermelha dizendo que o argumento se perdia. Baixe para o
   `nobody` (`setpriv`) antes de executar qualquer coisa que peça root.
+- **Peça escrita numa lista e ausente da outra é invisível, não quebrada.**
+  A polybar tinha `[module/webdav]` inteiro — script próprio, verde quando o
+  celular está montado, com a contagem de pastas — e ele não estava em
+  NENHUMA das três linhas `modules-*`. A barra nunca o desenhou; quem rodava
+  `stylus webdav` não tinha na tela nenhuma confirmação de que deu certo. O
+  `[module/xwindow]` idem. É a mesma família do `stylus-welcome` que o i3
+  abria e nunca existiu, e do `set_text` que ninguém chamava no deck: ler um
+  arquivo por vez não pega nada, porque o defeito só existe na RELAÇÃO entre
+  as duas listas. Quando duas listas se referem uma à outra, confira as duas
+  direções.
+- **Ícone que não existe é um espaço, e um espaço não parece defeito.** Três
+  módulos internos da barra (volume, mudo, data) tinham `format-prefix` com
+  dois ESPAÇOS e uma cor de ícone. Os módulos de script trazem o ícone de
+  dentro; os internos não têm de onde tirar. O pior era o do mudo: o aviso
+  mais importante da barra existia como um vermelho sem forma.
+- **O sistema tinha DOIS terminais com paletas diferentes.** O alacritty (i3)
+  usa o `palette`; o Konsole que o `stylus-switch-kde` escreve usava um
+  esquema de origem desconhecida — azul 0,102,204 onde a paleta diz
+  91,206,250. A conferência da paleta não pegava porque varre o `/etc/skel` e
+  compara HEXADECIMAL, e aquilo mora num heredoc do `/usr/local/bin` em
+  R,G,B decimal. Dois formatos e dois lugares é onde a deriva se esconde. (E
+  `Color8..15` não são chaves do Konsole — as claras se chamam
+  `Color0Intense`; as oito que estavam lá nunca foram lidas.)
+- **Número fixo de largura no desenho é sempre a tela de quem escreveu.** Em
+  um dia: a grade dos JOGOS somava 940 px num corpo de 1645 (setecentos de
+  nada à direita, e dois rótulos cortados dentro dos quadros estreitos); o
+  painel de saída da AJUSTES tinha `min(340, …)` com 660 px vazios ao lado; o
+  calendário do DIÁRIO parava trezentos pixels antes da lista que acompanha;
+  o disco da tela cheia empurrava o nome da faixa para fora da tela. Nenhum
+  estoura. Todos leem como página montada para outro monitor.
 - **Folga fixa entre dois textos na mesma linha sempre quebra na máquina do
   outro.** O `- 300` reservado para o valor à direita não cabia o valor mais
   largo, e o nome do aparelho entrava por cima — só em quem tem placa de nome
@@ -420,6 +450,34 @@ reação ao som, mais luz com propósito — nunca mais realismo.
 - **A PILHA mede o compromisso**: empilhar lê o disco numa thread e a linha
   passa a dizer "45 min · 2 lados", com o total da noite no rodapé — que era
   uma frase escrita atrás de um `if` que nunca foi verdade.
+
+### Quarta leva (o disco na tela toda, e o resto do sistema)
+- **A AGORA ganhou `[f]`: o disco ocupando a tela inteira**, sem trilho e sem
+  coluna — o deck sem OpenGL, sem venv e sem janela. É a resposta à pergunta
+  "por que não jogar fora o deck e pôr tudo no lançador?": quase tudo já
+  cabe. O que NÃO cabe é a cerimônia (spinup → cue → drop) e o braço
+  descendo, que é o ritual e a §5.5 chama de sagrado. Enquanto isso não
+  estiver aqui, o deck continua sendo o lugar dele.
+- **O tamanho grande revelou três defeitos do desenho do disco** que só
+  existiam nele: o texto caindo fora da tela, os cinco anéis âmbar dos
+  intervalos virando curva de nível, e os sessenta sulcos FIXOS virando alvo
+  de tiro. Ver a lição do número fixo na §4.
+- **A agulha ganhou o sulco em que anda**, aceso fraco, com o rastro do
+  pedaço que acabou de passar — em segmentos, porque pontos com o
+  espaçamento do arco leem como tracejado de desenho técnico.
+- **Quatro telas do lançador paravam de usar a tela na metade dela** (JOGOS,
+  AJUSTES, DIÁRIO, ESTANTE). Mesma lição.
+- **A ESTANTE tinha QUATRO respostas para "o que está tocando"** na mesma
+  tela — o cartão do trilho, o halo atrás da capa, o nome em âmbar e uma
+  tarja no rodapé que ainda anunciava um atalho errado ("enter = ver o
+  disco", quando ENTER ali PÕE o disco). A tarja saiu.
+- **A barra e o KDE tinham peça escrita e nunca desenhada**, e o `check.sh`
+  ganhou duas conferências novas para isso: todo `[module/…]` da polybar tem
+  que estar numa linha `modules-*`, e as 18 cores do Konsole têm que ser as
+  do alacritty.
+- **O `stylus-switch-kde` escrevia uma segunda versão do GTK** por cima da do
+  `/etc/skel`: trocar para o KDE mudava o corpo da letra de 10 para 11 e
+  apagava o `gtk-application-prefer-dark-theme`.
 
 ### Futuras Melhorias
 - **Ritual vinyl:** o rework do composto CRT (disco como OBJETO, `u_disc`/
