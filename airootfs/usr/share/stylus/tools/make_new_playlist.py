@@ -29,13 +29,15 @@ import datetime
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
 
 LIB = raiz()
 # Era um subdiretório com o nome da coleção de uma pessoa; a coleção é a
 # raiz configurada, seja qual for.
 ROOT = LIB
-AUDIO_EXT = (".flac", ".mp3")
+# Era `(".flac", ".mp3")`: numa coleção em ALAC ou Opus esta ferramenta
+# montava uma playlist VAZIA e não dizia por quê. Ver o _raiz.
+AUDIO_EXT = audio_ext()
 
 
 def track_num(path):

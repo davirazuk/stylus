@@ -39,9 +39,16 @@ from mutagen.flac import FLAC, Picture
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, USLT, error as id3error
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
 
 ROOT = raiz()
+TODOS = audio_ext()          # o que é música (ver o _raiz)
+# O que esta ferramenta sabe ESCREVER — que é outra pergunta. Ela grava capa
+# e letra dentro do arquivo, e as duas rotinas que fazem isso (`read_state` e
+# o que vem depois) só existem para o FLAC e o MP3. Widenar esta lista sem
+# escrever as rotinas seria prometer um conserto que não acontece; o que ela
+# faz é DIZER quantas faixas ficaram de fora, no fim.
+ESCREVIVEIS = (".flac", ".mp3")
 COVER_NAMES = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg")
 UA = {"User-Agent": "stylus-tool/1.0"}
 LRCLIB_DELAY = 0.25          # be polite to a free community API
@@ -114,9 +121,19 @@ def main(apply=False, fetch=True, root=None):
     scanned = 0
     root = root or ROOT
 
+    ignorados = set()
     for dirpath, _dn, filenames in os.walk(root):
         audio_files = sorted(f for f in filenames
-                             if f.lower().endswith((".flac", ".mp3")))
+                             if f.lower().endswith(ESCREVIVEIS))
+        # O que é música e esta ferramenta não sabe ESCREVER. Contar e dizer,
+        # em vez de calar: numa coleção em ALAC ou Opus ela varria tudo e
+        # terminava com "0 discos", sem uma palavra sobre o motivo — a pessoa
+        # conclui que a coleção está bem, e não que a ferramenta não serve
+        # para ela.
+        for f in filenames:
+            baixo = f.lower()
+            if baixo.endswith(TODOS) and not baixo.endswith(ESCREVIVEIS):
+                ignorados.add(os.path.splitext(baixo)[1])
         if not audio_files:
             continue
 
@@ -228,6 +245,14 @@ def main(apply=False, fetch=True, root=None):
     print(f"ainda sem capa:  {art_missing} (não há capa em lugar nenhum)")
     print(f"ainda sem letra: {lyr_missing} (não achada mesmo — "
           f"instrumental, bootleg, lançamento obscuro)")
+    if ignorados:
+        # Silêncio aqui vira "a coleção está bem". Ela não está: a ferramenta
+        # é que não serve para aqueles arquivos, e isso tem que estar escrito.
+        print("\n%s: esta ferramenta grava capa e letra DENTRO de FLAC e MP3."
+              % ", ".join(sorted(ignorados)))
+        print("As faixas nesses formatos foram puladas — não é que estejam "
+              "boas, é que não\ndá para escrever nelas por aqui. O `stylus "
+              "covers` lê a capa de todos eles.")
     if not apply:
         print("\nisto foi só uma olhada — passe --apply para gravar as etiquetas")
 

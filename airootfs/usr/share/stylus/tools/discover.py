@@ -7,7 +7,7 @@ single e EP, gravação ao vivo e coletânea.
 import json, os, sys, urllib.parse
 import requests
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
 
 LIB = raiz()
 API = "http://127.0.0.1:8765/api/search"
@@ -22,7 +22,8 @@ SKIP_WORDS = (
 )
 
 
-AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".shn")
+# Ver o `audio_ext` no _raiz: uma lista só para todas as ferramentas.
+AUDIO_EXT = audio_ext()
 
 
 def _tem_audio(d):

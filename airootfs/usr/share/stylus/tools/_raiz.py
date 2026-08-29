@@ -54,3 +54,32 @@ def raiz():
         os.environ.get("STYLUS_LIBRARY")
         or os.environ.get("XDG_MUSIC_DIR")
         or "~/Music")
+
+
+# Sem o vinyl, a mesma lista escrita à mão — e SÓ aqui.
+_EXT_PADRAO = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac",
+               ".wma", ".shn")
+
+
+def audio_ext():
+    """O que conta como arquivo de música — a MESMA resposta para todas.
+
+    Mesmo motivo do `raiz()` acima, e o mesmo estrago. Havia QUATRO listas
+    diferentes aqui dentro: o `check_library` e o `discover` traziam oito
+    extensões (com .shn e sem .wma), o `extract_covers` e o `embed_metadata`
+    paravam em .flac e .mp3, e o `make_new_playlist` e o `suggest_playlists`
+    idem. Numa coleção em ALAC, Opus ou Vorbis — que é o que sai de um
+    celular e de metade das lojas — essas quatro ferramentas não achavam
+    faixa nenhuma e não davam erro: diziam que estava tudo bem.
+
+    A resposta é a do `vinyl.AUDIO_EXT`, que é quem monta a estante.
+    """
+    _com_o_deck_no_caminho()
+    try:
+        import vinyl
+        ext = tuple(getattr(vinyl, "AUDIO_EXT", ()) or ())
+        if ext:
+            return ext
+    except Exception:                      # noqa: BLE001
+        pass
+    return _EXT_PADRAO

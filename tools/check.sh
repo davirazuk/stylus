@@ -1102,6 +1102,143 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── o que conta como música é UMA lista ───────────────────────────────────
+# **Sintoma:** `stylus covers`, `stylus suggest` e o gerador de playlist não
+# achavam faixa nenhuma numa coleção em ALAC, Opus ou Vorbis — e não davam
+# erro: diziam "0 capas a escrever", "nenhuma sugestão", playlist vazia.
+#
+# Havia QUATRO listas de extensão neste sistema e elas já discordavam: o
+# vinyl tinha oito com .wma, o check_library e o discover tinham oito com
+# .shn e sem .wma, e o extract_covers, o embed_metadata, o make_new_playlist
+# e o suggest_playlists paravam em .flac e .mp3. É o mesmo estrago do
+# `/home/davirazuk/Músicas` escrito à mão em nove ferramentas — só que em vez
+# de varrer a pasta errada, elas varriam a pasta certa procurando o formato
+# errado. A resposta mora no `_raiz.audio_ext()`, que pergunta ao vinyl.
+sec "o que conta como música é uma lista só"
+listas=$(python3 - <<'EXTEOF'
+import pathlib, re
+
+# Uma tupla de extensões de áudio escrita à mão fora do vinyl e do _raiz.
+# DUAS ou mais extensões: um `endswith(".flac")` sozinho é uma rotina que
+# só existe para o FLAC, e isso é legítimo — não é uma opinião sobre o que
+# conta como música.
+padrao = re.compile(r'\(\s*"\.(?:flac|mp3|ogg|opus|m4a|wav|aac|wma|shn)"'
+                    r'(?:\s*,\s*"\.[a-z0-9]+")+\s*,?\s*\)')
+livres = {"_raiz.py"}
+for arq in sorted(pathlib.Path("airootfs/usr/share/stylus/tools").glob("*.py")):
+    if arq.name in livres:
+        continue
+    for n, linha in enumerate(arq.read_text(encoding="utf-8").splitlines(), 1):
+        nu = linha.lstrip()
+        if nu.startswith("#"):
+            continue
+        # "o que eu sei ESCREVER" é outra pergunta que não "o que é música",
+        # e uma ferramenta tem direito a respondê-la — desde que diga isso
+        # no nome. Ver o ESCREVIVEIS do embed_metadata.
+        if "ESCREV" in nu.split("=")[0]:
+            continue
+        if padrao.search(linha):
+            print("%s:%d  %s" % (arq.name, n, linha.strip()[:70]))
+EXTEOF
+)
+if [[ -z $listas ]]; then
+    ok "nenhuma ferramenta traz a própria lista de extensões"
+else
+    bad "lista de extensões escrita à mão (use o _raiz.audio_ext):"
+    printf '%s\n' "$listas" | sed 's/^/      /'
+fi
+
+sec "a capa embutida é achada em todo formato"
+# O `extract_covers` só sabia ler .flac e .mp3. Cada formato guarda a capa
+# num lugar diferente — o átomo `covr` do MP4, o `metadata_block_picture` do
+# Ogg (um bloco PICTURE do FLAC em base64 dentro de uma tag de texto) — e a
+# ferramenta simplesmente não fazia nada, dizendo "0 não têm capa embutida".
+#
+# O FLAC é conferido com um arquivo DE VERDADE, montado aqui (cabeçalho
+# fLaC + STREAMINFO, sem quadros de áudio: o mutagen só lê metadado). Os
+# outros dois não dá para montar sem codificador, então o teste entrega ao
+# `embedded_art` o objeto que o mutagen entregaria — que é onde mora a
+# lógica que quebrou.
+capas=$(python3 - <<'CAPAEOF'
+import base64, os, struct, sys, tempfile
+
+sys.path.insert(0, "airootfs/usr/share/stylus/tools")
+tmp = tempfile.mkdtemp(prefix="stylus-capa-")
+os.environ.setdefault("STYLUS_LIBRARY", tmp)
+
+import mutagen
+from mutagen.flac import FLAC, Picture
+from mutagen.mp4 import MP4Cover
+import extract_covers as EC
+
+erros = []
+
+
+def flac_minimo(caminho):
+    si = bytearray(34)
+    struct.pack_into(">HH", si, 0, 4096, 4096)
+    v = (44100 << 44) | (1 << 41) | (15 << 36) | 0     # 44,1k estéreo 16 bits
+    si[10:18] = v.to_bytes(8, "big")
+    cab = bytes([0x80]) + len(si).to_bytes(3, "big")   # último bloco, tipo 0
+    open(caminho, "wb").write(b"fLaC" + cab + bytes(si))
+
+
+alvo = os.path.join(tmp, "t.flac")
+flac_minimo(alvo)
+f = FLAC(alvo)
+p = Picture()
+p.type, p.mime, p.data = 3, "image/png", b"\x89PNG\r\n\x1a\n" + b"x" * 40
+f.add_picture(p)
+f.save()
+r = EC.embedded_art(alvo)
+if not r or r[1] != ".png" or len(r[0]) != 48:
+    erros.append("FLAC de verdade: %r" % (r,))
+
+
+class _Arq:
+    pictures = None
+
+    def __init__(self, tags):
+        self.tags = tags
+
+
+og = Picture()
+og.type, og.mime, og.data = 3, "image/jpeg", b"\xff\xd8" + b"o" * 30
+casos = [
+    ("Ogg/Opus", _Arq({"metadata_block_picture":
+                       [base64.b64encode(og.write()).decode("ascii")]}),
+     ".jpg", 32),
+    ("MP4/ALAC", _Arq({"covr": [MP4Cover(b"\x89PNG" + b"m" * 30,
+                                         imageformat=MP4Cover.FORMAT_PNG)]}),
+     ".png", 34),
+    ("sem capa", _Arq({}), None, 0),
+]
+verdadeiro = mutagen.File
+try:
+    for nome, obj, ext, n in casos:
+        mutagen.File = lambda _p, _o=obj: _o
+        r = EC.embedded_art("qualquer")
+        if ext is None:
+            if r is not None:
+                erros.append("%s: inventou capa %r" % (nome, r))
+        elif not r or r[1] != ext or len(r[0]) != n:
+            erros.append("%s: %r" % (nome, r))
+finally:
+    mutagen.File = verdadeiro
+
+import shutil
+shutil.rmtree(tmp, ignore_errors=True)
+for e in erros:
+    print(e)
+CAPAEOF
+)
+if [[ -z $capas ]]; then
+    ok "capa achada em FLAC, MP4/ALAC e Ogg/Opus (e nenhuma inventada)"
+else
+    bad "o extrator de capas não lê todo formato:"
+    printf '%s\n' "$capas" | sed 's/^/      /'
+fi
+
 # ── a cerimônia é UMA só, nos dois lugares ────────────────────────────────
 # O deck e a tela cheia do lançador encenam o MESMO ritual — spinup → cue →
 # drop. As durações moram no `vinyl.py`, e o `app.py` as lê de lá em vez de

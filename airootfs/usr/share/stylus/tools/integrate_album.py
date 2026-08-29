@@ -1,7 +1,7 @@
 import os, re, sys, shutil, requests
 from mutagen.flac import FLAC
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
 
 QOBUZ_DIR = os.environ.get("STYLUS_QOBUZ_DIR") or os.path.expanduser("~/Qobuz Downloads")
 LIB_ROOT = raiz()
@@ -108,9 +108,15 @@ def integrate(folder_name, artist, album_clean):
     # inteiro e recém-terminado — perda de dados de verdade, silenciosa, e com
     # uma linha final dizendo "Integrated". Agora a origem só some quando não
     # sobrou áudio nenhum nela.
+    #
+    # E a lista vem do _raiz, não escrita aqui: esta é a pergunta "sobrou
+    # música?" logo antes de um rmtree, e a lista que estava escrita à mão
+    # não tinha .aac, .wma nem .shn. Um arquivo desses ficando para trás
+    # não seria contado, e a origem seria apagada com ele dentro — que é
+    # exatamente a perda de dados que este bloco existe para impedir.
     restou = [os.path.join(r, f)
               for r, _d, fs in os.walk(src) for f in fs
-              if f.lower().endswith((".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav"))]
+              if f.lower().endswith(audio_ext())]
     if not new_paths:
         print(f"!!! NÃO integrei nada de {folder_name} — a origem foi PRESERVADA "
               f"em {src}. Confira o formato dos arquivos antes de rodar de novo.")

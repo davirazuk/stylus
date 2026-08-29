@@ -15,14 +15,15 @@ fora inteiro — essas são decisões sobre como uma faixa específica soa, que
 """
 import os
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
 
 LIB = raiz()
 # A coleção e o lugar das playlists são a mesma pasta: o subdiretório fixo
 # que havia aqui era o nome da coleção de uma pessoa só.
 ROOT = LIB
 MANIFEST = os.path.expanduser("~/.local/share/stylus-added.tsv")
-AUDIO_EXT = (".flac", ".mp3")
+# Era `(".flac", ".mp3")` — ver a mesma lição no _raiz.
+AUDIO_EXT = audio_ext()
 
 # artist -> playlist basename (without .m3u)
 GENRE = {

@@ -20,9 +20,11 @@ import re
 import sys
 from collections import defaultdict
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
 
-AUDIO = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".shn")
+# A lista vem do _raiz, que a pega do vinyl: havia quatro cópias dela
+# neste diretório e elas já discordavam (esta não tinha .wma).
+AUDIO = audio_ext()
 SIDECAR = (".jpg", ".jpeg", ".png", ".txt", ".pdf", ".m3u", ".log", ".cue", ".nfo")
 LEAD_NUM = re.compile(r"^\s*(\d{1,3})\b")
 TINY_KB = 40

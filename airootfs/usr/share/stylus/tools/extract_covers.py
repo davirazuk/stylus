@@ -15,37 +15,92 @@ import os
 import sys
 import glob
 
-from mutagen.flac import FLAC
-from mutagen.id3 import ID3
+import base64
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+import mutagen
+from mutagen.flac import Picture
+
+from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
 
 ROOT = raiz()
+AUDIO = audio_ext()
 COVER_NAMES = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg")
 
 
+def _ext_de(mime):
+    return ".png" if "png" in (mime or "").lower() else ".jpg"
+
+
 def embedded_art(path):
-    """Return (bytes, ext) of the first embedded picture, or None."""
+    """(bytes, extensão) da primeira capa embutida, ou None.
+
+    Pelo `mutagen.File` e não por um `if` na extensão do nome. Antes só
+    respondia a .flac e .mp3, e cada formato guarda a capa num lugar
+    diferente:
+
+      FLAC/Ogg FLAC   blocos PICTURE (`.pictures`)
+      MP3             o quadro APIC do ID3
+      MP4/M4A/ALAC    o átomo `covr`, que diz o formato num inteiro
+      Ogg Vorbis/Opus `metadata_block_picture`: um bloco PICTURE do FLAC
+                      em base64, dentro de uma tag de texto
+
+    Numa coleção em ALAC ou Opus a ferramenta inteira não fazia nada e
+    dizia "0 não têm capa embutida", que é pior do que um erro.
+    """
     try:
-        if path.lower().endswith(".flac"):
-            pics = FLAC(path).pictures
-            if pics:
-                p = pics[0]
-                return p.data, ".png" if "png" in (p.mime or "").lower() else ".jpg"
-        elif path.lower().endswith(".mp3"):
-            apics = ID3(path).getall("APIC")
-            if apics:
-                a = apics[0]
-                return a.data, ".png" if "png" in (a.mime or "").lower() else ".jpg"
-    except Exception:
+        arq = mutagen.File(path)
+    except Exception:                                       # noqa: BLE001
+        return None
+    if arq is None:
+        return None
+
+    # FLAC (e Ogg FLAC): blocos PICTURE de verdade.
+    pics = getattr(arq, "pictures", None)
+    if pics:
+        return pics[0].data, _ext_de(pics[0].mime)
+
+    tags = getattr(arq, "tags", None)
+    if not tags:
+        return None
+
+    # MP3: o quadro APIC.
+    try:
+        apics = tags.getall("APIC")
+        if apics:
+            return apics[0].data, _ext_de(apics[0].mime)
+    except AttributeError:
         pass
+
+    # MP4/M4A: o átomo `covr`. O formato vem num inteiro, não num mime.
+    try:
+        covr = tags.get("covr")
+    except Exception:                                       # noqa: BLE001
+        covr = None
+    if covr:
+        capa = covr[0]
+        fmt = getattr(capa, "imageformat", None)
+        png = getattr(type(capa), "FORMAT_PNG", 14)
+        return bytes(capa), (".png" if fmt == png else ".jpg")
+
+    # Ogg Vorbis / Opus: bloco PICTURE do FLAC, em base64, numa tag de texto.
+    try:
+        blocos = tags.get("metadata_block_picture")
+    except Exception:                                       # noqa: BLE001
+        blocos = None
+    for bloco in (blocos or []):
+        try:
+            p = Picture(base64.b64decode(bloco))
+        except Exception:                                   # noqa: BLE001
+            continue
+        if p.data:
+            return p.data, _ext_de(p.mime)
     return None
 
 
 def main(apply=False):
     wrote = skipped_have = no_art = 0
     for dirpath, dirnames, filenames in os.walk(ROOT):
-        audio = [f for f in filenames if f.lower().endswith((".flac", ".mp3"))]
+        audio = [f for f in filenames if f.lower().endswith(AUDIO)]
         if not audio:
             continue
         if any(c in (f.lower() for f in filenames) for c in COVER_NAMES):

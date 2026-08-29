@@ -216,7 +216,16 @@ class _Roots(list):
 
 
 MUSIC_ROOTS = _Roots()
-AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
+# O que conta como arquivo de música — a lista CANÔNICA. As ferramentas de
+# `tools/` a pegam pelo `_raiz.audio_ext()`; havia QUATRO listas diferentes
+# espalhadas por elas, e duas paravam em .flac e .mp3 — numa coleção em
+# ALAC ou Opus, `stylus covers`, `stylus suggest` e o gerador de playlist
+# não achavam faixa nenhuma e diziam que estava tudo bem.
+#
+# O .shn (Shorten) veio das listas do check_library/discover: é o formato
+# das coleções de gravação ao vivo, e não estava aqui.
+AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac",
+             ".wma", ".shn")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
