@@ -705,9 +705,27 @@ class NowScreen(Screen):
         # Ela vem depois do texto, então tem que ceder ao texto.
         hist = f"{al.plays}ª vez" if al.plays else "primeira vez"
         y_rodape = min(max(cr.bottom + 20, y + 12), r.bottom - 60)
+        # Os ícones de embaralhar/repetir/soneca são desenhados lá embaixo,
+        # encostados à direita e quase na mesma linha que esta. Montados
+        # AQUI para poder MEDIR: numa tela estreita a linha do rodapé
+        # chegava neles e os dois textos se cruzavam. Mesma lição da folga
+        # fixa, e ela vale toda vez que dois textos dividem uma linha.
+        icones = []
+        if self.app.shuffle:
+            icones.append(T.icon("󰒟"))  # nf-md-shuffle
+        if self.app.repeat == 1:
+            icones.append(T.icon("󰑙"))  # nf-md-repeat_once
+        elif self.app.repeat == 2:
+            icones.append(T.icon("󰑖"))  # nf-md-repeat
+        if self.app._sleep_minutes > 0:
+            faltam_min = max(0, int((self.app._sleep_end - time.time()) / 60))
+            icones.append(f"{T.icon('󰅐')}{faltam_min}m")  # nf-md-timer
+        txt_icones = "  ".join(icones)
+        larg_icones = (T.largura(txt_icones, 20) + 28) if icones else 0
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
-               (x, y_rodape), 19, T.TEXT_FAINT, maxw=w)
+               (x, y_rodape), 19, T.TEXT_FAINT,
+               maxw=max(60, w - larg_icones))
 
         # ── a letra do momento, em JANELA ────────
         est = self.app.lyric_state(al, track)
@@ -728,19 +746,10 @@ class NowScreen(Screen):
                 else:
                     yl += 12
 
-        # Shuffle/repeat state icons — Nerd Font glyphs for consistency
-        icons = []
-        if self.app.shuffle:
-            icons.append(T.icon("󰒟"))  # nf-md-shuffle
-        if self.app.repeat == 1:
-            icons.append(T.icon("󰑙"))  # nf-md-repeat_once
-        elif self.app.repeat == 2:
-            icons.append(T.icon("󰑖"))  # nf-md-repeat
-        if self.app._sleep_minutes > 0:
-            remaining = max(0, int((self.app._sleep_end - time.time()) / 60))
-            icons.append(f"{T.icon('󰅐')}{remaining}m")  # nf-md-timer
-        if icons:
-            T.text(s, "  ".join(icons), (r.right - 20, r.bottom - 50), 20,
+        # Embaralhar / repetir / soneca — montados lá em cima, junto do
+        # rodapé, para o rodapé poder medi-los.
+        if icones:
+            T.text(s, txt_icones, (r.right - 20, r.bottom - 50), 20,
                    T.AMBER, anchor="bottomright")
 
         self.app.hint(s, r, "[f] o disco na tela toda   [enter] abre o deck   "

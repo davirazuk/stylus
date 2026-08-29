@@ -1484,6 +1484,38 @@ def main():
                              "graph": 48000, "fbits": 24, "codec": "FLAC",
                              "dev": "Meteor Lake-P HD Audio Controller Speaker",
                              "multi": True}
+        # E com um DISCO NO PRATO, não só com o prato vazio.
+        #
+        # **Sintoma:** a AGORA desenhava o artista, o disco, o LADO e o "vira
+        # em X" para fora da tela em 800x600 — e este teste passava verde,
+        # porque com nada tocando o `draw` sai cedo pelo `_nothing` e a
+        # coluna de texto nem chega a existir. A metade da tela que mais tem
+        # texto era a metade que não estava sendo medida.
+        #
+        # Os nomes são compridos de propósito: é o comprimento que revela
+        # folga fixa e piso que não cabe, e o disco de nome curto do teste
+        # antigo cabia em qualquer lugar.
+        class _AlbLongo:
+            folder = "/x/Um Artista/Um Disco"
+            artist = "Um Artista Com Nome Bastante Comprido"
+            name = "Um Disco De Nome Também Bem Comprido"
+            year, cover = 1969, None
+            plays, last_played, total = 3, 0, 2600
+            discos = 2
+            tracks = [{"title": "Uma faixa de nome comprido também",
+                       "dur": 200}]
+            sides = [{"label": "SIDE %s" % c, "start": i * 650,
+                      "end": (i + 1) * 650, "tracks": [0]}
+                     for i, c in enumerate("ABCD")]
+
+        _alongo = _AlbLongo()
+        _guarda_w, _guarda_al = app.playing.where, app.playing.album
+        estados_tela = [
+            ("prato vazio", lambda: ({}, None, None, None, None, 0.0), None),
+            ("disco no prato",
+             lambda: ({"status": "Playing"}, _alongo, _alongo.tracks[0],
+                      _alongo.sides[2], 1500.0, 0.42), _alongo),
+        ]
         batidas, vazados = [], []
         # Em QUATRO tamanhos de tela. O layout do diário era uma altura fixa
         # de 104 px numa posição fixa: numa tela de 720 o calendário entrava
@@ -1498,8 +1530,10 @@ def main():
         # que o X entrega: nela os dois pisos da AGORA — 260 px para o disco
         # e 180 para a coluna de texto — somavam mais do que a largura da
         # tela, e o bloco inteiro saía pela direita.
-        for larg, alt in ((800, 600), (1024, 600), (1024, 768), (1280, 720),
-                          (1366, 768), (1920, 1080), (3840, 2160)):
+        for _nome_est, _onde, _album in estados_tela:
+          app.playing.where, app.playing.album = _onde, _album
+          for larg, alt in ((800, 600), (1024, 600), (1024, 768), (1280, 720),
+                            (1366, 768), (1920, 1080), (3840, 2160)):
             quadro = pygame.Rect(230, 0, larg - 230, alt)
             for i, tela in enumerate(app.screens):
                 app._goto(i)
@@ -1532,10 +1566,12 @@ def main():
                         vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}"
                                        " (ao lado)")
         _T.text = original
+        app.playing.where, app.playing.album = _guarda_w, _guarda_al
         if batidas:
             bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))
         else:
-            ok(f"{len(app.screens)} seções × 7 resoluções, nada por cima de nada")
+            ok(f"{len(app.screens)} seções × 7 resoluções × 2 estados, "
+               "nada por cima de nada")
         if vazados:
             bad(f"{len(vazados)} textos fora da tela", "\n".join(vazados[:5]))
         else:
