@@ -1306,9 +1306,7 @@ class Album:
             pass
 
     def _measure_durations(self):
-        t = 0.0
         for tr in self.tracks:
-            tr["start"] = t
             # Só mede o que ainda não tem medida: um disco vindo do
             # disco.json já traz a duração de cada faixa, e o ffprobe num
             # endereço http abre uma conexão por faixa para redescobrir o que
@@ -1316,6 +1314,32 @@ class Album:
             # qualquer coisa.
             if not tr.get("duration"):
                 tr["duration"] = _probe_duration(tr["path"])
+
+        # ── as que não deram para medir ───────────────────────────────────
+        # **Sintoma:** uma faixa que nem o mutagen nem o ffprobe sabem ler
+        # entrava com duração ZERO — e zero não é "não sei", é "não dura
+        # nada". Três faixas assim num disco de doze tiram um quarto do
+        # total: o disco perde um LADO inteiro, o "vira em X" mente, e a
+        # agulha do deck aponta para o sulco errado. Nada disso dá erro em
+        # lugar nenhum; o disco simplesmente fica menor do que é.
+        #
+        # A MEDIANA das que deram é o palpite honesto: ela resiste a uma
+        # faixa de vinte minutos no meio de onze de três, que é justamente o
+        # tipo de disco em que a média estragaria tudo.
+        medidas = sorted(t["duration"] for t in self.tracks if t["duration"] > 0)
+        if medidas and len(medidas) < len(self.tracks):
+            meio = medidas[len(medidas) // 2]
+            for tr in self.tracks:
+                if not tr["duration"]:
+                    tr["duration"] = meio
+                    # Fica marcado: quem quiser dizer "aproximado" na tela
+                    # tem como saber, e quem for depurar não vai achar que a
+                    # faixa media isso mesmo.
+                    tr["estimada"] = True
+
+        t = 0.0
+        for tr in self.tracks:
+            tr["start"] = t
             t += tr["duration"]
         self.total = t
 

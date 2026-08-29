@@ -472,6 +472,45 @@ def main():
     _um = _Falso([210] * 6)
     check("o que cabe num lado só continua sendo um lado só",
           len(_um.sides) == 1)
+
+    # ── faixa que não deu para medir ──────────────────────────────────────
+    # **Sintoma:** uma faixa que nem o mutagen nem o ffprobe sabem ler entrava
+    # com duração ZERO — e zero não é "não sei", é "não dura nada". Três
+    # dessas num disco de doze tiram um quarto do total: o disco perde um LADO
+    # inteiro, o "vira em X" mente, e a agulha do deck aponta para o sulco
+    # errado. Sem erro nenhum em lugar nenhum.
+    class _SemMedida(vinyl.Album):
+        def __init__(self, duracoes):
+            self.folder, self.artist, self.name = "/x", "A", "B"
+            self.year, self.cover = "", None
+            self.plays = self.first_played = self.last_played = 0
+            self.total, self.sides = 0.0, []
+            self.tracks = [{"path": "/x/%d" % i, "title": "F%d" % i,
+                            "duration": float(d), "start": 0.0}
+                           for i, d in enumerate(duracoes)]
+            _real = vinyl._probe_duration
+            vinyl._probe_duration = lambda _p: 0.0   # nada é mensurável aqui
+            try:
+                self._measure_durations()
+                self._build_sides()
+            finally:
+                vinyl._probe_duration = _real
+
+    _b = _SemMedida([225] * 9 + [0, 0, 0])
+    check("três faixas sem medida não encolhem o disco",
+          abs(_b.total - 225 * 12) < 1.0)
+    check("e o disco continua com os dois lados que ele tem",
+          len(_b.sides) == 2)
+    check("as estimadas ficam marcadas",
+          sum(1 for t in _b.tracks if t.get("estimada")) == 3)
+    # A MEDIANA e não a média: ela resiste a uma faixa de vinte minutos no
+    # meio de onze de três, que é onde a média estragaria tudo.
+    _c = _SemMedida([180] * 10 + [1200, 0])
+    check("o palpite é a mediana, não a média",
+          abs(_c.tracks[-1]["duration"] - 180) < 1.0)
+    # E sem NENHUMA medida não se inventa disco: zero é zero.
+    check("sem medida nenhuma, não inventa duração",
+          _SemMedida([0] * 6).total == 0.0)
     check("e o número de DISCOS acompanha os lados",
           _Falso([225] * 24).discos == 2 and _um.discos == 1)
 
