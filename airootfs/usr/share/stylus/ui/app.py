@@ -459,18 +459,29 @@ class NowScreen(Screen):
         # O bloco inteiro (o quanto o disco sai + a capa + a coluna) é que se
         # centra. Sem contar a saliência, a capa ficava no meio e o disco
         # saía por baixo do trilho.
-        margem, gap, txt_teto = 64, 72, 620
+        margem, gap, txt_teto, txt_min = 64, 72, 620, 180
         avail = max(320, r.w - margem * 2)
         # 0.36 e não 0.44: a saliência do disco pede a diferença.
         size = min(int(r.h * 0.62), int(avail * 0.36), 720)
-        size = max(260, size)
+        # O bloco inteiro é `sai + size + gap + txt_w`, e o `sai` é 0,545 do
+        # tamanho do disco (ver as duas linhas abaixo) — ou seja, o bloco
+        # mede 1,545×size + gap + a coluna de texto.
+        #
+        # **Sintoma:** os dois pisos — 260 para o disco e 180 para a coluna —
+        # somam mais do que a largura de uma tela de 800, e o bloco era
+        # desenhado para FORA dela: o nome do artista, o do disco, o LADO e o
+        # "vira em X" todos com o fim cortado pela borda. Um piso que não
+        # cabe não é piso, é overflow com nome bonito.
+        #
+        # Quem cede é o DISCO, porque ele é desenho e a coluna é informação.
+        size = max(110, min(size, int((avail - gap - txt_min) / 1.545)))
         # O disco é um pouco MENOR que a capa (12" contra 12⅜"), e sai o
         # bastante para a bolacha aparecer — é ela que diz que ele é um
         # disco, e não uma sombra.
         rm = int(size * 0.485)
         desl = int(size * 0.56)
         sai = max(0, desl + rm - size // 2)
-        txt_w = min(txt_teto, max(180, avail - sai - size - gap))
+        txt_w = min(txt_teto, max(120, avail - sai - size - gap))
         total = sai + size + gap + txt_w
 
         # AGORA usa 640px — 320 esticado ficava borrado (audit A-N1)
@@ -654,15 +665,30 @@ class NowScreen(Screen):
             # cor do lado respira com o áudio
             side_alpha = int(180 + level * 75) if level > 0.01 else 180
             side_cor = T.lerp(T.AMBER, (255, 255, 255), (side_alpha - 180) / 75)
-            r_lado = T.text(s, rotulo, (x, y), 30, side_cor, bold=True)
             # MEDIDO, não `x + 150`: "DISCO 2 · LADO C" é o dobro da largura
             # de "LADO A", e com a folga fixa o "vira em 6min" era desenhado
             # por cima dele. É a mesma lição do nome do conversor na tela
             # SINAL, e ela vale toda vez que dois textos dividem uma linha.
-            T.text(s, ("acaba em " if ultimo else "vira em ") + humano(resta),
-                   (r_lado.right + 24, y + 5), 22, T.TEXT_DIM, maxw=w - (r_lado.width + 24))
-            self._groove(s, pygame.Rect(x, y + 48, w, 14), frac, wave, pulse)
-            y += 84
+            #
+            # E quando os dois não cabem na mesma linha, o "vira em" DESCE —
+            # o mesmo que o `job_panel` faz com o estado da tarefa. Antes o
+            # rótulo ia sem `maxw` nenhum e o "vira em" recebia uma folga que
+            # podia ser NEGATIVA: numa tela de 800 os dois eram desenhados
+            # para fora da borda. E é o "vira em" que não pode ser cortado:
+            # é a informação que só um disco dá.
+            resta_txt = ("acaba em " if ultimo else "vira em ") + humano(resta)
+            larg_resta = T.largura(resta_txt, 22)
+            if T.largura(rotulo, 30) + 24 + larg_resta <= w:
+                r_lado = T.text(s, rotulo, (x, y), 30, side_cor, bold=True)
+                T.text(s, resta_txt, (r_lado.right + 24, y + 5), 22, T.TEXT_DIM,
+                       maxw=max(1, w - (r_lado.width + 24)))
+                y_sulco = y + 48
+            else:
+                T.text(s, rotulo, (x, y), 30, side_cor, bold=True, maxw=w)
+                T.text(s, resta_txt, (x, y + 34), 22, T.TEXT_DIM, maxw=w)
+                y_sulco = y + 66
+            self._groove(s, pygame.Rect(x, y_sulco, w, 14), frac, wave, pulse)
+            y = y_sulco + 36
 
         if track:
             n = (al.tracks.index(track) + 1) if track in al.tracks else 0
@@ -671,8 +697,14 @@ class NowScreen(Screen):
             y += 48
 
         # Informativos no rodapé
+        #
+        # A posição era amarrada só à CAPA (`cr.bottom + 20`), como se a
+        # coluna de texto ao lado nunca passasse dela. Numa tela baixa e
+        # estreita ela passa — o LADO desce para duas linhas, o nome da faixa
+        # quebra — e a linha do rodapé era desenhada POR CIMA do "LADO A".
+        # Ela vem depois do texto, então tem que ceder ao texto.
         hist = f"{al.plays}ª vez" if al.plays else "primeira vez"
-        y_rodape = min(cr.bottom + 20, r.bottom - 60)
+        y_rodape = min(max(cr.bottom + 20, y + 12), r.bottom - 60)
         T.text(s, f"{hist}  ·  {len(al.tracks)} faixas  ·  "
                   f"{humano(al.total)}  ·  {ha_quanto(al.last_played)}",
                (x, y_rodape), 19, T.TEXT_FAINT, maxw=w)
@@ -1741,18 +1773,33 @@ class SignalScreen(Screen):
              "pode trocar de taxa" if i.get("multi") else "taxa travada"),
         ]
         by = y + 96
+        # O passo e a altura dos quadros vêm da ALTURA que sobra. Eram 132 e
+        # 104 fixos: três quadros mais o cabeçalho somam 552 px, e numa tela
+        # de 600 o veredito ("reamostrado 44,1 → 48 kHz", que é a frase que
+        # esta tela existe para dizer) era desenhado por cima da linha de
+        # dicas. Os 136 px reservados são o veredito (34), a explicação de
+        # duas linhas (44) e a linha de dicas (34), com folga.
+        disp = max(210, r.bottom - 136 - by)
+        passo = min(132, max(76, disp // 3))
+        alt_box = max(62, passo - 28)
+        # As letras encolhem junto: num quadro de 62 px o valor em 26 pt
+        # transborda por baixo dele.
+        fs_val = 26 if alt_box >= 90 else 20
+        fs_nome = 24 if alt_box >= 90 else 19
+        y_tit = int(alt_box * 0.17)
+        y_val = int(alt_box * 0.42)
         for n, (titulo, nome, val) in enumerate(elos):
-            box = pygame.Rect(bx, by + n * 132, bw, 104)
+            box = pygame.Rect(bx, by + n * passo, bw, alt_box)
             T.panel(s, box, T.INK_SOFT, radius=12, border=T.LINE)
-            T.text(s, titulo, (box.x + 24, box.y + 18), 16, T.TEXT_FAINT)
+            T.text(s, titulo, (box.x + 24, box.y + y_tit), 16, T.TEXT_FAINT)
             # O nome do aparelho para onde o valor começa, MEDIDO. Ver
             # T.largura: com folga fixa, o nome do conversor entrava por cima
             # do "pode trocar de taxa" — e só em quem tem placa de nome
             # comprido, que é sempre a máquina de outra pessoa.
-            folga = T.largura(str(val), 26, bold=True) + 40
-            T.text(s, str(nome), (box.x + 24, box.y + 44), 24, T.TEXT,
+            folga = T.largura(str(val), fs_val, bold=True) + 40
+            T.text(s, str(nome), (box.x + 24, box.y + y_val), fs_nome, T.TEXT,
                    maxw=max(120, bw - 48 - folga))
-            T.text(s, str(val), (box.right - 24, box.y + 44), 26,
+            T.text(s, str(val), (box.right - 24, box.y + y_val), fs_val,
                    cor if n < 2 else (T.GREEN if i.get("multi") else T.AMBER),
                    bold=True, anchor="topright")
             if n < len(elos) - 1:
@@ -1769,7 +1816,7 @@ class SignalScreen(Screen):
         # 84 caracteres: numa tela de 1024 ela terminava fora do monitor,
         # justo a frase que existe para dizer o que fazer quando o caminho do
         # som está errado.
-        vy = by + 3 * 132 + 12
+        vy = by + 3 * passo + 12
         if not frate:
             T.text(s, "ponha um disco para medir o caminho inteiro",
                    (bx, vy), 21, T.TEXT_FAINT, maxw=bw)
@@ -1781,9 +1828,13 @@ class SignalScreen(Screen):
                    (bx, vy), 24, T.RED, bold=True, maxw=bw)
             # Em parágrafo, não cortada: uma explicação com reticências no
             # meio não explica nada.
+            # Uma linha em vez de duas quando não há espaço para duas: a
+            # explicação cortada ao meio é melhor do que a explicação por
+            # cima da linha de dicas.
             T.paragrafo(s, "algo mais está segurando o grafo nessa taxa, ou o "
                            "conversor ainda não soltou a anterior",
-                        (bx, vy + 34), 18, T.TEXT_FAINT, maxw=bw, limite=2)
+                        (bx, vy + 34), 18, T.TEXT_FAINT, maxw=bw,
+                        limite=2 if r.bottom - (vy + 34) > 96 else 1)
         self.app.hint(s, r, "atualiza sozinho   ·   [enter] força agora")
 
 
@@ -3657,13 +3708,34 @@ class GamesScreen(Screen):
         # rótulos ("Keyboard Wa…", "sincronizar pro ce…") cortados dentro de
         # quadros estreitos enquanto o espaço para eles estava vazio ao lado.
         gap = 20
+        # O que sobra de ALTURA para a grade e a fileira de ações. Sem esta
+        # conta a grade era desenhada com passo fixo de 120 px: dez jogos em
+        # três colunas são quatro fileiras, e numa tela de 1024x600 — que é
+        # painel de carro, mini-PC e monitor velho — as ações caíam 60 px
+        # abaixo da borda de baixo. Não estoura; some.
+        livre = max(140, r.bottom - 40 - y)
         cols = max(3, min(6, (r.w - 88) // 250))
         cols = min(cols, n_games)
+        # Numa tela BAIXA, mais colunas é o que faz caber: elas custam largura,
+        # que é o que sobra, e economizam fileira, que é o que falta.
+        # ...mas só até onde a LARGURA deixa: um quadro abaixo de 120 px não
+        # cabe o nome, e o `max(120, …)` do `cw` logo abaixo não encolhe o
+        # quadro — ele empurra a grade para fora da tela pela direita, que é
+        # trocar um vazamento por outro.
+        cols_max = max(3, min(6, (r.w - 88 + gap) // (120 + gap)))
+        while (cols < min(cols_max, n_games)
+               and ((n_games + cols - 1) // cols) * 120 + 80 > livre):
+            cols += 1
         cw = max(120, (r.w - 88 - gap * (cols - 1)) // cols)
+        linhas = (n_games + cols - 1) // cols
+        # E se ainda não couber, o passo encolhe. Com piso: abaixo de 70 px
+        # o quadro deixa de caber o nome e o "[enter] instala" embaixo dele.
+        passo = min(120, max(70, (livre - 80) // max(1, linhas)))
+        alt_card = max(52, passo - 20)
         for i, (nome, _cmd, binario, icon, kind, de_onde) in enumerate(self.ACOES):
             col = i % cols
             row = i // cols
-            bx = pygame.Rect(x + col * (cw + gap), y + row * 120, cw, 100)
+            bx = pygame.Rect(x + col * (cw + gap), y + row * passo, cw, alt_card)
             self.app.alvos.append((bx.copy(), i))
             sel = i == self.sel
             tem = self._is_installed(binario)
@@ -3698,12 +3770,12 @@ class GamesScreen(Screen):
                            15, T.TEXT_FAINT, anchor="center", maxw=bx.w - 24)
 
         # CH songs row
-        # Divisão para CIMA: com `n_games // cols + 1` um número de jogos
-        # múltiplo de quatro (doze, um dia) abriria uma fileira inteira de
-        # vazio entre a grade e esta linha, e empurraria a linha para fora da
-        # tela de 768.
-        linhas = (n_games + cols - 1) // cols
-        y2 = y + linhas * 120 + 10
+        # Divisão para CIMA (no `linhas`, lá em cima): com `n_games // cols + 1`
+        # um número de jogos múltiplo de quatro (doze, um dia) abriria uma
+        # fileira inteira de vazio entre a grade e esta linha, e empurraria a
+        # linha para fora da tela de 768.
+        y2 = y + linhas * passo + 10
+        alt_acao = max(40, min(60, r.bottom - 40 - y2))
         ch_actions = [
             ("buscar músicas", "󰍉", "buscar"),
             (f"baixadas ({len(self.downloaded)})", "󰀙", "baixadas"),
@@ -3716,7 +3788,7 @@ class GamesScreen(Screen):
         # pela esquerda com fins diferentes leem como erro de layout.
         cw2 = (r.w - 88 - gap * 3) // 4
         for i, (label, icon, _sub) in enumerate(ch_actions):
-            bx = pygame.Rect(x + i * (cw2 + gap), y2, cw2, 60)
+            bx = pygame.Rect(x + i * (cw2 + gap), y2, cw2, alt_acao)
             sel = i + n_games == self.sel
             T.panel(s, bx, T.INK_LIFT if sel else T.INK_SOFT, radius=10,
                     border=T.AMBER if sel else T.LINE)
@@ -3989,7 +4061,11 @@ class SettingsScreen(Screen):
         x, y = r.x + 44, r.y + 34
         T.text(s, "ajustes", (x, y), 30, T.TEXT, bold=True)
         y += 70
-        opt_w = min(560, r.w - 88)
+        # A coluna cede para a SAÍDA ter tamanho útil. Com `min(560, r.w-88)`
+        # fixo, numa tela de 1024 sobravam 136 px para o painel — onde sai a
+        # saída do atualizador, que é texto de terminal. É o mesmo piso de
+        # 420 px do `lista_com_saida`, pela mesma razão.
+        opt_w = min(560, max(280, r.w - 88 - 420))
         for i, (rotulo, cmd) in enumerate(self.opcoes()):
             sel = i == self.sel
             box = pygame.Rect(x, y, opt_w, 44)
@@ -4034,8 +4110,14 @@ class SettingsScreen(Screen):
         if jp_w > 120:
             jp = pygame.Rect(jp_x, r.y + 100, jp_w, r.h - 200)
         else:
-            jp = pygame.Rect(x, y + 20, opt_w, r.bottom - y - 100)
-        self.app.job_panel(s, jp, self.job)
+            # Numa tela estreita ele desce para baixo das opções — e ali tem
+            # que parar ANTES do rodapé (o "STYLUS", o build, o disco e a
+            # frase da agulha), que mora nos últimos 186 px. Sem isso ele era
+            # desenhado por cima deles.
+            jp = pygame.Rect(x, y + 20, opt_w,
+                             max(0, (r.bottom - 190) - (y + 20)))
+        if jp.h >= 60:
+            self.app.job_panel(s, jp, self.job)
         # **Esta era a única seção sem linha de dicas.** Todas as outras
         # dizem o que as teclas fazem; justamente a que troca a pasta da
         # coleção, o driver de vídeo e roda o atualizador não dizia nada — e

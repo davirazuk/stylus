@@ -1492,8 +1492,14 @@ def main():
         # A de 1024 entrou depois: é a que a máquina virtual e o monitor
         # velho dão, e foi nela que a quarta coluna dos JOGOS apareceu
         # desenhada FORA da tela.
-        for larg, alt in ((1024, 768), (1280, 720), (1366, 768),
-                          (1920, 1080), (3840, 2160)):
+        # A de 1024x600 entrou depois: é painel de carro, mini-PC e monitor
+        # velho, e foi nela que a fileira de ações dos JOGOS era desenhada
+        # sessenta pixels ABAIXO da borda de baixo. A de 800x600 é o piso do
+        # que o X entrega: nela os dois pisos da AGORA — 260 px para o disco
+        # e 180 para a coluna de texto — somavam mais do que a largura da
+        # tela, e o bloco inteiro saía pela direita.
+        for larg, alt in ((800, 600), (1024, 600), (1024, 768), (1280, 720),
+                          (1366, 768), (1920, 1080), (3840, 2160)):
             quadro = pygame.Rect(230, 0, larg - 230, alt)
             for i, tela in enumerate(app.screens):
                 app._goto(i)
@@ -1529,7 +1535,7 @@ def main():
         if batidas:
             bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))
         else:
-            ok(f"{len(app.screens)} seções × 4 resoluções, nada por cima de nada")
+            ok(f"{len(app.screens)} seções × 7 resoluções, nada por cima de nada")
         if vazados:
             bad(f"{len(vazados)} textos fora da tela", "\n".join(vazados[:5]))
         else:
