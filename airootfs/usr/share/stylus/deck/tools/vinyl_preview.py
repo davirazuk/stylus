@@ -154,19 +154,19 @@ def render(album, progress, W=2560, H=1600, rotation=None, lift=0.0, arm_radius=
     for pts, cols, wd in vinyl.edge_and_label_rings(cx, cy, radius, iso, light):
         draw_strip(dr, pts, cols, wd, w, h)
 
-    # o berço, e depois o braço
-    rest = vinyl.arm_rest(cx, cy, radius, iso)
-    if rest is not None and len(rest[0]):
-        draw_segments(dr, rest[0], rest[1], w, h, width_px=1.2)
-
+    # o braço — que é um facho, não uma peça (ver vinyl.tonearm)
     play_r = vinyl.R_PROG_OUT + (vinyl.R_PROG_IN - vinyl.R_PROG_OUT) * frac
     ar = arm_radius if arm_radius is not None else play_r
     segs, cols, stylus = vinyl.tonearm(cx, cy, radius, iso, ar, lift=lift)
     draw_segments(dr, segs, cols, w, h, width_px=1.6)
     spx = _to_px(np.array([stylus]), w, h)[0]
     if lift < 0.5:
-        r = 7 * SS
-        dr.ellipse((spx[0] - r, spx[1] - r, spx[0] + r, spx[1] + r), fill=(150, 220, 255))
+        # Âmbar, não azul: azul é a língua do scope (ver a paleta do
+        # vinyl.py), e esta é a agulha encostada no sulco — o único ponto
+        # saturado do quadro, pela §5.5.
+        r = 5 * SS
+        dr.ellipse((spx[0] - r, spx[1] - r, spx[0] + r, spx[1] + r),
+                   fill=(255, 196, 96))
 
     # bloom-ish
     glow = img.filter(ImageFilter.GaussianBlur(radius=10 * SS))

@@ -448,8 +448,6 @@ class RitualScene:
             if lg: strips.append(build_strip(lg[0],lg[2],W,H,lg[1]))
         for pts,cols,wd in vinyl.edge_and_label_rings(cx,cy,radius,iso,light):
             strips.append(build_strip(pts,wd,W,H,cols))
-        rest=vinyl.arm_rest(cx,cy,radius,iso)
-        if rest is not None and len(rest[0]): tris.append(build_segs(rest[0],1.8,W,H,rest[1]))
         play_r=vinyl.R_PROG_OUT + (vinyl.R_PROG_IN - vinyl.R_PROG_OUT)*frac
         segs,cols,_=vinyl.tonearm(cx,cy,radius,iso,self.deck.arm_target_radius(play_r),lift=self.deck.arm_lift())
         if len(segs): tris.append(build_segs(segs,2.2,W,H,cols))
@@ -472,7 +470,16 @@ class RitualScene:
             beam_segs2 = np.array([[sx, sy], [bx, by]], dtype=np.float32)
             beam_cols2 = np.array([[*hot, 1.0]], dtype=np.float32)
             tris.append(build_segs(beam_segs2, 0.08, W, H, beam_cols2))
-            # Sparks — flickering dots at the impact point
+            # Faíscas na gota da agulha (§5.5: elas EXISTEM e devem ser
+            # desenhadas). E até agora não eram: o "duplicate to make a tiny
+            # segment" faz um segmento de comprimento ZERO, e o build_segs
+            # monta o quadrilátero a partir da normal do segmento — com
+            # comprimento zero a normal é zero, os quatro vértices caem no
+            # mesmo ponto e o triângulo tem área zero. Quatro faíscas
+            # calculadas por quadro, nenhuma delas na tela.
+            #
+            # Uma faísca é um risco CURTO com direção própria, e é isso que
+            # a faz ler como respingo em vez de bolinha.
             impact_fade = beam_fade
             now_t = time.time()
             for sk in range(4):
@@ -481,8 +488,12 @@ class RitualScene:
                 spark_y = by + math.cos(t * 2.7) * 0.012 * radius * impact_fade
                 spark_bright = impact_fade * (0.3 + 0.3 * math.sin(t * 5.0 + sk))
                 spark_col = [[1.0 * spark_bright, 0.8 * spark_bright, 0.35 * spark_bright, 1.0]]
-                # build_segs needs pairs of points; duplicate to make a tiny segment
-                sp = np.array([[spark_x, spark_y], [spark_x, spark_y]], dtype=np.float32)
+                ang = t * 1.3 + sk
+                ln_s = (0.006 + 0.004 * self.deck.crackle) * radius
+                sp = np.array([[spark_x, spark_y],
+                               [spark_x + math.cos(ang) * ln_s,
+                                spark_y + math.sin(ang) * ln_s]],
+                              dtype=np.float32)
                 sc = np.array(spark_col, dtype=np.float32)
                 tris.append(build_segs(sp, 0.018, W, H, sc))
         arm=np.concatenate(tris,axis=0) if tris else None

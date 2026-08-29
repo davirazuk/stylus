@@ -329,20 +329,45 @@ def main():
     check("a agulha cai dentro do quadro", abs(stylus[0]) <= 1.5 and abs(stylus[1]) <= 1.5)
     # O braço parado tem que ficar FORA do disco, senão a agulha desenha
     # sulco durante a pausa da virada.
-    _s2, _c2, st_rest = vinyl.tonearm(-0.1, -0.1, 0.76, iso, vinyl.ARM_REST_RADIUS, lift=1.0)
+    s2, _c2, st_rest = vinyl.tonearm(-0.1, -0.1, 0.76, iso, vinyl.ARM_REST_RADIUS, lift=1.0)
     dx = (st_rest[0] - (-0.1)) / iso[0]
     dy = (st_rest[1] - (-0.1)) / iso[1]
     check("parado, a agulha fica fora do disco", math.hypot(dx, dy) > 0.76)
-    # O berço tem que ficar exatamente onde o braço para, senão ele desenha
-    # uma peça solta em vez de um descanso.
-    rest = vinyl.arm_rest(-0.1, -0.1, 0.76, iso)
-    check("arm_rest devolve pares de pontos", len(rest[0]) % 2 == 0 and len(rest[0]) > 0)
-    check("uma cor por segmento do berço", len(rest[1]) == len(rest[0]) // 2)
-    near = min(math.hypot(p[0] - st_rest[0], p[1] - st_rest[1]) for p in rest[0])
-    check("o berço fica onde a agulha para", near < 0.10)
-    check("e fora do disco",
-          all(math.hypot((p[0] + 0.1) / iso[0], (p[1] + 0.1) / iso[1]) > 0.76
-              for p in rest[0]))
+    # ── o braço é LUZ, e a lei do §5.5 se confere aqui ────────────────────
+    # O que havia era um toca-discos desenhado: tubo em nove cópias,
+    # contrapeso em barril, cabeçote, gimbal e um berço em U — e o CLAUDE.md
+    # proíbe isso pelo nome. Três perguntas que pegam a volta desse desenho:
+    check("nada de berço: arm_rest não existe mais",
+          not hasattr(vinyl, "arm_rest"))
+    # 1. Nenhum segmento atrás do pivô. O contrapeso morava lá, e é ele que
+    #    faz o braço ler como peça de máquina em vez de facho.
+    pv, (spx, spy) = vinyl.stylus_xy(-0.1, -0.1, 0.76, iso, 0.7, 0.0)
+    ux, uy = spx - pv[0], spy - pv[1]
+    atras = [p for p in segs
+             if (p[0] - pv[0]) * ux + (p[1] - pv[1]) * uy < -1e-4]
+    check("nada desenhado atrás do pivô (o contrapeso saiu)", not atras)
+    # 2. A luz mora na PONTA: a metade de fora tem que ser mais clara que a
+    #    de dentro, senão voltou a ser haste de brilho uniforme.
+    meio = [(sum(c[:3]),
+             ((segs[2 * i][0] + segs[2 * i + 1][0]) / 2 - pv[0]) * ux
+             + ((segs[2 * i][1] + segs[2 * i + 1][1]) / 2 - pv[1]) * uy)
+            for i, c in enumerate(cols)]
+    dentro = [b for b, d in meio if d < 0.5 * (ux * ux + uy * uy)]
+    fora = [b for b, d in meio if d >= 0.5 * (ux * ux + uy * uy)]
+    check("a luz do braço mora na ponta",
+          bool(dentro) and bool(fora)
+          and sum(fora) / len(fora) > 3.0 * (sum(dentro) / len(dentro)))
+    # 3. Levantado, o facho apaga — é assim que este desenho diz "saiu do
+    #    sulco", já que não há terceira dimensão para levantar nada.
+    check("levantado, o braço apaga",
+          float(np.sum(s2)) >= 0.0 and float(np.sum(_c2)) < float(np.sum(cols)))
+    # 4. Nenhum segmento de comprimento zero: o build_segs monta o
+    #    quadrilátero a partir da normal do segmento, e comprimento zero vira
+    #    quatro vértices no mesmo ponto — código que desenha nada.
+    zerados = sum(1 for i in range(len(segs) // 2)
+                  if math.hypot(segs[2 * i][0] - segs[2 * i + 1][0],
+                                segs[2 * i][1] - segs[2 * i + 1][1]) < 1e-6)
+    check("nenhum segmento de comprimento zero", zerados == 0)
     # O CUE é 1,7s inteiros de cerimônia; a 3° de arco ele era um tremor.
     ang_rest = vinyl.arm_angle_for_radius(vinyl.ARM_REST_RADIUS)
     ang_lead = vinyl.arm_angle_for_radius(vinyl.R_LEADIN)

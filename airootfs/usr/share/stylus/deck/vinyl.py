@@ -232,8 +232,12 @@ GROOVE_UNPLAYED = (0.105, 0.112, 0.120)   # ahead: graphite, a touch milky for v
 GROOVE_PLAYED   = (0.210, 0.218, 0.228)   # behind: lit, a touch brighter
 GROOVE_GAP      = (0.760, 0.750, 0.735)   # gap: near-white, countable de longe
 STYLUS_HOT      = (0.740, 0.520, 0.140)   # live: hot amber, only saturated accent
-ARM_METAL       = (0.285, 0.285, 0.290)   # brushed steel — warm neutral
-ARM_HIGHLIGHT   = (0.545, 0.545, 0.550)   # highlight — not blue
+# O braço não é metal: é o facho. Ver `tonearm` — o CLAUDE.md §5.5 proíbe
+# "braço de metal com contrapeso desenhado" pelo nome, e manda no lugar
+# "feixe âmbar na agulha pulsando". Estas duas cores são esse feixe: fraco
+# no corpo do traço, quente onde ele encosta na música.
+ARM_LIGHT       = (0.560, 0.315, 0.095)   # o traço — âmbar baixo, não compete
+ARM_TIP         = (0.980, 0.700, 0.300)   # a agulha encostada — o ponto quente
 EDGE_RING       = (0.185, 0.185, 0.188)   # edge / label rim — steel
 DUST            = (0.165, 0.165, 0.168)   # dust — neutral
 ALARM           = (0.740, 0.230, 0.225)   # side break — muted red, not bloom
@@ -1929,8 +1933,12 @@ ARM_PIVOT_ANGLE = math.radians(42.0)   # clockwise from 12 o'clock: rear right
 # é que 26% além da borda lê como fora do disco, e 7% lê como quase caindo
 # dentro dele.
 #
-# O que faz isso parar de ser "pairando sem explicação" é o berço desenhado
-# em arm_rest(): um toca-discos tem um descanso, e agora este tem.
+# O que fazia isso parar de ser "pairando sem explicação" era um berço em U
+# desenhado em `arm_rest()` — que saiu junto com o resto do toca-discos de
+# mentira (ver `tonearm`). Não faz falta: o que pairava era um BRAÇO DE
+# METAL, e metal parado no ar pede alguma coisa embaixo. O facho, não —
+# parado ele simplesmente apaga, e o que fica é o ponto de onde ele vai
+# descer, que é a mesma coisa que a AGORA desenha quando não há nada tocando.
 ARM_REST_RADIUS = 1.26
 
 
@@ -1970,23 +1978,42 @@ def stylus_xy(cx, cy, radius, iso, stylus_radius, lift=0.0):
     return pv, (pv[0] + (sx - pv[0]) * push, pv[1] + (sy - pv[1]) * push)
 
 
-def arm_rest(cx, cy, radius, iso):
-    """O berço em que o braço pousa quando não está tocando.
+def tonearm(cx, cy, radius, iso, stylus_radius, lift=0.0):
+    """O braço em LUZ: um traço que acende na ponta e some antes do pivô.
 
-    Um braço levantado e parado no ar, sem nada embaixo, lê como um defeito
-    de desenho — foi assim que a virada de lado apareceu na primeira vez.
-    Com o berço no ponto onde ele realmente para (mesma stylus_xy que
-    desenha o braço, então os dois não têm como divergir), a mesma pose
-    passa a ler como pousado. É também mais um objeto no deck, que é o
-    ponto: o ritual mora nos objetos.
+    ── Por que não há tubo, contrapeso, cabeçote nem gimbal ──────────────────
+    Havia, e era o defeito. Tubo de alumínio em nove cópias paralelas — o
+    comentário dizia "real aluminium tube on a 152mm record is about 10mm
+    across" —, um contrapeso em barril de 41 segmentos atrás do pivô, um
+    cabeçote inclinado nos 23° de praxe, o anel do gimbal, e ao lado um berço
+    em U com pé. Uma peça de móvel desenhada em cinza-aço no meio de um
+    quadro cujo assunto é âmbar no escuro.
+
+    O CLAUDE.md §5.5 proíbe isso pelo nome ("braço de metal com contrapeso
+    desenhado") e diz o que vai no lugar: "feixe âmbar na agulha pulsando".
+    A AGORA já tinha tirado o braço dela pelo mesmo motivo — ver
+    `NowScreen._nothing` — e a lei avisa que isto já custou semanas de volta.
+
+    **O RITUAL não muda, e é ele que era para ser analógico.** A agulha anda
+    pelo lado, o raio é o tempo, o braço pivota de um ponto FORA do disco:
+    tudo isso é `stylus_xy`, que continua idêntica. O que muda é o material.
+    Em vez de metal iluminado por uma luz que não existe, o braço É a luz:
+
+        o corpo    fraco, e começa a 38% do caminho — perto do pivô não há
+                   nada, e é isso que impede o traço de ler como haste
+                   apoiada num parafuso
+        a ponta    quase toda a luz mora ali (o expoente 2.2), porque é ali
+                   que ele encosta na música
+        a agulha   uma cruz curta e quente, não um cabeçote
+
+    `lift` em [0,1] tira a agulha do sulco. Sem terceira dimensão, quem diz
+    "saiu" é a luz se retirando — o facho apaga e a ponta esfria — em vez de
+    um objeto subindo. E é por isso que o berço deixou de ser necessário: um
+    braço de metal parado no ar pede alguma coisa embaixo; um facho que se
+    apaga, não.
     """
-    pv, s = stylus_xy(cx, cy, radius, iso, ARM_REST_RADIUS, lift=1.0)
-    ux, uy = s[0] - pv[0], s[1] - pv[1]
-    ln = math.hypot(ux, uy) or 1.0
-    ux, uy = ux / ln, uy / ln
-    nx, ny = -uy, ux
-    dim = tuple(v * 0.95 for v in ARM_METAL)
-    hi = tuple(v * 0.95 for v in ARM_HIGHLIGHT)
+    pv, (sx, sy) = stylus_xy(cx, cy, radius, iso, stylus_radius, lift)
+
     segs, cols = [], []
 
     def seg(a, b, color):
@@ -1994,100 +2021,33 @@ def arm_rest(cx, cy, radius, iso):
         segs.append(np.array(b, dtype=np.float32))
         cols.append([color[0], color[1], color[2], 1.0])
 
-    # Uma forquilha em U que ABRE para o lado do pivô: as duas hastes
-    # ladeiam a cabeça e a travessa é onde ela encosta. A primeira versão
-    # tinha as hastes para o outro lado e o U ficava inteiro além da ponta
-    # do braço, sem nada dentro — de fora lia como uma caixinha solta
-    # flutuando, não como um descanso segurando alguma coisa.
-    w = 0.050 * radius            # meia-largura, folgada em volta da cabeça
-    d = 0.085 * radius            # o quanto as hastes recuam ladeando o braço
-    c = (s[0] + ux * 0.030 * radius, s[1] + uy * 0.030 * radius)
-    a1 = (c[0] + nx * w, c[1] + ny * w)
-    a2 = (c[0] - nx * w, c[1] - ny * w)
-    seg(a1, a2, hi)                                       # a travessa
-    seg(a1, (a1[0] - ux * d, a1[1] - uy * d), dim)        # as hastes
-    seg(a2, (a2[0] - ux * d, a2[1] - uy * d), dim)
-    # o pé, visto de cima: fora do U, do lado de fora da travessa
-    th = np.linspace(0.0, 2.0 * np.pi, 13)
-    foot = (c[0] + ux * 0.034 * radius, c[1] + uy * 0.034 * radius)
-    pc = _polar(foot[0], foot[1], 0.019 * radius, th, iso)
-    for j in range(len(th) - 1):
-        seg(pc[j], pc[j + 1], dim)
-    seg(c, foot, dim)
-    return np.array(segs, dtype=np.float32), np.array(cols, dtype=np.float32)
+    # Levantado o facho não some de vez: some o suficiente para dizer que
+    # saiu do sulco, e fica o bastante para ainda se ver ONDE ele parou.
+    acende = 1.0 - 0.72 * lift
+    ux, uy = sx - pv[0], sy - pv[1]
+    n, t0 = 24, 0.38
+    for i in range(n):
+        a = t0 + (1.0 - t0) * (i / n)
+        b = t0 + (1.0 - t0) * ((i + 1) / n)
+        f = ((i + 1) / n) ** 2.2
+        c = tuple(v * f * acende for v in ARM_LIGHT)
+        seg((pv[0] + ux * a, pv[1] + uy * a),
+            (pv[0] + ux * b, pv[1] + uy * b), c)
 
-
-def tonearm(cx, cy, radius, iso, stylus_radius, lift=0.0):
-    """Arm tube, headshell, counterweight, pivot — as disconnected segments.
-
-    lift in [0,1] raises the arm off the record. There is no third dimension
-    here, so the cue is done the way a shadow-less top-down view can do it:
-    the arm brightens and shifts very slightly outward, the way something
-    lifting toward the light does, and the stylus contact point goes out.
-    """
-    pv, (sx, sy) = stylus_xy(cx, cy, radius, iso, stylus_radius, lift)
-
-    segs, cols = [], []
-
-    def seg(a, b, color, reps=1):
-        for _ in range(reps):
-            segs.append(np.array(a, dtype=np.float32))
-            segs.append(np.array(b, dtype=np.float32))
-            cols.append([color[0], color[1], color[2], 1.0])
-
-    bright = 1.0 + lift * 0.6
-    metal = tuple(c * bright for c in ARM_METAL)
-    hi = tuple(c * bright for c in ARM_HIGHLIGHT)
-
-    # Counterweight stub, behind the pivot. It needs an actual weight on the
-    # end: a bare stub reads as the arm continuing off the frame forever
-    # instead of terminating, which is what it looked like before — a stray
-    # line across the corner, not a tonearm. A real counterweight is a short
-    # fat barrel, and its mass is most of what makes the arm read as balanced
-    # rather than as a pointer.
-    back = (pv[0] - (sx - pv[0]) * 0.22, pv[1] - (sy - pv[1]) * 0.22)
-    seg(pv, back, metal)
-    bux, buy = (back[0] - pv[0]), (back[1] - pv[1])
-    bln = math.hypot(bux, buy) or 1.0
-    bnx, bny = -buy / bln, bux / bln
-    cw_half = 0.052 * radius       # how far the barrel stands off the axis
-    cw_len = 0.055 * radius        # how long it is along the axis
-    for t in np.linspace(-1.0, 1.0, 41):
-        ax = back[0] + (bux / bln) * cw_len * t
-        ay = back[1] + (buy / bln) * cw_len * t
-        # ends of the barrel are narrower, so it reads as round, not as a slab
-        w = cw_half * math.sqrt(max(0.0, 1.0 - t * t * 0.55))
-        seg((ax - bnx * w, ay - bny * w), (ax + bnx * w, ay + bny * w),
-            hi if abs(t) < 0.2 else metal)
-    # the tube: drawn as several parallel copies so it has real thickness
-    # without needing a second, wider shader path
-    ux, uy = (sx - pv[0]), (sy - pv[1])
+    # A agulha: uma cruz curta no ponto de contato. Curta e NÃO degenerada —
+    # o build_segs monta um quadrilátero a partir da normal do segmento, e
+    # um segmento de comprimento zero vira quatro vértices no mesmo lugar,
+    # ou seja, nada desenhado (foi assim que as "faíscas" do ritual.py
+    # passaram a existir no código sem nunca aparecer na tela).
     ln = math.hypot(ux, uy) or 1.0
-    nx, ny = -uy / ln, ux / ln
-    # The tube has to out-weigh the beam trace visually or the arm reads as
-    # another signal line. Real aluminium tube on a 152mm record is about
-    # 10mm across; this is that, in NDC, as parallel copies.
-    tube = (-0.0060, -0.0045, -0.0030, -0.0015, 0.0, 0.0015, 0.0030, 0.0045, 0.0060)
-    for k, off in enumerate(tube):
-        c = hi if k == 4 else metal
-        seg((pv[0] + nx * off, pv[1] + ny * off), (sx + nx * off, sy + ny * off), c)
-    # headshell: a short block canted at the standard offset angle
-    off_ang = math.radians(23.0)
-    hl = 0.085 * radius
-    hdx = (ux / ln) * math.cos(off_ang) - (uy / ln) * math.sin(off_ang)
-    hdy = (ux / ln) * math.sin(off_ang) + (uy / ln) * math.cos(off_ang)
-    for off in (-0.010, -0.006, -0.002, 0.002, 0.006, 0.010):
-        seg((sx + nx * off - hdx * hl, sy + ny * off - hdy * hl),
-            (sx + nx * off + hdx * hl * 0.25, sy + ny * off + hdy * hl * 0.25), hi)
-    # pivot gimbal
-    th = np.linspace(0, 2 * np.pi, 17)
-    pr = 0.035 * radius
-    # iso, like every other element here. Passing (1,1) drew the one part of
-    # the arm that is supposed to be a circle as a 1.6:1 ellipse on a 16:10
-    # screen — the same aspect bug the geometric modes in scope.py already had.
-    pc = _polar(pv[0], pv[1], pr, th, iso)
-    for j in range(len(th) - 1):
-        seg(pc[j], pc[j + 1], hi)
+    tx, ty = ux / ln, uy / ln
+    nx, ny = -ty, tx
+    quente = tuple(v * (0.35 + 0.65 * (1.0 - lift)) for v in ARM_TIP)
+    d = 0.012 * radius
+    seg((sx - tx * d, sy - ty * d), (sx + tx * d * 0.6, sy + ty * d * 0.6),
+        quente)
+    seg((sx - nx * d * 0.8, sy - ny * d * 0.8),
+        (sx + nx * d * 0.8, sy + ny * d * 0.8), quente)
     return np.array(segs, dtype=np.float32), np.array(cols, dtype=np.float32), (sx, sy)
 
 
