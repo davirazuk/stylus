@@ -340,15 +340,30 @@ else bad "a área de trabalho abre o que não existe:"; printf '      %s\n' "${f
 # O terminal, porém, é nomeado direto na config e foi ele que quebrou: $term
 # era xfce4-terminal, que não está em lista de pacote nenhuma, então o
 # Mod+Enter do medium ao vivo não abria nada. Isso dá para conferir exato.
+#
+# E o do ROFI junto, que é o mesmo defeito no arquivo do lado: a config do i3
+# foi consertada com o motivo escrito ao lado dela e o
+# `~/.config/rofi/config.rasi` continuou dizendo `terminal: "xfce4-terminal"`.
+# É o terminal que o rofi usa para abrir entrada de `Terminal=true` — htop,
+# nano, ranger — e o efeito é o pior que existe: clicar e não acontecer nada,
+# sem erro em lugar nenhum. Conferir um arquivo e não o vizinho é como este
+# defeito sobreviveu ao próprio conserto.
 if [[ -f $LISTA_INST ]]; then
-    TERMDEF=$(sed -n 's/^set \$term  *//p' airootfs/etc/skel/.config/i3/config | awk '{print $1}')
-    if [[ -z $TERMDEF ]]; then
-        bad "a config do i3 não define \$term"
-    elif nomes "$LISTA_INST" | grep -qx "$TERMDEF" && nomes "$LISTA_ISO" | grep -qx "$TERMDEF"; then
-        ok "o terminal do Mod+Enter ($TERMDEF) está nas duas listas de pacote"
-    else
-        bad "\$term é '$TERMDEF', que não está nas duas listas — Mod+Enter não abre nada"
-    fi
+    declare -A TERMOS=(
+        [i3]="$(sed -n 's/^set \$term  *//p' airootfs/etc/skel/.config/i3/config | awk '{print $1}')"
+        [rofi]="$(sed -n 's@^[[:space:]]*terminal:[[:space:]]*"\([^"]*\)".*@\1@p' \
+                  airootfs/etc/skel/.config/rofi/config.rasi | awk '{print $1}')"
+    )
+    for _quem in i3 rofi; do
+        _t=${TERMOS[$_quem]}
+        if [[ -z $_t ]]; then
+            bad "a config do $_quem não diz qual é o terminal"
+        elif nomes "$LISTA_INST" | grep -qx "$_t" && nomes "$LISTA_ISO" | grep -qx "$_t"; then
+            ok "o terminal do $_quem ($_t) está nas duas listas de pacote"
+        else
+            bad "o terminal do $_quem é '$_t', que não está nas duas listas — não abre nada"
+        fi
+    done
 fi
 
 sec "nenhuma casa de ninguém escrita à mão"
@@ -745,7 +760,12 @@ LIMITE = 22.0        # abaixo disto, duas cores sao a mesma intencao
 # nao e uma paleta: e a barra do i3 e o Dolphin do KDE discordando sobre
 # qual e o cinza do sistema, que e exatamente o que se quer evitar quando
 # duas pessoas usam a mesma maquina de jeitos diferentes.
-RAIZES = ["airootfs/etc/skel",
+# `airootfs/etc` inteiro e nao so o `/etc/skel`: havia uma SEGUNDA arvore da
+# polybar em `/etc/polybar`, com nove dos dez arquivos diferentes da do skel e
+# a paleta VELHA dentro (#e2e7f0, #5c6478, #b090f0, #70c8e8 — as cores que o
+# cabecalho do arquivo `palette` cita pelo nome como exemplo de deriva). Ela
+# passou verde por anos porque esta conferencia so olhava o /etc/skel.
+RAIZES = ["airootfs/etc",
           "airootfs/usr/share/color-schemes",
           "airootfs/usr/share/Kvantum",
           "airootfs/usr/share/qt5ct",

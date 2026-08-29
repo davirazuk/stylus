@@ -30,6 +30,13 @@ DEVICES=${STYLUS_CONTROLLER_DEVICES:-/proc/bus/input/devices}
 #  nothing installed. Each block is one device; the ones with a "js" handler
 #  are the ones the kernel considers gamepads.
 list_pads() {   # emits: <js device>\t<name>\t<vendor>:<product>
+    # A ordem das redireções importa, e a que estava aqui era a errada:
+    # `done < "$DEVICES" 2>/dev/null` abre o arquivo ANTES de o 2>/dev/null
+    # existir, então "No such file or directory" escapa para o journal. Vale
+    # para o contêiner e para quem apontar o STYLUS_*_DEVICES para outro
+    # lugar. Perguntar antes é mais honesto do que calar o laço inteiro: o
+    # `2>/dev/null` no `done` também engolia o erro de tudo que roda dentro.
+    [[ -r $DEVICES ]] || return 0
     local name="" handlers="" ids=""
     while IFS= read -r line; do
         case $line in
@@ -48,7 +55,7 @@ list_pads() {   # emits: <js device>\t<name>\t<vendor>:<product>
                 fi
                 name=""; handlers=""; ids="" ;;
         esac
-    done < "$DEVICES" 2>/dev/null
+    done < "$DEVICES"
 }
 
 # The families the kernel has a real driver for. Anything else still works as a

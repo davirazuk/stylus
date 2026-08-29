@@ -7,7 +7,15 @@ configuration {
     display-run:         "  comando";
     display-window:      "  janelas";
     drun-display-format: "{name}";
-    terminal:            "xfce4-terminal";
+    // alacritty, e não xfce4-terminal.
+    //
+    // A config do i3 já tinha sido consertada por causa deste MESMO nome,
+    // com o motivo escrito ao lado dela: o xfce4-terminal não está em
+    // lista de pacote nenhuma deste sistema. Aqui ele ficou. É o terminal
+    // que o rofi usa para abrir entrada de `Terminal=true` — htop, nano,
+    // ranger, o instalador de qualquer coisa — e o efeito é o pior que
+    // existe: clicar e não acontecer nada, sem erro em lugar nenhum.
+    terminal:            "alacritty";
     sidebar-mode:        false;
 }
 

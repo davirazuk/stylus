@@ -88,6 +88,13 @@ xinput_pointers() {   # emits: <id>\t<name>
 
 # The kernel's view: blocks that carry a "mouse" handler are pointing devices.
 kernel_mice() {       # emits: <event device>\t<name>\t<vendor>:<product>
+    # A ordem das redireções importa, e a que estava aqui era a errada:
+    # `done < "$DEVICES" 2>/dev/null` abre o arquivo ANTES de o 2>/dev/null
+    # existir, então "No such file or directory" escapa para o journal. Vale
+    # para o contêiner e para quem apontar o STYLUS_*_DEVICES para outro
+    # lugar. Perguntar antes é mais honesto do que calar o laço inteiro: o
+    # `2>/dev/null` no `done` também engolia o erro de tudo que roda dentro.
+    [[ -r $DEVICES ]] || return 0
     local name="" handlers="" ids=""
     while IFS= read -r line; do
         case $line in
@@ -106,7 +113,7 @@ kernel_mice() {       # emits: <event device>\t<name>\t<vendor>:<product>
                 fi
                 name=""; handlers=""; ids="" ;;
         esac
-    done < "$DEVICES" 2>/dev/null
+    done < "$DEVICES"
 }
 
 # Vendors libratbag has a device database for. Not a promise that a given model
