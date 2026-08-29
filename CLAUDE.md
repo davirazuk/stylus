@@ -353,6 +353,22 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   `test_ritual.py` ficaram de fora de tudo por precisarem de um `--album`
   que num contêiner não existe. O `check.sh` agora monta oito WAVs de
   silêncio com o módulo `wave` e roda.
+- **"1 faixas".** A regra do plural estava escrita à mão em quinze lugares
+  (`f"{n} faixas"`) e o caso do 1 faltava em todos: "1 discos", "posto há 1
+  meses", "1 discos · 1 vezes". Não derruba nada e não some sozinho — só faz
+  o sistema parecer traduzido por máquina, e o texto que a pessoa vê é a
+  única parte dele que ela lê inteira. `model.plural`.
+- **O sorteio lia a coleção inteira do disco.** O `draw_record` abria um
+  `Album` de CADA candidato para aplicar um empurrãozinho de 15% pela hora do
+  dia — quatro mil e quinhentos arquivos abertos (e um ffprobe por faixa que
+  o mutagen não lê) para um ajuste que o próprio comentário chama de sutil.
+  Sorteie pelo que é barato, tire uma dúzia de finalistas, e só neles pague o
+  preço. Vale sempre que um peso caro decide pouco.
+- **Conferência que reprova por falta de dependência ensina a ignorar a
+  conferência.** O `check.sh` roda aqui, no contêiner Arch da nuvem e na
+  máquina de quem mexe, e nem todos têm numpy, pygame e mutagen. Sem guarda,
+  o vermelho dizia "o aviso do fim do lado manda a coisa errada" numa máquina
+  onde ele está perfeito. Use o prefixo `PULA`, que vira um "—" amarelo.
 - **Piso que não cabe não é piso, é vazamento com nome bonito.** A AGORA
   tinha dois: 260 px para o disco e 180 para a coluna de texto. Juntos, mais
   do que a largura de uma tela de 800 — e o bloco inteiro era desenhado para
@@ -590,6 +606,23 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   achou de cara uma divisão por zero no rastro do sulco (`passos` valia 0 e
   o laço dividia por ele). Custa nada e cobre os três momentos em que a
   agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
+
+### Nona leva (texto, custo e o celular)
+- **"1 faixas" em quinze lugares**, e o `ha_quanto` com o mesmo defeito em
+  três das cinco frases.
+- **Sortear um disco lia a coleção inteira** — ver a lição na §4. Junto:
+  "monta uma noite" varria a estante três vezes para escolher três discos.
+- **O celular repartia o MESMO disco de um jeito diferente do computador**
+  (teto de 22 min contra 26, sem equilíbrio e sem a regra do par). O
+  `buildSides` do VinylActivity.kt agora é a transliteração do
+  `Album._build_sides`, conferida contra ele em 192 formas de disco — nada
+  neste repositório compila o app do celular, então a lógica foi provada
+  traduzindo o Kotlin de volta para Python.
+- **Numa playlist, o deck dizia "CONTÍNUO acabou — agora o CONTÍNUO"**: o
+  mesmo lado duas vezes, porque num disco de um lado só o `i` e o `i-1` são
+  o mesmo.
+- Conferências novas: o plural, o custo do sorteio, o celular, e as quatro
+  de hoje passaram a PULAR onde falta dependência em vez de reprovar.
 
 ### Oitava leva (o lançador em telas pequenas)
 - **Em 1024x600 — painel de carro, mini-PC, monitor velho — quatro telas
