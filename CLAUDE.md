@@ -221,6 +221,33 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   para onde escurecer. Medido, a sombra que existia mudava no máximo 7
   unidades somando os três canais. Num fundo escuro, peso vem de LUZ — uma
   aresta iluminada, uma lombada. Ver `T.sleeve` no `ui/theme.py`.
+- **`ceil(total / teto_do_lado)` dá disco de TRÊS lados.** Um LP de 45 min —
+  a forma mais comum que um disco tem — saía com três lados de quinze. Duas
+  coisas: 22 min é o lado CONFORTÁVEL e não o teto (o lado A de Abbey Road
+  tem 23min30; o teto virou 26), e quem se arredonda para cima é o número de
+  DISCOS, porque o disco é o objeto e ele tem dois lados sempre.
+- **Duração zero não é "não sei", é "não dura nada".** Faixa que nem o
+  mutagen nem o ffprobe leem entrava com 0, e três num disco de doze tiram um
+  quarto do total: some um LADO inteiro, o "vira em X" mente e a agulha do
+  deck aponta para o sulco errado, tudo sem erro nenhum. As que faltam
+  recebem a MEDIANA das que deram (a média quebra num disco com uma faixa de
+  vinte minutos), marcadas com `estimada`.
+- **`dirname` de um ENDEREÇO é a mesma string para tudo.** Um disco da rede
+  não tem caminho: o dirname de `https://x.invalid/123.flac` é
+  `https:/x.invalid` para TODA playlist do Qobuz. Quem compara isso para
+  saber "trocou de disco?" nunca troca. A pergunta certa é o `Album.folder`.
+- **Lado sem `label` derruba a tela.** O lado único de uma playlist
+  (`continuo`) saía sem rótulo — a etiqueta é posta num laço que o atalho da
+  playlist pula — e a AGORA faz `side["label"]`. Toda playlist do Qobuz
+  virava tela de erro. Dado que falta pode virar "LADO"; não pode virar
+  traceback: use `.get` em desenho.
+- **Camada de texto criada, desenhada e nunca alimentada.** As duas legendas
+  do deck eram construídas no `main()` e desenhadas em todo quadro, e ninguém
+  chamava `set_text` nelas: o deck nunca disse "vire o disco", que é a tese
+  do sistema. As peças todas existiam (play_banner, banner(),
+  caption_is_state(), a cor ALARM na paleta); faltava o último fio. Quando
+  achar um helper que ninguém chama, desconfie de um recurso inteiro faltando
+  — foi assim também com o `Nx` do diário e o "X min encostado no móvel".
 - **Tecla que muda um campo e acende um ícone não é tecla.** O `[s]`
   (embaralhar) e o `[R]` (repetir) da AGORA viravam `not self.shuffle`, um
   toast e um ícone — e NENHUMA linha do programa contava ao mpv. A música
@@ -374,6 +401,25 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   capas "OS QUE VOLTAM" filtra por esse número, ela não desenhava NADA — meia
   página faltando sem aviso. Agora a contagem sai do registro que a própria
   tela acabou de ler.
+
+### Terceira leva (defeitos que o usuário viu, e o visual da AGORA)
+- **Playlist do Qobuz quebrava a AGORA** (lado sem rótulo — ver a §4), a loja
+  parava nos **100 primeiros favoritos** (agora pagina de 100 em 100 até o
+  total, teto em STYLUS_QOBUZ_FAVORITOS) e a busca subiu de 30 para 100.
+- **Os lados e os discos** passaram a bater com o objeto: 45 min = 2 lados,
+  74 = 4, 90 = 4 (era 5). O `Album.discos` existe e a AGORA escreve
+  "DISCO 2 · LADO C" — com a folga MEDIDA, que é a lição de sempre.
+- **O disco da AGORA SAI da capa** em vez de ser um aro atrás dela: sai pela
+  esquerda, o bloco inteiro (saliência + capa + coluna) é que se centra, a
+  lombada da capa foi para o outro lado (o disco estava saindo por dentro da
+  costura), a agulha aparece no sulco em que está (o raio é o tempo), e o
+  disco PÁRA quando a música pára — o ângulo acumula em vez de ser lido do
+  relógio.
+- **O deck ganhou voz**: "LADO A acabou — vire o disco para o LADO B" em
+  ALARM, "PRIMEIRA VEZ" quando a agulha desce, o nome da faixa no canto.
+- **A PILHA mede o compromisso**: empilhar lê o disco numa thread e a linha
+  passa a dizer "45 min · 2 lados", com o total da noite no rodapé — que era
+  uma frase escrita atrás de um `if` que nunca foi verdade.
 
 ### Futuras Melhorias
 - **Ritual vinyl:** o rework do composto CRT (disco como OBJETO, `u_disc`/
