@@ -1356,6 +1356,84 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+# ── os favoritos do Qobuz vêm TODOS, não os cem primeiros ─────────────────
+# **Sintoma:** a loja mostrava 100 discos e parava. Sem recado, sem "mostrando
+# 100 de 340" — os outros simplesmente não existiam ali, e quem favoritou 200
+# discos no celular via metade da própria estante. A chamada tinha `offset=0`
+# escrito à mão e nunca uma segunda página.
+#
+# Um laço que fala com a rede tem que ter mais de uma saída, senão um dia ele
+# não sai: a conferência põe um Qobuz de mentira e cobra as quatro (total
+# alcançado, página curta, página vazia, teto).
+sec "os favoritos do Qobuz vêm todos"
+saida=$(python3 - <<'FAVEOF' 2>/dev/null
+import importlib.machinery as _im, importlib.util as _iu, sys, types, traceback
+sys.path.insert(0, "airootfs/usr/share/stylus")
+# O qobuz_busca precisa do qobuz-dl instalado; aqui só interessa a paginação.
+_m = types.ModuleType("qobuz_busca")
+_m.Recusa = type("Recusa", (Exception,), {})
+_m.cliente = lambda: None
+_m.disco = lambda i: i
+sys.modules["qobuz_busca"] = _m
+try:
+    _spec = _iu.spec_from_loader("qs", _im.SourceFileLoader(
+        "qs", "airootfs/usr/share/stylus/qobuz_shelf.py"))
+    qs = _iu.module_from_spec(_spec)
+    _spec.loader.exec_module(qs)
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+
+class Cli:
+    sec = "x"
+
+    def __init__(self, total, declara=True):
+        self.total, self.declara, self.chamadas = total, declara, []
+
+    def api_call(self, _ep, **kw):
+        off, lim = kw["offset"], kw["limit"]
+        self.chamadas.append((off, lim))
+        itens = [{"id": i} for i in range(off, min(off + lim, self.total))]
+        bloco = {"items": itens}
+        if self.declara:
+            bloco["total"] = self.total
+        return {"albums": bloco}
+
+
+class Vazio(Cli):
+    def api_call(self, _ep, **kw):
+        return {}
+
+
+try:
+    erros = []
+    for total, teto in ((340, 1000), (100, 1000), (7, 1000), (0, 1000),
+                        (900, 250)):
+        c = Cli(total)
+        itens, _t = qs.favoritos_todos(c, teto)
+        if len(itens) != min(total, teto):
+            erros.append("total=%d teto=%d veio %d" % (total, teto, len(itens)))
+    c = Cli(250, declara=False)
+    if len(qs.favoritos_todos(c, 1000)[0]) != 250:
+        erros.append("sem 'total' declarado, parou cedo")
+    if qs.favoritos_todos(Vazio(10), 1000)[0]:
+        erros.append("resposta vazia devolveu disco")
+    if erros:
+        print("ERRO %s" % "; ".join(erros))
+    else:
+        print("OK 340 favoritos saem em 4 páginas, e o teto corta com recado")
+except BaseException:                                    # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+FAVEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o qobuz_shelf aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a loja do Qobuz para de contar disco cedo demais"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 # ── a assinatura vencida do Qobuz é renovada com a música tocando ─────────
 # **Sintoma:** os endereços do Qobuz valem ~1 h e uma playlist de 200 faixas
 # são 13. Passada a hora, o mpv pedia o endereço seguinte, levava 403, pulava

@@ -1326,7 +1326,14 @@ class Album:
             self.sides = []
             return
         if getattr(self, "continuo", False):
-            self.sides = [{"start": 0.0, "end": self.total,
+            # O rótulo NÃO é opcional. Este lado saía sem ele — a etiqueta é
+            # posta no laço lá embaixo, que este `return` pula — e a AGORA
+            # faz `side["label"]`: pôr uma playlist do Qobuz e ir para a
+            # AGORA levantava KeyError, ou seja, a tela principal do sistema
+            # quebrava para toda playlist. Não é "SIDE A": uma playlist não
+            # tem lado nenhum, e é justamente essa a diferença que este
+            # sistema existe para marcar.
+            self.sides = [{"start": 0.0, "end": self.total, "label": "CONTÍNUO",
                            "tracks": list(range(len(self.tracks)))}]
             return
         n_sides = max(1, math.ceil(self.total / SIDE_MAX_SECONDS))
@@ -1380,7 +1387,8 @@ class Album:
                 return i, s
         if self.sides:
             return len(self.sides) - 1, self.sides[-1]
-        return 0, {"label": "SIDE A", "start": 0.0, "end": max(1.0, self.total), "tracks": []}
+        return 0, {"label": "SIDE A", "start": 0.0,
+                   "end": max(1.0, self.total), "tracks": []}
 
     def track_for(self, t):
         for i, tr in enumerate(self.tracks):

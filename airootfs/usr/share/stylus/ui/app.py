@@ -507,7 +507,10 @@ class NowScreen(Screen):
         if side:
             resta = max(0.0, side["end"] - t_abs)
             ultimo = side is al.sides[-1]
-            rotulo = side["label"].replace("SIDE", "LADO")
+            # `.get` e não `[...]`: um lado sem etiqueta derrubava a tela
+            # inteira (era o caso das playlists do Qobuz). Dado que falta
+            # pode virar "LADO"; não pode virar tela de erro.
+            rotulo = side.get("label", "LADO").replace("SIDE", "LADO")
             # cor do lado respira com o áudio
             side_alpha = int(180 + level * 75) if level > 0.01 else 180
             side_cor = T.lerp(T.AMBER, (255, 255, 255), (side_alpha - 180) / 75)
@@ -4515,8 +4518,8 @@ class App:
             anterior = al.sides[self._lado_i]
             ultimo = i >= len(al.sides) - 1
             self._flip = (time.time(),
-                          anterior["label"].replace("SIDE", "LADO"),
-                          side["label"].replace("SIDE", "LADO"),
+                          anterior.get("label", "LADO").replace("SIDE", "LADO"),
+                          side.get("label", "LADO").replace("SIDE", "LADO"),
                           f"{al.artist} — {al.name}", ultimo)
         self._lado_i = i
 

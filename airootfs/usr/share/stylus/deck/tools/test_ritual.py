@@ -12,9 +12,12 @@ Não testa aparência. Aparência se confere olhando:
     ./venv/bin/python tools/test_ritual.py [--album CAMINHO]
 """
 import argparse
+import json
 import math
 import os
+import shutil as _shutil
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -387,7 +390,6 @@ def main():
 
     # ── de quem é o disco quando ele está solto na raiz ───────────────────
     case("um disco solto na raiz não é da banda 'Songs'")
-    import shutil as _shutil
     import tempfile as _tf
     _raiz = _tf.mkdtemp(prefix="stylus-raiz-")
     try:
@@ -507,6 +509,35 @@ def main():
             vinyl.CACHE_QOBUZ = _cache
     finally:
         _shutil.rmtree(_tmp, ignore_errors=True)
+
+    case("todo lado tem rótulo — inclusive o que não é lado")
+    # **Sintoma:** a AGORA faz `side["label"]`. O lado único de uma playlist
+    # (`continuo: true`) saía SEM rótulo, porque a etiqueta é posta num laço
+    # que o atalho da playlist pula — pôr uma playlist do Qobuz e ir para a
+    # AGORA levantava KeyError, e a tela principal do sistema virava tela de
+    # erro para toda playlist.
+    check("os lados de um disco têm rótulo",
+          all(s.get("label") for s in alb.sides))
+    _tmpc = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(_tmpc, "disco.json"), "w", encoding="utf-8") as fh:
+            json.dump({"fonte": "qobuz-lista", "artist": "Dono",
+                       "album": "Grande", "continuo": True,
+                       "tracks": [{"title": "F%d" % i, "duration": 200,
+                                   "url": "https://x.invalid/%d.flac" % i}
+                                  for i in range(40)]}, fh)
+        pl = vinyl.Album(_tmpc, envelope=False)
+        check("uma playlist de 2h13 continua com UM lado", len(pl.sides) == 1)
+        check("e esse lado tem rótulo",
+              bool((pl.sides or [{}])[0].get("label")))
+        # E não é "LADO A": uma playlist não tem lado nenhum, e é essa a
+        # diferença que este sistema existe para marcar.
+        check("que não finge ser um lado de disco",
+              "SIDE" not in (pl.sides or [{}])[0].get("label", ""))
+        check("o side_for dela também responde com rótulo",
+              bool(pl.side_for(100.0)[1].get("label")))
+    finally:
+        _shutil.rmtree(_tmpc, ignore_errors=True)
 
     case("o deck DIZ o que está acontecendo")
     # POR QUE ISTO EXISTE

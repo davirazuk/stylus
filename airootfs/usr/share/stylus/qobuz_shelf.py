@@ -145,6 +145,49 @@ def linhas(itens):
     return saida
 
 
+# Quantos discos favoritos, no máximo. Não é o limite de uma CHAMADA — é o
+# teto da coleção inteira, e as chamadas vão de 100 em 100 até chegar lá.
+TETO_FAVORITOS = int(os.environ.get("STYLUS_QOBUZ_FAVORITOS", "1000"))
+POR_PAGINA = 100
+
+
+def favoritos_todos(cl, teto=TETO_FAVORITOS):
+    """TODOS os discos favoritados, e não os cem primeiros.
+
+    **Sintoma:** a loja mostrava 100 discos e parava. Sem recado, sem
+    "mostrando 100 de 340" — os outros simplesmente não existiam ali, e a
+    pessoa que favoritou 200 discos no celular via metade da própria estante.
+    A chamada tinha `offset=0` escrito à mão e nunca uma segunda página.
+
+    Para de verdade em quatro situações, porque um laço que fala com a rede
+    não pode depender de uma só: chegou ao total que o Qobuz declarou, veio
+    uma página curta, veio uma página vazia, ou bateu no teto.
+    """
+    itens, total = [], None
+    while len(itens) < teto:
+        # Assinado à mão porque o get_favorite_albums do qobuz-dl chama o
+        # api_call sem o `sec` e estoura com KeyError ao assinar.
+        dados = cl.api_call("favorite/getUserFavorites", type="albums",
+                            offset=len(itens),
+                            limit=min(POR_PAGINA, teto - len(itens)),
+                            sec=cl.sec)
+        bloco = (dados or {}).get("albums") or {}
+        pagina = bloco.get("items") or []
+        if total is None:
+            try:
+                total = int(bloco.get("total"))
+            except (TypeError, ValueError):
+                total = None
+        if not pagina:
+            break
+        itens += pagina
+        if total is not None and len(itens) >= total:
+            break
+        if len(pagina) < POR_PAGINA:
+            break
+    return itens, total
+
+
 def main():
     modo = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
@@ -153,16 +196,23 @@ def main():
         morre(str(e))
     if modo in ("favoritos", "favorites"):
         try:
-            quantos = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+            quantos = int(sys.argv[2]) if len(sys.argv) > 2 else TETO_FAVORITOS
         except ValueError:
-            quantos = 100
+            quantos = TETO_FAVORITOS
         try:
-            # Assinado à mão porque o get_favorite_albums do qobuz-dl chama o
-            # api_call sem o `sec` e estoura com KeyError ao assinar.
-            dados = cl.api_call("favorite/getUserFavorites", type="albums",
-                                offset=0, limit=quantos, sec=cl.sec)
+            itens, total = favoritos_todos(cl, quantos)
         except Exception as e:                           # noqa: BLE001
             morre("não deu para ler os seus favoritos: %s" % e)
+        if total and len(itens) < total:
+            # Se o teto cortou, DIZER — pelo stderr, que não entra no menu.
+            # Uma lista curta sem explicação é indistinguível de uma coleção
+            # pequena, que foi o defeito original.
+            print("  · mostrando %d dos %d favoritos "
+                  "(STYLUS_QOBUZ_FAVORITOS muda o teto)" % (len(itens), total),
+                  file=sys.stderr)
+        for ln in linhas([disco(i) for i in itens]):
+            print(ln)
+        return
     elif modo in ("listas", "playlists"):
         os.makedirs(CAPAS, exist_ok=True)
         try:
@@ -182,7 +232,9 @@ def main():
         if not termo:
             morre("busca vazia")
         try:
-            dados = cl.search_albums(termo, limit=30)
+            # 30 era pouco para uma busca larga ("beatles" tem centenas de
+            # edições) e a tela não tinha como pedir mais.
+            dados = cl.search_albums(termo, limit=100)
         except Exception as e:                           # noqa: BLE001
             morre("a busca falhou: %s" % e)
     else:
