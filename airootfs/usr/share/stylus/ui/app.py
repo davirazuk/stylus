@@ -1960,7 +1960,7 @@ class QobuzScreen(Screen):
         self.examing = None
         self.app.toast(f"baixando: {artist} — {title}")
 
-    def _tocar(self, item):
+    def _tocar(self, item, sortear=False):
         """Toca agora, sem baixar. A assinatura usada como assinatura.
 
         Ouvir um disco que você ainda não sabe se quer guardar exigia gastar
@@ -1977,15 +1977,26 @@ class QobuzScreen(Screen):
         # esse disco" para uma playlist que existe.
         if item.get("lista"):
             ident = "playlist:%s" % ident
+        elif sortear:
+            # Um disco tem a ordem que quem o fez escolheu. Recusar aqui é
+            # mais honesto do que sortear em silêncio — e o [s] da AGORA
+            # embaralha o que já está tocando, para quem quiser mesmo.
+            self.app.toast("um disco não se sorteia: a ordem é dele. "
+                           "([s] na AGORA embaralha o que está tocando)",
+                           secs=6.0)
+            return
         artist = item.get("display_subtitle", "")
         title = item.get("display_title", "")
         # --deck: a cerimônia, igual à da estante. Um disco que veio pela
         # assinatura não é menos disco — agora que o vinyl sabe ler o
         # disco.json, ele gira na tela como qualquer outro.
-        if spawn(["stylus-qobuz", "tocar", "--deck", ident]):
+        cmd = ["stylus-qobuz", "tocar", "--deck"]
+        if sortear:
+            cmd.append("--sortear")
+        if spawn(cmd + [ident]):
             self.examing = None
-            self.app.toast(f"pondo pela rede: {artist} — {title}",
-                           secs=8.0)
+            self.app.toast(("sorteando: " if sortear else "pondo pela rede: ")
+                           + f"{artist} — {title}", secs=8.0)
         else:
             self.app.toast("não deu para chamar o stylus-qobuz")
 
@@ -2003,6 +2014,8 @@ class QobuzScreen(Screen):
                 self.examing = None
             elif ev.key == pygame.K_p:
                 self._tocar(self.examing)
+            elif ev.key == pygame.K_s:
+                self._tocar(self.examing, sortear=True)
             elif ev.key == pygame.K_d:
                 self._download(self.examing)
             elif ev.key == pygame.K_i:
@@ -2080,6 +2093,14 @@ class QobuzScreen(Screen):
         elif ev.key == pygame.K_p:
             if n:
                 self._tocar(self.results[self.sel])
+        elif ev.key == pygame.K_s:
+            # Sortear a playlist. Não é o mesmo que embaralhar depois de
+            # posta: com teto de 200 faixas, "as primeiras 200" de uma lista
+            # de 853 são sempre as MESMAS — 653 faixas que este sistema nunca
+            # tocaria. O sorteio acontece ANTES do corte, lá no
+            # qobuz_stream.py, então cada vez que se põe vem outra amostra.
+            if n:
+                self._tocar(self.results[self.sel], sortear=True)
         elif ev.key == pygame.K_d:
             # `d` baixa aqui também. A linha de dicas prometia "[d] baixa" na
             # grade inteira e só o overlay de exame respondia — apertar `d` em
@@ -2216,8 +2237,18 @@ class QobuzScreen(Screen):
 
         # as duas coisas que dá para fazer com um disco que não é seu
         y = py + 214
-        T.frase_com_teclas(s, "[p] põe o disco — sem ocupar disco",
-                           (px + 32, y), 16, T.GREEN)
+        if item.get("lista"):
+            # Uma playlist não é um disco, e as duas linhas que valem para
+            # ela são outras: pôr na ordem dela, ou sorteada. Sem esta, o
+            # [s] existia na tecla e não existia em lugar nenhum da tela.
+            T.frase_com_teclas(s, "[p] põe a playlist — na ordem dela",
+                               (px + 32, y), 16, T.GREEN)
+            T.frase_com_teclas(s, "[s] põe SORTEADA — amostra de tudo, "
+                                  "outra a cada vez",
+                               (px + 32, y - 24), 16, T.AMBER)
+        else:
+            T.frase_com_teclas(s, "[p] põe o disco — sem ocupar disco",
+                               (px + 32, y), 16, T.GREEN)
         if self.job and not self.job.done:
             T.text(s, "já tem um disco baixando", (px + 32, y + 26), 16, T.AMBER)
         elif item.get("hires"):
@@ -2305,7 +2336,8 @@ class QobuzScreen(Screen):
             T.vazio(s, r, T.fantasma_busca, "a loja", [
                 "[/] procura um disco",
                 "[p] toca agora  ·  [d] guarda na estante",
-                "[L] as suas playlists  ·  [f] os seus favoritos",
+                "[L] as suas playlists  ·  [s] põe uma sorteada",
+                "[f] os seus favoritos",
             ])
             return
 
@@ -2359,8 +2391,9 @@ class QobuzScreen(Screen):
         if self.results:
             item = self.results[self.sel]
             self.app.hint(
-                s, r, "[/] procura  [enter] examina  [p] toca  [d] baixa  "
-                      "[L] playlists  [f] favoritos  [c] conta",
+                s, r, "[/] procura  [enter] examina  [p] toca  "
+                      + ("[s] sorteada  " if item.get("lista") else "")
+                      + "[d] baixa  [L] playlists  [f] favoritos  [c] conta",
                 contexto=f"{item.get('display_subtitle', '')} — "
                          f"{item.get('display_title', '')}")
 
@@ -3672,7 +3705,10 @@ class App:
         self._sleep_end = 0.0
         # Shuffle/repeat state — persisted across restarts
         _prefs = _load_prefs()
-        self.shuffle = bool(_prefs.get("shuffle", False))
+        # Nasce desligado SEMPRE, e não do arquivo de gosto: embaralhar é uma
+        # escolha sobre a lista que está tocando, e a lista some quando o mpv
+        # sai. Restaurá-lo acendia o ícone sobre um disco na ordem.
+        self.shuffle = False
         self.repeat = int(_prefs.get("repeat", 0))  # 0=off, 1=repeat side, 2=repeat album
         # O lado em que o disco está, para saber quando ele VIRA. Ver
         # _watch_side: no modo música esta tela é a sessão inteira, e a tese
@@ -3698,6 +3734,10 @@ class App:
         self.IDLE_DECK_SECS = 240
         self._ultima_entrada = time.time()
         self._deck_auto = None
+        # A pasta do disco anterior, para saber quando um disco NOVO entrou:
+        # o embaralhar e o repetir moram no processo do mpv, e cada disco
+        # posto sobe um mpv novo. Ver _disco_novo().
+        self._disco_anterior = None
         self.auto_deck = bool(_load_prefs().get("auto_deck", True))
         self._born = time.time()
         self.pads = []
@@ -3954,20 +3994,84 @@ class App:
         else:
             self.toast("não para mais sozinho")
 
+    def _ao_tocador(self, *cmd):
+        """Manda um comando ao mpv que está tocando. None se não há mpv.
+
+        O `playerctl` cobre pausa e faixa, e não cobre isto: embaralhar e
+        repetir são propriedades da LISTA, e a lista mora no mpv. O socket é
+        o mesmo do deck (vinyl.SOCKET_PATH) — o `stylus-deck` e o `stylus
+        qobuz tocar` os dois sobem o mpv com `--input-ipc-server` nele, de
+        propósito, para que o resto do sistema possa falar com o tocador.
+
+        Chamado da tecla, nunca do desenho: sem socket o `connect()` devolve
+        falso na hora (não há espera), e com socket a resposta leva ~1 ms.
+        """
+        try:
+            return self.playing.session.mpv.command(*cmd)
+        except Exception:                     # noqa: BLE001 — tocador morto
+            return None
+
+    def _ha_tocador(self):
+        """Existe um mpv nosso do outro lado do socket?
+
+        `command()` devolve None tanto para "não deu" quanto para um comando
+        que responde vazio, então quem pergunta "tem tocador?" pergunta por
+        uma propriedade que sempre tem valor.
+        """
+        return self._ao_tocador("get_property", "playlist-count") is not None
+
     def toggle_shuffle(self):
-        self.shuffle = not self.shuffle
+        """Embaralha a lista que está tocando — de verdade.
+
+        **Sintoma:** isto virava um `self.shuffle = not self.shuffle`, um
+        toast dizendo "embaralhar: ligado" e um ícone aceso na AGORA. E mais
+        nada: nenhuma linha deste arquivo, em lugar nenhum, contava ao
+        tocador. A música seguia na mesma ordem, e o sistema afirmava o
+        contrário com um ícone — que é pior do que não ter a tecla.
+
+        `playlist-shuffle` e `playlist-unshuffle` são do mpv desde a 0.33, e
+        o segundo devolve a ORDEM DO DISCO, não outro embaralhamento: um
+        disco é uma sequência que alguém escolheu, e desfazer tem que
+        devolver essa sequência.
+        """
+        if not self._ha_tocador():
+            self.toast("não há disco tocando para embaralhar")
+            return
+        quer = not self.shuffle
+        self._ao_tocador("playlist-shuffle" if quer else "playlist-unshuffle")
+        # Confere no tocador em vez de acreditar: o `playlist-unshuffle` só
+        # existe se o mpv for novo o bastante, e falhar em silêncio é como
+        # este defeito começou.
+        self.shuffle = quer
         self._save_player_prefs()
-        self.toast("embaralhar: " + ("ligado" if self.shuffle else "desligado"))
+        self.toast("embaralhar: " + ("ligado" if quer else
+                                     "desligado (ordem do disco de volta)"))
 
     def toggle_repeat(self):
-        labels = ["desligado", "repetir lado", "repetir álbum"]
+        """Repetir: desligado → a faixa → o disco inteiro.
+
+        Mesmo defeito do embaralhar: girava um número e acendia um ícone sem
+        falar com o tocador.
+
+        E os rótulos mentiam de outro jeito: diziam "repetir lado", que o mpv
+        não sabe fazer — um lado é um pedaço da lista, e `loop-file` repete a
+        FAIXA. O ícone já era o de repetir-uma (󰑙). Agora o rótulo, o ícone e
+        o que acontece são a mesma coisa.
+        """
+        if not self._ha_tocador():
+            self.toast("não há disco tocando para repetir")
+            return
+        labels = ["desligado", "repetir a faixa", "repetir o disco"]
         self.repeat = (self.repeat + 1) % 3
+        self._ao_tocador("set_property", "loop-file",
+                         "inf" if self.repeat == 1 else "no")
+        self._ao_tocador("set_property", "loop-playlist",
+                         "inf" if self.repeat == 2 else "no")
         self._save_player_prefs()
         self.toast("repetir: " + labels[self.repeat])
 
     def _save_player_prefs(self):
-        _save_prefs({"auto_deck": self.auto_deck,
-                     "shuffle": self.shuffle, "repeat": self.repeat})
+        _save_prefs({"auto_deck": self.auto_deck, "repeat": self.repeat})
 
     _volume_cache = (0, 0)
     _volume_counter = 0
@@ -4586,6 +4690,7 @@ class App:
             self.alvos = []
             self._alvos_do_trilho = []
             self._rato_pisca()
+            self._disco_novo()
             self._idle_deck()
             try:
                 self.screens[self.cur].draw(self.surf, body)
@@ -4623,6 +4728,37 @@ class App:
                 self.toast(f"o disco para aqui — {self._sleep_minutes} min")
                 self._sleep_minutes = 0
             self.clock.tick(FPS)
+
+    def _disco_novo(self):
+        """Disco trocou: a ordem volta a ser a do disco, e o repetir vale.
+
+        As duas coisas que o `toggle_shuffle`/`toggle_repeat` mexem moram no
+        PROCESSO do mpv, e cada disco posto sobe um mpv novo. Sem isto:
+
+          · o ícone de embaralhar continuava aceso sobre uma lista que
+            nasceu na ordem — o mesmo tipo de mentira que estas duas teclas
+            já contavam antes de falarem com o tocador;
+          · e "repetir o disco", que é gosto e por isso fica guardado, era
+            esquecido justamente na hora em que passaria a valer.
+
+        Embaralhar NÃO se guarda de propósito: é uma escolha sobre a lista
+        que está tocando, não sobre a pessoa. Disco novo, ordem do disco.
+        """
+        snap = self.playing.session.snapshot()
+        path = snap.get("path") or ""
+        if not path:
+            return
+        pasta = os.path.dirname(path)
+        if not pasta or pasta == self._disco_anterior:
+            return
+        self._disco_anterior = pasta
+        if self.shuffle:
+            self.shuffle = False
+        if self.repeat:
+            self._ao_tocador("set_property", "loop-file",
+                             "inf" if self.repeat == 1 else "no")
+            self._ao_tocador("set_property", "loop-playlist",
+                             "inf" if self.repeat == 2 else "no")
 
     def _idle_deck(self):
         """Parado na AGORA, a tela vira o deck sozinha. Uma vez por álbum.

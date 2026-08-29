@@ -366,6 +366,84 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("artista", traceback.format_exc())
 
+    secao("embaralhar e repetir falam com o tocador")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # As duas teclas viravam um `not self.shuffle`, um toast e um ícone aceso
+    # na AGORA — e nenhuma linha do programa contava ao mpv. A música seguia
+    # na mesma ordem e o sistema afirmava o contrário com um ícone, que é
+    # pior do que não ter a tecla. Ler não pega: o método existe, tem nome
+    # certo e faz alguma coisa. Então o teste põe um mpv de mentira e olha o
+    # que CHEGA nele.
+    try:
+        agora = next(s for s in app.screens if s.name == "AGORA")
+        i_ag = app.screens.index(agora)
+        app._goto(i_ag)
+
+        class MpvDeMentira:
+            def __init__(self):
+                self.cmds = []
+
+            def command(self, *args):
+                self.cmds.append(args)
+                if args[:2] == ("get_property", "playlist-count"):
+                    return 9
+                return True
+
+        falso = MpvDeMentira()
+        real = app.playing.session.mpv
+        app.playing.session.mpv = falso
+
+        def tecla(k, mod=0):
+            agora.key(pygame.event.Event(pygame.KEYDOWN, key=k, unicode="",
+                                         mod=mod))
+
+        app.shuffle = False
+        tecla(pygame.K_s)
+        if ("playlist-shuffle",) not in falso.cmds:
+            bad("o [s] não embaralhou nada no tocador", str(falso.cmds[-3:]))
+        else:
+            ok("[s] manda playlist-shuffle")
+        falso.cmds.clear()
+        tecla(pygame.K_s)
+        if ("playlist-unshuffle",) not in falso.cmds:
+            bad("o [s] de volta não desembaralhou", str(falso.cmds[-3:]))
+        else:
+            ok("[s] de novo devolve a ordem do disco")
+
+        # Repetir: faixa, disco, desligado — e as duas propriedades do mpv
+        # coerentes em cada degrau.
+        app.repeat = 0
+        esperado = [("inf", "no"), ("no", "inf"), ("no", "no")]
+        erros = []
+        for passo, (lf, lp) in enumerate(esperado):
+            falso.cmds.clear()
+            tecla(pygame.K_r, mod=pygame.KMOD_SHIFT)
+            props = {c[1]: c[2] for c in falso.cmds if c[0] == "set_property"}
+            if props.get("loop-file") != lf or props.get("loop-playlist") != lp:
+                erros.append("degrau %d: %s" % (passo, props))
+        if erros:
+            bad("o [R] não põe o repetir no tocador", "; ".join(erros))
+        else:
+            ok("[R] cicla faixa → disco → desligado no tocador")
+
+        # Sem tocador do outro lado, ninguém acende ícone nenhum: o estado
+        # tem que continuar sendo o do mpv, não uma opinião da tela.
+        class MpvMorto:
+            def command(self, *a):
+                return None
+
+        app.playing.session.mpv = MpvMorto()
+        app.shuffle = False
+        tecla(pygame.K_s)
+        if app.shuffle:
+            bad("sem tocador, o [s] acendeu o ícone assim mesmo")
+        else:
+            ok("sem tocador, nada é prometido")
+        app.playing.session.mpv = real
+    except Exception:                                       # noqa: BLE001
+        bad("embaralhar e repetir", traceback.format_exc())
+
     secao("a estante diz qual disco está no prato")
     # POR QUE ISTO EXISTE
     # -------------------

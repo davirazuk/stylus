@@ -28,6 +28,12 @@ Ela entra pelo mesmo cano — mesma pasta de cache, mesmo m3u, mesmo disco.json
   hora de pedidos para uma assinatura que expira em uma. O padrão são as
   primeiras 200 (mudável no STYLUS_QOBUZ_MAX), assinadas em paralelo, e o
   programa DIZ quantas pegou — em vez de parecer que a playlist é menor.
+* **E por isso ela pode vir SORTEADA** (`--sortear`). Com teto, "as
+  primeiras 200" são sempre as MESMAS 200: uma playlist de 853 faixas tinha
+  653 que este sistema nunca tocaria, e a pessoa não tinha como saber. O
+  sorteio embaralha a lista inteira ANTES de cortar, então o que entra é uma
+  amostra de tudo, diferente a cada vez que se põe. Um DISCO nunca é
+  sorteado — a ordem de um disco é uma escolha de quem o fez.
 
 DUAS COISAS QUE ISTO TEM QUE RESPEITAR
 --------------------------------------
@@ -42,8 +48,10 @@ DUAS COISAS QUE ISTO TEM QUE RESPEITAR
 """
 import json
 import os
+import random
 import re
 import sys
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -184,6 +192,10 @@ def escrever(destino, linhas, manifesto, cabecalho):
     # virar o lado, que é a única coisa que esta máquina faz e mais nenhuma
     # faz. Sem ele, o vinyl.py tentaria descobrir a ordem lendo arquivos de
     # áudio que não existem.
+    # Quando esta lista foi assinada. Os endereços do Qobuz valem cerca de
+    # uma hora; sem esta marca, nada no sistema tem como saber se a lista que
+    # está no disco ainda vale ou se já é papel velho.
+    cabecalho.setdefault("assinado_em", int(time.time()))
     cabecalho["tracks"] = manifesto
     with open(os.path.join(destino, "disco.json"), "w", encoding="utf-8") as fh:
         json.dump(cabecalho, fh, ensure_ascii=False, indent=1)
@@ -235,7 +247,7 @@ def um_disco(cl, album_id):
     return lista
 
 
-def uma_lista(cl, lista_id):
+def uma_lista(cl, lista_id, sortear=False):
     # O get_plist_meta é um GERADOR de páginas de 500 — não um dicionário.
     # Tratá-lo como dicionário devolve o objeto do gerador e a playlist
     # aparece vazia, sem erro nenhum.
@@ -256,9 +268,16 @@ def uma_lista(cl, lista_id):
         morre("essa playlist não tem faixa nenhuma")
 
     total = len(faixas)
+    if sortear:
+        # ANTES do corte, e é esse o ponto. Sortear depois de cortar
+        # embaralharia as mesmas 200 de sempre; sorteando antes, uma playlist
+        # de 853 faixas entrega 200 tiradas de todas elas, outras a cada vez.
+        random.shuffle(faixas)
     if total > TETO:
-        print("  · playlist com %d faixas; pegando as primeiras %d "
-              "(STYLUS_QOBUZ_MAX muda isso)" % (total, TETO), file=sys.stderr)
+        print("  · playlist com %d faixas; pegando %s %d "
+              "(STYLUS_QOBUZ_MAX muda isso)"
+              % (total, "sorteadas" if sortear else "as primeiras", TETO),
+              file=sys.stderr)
         faixas = faixas[:TETO]
 
     destino = os.path.join(CACHE, "Playlists", limpo("%s — %s" % (dono, nome)))
@@ -288,11 +307,22 @@ def uma_lista(cl, lista_id):
     lista = escrever(destino, linhas, manifesto,
                      {"fonte": "qobuz-lista", "id": str(lista_id),
                       "artist": dono, "album": nome, "year": "",
+                      "sorteada": bool(sortear),
                       # Um lado só: ver o cabeçalho deste arquivo.
                       "continuo": True})
     horas = sum(m["duration"] for m in manifesto) / 3600.0
-    print("%s — %s  ·  %d faixas  ·  %.1f h"
-          % (dono, nome, len(manifesto), horas), file=sys.stderr)
+    print("%s — %s  ·  %d faixas  ·  %.1f h%s"
+          % (dono, nome, len(manifesto), horas,
+             "  ·  sorteada" if sortear else ""), file=sys.stderr)
+    # Os endereços expiram (ver o cabeçalho). Uma lista de 13 horas assinada
+    # com validade de uma é uma promessa que ela não cumpre, e o sintoma —
+    # faixas que o mpv pula em silêncio até a lista "acabar" — parece defeito
+    # de rede, ou do disco, ou do tocador. Dizer a hora não conserta, mas
+    # troca "parou sozinho" por uma frase que a pessoa pode entender.
+    if horas > 1.2:
+        print("  · atenção: os endereços assinados valem cerca de uma hora, "
+              "e isto tem %.1f. Depois disso, `tocar` de novo renova."
+              % horas, file=sys.stderr)
     return lista
 
 
@@ -305,18 +335,33 @@ _ALBUM = re.compile(r"/album/(?:[^/]+/)?([A-Za-z0-9]+)/?$")
 def main():
     args = [a for a in sys.argv[1:]]
     forcar_lista = False
-    if args and args[0] in ("--lista", "--playlist"):
-        forcar_lista = True
+    sortear = False
+    # As opções vêm antes do alvo e em qualquer ordem: `--lista --sortear 123`
+    # e `--sortear --lista 123` são a mesma coisa, e quem digita não devia ter
+    # que adivinhar qual.
+    while args and args[0].startswith("--"):
+        if args[0] in ("--lista", "--playlist"):
+            forcar_lista = True
+        elif args[0] in ("--sortear", "--aleatorio", "--shuffle"):
+            sortear = True
+        else:
+            morre("não conheço a opção %s" % args[0])
         args = args[1:]
     if not args:
-        morre("uso: qobuz_stream.py [--lista] ID|URL")
+        morre("uso: qobuz_stream.py [--lista] [--sortear] ID|URL")
     alvo = args[0]
 
     cl = cliente()
     m = _LISTA.search(alvo)
     if m or forcar_lista:
-        print(uma_lista(cl, m.group(1) if m else alvo))
+        print(uma_lista(cl, m.group(1) if m else alvo, sortear=sortear))
         return
+    if sortear:
+        # Um disco tem uma ordem, e ela é uma escolha de quem o fez. Recusar
+        # é mais honesto do que sortear em silêncio — e o `[s]` da AGORA
+        # embaralha o que já está tocando, para quem quiser mesmo.
+        morre("um DISCO não se sorteia: a ordem dele é do disco.\n"
+              "       Para embaralhar o que está tocando, use o [s] na AGORA.")
     m = _ALBUM.search(alvo)
     print(um_disco(cl, m.group(1) if m else alvo))
 

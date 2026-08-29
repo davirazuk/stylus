@@ -1270,6 +1270,88 @@ else
     bad "nenhum heredoc de python encontrado — a busca parou de achar"
 fi
 
+# ── a playlist sorteada é sorteada ANTES do corte ─────────────────────────
+# **Sintoma:** com teto de 200 faixas, "as primeiras 200" de uma playlist de
+# 853 são sempre as MESMAS — 653 faixas que este sistema nunca tocaria, e
+# nada na tela dizendo isso. O `--sortear` só resolve se o embaralhamento
+# acontecer ANTES do corte; sorteando depois, ele embaralha as mesmas 200 de
+# sempre e o defeito continua inteiro, agora com uma opção que finge
+# consertá-lo.
+#
+# A conferência roda o `uma_lista` de verdade com um cliente de mentira: sem
+# rede, sem conta, sem assinatura.
+sec "a playlist sorteada sai de dentro da playlist inteira"
+# O stderr vai para o lixo de propósito: o qobuz_stream escreve ali as linhas
+# de progresso ("playlist com 120 faixas; pegando sorteadas 10"), e elas
+# entrariam na frente da resposta. O que importa sai pelo stdout, e um erro
+# inesperado vira uma linha ERRO pelo `except` lá embaixo.
+saida=$(python3 - <<'QOBUZEOF' 2>/dev/null
+import json, os, re, shutil, sys, tempfile, traceback
+sys.path.insert(0, "airootfs/usr/share/stylus")
+try:
+    import qobuz_stream as q
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+tmp = tempfile.mkdtemp()
+q.CACHE, q.TETO = tmp, 10
+
+
+class ClienteFalso:
+    def get_plist_meta(self, _pid):
+        yield {"name": "Grande", "owner": {"name": "Dono"},
+               "tracks": {"items": [
+                   {"id": i, "title": "F%03d" % i, "duration": 200,
+                    "streamable": True} for i in range(120)]}}
+
+    def get_track_url(self, tid, fmt_id=27):
+        return {"url": "https://exemplo.invalid/%s.flac" % tid}
+
+
+def titulos(sortear):
+    lista = q.uma_lista(ClienteFalso(), 42, sortear=sortear)
+    with open(os.path.join(os.path.dirname(lista), "disco.json"),
+              encoding="utf-8") as fh:
+        m = json.load(fh)
+    return [t["title"] for t in m["tracks"]], m
+
+
+def numeros(ts):
+    # O título no manifesto é "quem — título" (numa playlist cada faixa é de
+    # um artista), então o número sai por busca e não por fatia.
+    return [int(re.search(r"F(\d+)", t).group(1)) for t in ts]
+
+
+try:
+    normal, m_normal = titulos(False)
+    um, m_um = titulos(True)
+    dois, _ = titulos(True)
+    if numeros(normal) != list(range(q.TETO)):
+        print("ERRO sem --sortear a lista saiu fora da ordem da playlist")
+    elif not any(n >= q.TETO for n in numeros(um)):
+        print("ERRO a sorteada só pegou as primeiras %d" % q.TETO)
+    elif um == dois:
+        print("ERRO duas rodadas sorteadas saíram iguais")
+    elif not m_um.get("sorteada") or m_normal.get("sorteada"):
+        print("ERRO o disco.json não marca quem foi sorteada")
+    elif not isinstance(m_normal.get("assinado_em"), int):
+        print("ERRO falta o assinado_em (a validade dos endereços)")
+    else:
+        print("OK %d de 120, e outras a cada vez" % len(um))
+except Exception:                                        # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+QOBUZEOF
+)
+case "$saida" in
+    OK*)   ok "a playlist sorteada ${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o qobuz_stream aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o sorteio da playlist não sorteia a playlist inteira"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
