@@ -1102,6 +1102,61 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── unidade de usuário que ninguém liga ───────────────────────────────────
+# **Sintoma:** o scrobbler do last.fm e o botão do fone não existiam. Não
+# "não funcionavam": não SUBIAM. As duas unidades estavam escritas em
+# `~/.config/systemd/user/` com `WantedBy=graphical-session.target`, e um
+# `WantedBy` só vale depois de um `systemctl --user enable` — que nada neste
+# repositório jamais chamou.
+#
+# E o lugar estava errado de qualquer jeito: o `sync.sh` PRESERVA o
+# ~/.config (é a regra, e é boa), então unidade nova nunca alcança quem já
+# instalou. O que precisa alcançar máquina existente vai para o
+# /usr/local/bin — no caso, para o `stylus-fundo`, que já sobe os vigias nas
+# duas áreas de trabalho e é seguro rodar duas vezes.
+sec "nenhuma unidade de usuário escrita e nunca ligada"
+unidades=$(python3 - <<'UNIEOF'
+import os
+import pathlib
+import re
+
+raiz = pathlib.Path("airootfs/etc/skel/.config/systemd/user")
+if not raiz.is_dir():
+    raise SystemExit(0)
+
+# Todo o repositório, para procurar quem liga.
+texto = []
+for r, ds, fs in os.walk("."):
+    ds[:] = [d for d in ds if d not in (".git", "__pycache__", "work", "out")]
+    for f in fs:
+        try:
+            texto.append(open(os.path.join(r, f), encoding="utf-8",
+                              errors="ignore").read())
+        except OSError:
+            pass
+todo = "\n".join(texto)
+
+for u in sorted(raiz.glob("*.service")):
+    corpo = u.read_text(encoding="utf-8")
+    if "[Install]" not in corpo:
+        continue           # unidade só para ser chamada por outra: tudo bem
+    nome = u.stem
+    # Alguém dá `systemctl --user enable` nela? Ou existe um `.wants`?
+    liga = re.search(r"--user\s+enable[^\n]*%s" % re.escape(nome), todo)
+    wants = list(raiz.glob("*.wants/%s" % u.name))
+    if not liga and not wants:
+        print("%s: tem [Install] e ninguém a liga "
+              "(e o sync.sh preserva o ~/.config, então ela nem chega)"
+              % u.name)
+UNIEOF
+)
+if [[ -z $unidades ]]; then
+    ok "toda unidade de usuário do /etc/skel é ligada por alguém"
+else
+    bad "unidade de usuário escrita e nunca ligada:"
+    printf '%s\n' "$unidades" | sed 's/^/      /'
+fi
+
 # ── função escrita e nunca chamada ────────────────────────────────────────
 # É a armadilha mais cara deste repositório, e ela já apareceu cinco vezes:
 #

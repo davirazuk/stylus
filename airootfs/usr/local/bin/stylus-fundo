@@ -54,26 +54,57 @@ de_pe() {
     return 1
 }
 
-# nome | nome do arquivo do processo | argumento exigido | o que rodar
+# ── quando um vigia FAZ sentido nesta máquina ─────────────────────────────
+# Dois deles só têm o que fazer em algumas máquinas, e subir sem ter o que
+# fazer é morrer no primeiro segundo e deixar erro no journal a cada login.
+tem_scrobble() {   # o last.fm só existe depois do `stylus-scrobble login`
+    grep -q '"sk"' \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/stylus/scrobble.json" 2>/dev/null
+}
+tem_iem() {        # o fone com botão: o chip KTMicro, pelo par vendor:product
+    grep -qi '31b2.*1132\|Vendor=31b2' /proc/bus/input/devices 2>/dev/null
+}
+
+# nome | nome do arquivo do processo | argumento exigido | o que rodar | guarda
+#
+# Os dois últimos vieram de arquivos `.service` que ESTAVAM NO REPOSITÓRIO e
+# NUNCA SUBIRAM: `~/.config/systemd/user/stylus-scrobble.service` e
+# `stylus-iem.service` traziam `WantedBy=graphical-session.target`, mas um
+# `WantedBy` só vale depois de um `systemctl --user enable`, e nada nunca
+# chamou isso. Duas unidades escritas, testadas e mortas — o scrobbler e o
+# botão do fone simplesmente não existiam na máquina de ninguém.
+#
+# E o lugar delas estava errado de qualquer jeito: o `sync.sh` PRESERVA o
+# ~/.config (é a regra, e ela é boa), então uma unidade nova nunca alcança
+# quem já instalou. O que precisa alcançar máquina existente mora aqui, no
+# /usr/local/bin — é a lição escrita na §4 do CLAUDE.md.
 SERVICOS=(
-    "o aviso de virar o lado|stylus-side-watch||stylus-side-watch"
-    "o papel de parede que segue o disco|stylus-wallpaper|--se-ligado|stylus-wallpaper --se-ligado"
-    "o aviso de disco cheio|disk-watch.sh||$SCRIPTS/disk-watch.sh"
-    "o aviso de vídeo caído|gpu-watch.sh||$SCRIPTS/gpu-watch.sh"
+    "o aviso de virar o lado|stylus-side-watch||stylus-side-watch|"
+    "o papel de parede que segue o disco|stylus-wallpaper|--se-ligado|stylus-wallpaper --se-ligado|"
+    "o aviso de disco cheio|disk-watch.sh||$SCRIPTS/disk-watch.sh|"
+    "o aviso de vídeo caído|gpu-watch.sh||$SCRIPTS/gpu-watch.sh|"
+    "o scrobble para o last.fm|stylus-scrobble||stylus-scrobble|tem_scrobble"
+    "o botão do fone|stylus-iem||stylus-iem|tem_iem"
 )
 
 if [[ ${1:-} == --listar ]]; then
     for s in "${SERVICOS[@]}"; do
-        IFS='|' read -r nome alvo exige _cmd <<<"$s"
-        if de_pe "$alvo" "$exige"; then printf '  \033[1;32m✓\033[0m %s\n' "$nome"
-        else printf '  \033[2m—\033[0m %s (parado)\n' "$nome"; fi
+        IFS='|' read -r nome alvo exige _cmd guarda <<<"$s"
+        if de_pe "$alvo" "$exige"; then
+            printf '  \033[1;32m✓\033[0m %s\n' "$nome"
+        elif [[ -n $guarda ]] && ! "$guarda"; then
+            printf '  \033[2m—\033[0m %s (não se aplica a esta máquina)\n' "$nome"
+        else
+            printf '  \033[2m—\033[0m %s (parado)\n' "$nome"
+        fi
     done
     exit 0
 fi
 
 for s in "${SERVICOS[@]}"; do
-    IFS='|' read -r _nome alvo exige cmd <<<"$s"
+    IFS='|' read -r _nome alvo exige cmd guarda <<<"$s"
     de_pe "$alvo" "$exige" && continue
+    [[ -n $guarda ]] && ! "$guarda" && continue
     # O primeiro pedaço tem que existir: chamar o que não está instalado
     # deixaria um erro no journal a cada login, para sempre, sem consequência
     # nenhuma além do ruído.
