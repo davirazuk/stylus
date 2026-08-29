@@ -221,6 +221,24 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   para onde escurecer. Medido, a sombra que existia mudava no máximo 7
   unidades somando os três canais. Num fundo escuro, peso vem de LUZ — uma
   aresta iluminada, uma lombada. Ver `T.sleeve` no `ui/theme.py`.
+- **Tecla que muda um campo e acende um ícone não é tecla.** O `[s]`
+  (embaralhar) e o `[R]` (repetir) da AGORA viravam `not self.shuffle`, um
+  toast e um ícone — e NENHUMA linha do programa contava ao mpv. A música
+  seguia na mesma ordem enquanto a tela afirmava o contrário, que é pior do
+  que não ter a tecla. Ler não pega: o método existe, tem o nome certo e faz
+  alguma coisa. O teste põe um mpv de mentira e olha o que CHEGA nele.
+- **Os endereços do Qobuz vencem em ~1 h; uma playlist de 200 faixas são 13.**
+  Passada a hora, o mpv pede o endereço seguinte, leva 403, pula, leva 403 de
+  novo, e varre o resto da lista em segundos — da poltrona é "a música parou
+  sozinha", sem nada ligando aquilo a uma assinatura. Quem renova é o
+  `stylus-side-watch` (já pergunta ao mpv de 2 em 2 s em que faixa está), com
+  o `qid` que o manifesto guarda; a faixa que TOCA não é tocada, então não há
+  corte no som. E `playlist-remove` tem que ir de TRÁS para a frente: do
+  começo, cada remoção empurra o resto e metade da cauda velha sobrevive.
+- **Com teto, "as primeiras N" são sempre as MESMAS.** Uma playlist de 853
+  faixas com teto de 200 tinha 653 que o sistema nunca tocaria. O `--sortear`
+  embaralha ANTES do corte — sortear depois embaralha as mesmas 200 de
+  sempre, que é a armadilha desta feature e passa despercebida.
 - **`set_alpha(None)` APAGA o SRCALPHA da superfície (pygame 2).** Não é
   "tirar o alfa de superfície e ficar com o por-pixel": é pôr o modo de
   mistura em NONE, e o blit vira cópia crua. O `T.halo` e o `T.disco`
@@ -325,6 +343,27 @@ reação ao som, mais luz com propósito — nunca mais realismo.
 - **O teste do deck** morria num IndexError quando o álbum não tinha duração
   (isto é: em toda máquina sem ffprobe). Agora diz o que falta e fecha a
   contagem.
+
+### Segunda leva (a pedido: playlist sorteada, Qobuz, visual)
+- **Embaralhar e repetir passaram a existir de verdade** — ver a lição na §4.
+  `[s]` manda `playlist-shuffle`/`playlist-unshuffle` (o segundo devolve a
+  ORDEM DO DISCO, não outro embaralhamento), `[R]` cicla `loop-file` →
+  `loop-playlist`. Sem tocador, nada é prometido. Embaralhar deixou de ser
+  guardado no arquivo de gosto: é escolha sobre a LISTA, e a lista some com o
+  mpv — disco novo devolve a ordem do disco (`_disco_novo`).
+- **Playlist do Qobuz sorteada:** `--sortear` no `qobuz_stream`, `[s]` na
+  loja da tela cheia, `Alt+s` na grade do rofi. Um DISCO recusa, com recado.
+- **A assinatura do Qobuz se renova sozinha** (ver a §4). O `stylus-deck`
+  também deixou de retomar uma lista sorteada de onde parou: o índice
+  continua valendo, a música por trás dele não.
+- **O espectro da AGORA virou um anel no aro do disco**, no lugar da coluna
+  de vinte e quatro caixinhas ao lado da capa. Raio = espectro, grave no
+  alto, espelhado nos dois lados; parado é uma circunferência.
+- **A pilha ganhou ordem:** `[e]` embaralha, `←`/`→` sobem e descem o disco.
+- **A AJUSTES ganhou linha de dicas** (era a única sem), o `T.passos` passou
+  a desenhar `[c]` como TECLA e não como colchete literal, e a estante passou
+  a anunciar o `[r]` (sorteia) e o `[f]` (favorito), que existiam desde
+  sempre e não apareciam em lugar nenhum.
 
 ### Futuras Melhorias
 - **Ritual vinyl:** o rework do composto CRT (disco como OBJETO, `u_disc`/
