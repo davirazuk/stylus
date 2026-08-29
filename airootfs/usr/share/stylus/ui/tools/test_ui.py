@@ -575,6 +575,106 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("a volta do disco", traceback.format_exc())
 
+    secao("o disco na tela toda, dentro do lançador")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # A pergunta era "por que não jogar fora o deck e pôr tudo no lançador?".
+    # A resposta é esta tela: o disco no meio, grande, sem trilho e sem
+    # coluna. E ela nasceu com o defeito clássico de layout — o disco tomava
+    # 40% da altura a partir do CENTRO, o texto vinha depois, e em 1080p o
+    # nome da faixa era desenhado abaixo da borda de baixo. Não estoura, não
+    # vira traceback: some.
+    #
+    # Então mede-se o que importa numa tela sem moldura: nada desenhado fora
+    # dela, em toda resolução; e não dá para ficar preso nela.
+    try:
+        import theme as _T
+        agora = next(s for s in app.screens if s.name == "AGORA")
+        app._goto(app.screens.index(agora))
+
+        class _AlbCheia:
+            folder, artist, name, year = "/x", "The Beatles", "Abbey Road", ""
+            cover, plays, last_played, total = None, 2, 0, 2600
+            discos = 2
+            tracks = [{"title": "Uma faixa de nome comprido", "dur": 200}]
+            sides = [{"label": "SIDE A", "start": 0, "end": 700, "tracks": [0]},
+                     {"label": "SIDE B", "start": 700, "end": 1300,
+                      "tracks": [0]},
+                     {"label": "SIDE C", "start": 1300, "end": 1950,
+                      "tracks": [0]},
+                     {"label": "SIDE D", "start": 1950, "end": 2600,
+                      "tracks": [0]}]
+
+        _alc = _AlbCheia()
+        _antes = app.playing.where
+        app.playing.where = lambda: ({}, _alc, _alc.tracks[0], _alc.sides[2],
+                                     1500.0, 0.42)
+
+        class _Ev:
+            def __init__(self, k):
+                self.key, self.mod, self.unicode = k, 0, ""
+
+        try:
+            agora.key(_Ev(pygame.K_f))
+            if not agora.tela_cheia:
+                bad("[f] não abre a tela cheia")
+            else:
+                original = _T.text
+                fora = []
+
+                def espiao_c(surf, txt, pos, size=20, colour=_T.TEXT,
+                             bold=False, anchor="topleft", maxw=None):
+                    rr = original(surf, txt, pos, size, colour, bold, anchor,
+                                  maxw)
+                    if str(txt).strip():
+                        fora.append((rr.copy(), str(txt)))
+                    return rr
+
+                _T.text = espiao_c
+                escapou = []
+                try:
+                    for larg, alt in ((1024, 768), (1280, 720), (1366, 768),
+                                      (1920, 1080), (3840, 2160)):
+                        quadro = pygame.Rect(0, 0, larg, alt)
+                        fora.clear()
+                        agora.draw(app.surf, quadro)
+                        for rr, ss in fora:
+                            if (rr.bottom > alt + 2 or rr.y < -2
+                                    or rr.right > larg + 2 or rr.x < -2):
+                                escapou.append("%dx%d: %r" % (larg, alt,
+                                                              ss[:26]))
+                finally:
+                    _T.text = original
+                if escapou:
+                    bad("%d textos fora da tela cheia" % len(escapou),
+                        "\n".join(escapou[:5]))
+                else:
+                    ok("nada desenhado fora dela, de 1024 a 3840 px")
+
+            # ESC sai: uma tela sem trilho precisa da saída que o resto do
+            # sistema usa, senão a única porta é uma tecla que ninguém contou.
+            agora.tela_cheia = True
+            agora.key(_Ev(pygame.K_ESCAPE))
+            if agora.tela_cheia:
+                bad("ESC não sai da tela cheia")
+            else:
+                ok("[f] abre, ESC e [f] fecham")
+
+            # E ela não pode sobreviver ao disco: sem nada tocando, uma tela
+            # cheia sem trilho é um quadro preto de onde não se sai.
+            agora.tela_cheia = True
+            app.playing.where = lambda: ({}, None, None, None, None, 0.0)
+            agora.draw(app.surf, pygame.Rect(0, 0, 1280, 720))
+            if agora.tela_cheia:
+                bad("a tela cheia sobrevive ao fim do disco")
+            else:
+                ok("acabou o disco, ela se fecha sozinha")
+        finally:
+            app.playing.where = _antes
+            agora.tela_cheia = False
+    except Exception:                                       # noqa: BLE001
+        bad("a tela cheia do disco", traceback.format_exc())
+
     secao("a pilha diz com o que você se comprometeu")
     # **Sintoma:** a PILHA soma `it.get("mins", 0)` para escrever "X min de
     # disco encostado no móvel" — e o item da estante NUNCA teve `mins`. O

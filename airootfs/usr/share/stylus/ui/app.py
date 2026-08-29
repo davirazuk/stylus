@@ -335,8 +335,20 @@ class NowScreen(Screen):
         # de tela dividem o mesmo estado e os picos "vazam" de um desenho
         # para o outro.
         self._spec_pico = None
+        # O DISCO ocupando a tela toda, sem trilho e sem coluna de texto.
+        # Ver `_cheia`: é o deck, dentro do lançador.
+        self.tela_cheia = False
 
     def key(self, ev):
+        # ── a tela cheia do disco ─────────────────────────────────────────
+        # `f` liga e desliga; ESC também desliga, porque ESC é "volta" no
+        # sistema inteiro e uma tela sem trilho precisa de uma saída óbvia.
+        if ev.key == pygame.K_f:
+            self.tela_cheia = not self.tela_cheia
+            return True
+        if ev.key == pygame.K_ESCAPE and self.tela_cheia:
+            self.tela_cheia = False
+            return True
         if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             # Abre O DECK no disco que JÁ está tocando, sem reiniciar nada: o
             # scope acha a posição sozinho pelo socket do mpv ou pelo MPRIS.
@@ -416,7 +428,13 @@ class NowScreen(Screen):
     def draw(self, s, r):
         snap, al, track, side, t_abs, frac = self.app.playing.where()
         if al is None:
+            # Sem disco não há tela cheia do disco: sair dela sozinha é
+            # melhor do que deixar a pessoa num quadro preto sem trilho.
+            self.tela_cheia = False
             self._nothing(s, r)
+            return
+        if self.tela_cheia:
+            self._cheia(s, r, snap, al, track, side, t_abs, frac)
             return
 
         # ── a capa vaza para a sala: fundo desfocado na cor do disco ──────
@@ -675,11 +693,164 @@ class NowScreen(Screen):
             T.text(s, "  ".join(icons), (r.right - 20, r.bottom - 50), 20,
                    T.AMBER, anchor="bottomright")
 
-        self.app.hint(s, r, "[enter] abre o deck   [space] pausa   "
+        self.app.hint(s, r, "[f] o disco na tela toda   [enter] abre o deck   "
+                            "[space] pausa   "
                             "[n]/[p] faixa   [←]/[→] busca   [v]/[b] lado   "
                             "[+]/[-] volume   "
                             + ("[D] deck sozinho: ligado" if self.app.auto_deck
                                else "[D] deck sozinho: desligado"))
+
+    def _cheia(self, s, r, snap, al, track, side, t_abs, frac):
+        """O DISCO ocupando a tela — o deck, dentro do lançador.
+
+        POR QUE ISTO EXISTE
+        -------------------
+        O deck é um programa à parte: OpenGL, um venv com PyOpenGL, PortAudio,
+        uma janela própria e uma cerimônia inteira. Tudo isso para mostrar um
+        disco girando — que é o que esta tela já desenha, com a mesma
+        geometria do vinyl.py, sem GL nenhum.
+
+        Aqui o disco vem para o CENTRO e cresce até o que a altura der; o
+        trilho e a coluna de texto saem (o laço principal olha o
+        `tela_cheia`), e o que sobra de escrito é o que se lê de longe: o
+        disco, o lado, e quanto falta. É a mesma leitura do deck sem o custo
+        dele — e é a resposta honesta a "por que não tudo no lançador".
+
+        O que ela AINDA não faz, e é o que o deck tem de próprio: a cerimônia
+        (spinup → cue → drop) e o braço descendo. Isso é o ritual, e o
+        CLAUDE.md §5.5 chama de sagrado; enquanto não estiver aqui, o deck
+        continua sendo o lugar dele.
+        """
+        fundo = self.app.backdrop(al, r.size)
+        if fundo is not None:
+            s.blit(fundo, r.topleft)
+            T.vignette(s)
+
+        level, wave, spec, pulse = self.app.audio_now()
+        # O texto é MEDIDO, não chutado: quatro linhas (artista, disco, lado,
+        # faixa) mais o respiro e a linha de dicas. Com o disco em 40% da
+        # altura o nome da faixa caía FORA da tela em 1080p — e o que se
+        # perdia era justamente a informação, não a decoração.
+        txt_h = 28 + 26 + 56 + 40 + 30 + 46
+        topo = r.y + max(16, int(r.h * 0.03))
+        rm = int(min((r.bottom - txt_h - topo) / 2, r.w * 0.30))
+        rm = max(120, rm)
+        dx, dy = r.centerx, topo + rm
+
+        hal = T.halo(int(rm * 1.06),
+                     forca=int(150 + (level * 0.75 + pulse * 0.25) * 105))
+        s.blit(hal, (dx - hal.get_width() // 2, dy - hal.get_height() // 2))
+        s.blit(T.disco(rm), (dx - rm, dy - rm))
+
+        parado = bool((snap or {}).get("paused"))
+        if self._ang is None:
+            self._ang = (frac * 5.0) % (2 * math.pi)
+        if not parado:
+            self._ang = (self._ang
+                         + min(0.1, self.app.clock.get_time() / 1000.0)
+                         * (0.6 + level * 1.8)) % (2 * math.pi)
+        bril = T.rascunho(rm * 2, rm * 2, "reflexo")
+        n, arco = 46, math.radians(40)
+        r0, r1 = rm * 0.93, rm * T.GROOVE_O
+        for i in range(n):
+            f = i / (n - 1)
+            aa = self._ang + (f - 0.5) * arco
+            a = int((26 + (level * 0.7 + pulse * 0.3) * 44)
+                    * math.sin(f * math.pi) ** 2)
+            if a > 0:
+                pygame.draw.line(
+                    bril, (*T.AMBER_GLOW, a),
+                    (rm + math.cos(aa) * r0, rm + math.sin(aa) * r0),
+                    (rm + math.cos(aa) * r1, rm + math.sin(aa) * r1), 2)
+        s.blit(bril, (dx - rm, dy - rm))
+
+        # A capa NA BOLACHA, que é onde ela está num disco de verdade — e
+        # aqui ela cabe, porque o disco é grande. Recortada em círculo pelo
+        # T.bolacha; quadrada no meio de um disco redondo seria um adesivo.
+        cov = self.app.thumbs_hi.get(al.cover) if al.cover else None
+        if cov is None and al.cover:
+            cov = self.app.thumbs.get(al.cover)
+        if cov is not None:
+            lr = int(rm * T.LABEL_R)
+            s.blit(T.bolacha(cov, lr, al.cover), (dx - lr, dy - lr))
+
+        # A agulha, no sulco em que ela está — e o SULCO ACESO com ela.
+        #
+        # Sozinho, o ponto da agulha era um pingo âmbar solto no meio de um
+        # disco de meio metro: não dizia onde estava porque não havia com o
+        # que comparar. O que diz é o sulco inteiro em que ele anda, aceso
+        # fraco: aí o raio vira o tempo à vista, que é a tese do deck.
+        # A agulha é a mesma cruz curta e quente do vinyl.py — luz, não peça.
+        if side and frac > 0.0:
+            rr = rm * (T.GROOVE_O - (T.GROOVE_O - T.GROOVE_I) * min(1.0, frac))
+            lado_s = int(rr * 2) + 8
+            sul = T.rascunho(lado_s, lado_s, "sulco-vivo")
+            cs = lado_s // 2
+            pygame.draw.circle(sul, (*T.AMBER, 46), (cs, cs), int(rr), 1)
+            # O rastro: o pedaço de sulco que ACABOU de passar pela agulha,
+            # apagando para trás. Em SEGMENTOS e não em pontos — pontos com
+            # o espaçamento do arco viram linha pontilhada, que lê como
+            # tracejado de desenho técnico e não como luz que some.
+            passos, arco = 40, math.radians(-72)
+            gr = max(1, int(rm * 0.009))
+            ant = None
+            for k in range(passos + 1):
+                f = k / float(passos)
+                a = math.pi + f * arco
+                pt = (cs + math.cos(a) * rr, cs + math.sin(a) * rr)
+                if ant is not None:
+                    pygame.draw.line(sul, (*T.AMBER_GLOW,
+                                           int(120 * (1.0 - f) ** 2)),
+                                     ant, pt, gr)
+                ant = pt
+            s.blit(sul, (dx - cs, dy - cs))
+            # À esquerda, como na tela pequena: aqui nada esconde o disco,
+            # mas as duas telas contam a mesma história sobre o mesmo disco.
+            ax, ay = dx - rr, dy
+            fr = max(8, int(rm * 0.07))
+            faisca = T.rascunho(fr * 2, fr * 2, "agulha")
+            for k in range(5, 0, -1):
+                pygame.draw.circle(
+                    faisca, (*T.AMBER_GLOW, int((26 + pulse * 44) * k / 5)),
+                    (fr, fr), int(fr * k / 5))
+            s.blit(faisca, (ax - fr, ay - fr))
+            braco = max(5, int(rm * 0.045))
+            gros = max(2, int(rm * 0.010))
+            pygame.draw.line(s, T.AMBER_GLOW, (ax - braco, ay), (ax + braco, ay),
+                             gros)
+            pygame.draw.line(s, T.AMBER, (ax, ay - braco // 2),
+                             (ax, ay + braco // 2), gros)
+        if spec is not None:
+            self._spectrum(s, (dx, dy), spec, level, rm)
+
+        # ── o que se lê de longe ──────────────────────────────────────────
+        larg = min(r.w - 120, 1100)
+        y = dy + rm + 26
+        T.text(s, al.artist.upper(), (r.centerx, y), 20, T.TEXT_FAINT,
+               anchor="midtop", maxw=larg)
+        T.text(s, al.name, (r.centerx, y + 28), 42, T.TEXT, bold=True,
+               anchor="midtop", maxw=larg)
+        y += 84
+        if side:
+            resta = max(0.0, side["end"] - t_abs)
+            ultimo = side is al.sides[-1]
+            rot = side.get("label", "LADO").replace("SIDE", "LADO")
+            if getattr(al, "discos", 1) > 1:
+                try:
+                    rot = "DISCO %d · %s" % (al.sides.index(side) // 2 + 1, rot)
+                except ValueError:
+                    pass
+            frase = "%s   %s%s" % (rot, "acaba em " if ultimo else "vira em ",
+                                   humano(resta))
+            T.text(s, frase, (r.centerx, y), 24, T.AMBER, bold=True,
+                   anchor="midtop", maxw=larg)
+            y += 40
+        if track:
+            n_t = (al.tracks.index(track) + 1) if track in al.tracks else 0
+            T.text(s, "%02d  %s" % (n_t, track.get("title") or ""),
+                   (r.centerx, y), 22, T.TEXT_DIM, anchor="midtop", maxw=larg)
+        self.app.hint(s, r, "[f] volta ao lançador   [space] pausa   "
+                            "[n]/[p] faixa   [v] vira o lado")
 
     def _spectrum(self, s, centro, spec, level, rm):
         """O som desenhado no ARO do disco — um anel que ondula com a música.
@@ -719,6 +890,13 @@ class NowScreen(Screen):
         for i in range(nb):
             pico[i] = max(float(spec[i]), pico[i] - 0.03)
         n = 96                      # pontos do anel: liso a 60 fps, e barato
+        # Colado no aro, não flutuando em volta: a onda é pequena de
+        # propósito. Com muita amplitude o anel perde a circunferência e o
+        # disco deixa de ter silhueta — vira uma mancha com contorno. E o
+        # TETO é em pixels, não em fração do raio: na tela cheia o disco tem
+        # 430 px de raio, e 7,5% dele são 32 px de ondulação — o anel
+        # descolava da borda e lia como uma curva de nível solta em volta.
+        ganho = min(0.075, 22.0 / max(1.0, rm)) * (0.45 + 0.55 * min(1.0, level))
         lado = int(rm * 2.4)
         aro = T.rascunho(lado, lado, "espectro")
         c = lado // 2
@@ -736,10 +914,6 @@ class NowScreen(Screen):
             i1 = min(nb - 1, i0 + 1)
             v = float(spec[i0]) + (float(spec[i1]) - float(spec[i0])) * (f - i0)
             vp = pico[i0] + (pico[i1] - pico[i0]) * (f - i0)
-            # Colado no aro, não flutuando em volta: a onda é pequena de
-            # propósito. Com muita amplitude o anel perde a circunferência e
-            # o disco deixa de ter silhueta — vira uma mancha com contorno.
-            ganho = 0.075 * (0.45 + 0.55 * min(1.0, level))
             r = rm * (0.99 + ganho * v)
             pts.append((c + math.cos(a) * r, c + math.sin(a) * r))
             rp = rm * (0.99 + ganho * vp)
@@ -4981,7 +5155,12 @@ class App:
             dt = self.clock.get_time() / 1000.0
             self._particles.update(dt)
             self._particles.draw(self.surf)
-            body = pygame.Rect(rail_w, 0, self.W - rail_w, self.H)
+            # Uma seção pode pedir a tela INTEIRA — é o que a AGORA faz no
+            # [f]. O trilho é a moldura do sistema; quando o assunto é o
+            # disco e mais nada, moldura é ruído.
+            inteira = getattr(self.screens[self.cur], "tela_cheia", False)
+            body = (pygame.Rect(0, 0, self.W, self.H) if inteira else
+                    pygame.Rect(rail_w, 0, self.W - rail_w, self.H))
             # Os alvos são de UM quadro: a grade muda de tamanho com a
             # janela, com o filtro e com a busca, e um retângulo guardado do
             # quadro passado clica no disco errado.
@@ -4998,7 +5177,8 @@ class App:
                 # computador ter quebrado.
                 T.text(self.surf, f"esta tela quebrou: {type(e).__name__}: {e}",
                        (body.x + 40, body.y + 60), 20, T.RED, maxw=body.w - 80)
-            self._draw_rail(self.surf, rail_w)
+            if not inteira:
+                self._draw_rail(self.surf, rail_w)
             self._watch_side()
             self._draw_flip(self.surf)
             self._draw_toast(self.surf)

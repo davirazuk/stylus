@@ -1043,6 +1043,43 @@ def halo(raio, folga=None, forca=255):
     return h
 
 
+_bolacha_cache = {}
+
+
+def bolacha(art, raio, chave):
+    """A capa recortada em CÍRCULO, do tamanho da bolacha do disco.
+
+    Num disco de verdade o meio é impresso, e com o disco no prato é a única
+    parte da arte que se vê. Quadrada no meio de um disco redondo seria um
+    adesivo colado; o recorte é o que a faz PERTENCER ao objeto.
+
+    Em cache pela `chave` (o caminho da capa) e pelo raio — recortar é um
+    smoothscale mais um blit de máscara, e isto é desenhado em todo quadro
+    da tela cheia.
+    """
+    raio = max(8, int(raio))
+    k = (chave, raio)
+    pronto = _bolacha_cache.get(k)
+    if pronto is not None:
+        return pronto
+    lado = raio * 2
+    sup = pygame.transform.smoothscale(art, (lado, lado)).convert_alpha()
+    # A máscara: branco dentro do círculo, transparente fora. O BLEND_RGBA_MIN
+    # leva o alfa para zero onde a máscara é zero — é o recorte sem precisar
+    # de per-pixel à mão.
+    mascara = pygame.Surface((lado, lado), pygame.SRCALPHA)
+    pygame.draw.circle(mascara, (255, 255, 255, 255), (raio, raio), raio)
+    sup.blit(mascara, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    # O aro âmbar e o furo do eixo: sem eles a arte redonda ainda lê como
+    # adesivo. São as duas coisas que toda bolacha de disco tem.
+    pygame.draw.circle(sup, AMBER_DIM, (raio, raio), raio, max(1, raio // 40))
+    pygame.draw.circle(sup, INK, (raio, raio), max(2, int(raio * 0.075)))
+    if len(_bolacha_cache) > 8:
+        _bolacha_cache.clear()
+    _bolacha_cache[k] = sup
+    return sup
+
+
 _RASCUNHOS = {}
 
 
@@ -1106,7 +1143,13 @@ def disco(raio):
 
     # os sulcos — grafite, não âmbar
     dentro, fora = int(R * GROOVE_I), int(R * GROOVE_O)
-    passo = max(2 * e, (fora - dentro) // 60)
+    # Quantos sulcos: sessenta era um número FIXO, e um número fixo é
+    # densidade que muda com o tamanho. No disco pequeno da AGORA lê como
+    # sulco; na tela cheia, com o raio em 430 px, os mesmos sessenta viram
+    # anéis largos e o disco lê como alvo de tiro. Cresce com o raio, com
+    # teto — passar de ~1 px real de espaçamento só produz cintilação.
+    n_sulcos = max(60, min(190, raio // 3))
+    passo = max(2 * e, (fora - dentro) // n_sulcos)
     for rr in range(dentro, fora, passo):
         f = (rr - dentro) / max(1, fora - dentro)
         # um pouco mais claros na borda, onde a luz pegaria primeiro
@@ -1115,10 +1158,15 @@ def disco(raio):
 
     # os intervalos entre as faixas. É AQUI que o âmbar entra, e só aqui:
     # é a única informação que o disco parado carrega — quantas faixas tem.
+    # 105 e não 150: a espessura é sempre 1 px real, então o que muda com o
+    # tamanho é só QUANTO do quadro eles ocupam. Na tela cheia os cinco a 150
+    # desenhavam curvas de nível de mapa por cima do disco inteiro, mais
+    # fortes que o próprio aro. Contar as faixas é para quem olha; não é o
+    # assunto do quadro.
     for frac in _INTERVALOS:
         rr = int(R * frac)
         if dentro < rr < fora:
-            pygame.draw.circle(d, (*AMBER_DIM, 150), (c, c), rr, e)
+            pygame.draw.circle(d, (*AMBER_DIM, 105), (c, c), rr, e)
 
     # a bolacha do meio — escura, com o aro âmbar
     lr = int(R * LABEL_R)
