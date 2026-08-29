@@ -192,6 +192,14 @@ except Exception:
     sys.exit(0)
 if os.path.realpath(pasta) != alvo or pos < 3:
     sys.exit(0)
+# Uma lista SORTEADA não se retoma. O índice guardado continua válido — é a
+# MÚSICA por trás dele que não é mais a mesma: pôr a mesma playlist de novo
+# sorteia outra ordem, e "retomar na faixa 47" cairia numa faixa que não tem
+# nada a ver com onde a pessoa parou. Numa lista na ordem (ou num disco) o
+# índice significa sempre a mesma faixa, e aí retomar é o certo.
+m = vinyl.manifesto(alvo) or {}
+if m.get("sorteada"):
+    sys.exit(0)
 al = vinyl.Album(alvo, envelope=False)
 if not al.tracks or not 0 <= idx < len(al.tracks):
     sys.exit(0)

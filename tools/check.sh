@@ -1352,6 +1352,127 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+# ── a assinatura vencida do Qobuz é renovada com a música tocando ─────────
+# **Sintoma:** os endereços do Qobuz valem ~1 h e uma playlist de 200 faixas
+# são 13. Passada a hora, o mpv pedia o endereço seguinte, levava 403, pulava
+# para o próximo, e varria o resto da lista em segundos — "a música parou
+# sozinha", sem nada na tela nem no journal ligando aquilo a uma assinatura.
+#
+# Duas coisas aqui podem quebrar em silêncio e as duas são conferidas com um
+# mpv de mentira:
+#
+#   1. A ORDEM DA REMOÇÃO. Tirando do começo para o fim, cada remoção empurra
+#      o resto e metade da cauda sobrevive misturada com a nova. Tem que ser
+#      de trás para a frente.
+#   2. A faixa que está TOCANDO não pode ser removida — o fluxo dela já está
+#      aberto, e tirá-la é cortar o som para renovar o que vem depois.
+sec "a assinatura do Qobuz é renovada sem cortar o som"
+saida=$(python3 - <<'RENOVAEOF' 2>/dev/null
+import importlib.util, json, os, shutil, sys, tempfile, time, traceback
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+try:
+    # Loader explícito: o arquivo não termina em .py (é um COMANDO), e sem
+    # isso o `spec_from_file_location` devolve um spec com loader=None e a
+    # conferência "pula" em vez de conferir.
+    import importlib.machinery as _im
+    spec = importlib.util.spec_from_loader(
+        "sidewatch",
+        _im.SourceFileLoader("sidewatch",
+                             "airootfs/usr/local/bin/stylus-side-watch"))
+    sw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sw)
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+tmp = tempfile.mkdtemp()
+
+
+def disco(fonte="qobuz-lista", idade=99999):
+    with open(os.path.join(tmp, "disco.json"), "w", encoding="utf-8") as fh:
+        json.dump({"fonte": fonte, "assinado_em": int(time.time()) - idade,
+                   "tracks": [{"title": "F%d" % i, "duration": 9,
+                               "url": "u%d" % i, "qid": 100 + i}
+                              for i in range(6)]}, fh)
+
+
+class Album:
+    folder = tmp
+
+
+class IPCFalso:
+    def __init__(self):
+        self.cmds = []
+
+    def connect(self):
+        return True
+
+    def get(self, p):
+        return {"playlist-pos": 2, "playlist-count": 6}.get(p)
+
+    def command(self, *a):
+        self.cmds.append(a)
+        return True
+
+    def close(self):
+        pass
+
+
+class Resposta:
+    returncode = 0
+
+    def __init__(self, saida):
+        self.stdout, self.stderr = saida, ""
+
+
+try:
+    # 1. quando renovar, e quando não
+    disco(idade=99999)
+    velha = sw.precisa_renovar(Album())
+    disco(idade=5)
+    nova = sw.precisa_renovar(Album())
+    os.remove(os.path.join(tmp, "disco.json"))
+    local = sw.precisa_renovar(Album())
+    disco(idade=99999)
+
+    # 2. a cirurgia na fila do mpv
+    cauda = os.path.join(tmp, "cauda.m3u")
+    with open(cauda, "w", encoding="utf-8") as fh:
+        fh.write("#EXTM3U\n")
+    falso = IPCFalso()
+    sw.vinyl._MpvIPC = lambda: falso
+    sw.subprocess.run = lambda *a, **k: Resposta(cauda + "\n")
+    deu = sw.renovar_assinatura(tmp)
+    remocoes = [c[1] for c in falso.cmds if c[0] == "playlist-remove"]
+    carga = [c for c in falso.cmds if c[0] == "loadlist"]
+
+    if not velha or nova or local:
+        print("ERRO precisa_renovar erra o caso: velha=%s nova=%s local=%s"
+              % (velha, nova, local))
+    elif not deu:
+        print("ERRO a renovação não chegou ao fim")
+    elif remocoes != [5, 4, 3]:
+        print("ERRO removeu na ordem errada: %s (tem que ser de trás)"
+              % remocoes)
+    elif 2 in remocoes:
+        print("ERRO removeu a faixa que está tocando")
+    elif carga != [("loadlist", cauda, "append")]:
+        print("ERRO a cauda não foi pendurada com loadlist: %s" % carga)
+    else:
+        print("OK tira as 3 de trás para a frente e pendura a cauda")
+except Exception:                                        # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+RENOVAEOF
+)
+case "$saida" in
+    OK*)   ok "renovando, ${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o stylus-side-watch aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a renovação da assinatura do Qobuz mexe errado na fila"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

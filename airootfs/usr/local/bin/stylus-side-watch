@@ -25,9 +25,11 @@ implicância. Quem quer a coisa inteira liga com
 `stylus-side-watch --pause`, ou põe STYLUS_SIDE_PAUSE=1 no ambiente.
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 sys.path.insert(0, "/usr/share/stylus/deck")
@@ -50,6 +52,22 @@ GRAVA_CADA = 10.0
 # Uma etiqueta de pilha do dunst: o aviso novo SUBSTITUI o anterior em vez de
 # empilhar. Um disco de seis lados não pode deixar seis avisos na tela.
 TAG = "stylus-side"
+
+# ── a assinatura do Qobuz vence antes da playlist acabar ──────────────────
+# Os endereços que o Qobuz assina valem cerca de UMA HORA. Uma playlist de
+# 200 faixas são treze. O que acontecia depois da primeira hora não era um
+# erro na tela: o mpv pedia o endereço seguinte, levava 403, pulava para o
+# próximo, levava 403 de novo, e varria o resto da lista em poucos segundos.
+# Da poltrona isso é "a música parou sozinha", e não havia nada — nem tela,
+# nem journal — ligando aquilo a uma assinatura vencida.
+#
+# Quem renova é ESTE serviço porque ele já está perguntando ao mpv, de dois
+# em dois segundos, em que faixa a agulha está: renovar é justamente saber o
+# que ainda não tocou. Um processo novo só para isso seria conversa de socket
+# em dobro pelo resto da sessão — o mesmo motivo pelo qual a agulha.tsv é
+# gravada aqui.
+RENOVA_APOS = 45 * 60      # com ~15 min de folga antes da hora
+QOBUZ_STREAM = "/usr/share/stylus/qobuz_stream.py"
 
 
 UI = "/usr/share/stylus/ui/app.py"
@@ -204,6 +222,111 @@ class Olho:
         return al, i, lado, restam
 
 
+def _manifesto(pasta):
+    try:
+        with open(os.path.join(pasta, "disco.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:                         # noqa: BLE001
+        return None
+
+
+def precisa_renovar(al):
+    """Este disco veio do Qobuz e a assinatura dele está velha?
+
+    Barato de propósito: roda a cada duas segundos, e a resposta quase sempre
+    é não. Um disco da estante nem chega a abrir arquivo — não tem disco.json.
+    """
+    if al is None or not getattr(al, "folder", ""):
+        return False
+    m = _manifesto(al.folder)
+    if not m or not str(m.get("fonte", "")).startswith("qobuz"):
+        return False
+    quando = m.get("assinado_em")
+    if not isinstance(quando, (int, float)):
+        return False
+    return (time.time() - quando) > RENOVA_APOS
+
+
+def renovar_assinatura(pasta):
+    """Reassina o que ainda não tocou e pendura no fim da fila do mpv.
+
+    A faixa que está tocando NÃO é tocada: o fluxo dela já está aberto e
+    continua até o fim. Só o que vem depois é trocado — e por isso não há
+    corte no som, que é a diferença entre isto e reabrir a lista inteira.
+
+    A cauda vai por `loadlist` e não por `loadfile` faixa a faixa: o m3u leva
+    os `#EXTINF` junto, e sem eles o mpv anuncia o ENDEREÇO como título — uma
+    linha de duzentos caracteres com uma assinatura dentro, que é o que
+    apareceria no polybar e na notificação de troca de faixa.
+    """
+    ipc = vinyl._MpvIPC()
+    if not ipc.connect():
+        return False
+    try:
+        pos = ipc.get("playlist-pos")
+        total = ipc.get("playlist-count")
+        if not isinstance(pos, int) or not isinstance(total, int):
+            return False
+        if pos < 0 or pos + 1 >= total:
+            return False                      # nada à frente para renovar
+        r = subprocess.run(
+            [sys.executable, QOBUZ_STREAM, "--renovar", pasta,
+             "--desde", str(pos + 1)],
+            capture_output=True, text=True, timeout=300)
+        cauda = (r.stdout or "").strip().splitlines()
+        cauda = cauda[-1] if cauda else ""
+        if r.returncode != 0 or not cauda or not os.path.isfile(cauda):
+            print("stylus-side-watch: não deu para renovar a assinatura: %s"
+                  % (r.stderr or "").strip()[:200], file=sys.stderr)
+            return False
+        # De trás para a frente: removendo do fim, os índices do que ainda
+        # não foi removido não mudam. Do começo para o fim, cada remoção
+        # empurra o resto e a metade da cauda sobreviveria.
+        for j in range(total - 1, pos, -1):
+            ipc.command("playlist-remove", j)
+        ipc.command("loadlist", cauda, "append")
+        return True
+    except Exception:                         # noqa: BLE001 — nunca derrubar
+        return False
+    finally:
+        ipc.close()
+
+
+class Renovador:
+    """Uma renovação por vez, numa thread, e nunca no laço do aviso.
+
+    Assinar 150 faixas leva dezenas de segundos. Feito no laço, o serviço
+    pararia de olhar o lado durante todo esse tempo — e o aviso de virar o
+    disco é a razão de ele existir.
+    """
+
+    def __init__(self):
+        self.rodando = False
+        self.ultima = 0.0
+
+    def talvez(self, al):
+        if self.rodando or time.time() - self.ultima < 120:
+            return
+        try:
+            if not precisa_renovar(al):
+                return
+        except Exception:                     # noqa: BLE001
+            return
+        pasta = al.folder
+        self.rodando = True
+        self.ultima = time.time()
+
+        def _corre():
+            try:
+                if renovar_assinatura(pasta):
+                    print("stylus-side-watch: assinatura do Qobuz renovada",
+                          file=sys.stderr)
+            finally:
+                self.rodando = False
+
+        threading.Thread(target=_corre, daemon=True).start()
+
+
 def rotulo(lado):
     return (lado or {}).get("label", "LADO").replace("SIDE", "LADO")
 
@@ -259,12 +382,16 @@ def main():
               f"{'acaba' if ultimo else 'vira'} em {int(restam // 60)} min")
         return 0
 
+    renovador = Renovador()
     while True:
         try:
             al, i, lado, _restam = olho.onde()
         except Exception:                     # noqa: BLE001 — nunca morrer
             time.sleep(INTERVALO)
             continue
+        # Antes de qualquer aviso: uma lista do Qobuz cuja assinatura está
+        # perto de vencer é reassinada agora, com a música ainda tocando.
+        renovador.talvez(al)
 
         if al is not None and lado is not None:
             if olho.lado is not None and i != olho.lado:

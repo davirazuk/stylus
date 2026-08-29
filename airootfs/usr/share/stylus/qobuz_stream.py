@@ -228,7 +228,8 @@ def um_disco(cl, album_id):
         linhas.append("#EXTINF:%d,%s - %s"
                       % (dur, quem, nome.replace("\n", " ").replace(",", " ")))
         linhas.append(url)
-        manifesto.append({"title": nome, "duration": dur, "url": url})
+        manifesto.append({"title": nome, "duration": dur, "url": url,
+                          "qid": t.get("id")})
 
     if not manifesto:
         morre("nenhuma faixa deste disco pode ser tocada com esta assinatura")
@@ -299,7 +300,13 @@ def uma_lista(cl, lista_id, sortear=False):
         # quem? O disco na tela mostra este título, e ele tem que se
         # sustentar sem um artista de álbum por trás.
         manifesto.append({"title": "%s — %s" % (quem, titulo),
-                          "duration": dur, "url": url})
+                          "duration": dur, "url": url,
+                          # O id da faixa no Qobuz. Não é enfeite: é o que
+                          # permite ASSINAR DE NOVO esta mesma faixa quando o
+                          # endereço vencer, sem perguntar a playlist inteira
+                          # de volta (e, numa lista sorteada, sem perder a
+                          # ordem que foi sorteada).
+                          "qid": t.get("id")})
 
     if not manifesto:
         morre("nenhuma faixa desta playlist pode ser tocada com esta assinatura")
@@ -326,6 +333,98 @@ def uma_lista(cl, lista_id, sortear=False):
     return lista
 
 
+def renovar(cl, pasta, desde=0):
+    """Assina de novo, da faixa `desde` em diante. Devolve o m3u da cauda.
+
+    POR QUE ISTO EXISTE
+    -------------------
+    Os endereços do Qobuz são assinados e valem cerca de UMA HORA. Uma
+    playlist de 200 faixas são treze. O que acontecia depois da primeira hora
+    não era um erro: o mpv pedia o endereço seguinte, levava 403, pulava para
+    o próximo, levava 403 de novo, e assim até o fim da lista — em silêncio,
+    em poucos segundos. Da poltrona isso é "a música parou sozinha", e não há
+    nada na tela nem no journal ligando aquilo a uma assinatura vencida.
+
+    A mesma faixa, assinada de novo, é um endereço novo. Por isso o manifesto
+    guarda o `qid`: a lista é reassinada sem perguntar a playlist de volta ao
+    Qobuz — o que importa numa lista SORTEADA, onde perguntar de novo daria
+    outra ordem e outra amostra.
+
+    Escreve dois arquivos: o `lista.m3u` inteiro, atualizado (é o que vale
+    para quem puser este disco de novo), e um `cauda.m3u` só com o que foi
+    reassinado — que é o que o tocador pendura no fim da fila, com os
+    `#EXTINF` no lugar, sem perder o nome das faixas.
+    """
+    m = manifesto_de(pasta)
+    if not m:
+        morre("não há disco.json em %s" % pasta)
+    faixas = m.get("tracks") or []
+    if not faixas:
+        morre("esse disco.json não tem faixa nenhuma")
+    desde = max(0, min(int(desde), len(faixas)))
+    alvo = faixas[desde:]
+    if not alvo:
+        morre("não há o que reassinar depois da faixa %d" % desde)
+    sem_id = [t for t in alvo if not t.get("qid")]
+    if sem_id:
+        # Listas escritas antes do `qid` existir. Dizer é melhor do que
+        # reassinar metade e deixar a outra metade vencida sem avisar.
+        morre("esta lista foi montada por uma versão antiga e não guarda o "
+              "id das faixas: ponha-a de novo para renovar")
+
+    novos = []
+    for t in alvo:
+        try:
+            u = cl.get_track_url(t["qid"], fmt_id=QUALIDADE)
+        except Exception as e:                           # noqa: BLE001
+            print("  · %s: %s" % (t.get("title") or "?", e), file=sys.stderr)
+            novos.append(None)
+            continue
+        novos.append((u or {}).get("url") or None)
+
+    linhas_cauda = ["#EXTM3U"]
+    trocadas = 0
+    for t, url in zip(alvo, novos):
+        if url:
+            t["url"] = url
+            trocadas += 1
+        linhas_cauda.append("#EXTINF:%d,%s"
+                            % (int(t.get("duration") or 0),
+                               (t.get("title") or "").replace("\n", " ")
+                               .replace(",", " ")))
+        linhas_cauda.append(t["url"])
+    if not trocadas:
+        morre("nenhuma faixa pôde ser reassinada")
+
+    linhas = ["#EXTM3U"]
+    for t in faixas:
+        linhas.append("#EXTINF:%d,%s" % (int(t.get("duration") or 0),
+                                         (t.get("title") or "")
+                                         .replace("\n", " ").replace(",", " ")))
+        linhas.append(t["url"])
+    cabecalho = {k: v for k, v in m.items() if k != "tracks"}
+    cabecalho["assinado_em"] = int(time.time())
+    escrever(pasta, linhas, faixas, cabecalho)
+
+    cauda = os.path.join(pasta, "cauda.m3u")
+    with open(cauda, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(linhas_cauda) + "\n")
+    print("reassinadas %d faixas a partir da %d" % (trocadas, desde + 1),
+          file=sys.stderr)
+    return cauda
+
+
+def manifesto_de(pasta):
+    """O disco.json da pasta, ou None. (O vinyl tem um igual; aqui não se
+    importa o vinyl para não arrastar o deck inteiro para dentro do
+    assinador.)"""
+    try:
+        with open(os.path.join(pasta, "disco.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
 # `/playlist/123`, `playlist:123`, `lista:123` — e o `--lista 123` explícito,
 # para o id cru, que sozinho não diz se é disco ou playlist.
 _LISTA = re.compile(r"(?:/playlist/|playlist:|lista:)(\d+)")
@@ -339,16 +438,30 @@ def main():
     # As opções vêm antes do alvo e em qualquer ordem: `--lista --sortear 123`
     # e `--sortear --lista 123` são a mesma coisa, e quem digita não devia ter
     # que adivinhar qual.
+    renova_pasta = None
+    desde = 0
     while args and args[0].startswith("--"):
         if args[0] in ("--lista", "--playlist"):
             forcar_lista = True
         elif args[0] in ("--sortear", "--aleatorio", "--shuffle"):
             sortear = True
+        elif args[0] == "--renovar":
+            if len(args) < 2:
+                morre("--renovar precisa da pasta do disco")
+            renova_pasta, args = args[1], args[1:]
+        elif args[0] == "--desde":
+            if len(args) < 2:
+                morre("--desde precisa do número da faixa")
+            desde, args = int(args[1]), args[1:]
         else:
             morre("não conheço a opção %s" % args[0])
         args = args[1:]
+    if renova_pasta:
+        print(renovar(cliente(), renova_pasta, desde))
+        return
     if not args:
-        morre("uso: qobuz_stream.py [--lista] [--sortear] ID|URL")
+        morre("uso: qobuz_stream.py [--lista] [--sortear] ID|URL\n"
+              "       qobuz_stream.py --renovar PASTA [--desde N]")
     alvo = args[0]
 
     cl = cliente()
