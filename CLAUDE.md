@@ -475,6 +475,18 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   ganhou duas conferências novas para isso: todo `[module/…]` da polybar tem
   que estar numa linha `modules-*`, e as 18 cores do Konsole têm que ser as
   do alacritty.
+- **A paleta do deck era o oposto da lei do desenho, escrito com todas as
+  letras.** A seção se chamava "vinyl is plastic, not phosphor" e mandava
+  especular BRANCO, sulcos cinzas QUENTES e intervalos QUASE-BRANCOS — a
+  §5.5 pela metade: o braço tinha virado luz meses antes e o disco, que
+  ocupa a tela, tinha ficado para trás. Agora o corpo é preto FRIO, o brilho
+  é a luz âmbar da própria coisa (não uma lâmpada branca fora de quadro), o
+  sulco à frente da agulha é grafite frio e atrás dela fica aceso, e os
+  intervalos são o mesmo âmbar do `_INTERVALOS` da tela AGORA. O `check.sh`
+  agora confere a lei em NÚMEROS (o que é luz tem vermelho acima de 1,5× o
+  azul; o que é corpo tem o azul acima do vermelho) — porque o jeito de ela
+  ser desfeita não é alguém discordando dela, é alguém "melhorando o visual"
+  com a primeira foto de toca-discos que achar.
 - **O `stylus-switch-kde` escrevia uma segunda versão do GTK** por cima da do
   `/etc/skel`: trocar para o KDE mudava o corpo da letra de 10 para 11 e
   apagava o `gtk-application-prefer-dark-theme`.
@@ -484,10 +496,8 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   `u_record` em scope.py) e o braço em luz estão no código; falta VER na
   máquina e afinar ganho. O `deck/tools/vinyl_preview.py` mostra a
   composição sem GL e é o jeito barato de conferir antes.
-- **O resto do vocabulário de "foto" no deck.** A paleta do vinyl.py ainda se
-  apresenta como "vinyl is plastic, not phosphor / honest materials: black
-  plastic reflects white specular", e o disco é desenhado nessa chave —
-  cinzas de plástico, não fósforo. Isso é a §5.5 pela metade: o braço virou
-  luz, o disco ainda não. É a próxima decisão de desenho, e é grande.
+- **O disco do deck virou luz** (era o item grande desta lista). Falta VER na
+  máquina, com o acumulador aditivo e o bloom, e afinar o ganho — o
+  `vinyl_preview.py` aproxima a composição e a cor, não o brilho.
 - **Missing commands:** conferir se algum comando existe na instalação local
   e não no repositório.

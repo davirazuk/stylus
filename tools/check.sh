@@ -929,6 +929,59 @@ elif (( ! FAST )); then
     else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
+# ── a lei do desenho do vinil, escrita em números ─────────────────────────
+# A §5.5 do CLAUDE.md diz que o disco é FÓSFORO e não plástico: preto frio no
+# corpo, âmbar como única cor viva. Ela já custou semanas, e o jeito de ela
+# ser desfeita não é alguém discordando dela — é alguém "melhorando o visual"
+# e pondo um especular branco de volta, que é o que qualquer referência de
+# toca-discos na internet mostra.
+#
+# A seção de paleta do vinyl.py se chamava, ela mesma, "vinyl is plastic, not
+# phosphor", e mandava o oposto da lei: especular BRANCO, sulcos cinzas
+# QUENTES, intervalos QUASE-BRANCOS. Ficou assim por meses depois de o braço
+# já ter virado luz. Escrever a lei em números é o que impede a próxima volta.
+sec "no deck, o que é luz é âmbar e o que é corpo é frio"
+fora_da_lei=$(python3 - <<'LUZEOF'
+import re, pathlib
+
+txt = pathlib.Path("airootfs/usr/share/stylus/deck/vinyl.py").read_text()
+cor = {}
+for nome, r, g, b in re.findall(
+        r"^([A-Z_]+)\s*=\s*\(([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", txt, re.M):
+    cor[nome] = (float(r), float(g), float(b))
+
+# O que é LUZ no quadro: tem que ser claramente âmbar — vermelho bem acima do
+# azul. Branco (r≈b) reprova, e é exatamente o que estava escrito.
+luz = ("VINYL_RIM", "SHEEN", "GROOVE_PLAYED", "GROOVE_GAP", "EDGE_RING",
+       "STYLUS_HOT", "ARM_LIGHT", "ARM_TIP", "ALARM")
+# O que é CORPO: preto frio. O azul não pode ficar abaixo do vermelho.
+frio = ("VINYL_CORE", "GROOVE_UNPLAYED", "DUST")
+
+for nome in luz:
+    if nome not in cor:
+        print("%s: sumiu da paleta" % nome)
+        continue
+    r, g, b = cor[nome]
+    if r <= b * 1.5:
+        print("%s = (%.3f, %.3f, %.3f): é luz e não é âmbar "
+              "(vermelho tem que passar de 1,5× o azul)" % (nome, r, g, b))
+for nome in frio:
+    if nome not in cor:
+        print("%s: sumiu da paleta" % nome)
+        continue
+    r, g, b = cor[nome]
+    if b < r:
+        print("%s = (%.3f, %.3f, %.3f): é corpo e está QUENTE "
+              "(o azul não pode ficar abaixo do vermelho)" % (nome, r, g, b))
+LUZEOF
+)
+if [[ -z $fora_da_lei ]]; then
+    ok "as 12 cores do disco seguem a §5.5"
+else
+    bad "a paleta do deck saiu da lei do desenho (CLAUDE.md §5.5):"
+    printf '%s\n' "$fora_da_lei" | sed 's/^/      /'
+fi
+
 # ── os dois terminais são o mesmo terminal ────────────────────────────────
 # **Sintoma:** o STYLUS tem dois terminais — o alacritty no i3 e o Konsole no
 # KDE — e eles tinham paletas DIFERENTES. O do i3 usava as cores do arquivo

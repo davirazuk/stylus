@@ -220,29 +220,48 @@ AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".wma")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Palette — vinyl is plastic, not phosphor
+# A paleta — o disco é FÓSFORO, não plástico
 # ═══════════════════════════════════════════════════════════════════════════
-# Honest materials: black plastic reflects white specular, grooves are
-# warm greys (dark ahead of needle, milky behind), gaps are near-white.
-# No blue neon — blue is the scope's language. Additive buffer:
-# anything >0.35 blooms, so body stays in hundredths to remain matte.
-# Contrast comes from luminance (shade), not hue. The amber live groove
-# is the only saturated accent — it contrasts grey, not competes.
-VINYL_CORE      = (0.016, 0.016, 0.017)   # black plastic — a touch lighter so groove contrast reads
-VINYL_RIM       = (0.064, 0.062, 0.058)   # warm edge, a bit brighter so disc pops from plinth
-SHEEN           = (0.128, 0.132, 0.122)   # white specular — slightly stronger, like scope's bloom but restrained
-GROOVE_UNPLAYED = (0.105, 0.112, 0.120)   # ahead: graphite, a touch milky for visibility
-GROOVE_PLAYED   = (0.210, 0.218, 0.228)   # behind: lit, a touch brighter
-GROOVE_GAP      = (0.760, 0.750, 0.735)   # gap: near-white, countable de longe
-STYLUS_HOT      = (0.740, 0.520, 0.140)   # live: hot amber, only saturated accent
+# Esta seção se chamava "vinyl is plastic, not phosphor" e dizia, com todas
+# as letras, o contrário da lei do desenho (CLAUDE.md §5.5): "materiais
+# honestos: o plástico preto reflete um especular BRANCO, os sulcos são
+# cinzas QUENTES, os intervalos são quase-brancos". O braço já tinha virado
+# luz; o disco tinha ficado para trás, e era a metade que ocupa a tela.
+#
+# O que se via: um disco cinza-oliva com anéis quase brancos, iluminado por
+# uma lâmpada branca fora de quadro — uma FOTO de toca-discos, que é o que a
+# §5.5 proíbe pelo nome. Ao lado da mesma coisa desenhada na tela AGORA (luz
+# âmbar no quase-preto), a comparação foi imediata e não a favor daqui.
+#
+# A lei, então, escrita em números: preto FRIO no corpo, e a única luz do
+# quadro é âmbar. O brilho do disco não é uma lâmpada branca refletida — é a
+# própria luz da coisa. O sulco à frente da agulha é grafite frio (ainda não
+# aconteceu); atrás dela ele fica ACESO, porque a agulha é o que acende. Os
+# intervalos entre faixas são o âmbar que se conta de longe — é a mesma
+# decisão do `_INTERVALOS` no ui/theme.py, e agora as duas telas dizem a
+# mesma coisa sobre o mesmo objeto.
+#
+# Nada de azul — o azul é a língua do scope. O acumulador é aditivo:
+# qualquer coisa acima de 0,35 floresce, e por isso o corpo fica nos
+# centésimos e só o intervalo estoura de propósito.
+VINYL_CORE      = (0.013, 0.015, 0.021)   # o corpo: preto FRIO, quase o fundo
+VINYL_RIM       = (0.052, 0.041, 0.027)   # o aro: âmbar baixo — a silhueta
+SHEEN           = (0.092, 0.064, 0.029)   # o brilho É a luz âmbar, não uma lâmpada
+GROOVE_UNPLAYED = (0.072, 0.080, 0.098)   # à frente: grafite frio, ainda não tocou
+GROOVE_PLAYED   = (0.185, 0.135, 0.072)   # atrás: aceso — a agulha é o que acende
+GROOVE_GAP      = (0.720, 0.470, 0.125)   # o intervalo: âmbar, contável de longe
+STYLUS_HOT      = (0.740, 0.520, 0.140)   # a agulha: âmbar quente
 # O braço não é metal: é o facho. Ver `tonearm` — o CLAUDE.md §5.5 proíbe
 # "braço de metal com contrapeso desenhado" pelo nome, e manda no lugar
 # "feixe âmbar na agulha pulsando". Estas duas cores são esse feixe: fraco
 # no corpo do traço, quente onde ele encosta na música.
 ARM_LIGHT       = (0.560, 0.315, 0.095)   # o traço — âmbar baixo, não compete
 ARM_TIP         = (0.980, 0.700, 0.300)   # a agulha encostada — o ponto quente
-EDGE_RING       = (0.185, 0.185, 0.188)   # edge / label rim — steel
-DUST            = (0.165, 0.165, 0.168)   # dust — neutral
+EDGE_RING       = (0.190, 0.132, 0.058)   # aro da borda e da bolacha — âmbar,
+                                          # não aço: era a última peça de
+                                          # metal no quadro
+DUST            = (0.120, 0.126, 0.140)   # as marcas de uso: cinza FRIO — são
+                                          # história do disco, não luz
 ALARM           = (0.740, 0.230, 0.225)   # side break — muted red, not bloom
 
 
@@ -1704,12 +1723,16 @@ def sheen_gain(theta, light_angle, strength=1.0):
 
 def disc_body(cx, cy, radius, iso, light_angle, n=320,
               rings=(0.024, 0.20, 0.38, 0.53, 0.66, 0.78, 0.88, 0.96, 1.0)):
-    """The black plastic — now honest, not stepped.
+    """O corpo do disco: preto frio com o aro em âmbar.
 
-    8 annuli with smooth pow distribution, warm neutral gradient, white
-    specular with soft pow falloff from centre (no hard cutoff at 0.25),
-    adaptive tessellation per ring, and spindle hole left empty so label
-    hole shows through. One material, one shader, no banding.
+    Oito anéis com distribuição suave, gradiente do centro (VINYL_CORE) para
+    a borda (VINYL_RIM) e o brilho (SHEEN) caindo em potência a partir do
+    meio — sem corte duro e sem banda fantasma. Tesselagem adaptativa por
+    anel, e o furo do eixo fica vazio para a bolacha aparecer por ele.
+
+    O gradiente e o brilho já eram assim; o que mudou foram as CORES (ver a
+    paleta lá em cima): o brilho deixou de ser um especular branco de lâmpada
+    fora de quadro e passou a ser a luz âmbar da própria coisa.
     """
     out = []
     for r0, r1 in zip(rings[:-1], rings[1:]):
