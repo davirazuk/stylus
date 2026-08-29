@@ -949,6 +949,71 @@ elif (( ! FAST )); then
     else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
+# ── nos aplicativos Qt, dá para LER o que está escrito ────────────────────
+# **Sintoma:** rótulo preto sobre fundo preto, e campo de texto com o fundo em
+# âmbar chapado.
+#
+# O `/usr/share/qt5ct/colors/stylus.conf` é uma lista de vinte cores SEM NOME
+# numa ordem que só o Qt conhece (o enum QPalette::ColorRole), e as cores
+# estavam nos papéis errados: WindowText tinha a mesma cor de Window, e Base —
+# o fundo de campo de texto, lista e tabela — era o âmbar da seleção. Ler o
+# arquivo não pega nada: são vinte hexadecimais numa linha. Vê-se abrindo um
+# aplicativo Qt, e é o tipo de coisa que a pessoa atribui ao aplicativo.
+#
+# A conferência é sobre o RESULTADO, não sobre a cor escolhida: texto e fundo
+# do mesmo par têm que estar longe um do outro. Quem escrever outra paleta
+# amanhã pode escolher o que quiser, menos escrever no escuro.
+sec "os aplicativos Qt dão para ler"
+ilegivel=$(python3 - <<'QTEOF'
+import pathlib
+
+PAPEIS = ("WindowText Button Light Midlight Dark Mid Text BrightText "
+          "ButtonText Base Window Shadow Highlight HighlightedText Link "
+          "LinkVisited AlternateBase NoRole ToolTipBase ToolTipText").split()
+# (o que se escreve, sobre o quê) — os pares que existem na tela.
+PARES = [("WindowText", "Window"), ("Text", "Base"), ("Text", "AlternateBase"),
+         ("ButtonText", "Button"), ("HighlightedText", "Highlight"),
+         ("ToolTipText", "ToolTipBase"), ("Link", "Base"),
+         ("LinkVisited", "Base")]
+# Longe o bastante para se ler. Não é contraste WCAG — é o piso abaixo do
+# qual as duas cores são a mesma mancha.
+PISO = 90.0
+
+
+def rgb(h):
+    h = h.strip().lstrip("#")
+    if len(h) == 8:            # aarrggbb
+        h = h[2:]
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+for arq in sorted(pathlib.Path("airootfs/usr/share").glob("qt*ct/colors/*.conf")):
+    for linha in arq.read_text(encoding="utf-8").splitlines():
+        if "_colors" not in linha or "=" not in linha:
+            continue
+        estado, valores = linha.split("=", 1)
+        cores = [v.strip() for v in valores.split(",")]
+        if len(cores) < len(PAPEIS):
+            print("%s: %s tem %d cores, o Qt espera %d"
+                  % (arq.name, estado, len(cores), len(PAPEIS)))
+            continue
+        m = dict(zip(PAPEIS, cores))
+        for frente, fundo in PARES:
+            a, b = rgb(m[frente]), rgb(m[fundo])
+            d = sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+            if d < PISO:
+                print("%s %s: %s (%s) sobre %s (%s) — distância %.0f"
+                      % (arq.parent.parent.name, estado.strip(), frente,
+                         m[frente], fundo, m[fundo], d))
+QTEOF
+)
+if [[ -z $ilegivel ]]; then
+    ok "as 3 linhas do qt5ct e do qt6ct têm texto legível sobre o fundo"
+else
+    bad "aplicativo Qt escrevendo no escuro:"
+    printf '%s\n' "$ilegivel" | sed 's/^/      /'
+fi
+
 # ── a lei do desenho do vinil, escrita em números ─────────────────────────
 # A §5.5 do CLAUDE.md diz que o disco é FÓSFORO e não plástico: preto frio no
 # corpo, âmbar como única cor viva. Ela já custou semanas, e o jeito de ela
