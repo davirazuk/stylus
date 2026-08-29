@@ -57,9 +57,25 @@ if [[ -d $REPO_DIR/.git ]]; then
     OLD=$($SUDO git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
     info "Buscando $REPO ($BRANCH)…"
     $SUDO git -C "$REPO_DIR" remote set-url origin "$REPO"
-    $SUDO git -C "$REPO_DIR" fetch --depth 1 origin "$BRANCH" >/dev/null 2>&1 \
-        || die "não consegui buscar. sem rede?"
-    $SUDO git -C "$REPO_DIR" reset --hard "origin/$BRANCH" >/dev/null
+    # O refspec vai ESCRITO. **Sintoma:** `stylus-update --branch outro`
+    # dizia "pronto" e atualizava para o código VELHO.
+    #
+    # O clone daqui é feito com `--branch main`, e um clone assim guarda um
+    # refspec de um galho só (`+refs/heads/main:refs/remotes/origin/main`).
+    # Um `git fetch origin OUTRO` traz os objetos e escreve só o FETCH_HEAD:
+    # `refs/remotes/origin/OUTRO` nunca passa a existir. O `reset --hard
+    # origin/OUTRO` logo abaixo então falhava com "Needed a single revision"
+    # — e como ninguém olhava a saída dele, o script seguia em frente e
+    # sincronizava a cópia antiga, anunciando sucesso.
+    #
+    # Com o refspec explícito o ramo remoto é escrito sempre, qualquer que
+    # seja a configuração do clone. E o reset passou a ter `|| die`: um
+    # checkout que não aconteceu não pode virar "pronto".
+    $SUDO git -C "$REPO_DIR" fetch --depth 1 origin \
+        "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" >/dev/null 2>&1 \
+        || die "não consegui buscar \"$BRANCH\". sem rede, ou o galho não existe?"
+    $SUDO git -C "$REPO_DIR" reset --hard "origin/$BRANCH" >/dev/null \
+        || die "não consegui trocar para \"$BRANCH\"."
 else
     info "Clonando $REPO ($BRANCH)…"
     $SUDO rm -rf "$REPO_DIR"
