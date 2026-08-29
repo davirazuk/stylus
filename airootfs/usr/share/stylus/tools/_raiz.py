@@ -83,3 +83,39 @@ def audio_ext():
     except Exception:                      # noqa: BLE001
         pass
     return _EXT_PADRAO
+
+
+# Sem o vinyl, a mesma lista de novo — e SÓ aqui.
+_CAPA_PADRAO = ("cover", "folder", "front", "capa", "albumart", "album")
+_CAPA_EXT = (".jpg", ".jpeg", ".png")
+
+
+def find_cover(pasta, entries=None):
+    """A capa desta pasta — a MESMA escolha que a estante e o deck fazem.
+
+    Havia QUATRO listas de nome de capa no sistema, e elas discordavam: duas
+    conheciam `folder.png`, as outras duas `cover.jpeg`. E as duas que
+    desenham — o deck e a estante — comparavam o nome EXATO: numa coleção
+    passada por um Windows, que guarda `Folder.jpg` e `Cover.jpg` com
+    maiúscula, o deck ficava sem capa nenhuma.
+    """
+    _com_o_deck_no_caminho()
+    try:
+        import vinyl
+        return vinyl.find_cover(pasta, entries)
+    except Exception:                      # noqa: BLE001
+        pass
+    if entries is None:
+        try:
+            entries = os.listdir(pasta)
+        except OSError:
+            return None
+    porordem = {}
+    for e in entries:
+        if e.lower().endswith(_CAPA_EXT):
+            porordem.setdefault(e.lower(), e)
+    for nome in _CAPA_PADRAO:
+        for ext in _CAPA_EXT:
+            if nome + ext in porordem:
+                return os.path.join(pasta, porordem[nome + ext])
+    return None

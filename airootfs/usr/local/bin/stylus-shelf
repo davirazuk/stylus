@@ -96,13 +96,9 @@ indexar_local() {
 import os, vinyl
 for f in vinyl.shelf(min_tracks=1):
     art, nome = vinyl.folder_names(f)
-    cap = ""
-    try:
-        for c in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg"):
-            if os.path.isfile(os.path.join(f, c)):
-                cap = os.path.join(f, c); break
-    except OSError:
-        pass
+    # A capa vem do vinyl, que a escolhe sem olhar maiúscula: esta era a
+    # QUINTA lista de nome de capa do sistema, e a mais curta de todas.
+    cap = vinyl.find_cover(f) or ""
     print(f"{art}\t{nome}\t{cap}\t{f}")
 PYEOF
     then

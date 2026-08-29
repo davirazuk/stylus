@@ -93,17 +93,11 @@ class Shelf:
                         entries = os.listdir(f)
                     except OSError:
                         n = 0
-                cover = None
-                for cand in ("cover.jpg", "cover.png", "folder.jpg",
-                             "front.jpg", "cover.jpeg"):
-                    if cand in entries:
-                        cover = os.path.join(f, cand)
-                        break
-                if cover is None:
-                    for e in sorted(entries):
-                        if e.lower().endswith((".jpg", ".jpeg", ".png")):
-                            cover = os.path.join(f, e)
-                            break
+                # Quem escolhe a capa é o vinyl, com a lista canônica e sem
+                # olhar maiúscula — eram duas listas diferentes e a daqui
+                # caía em "a primeira imagem em ordem alfabética", que numa
+                # pasta vinda do Windows é a contracapa ou a miniatura.
+                cover = vinyl.find_cover(f, entries)
                 k = os.path.normpath(f)
                 out.append({"folder": f, "artist": artist, "name": name,
                             "tracks": n, "cover": cover,

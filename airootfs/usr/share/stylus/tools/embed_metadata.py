@@ -39,7 +39,7 @@ from mutagen.flac import FLAC, Picture
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, USLT, error as id3error
 
-from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
+from _raiz import raiz, audio_ext, find_cover   # a coleção, a música, a capa
 
 ROOT = raiz()
 TODOS = audio_ext()          # o que é música (ver o _raiz)
@@ -49,7 +49,6 @@ TODOS = audio_ext()          # o que é música (ver o _raiz)
 # escrever as rotinas seria prometer um conserto que não acontece; o que ela
 # faz é DIZER quantas faixas ficaram de fora, no fim.
 ESCREVIVEIS = (".flac", ".mp3")
-COVER_NAMES = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg")
 UA = {"User-Agent": "stylus-tool/1.0"}
 LRCLIB_DELAY = 0.25          # be polite to a free community API
 
@@ -71,13 +70,17 @@ def folder_cover(dirpath, _cache={}):
     for base in (dirpath, os.path.dirname(dirpath.rstrip(os.sep))):
         if not base or not os.path.isdir(base):
             continue
-        for name in COVER_NAMES:
-            p = os.path.join(base, name)
-            if os.path.isfile(p):
-                mime = "image/png" if name.lower().endswith(".png") else "image/jpeg"
+        # A escolha é a do `find_cover`, a mesma da estante e do deck: esta
+        # lista era uma quarta cópia, e comparava o nome exato — pasta vinda
+        # do Windows (`Folder.jpg`) ficava sem capa para embutir.
+        p = find_cover(base)
+        if p:
+            mime = "image/png" if p.lower().endswith(".png") else "image/jpeg"
+            try:
                 with open(p, "rb") as f:
                     found = (f.read(), mime)
-                break
+            except OSError:
+                found = None
         if found:
             break
     _cache[dirpath] = found

@@ -20,11 +20,10 @@ import base64
 import mutagen
 from mutagen.flac import Picture
 
-from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
+from _raiz import raiz, audio_ext, find_cover   # a coleção, a música, a capa
 
 ROOT = raiz()
 AUDIO = audio_ext()
-COVER_NAMES = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg")
 
 
 def _ext_de(mime):
@@ -103,7 +102,12 @@ def main(apply=False):
         audio = [f for f in filenames if f.lower().endswith(AUDIO)]
         if not audio:
             continue
-        if any(c in (f.lower() for f in filenames) for c in COVER_NAMES):
+        # Pelo `find_cover`, que é quem a estante e o deck usam: esta lista
+        # era diferente das outras três (tinha `folder.png` e não tinha
+        # `cover.jpeg`) e comparava só minúsculas. O estrago: numa pasta com
+        # `Cover.jpg` do Windows, esta ferramenta escrevia um `cover.jpg`
+        # NOVO ao lado do que já estava lá.
+        if find_cover(dirpath, filenames):
             skipped_have += 1
             continue
 

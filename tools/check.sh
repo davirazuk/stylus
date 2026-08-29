@@ -2939,6 +2939,108 @@ else
 fi
 rm -rf "$tmpw"
 
+sec "a capa, escolhida do mesmo jeito em todo lugar"
+# **Sintoma:** coleção passada por um Windows guarda `Folder.jpg` e
+# `Cover.jpg` com maiúscula. O deck comparava o nome EXATO e ficava sem capa
+# nenhuma; a estante caía no "primeira imagem em ordem alfabética", que numa
+# pasta dessas é `AlbumArtSmall.jpg` ou `Back.jpg`. Eram QUATRO listas de
+# nome de capa no sistema, e discordavam entre si.
+saida=$(python3 - <<'CAPAEOF' 2>&1
+import os, shutil, sys, tempfile, traceback
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+try:
+    import vinyl
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+tmp = tempfile.mkdtemp()
+
+
+def pasta(nome, arquivos):
+    d = os.path.join(tmp, nome)
+    os.makedirs(d, exist_ok=True)
+    for a in arquivos:
+        open(os.path.join(d, a), "w").close()
+    return d
+
+
+try:
+    casos = [
+        # (o que tem na pasta, o que tem que sair)
+        (["cover.jpg", "back.jpg"], "cover.jpg"),
+        (["Folder.jpg", "AlbumArtSmall.jpg"], "Folder.jpg"),   # Windows
+        (["Cover.JPG"], "Cover.JPG"),
+        (["folder.png"], "folder.png"),
+        (["cover.jpeg"], "cover.jpeg"),
+        (["front.jpg", "cover.jpg"], "cover.jpg"),             # ordem importa
+        (["scan01.jpg"], "scan01.jpg"),                        # palpite do fim
+        (["back.jpg"], None),                                  # só contracapa
+        (["disc.png", "inlay.jpg"], None),
+        ([], None),
+        (["faixa.flac"], None),
+    ]
+    erros = []
+    for i, (arquivos, esperado) in enumerate(casos):
+        d = pasta("c%d" % i, arquivos)
+        got = vinyl.find_cover(d)
+        got = os.path.basename(got) if got else None
+        if got != esperado:
+            erros.append("%s -> %s (esperado %s)" % (arquivos, got, esperado))
+    # a lista pronta e o os.listdir têm que dar a mesma resposta
+    d = pasta("c0", [])
+    if vinyl.find_cover(d, os.listdir(d)) != vinyl.find_cover(d):
+        erros.append("com entries pronto responde diferente")
+    if erros:
+        print("ERRO " + " | ".join(erros))
+    else:
+        print("OK %d casos, com maiúscula do Windows e sem pôr a contracapa"
+              % len(casos))
+except Exception:                                        # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+CAPAEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a capa é escolhida errado"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+# E a quinta cópia da lista não pode nascer. Quem precisa da capa chama o
+# vinyl.find_cover (ou o _raiz.find_cover, que é a ponte para as ferramentas).
+# Só linhas de CÓDIGO: a conferência anterior desta família casava com o
+# próprio comentário que explicava o defeito, e ficava vermelha para sempre.
+fora=$(python3 - <<'FORAEOF'
+import os
+alvo = ("folder.jpg", "front.jpg", "folder.png")
+for base, _d, fs in os.walk("airootfs"):
+    for nome in fs:
+        if not (nome.endswith(".py") or nome.startswith("stylus-")):
+            continue
+        cam = os.path.join(base, nome)
+        if cam.endswith(("deck/vinyl.py", "tools/_raiz.py")) or "test_" in nome:
+            continue
+        try:
+            with open(cam, encoding="utf-8", errors="replace") as fh:
+                linhas = fh.read().splitlines()
+        except OSError:
+            continue
+        for ln in linhas:
+            nu = ln.split("#")[0] if not ln.lstrip().startswith("#") else ""
+            if any(a in nu for a in alvo):
+                print(cam)
+                break
+FORAEOF
+)
+if [[ -z $fora ]]; then
+    ok "nenhuma segunda lista de nome de capa escrita à mão"
+else
+    bad "lista de nome de capa fora do vinyl/_raiz (use find_cover):"
+    printf '      %s\n' $fora
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

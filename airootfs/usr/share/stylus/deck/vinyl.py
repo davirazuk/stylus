@@ -228,6 +228,52 @@ MUSIC_ROOTS = _Roots()
 AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac",
              ".wma", ".shn", ".ape")
 
+# A CAPA. Mesma história das extensões de áudio: havia QUATRO listas de nome
+# de capa espalhadas (aqui, no model da interface, no extract_covers e no
+# embed_metadata) e elas discordavam — duas tinham `folder.png`, as outras
+# duas `cover.jpeg`.
+#
+# Pior que a discordância: aqui e no model a comparação era pelo nome EXATO,
+# com maiúscula e tudo. Uma coleção passada por um Windows guarda `Folder.jpg`
+# (o Windows Media Player escreve assim há vinte anos) e `Cover.jpg` — e nesse
+# caso o deck ficava SEM capa nenhuma, e a estante caía no "primeira imagem em
+# ordem alfabética", que numa pasta dessas costuma ser `AlbumArtSmall.jpg` ou
+# `Back.jpg`. Meia coleção com a contracapa na estante, sem erro nenhum.
+COVER_NAMES = ("cover", "folder", "front", "capa", "albumart", "album")
+COVER_EXT = (".jpg", ".jpeg", ".png")
+# O que é imagem de disco mas NÃO é a capa. Só vale para o palpite do fim,
+# quando nenhum nome conhecido apareceu: melhor não ter capa do que pôr a
+# contracapa ou a bolacha do CD no lugar dela.
+_NAO_E_CAPA = ("back", "verso", "contra", "disc", "cd1", "cd2", "inlay",
+               "booklet", "tray", "matrix", "label", "small", "thumb")
+
+
+def find_cover(folder, entries=None):
+    """A capa desta pasta, ou None. Sem olhar maiúscula.
+
+    `entries` existe para quem já listou a pasta (a varredura da estante lista
+    centenas): passar a lista pronta evita um os.listdir por disco.
+    """
+    if entries is None:
+        try:
+            entries = os.listdir(folder)
+        except OSError:
+            return None
+    imagens = [e for e in entries if e.lower().endswith(COVER_EXT)]
+    if not imagens:
+        return None
+    porordem = {}
+    for e in imagens:
+        porordem.setdefault(e.lower(), e)
+    for nome in COVER_NAMES:
+        for ext in COVER_EXT:
+            achou = porordem.get(nome + ext)
+            if achou:
+                return os.path.join(folder, achou)
+    resto = [e for e in sorted(imagens)
+             if not any(x in e.lower() for x in _NAO_E_CAPA)]
+    return os.path.join(folder, resto[0]) if resto else None
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # A paleta — o disco é FÓSFORO, não plástico
@@ -1292,11 +1338,7 @@ class Album:
             title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", os.path.splitext(n)[0]).strip()
             self.tracks.append({"path": p, "title": title, "duration": 0.0, "start": 0.0})
         
-        for cand in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg", "cover.jpeg"):
-            p = os.path.join(self.folder, cand)
-            if os.path.isfile(p):
-                self.cover = p
-                break
+        self.cover = find_cover(self.folder) or self.cover
         if self.tracks:
             self._read_tags(self.tracks[0]["path"])
 
@@ -1326,8 +1368,8 @@ class Album:
         self.artist = m.get("artist") or self.artist
         self.name = m.get("album") or self.name
         self.year = str(m.get("year") or "")
-        capa = os.path.join(self.folder, "cover.jpg")
-        if os.path.isfile(capa):
+        capa = find_cover(self.folder)
+        if capa:
             self.cover = capa
         return True
 
