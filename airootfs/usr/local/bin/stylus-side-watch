@@ -188,6 +188,7 @@ class Olho:
         self.lado = None
         self._ti = [None, 0]
         self._gravei = 0.0
+        self._tentei = 0.0
 
     def onde(self):
         """(álbum, índice do lado, lado, quanto falta) — ou Nones."""
@@ -195,7 +196,29 @@ class Olho:
         caminho = snap.get("path") or ""
         pasta = os.path.dirname(caminho) if caminho else ""
         chave = pasta or f"{snap.get('artist')}/{snap.get('album')}"
-        if chave and chave != self.pasta:
+        trocou = bool(chave) and chave != self.pasta
+        # DISCO DA REDE: o `dirname` de um ENDEREÇO é a mesma string para
+        # toda playlist do Qobuz — "https:/o-servidor" — então a chave acima
+        # nunca muda de uma lista para outra e este serviço ficava com o
+        # disco ANTERIOR na mão: o "vira em X", o aviso de fim de lado e a
+        # agulha.tsv falavam da playlist de antes, e a renovação da
+        # assinatura chegava a pendurar a cauda dela na fila do mpv, o que da
+        # poltrona é a música trocar de disco sozinha. Ver a §4.
+        #
+        # Aqui a pergunta certa não é a pasta, é se o endereço que está
+        # tocando ainda é UMA DAS FAIXAS do disco que temos na mão.
+        agora = time.time()
+        if not trocou and caminho.startswith(("http://", "https://")):
+            al_atual = self.album
+            fora = al_atual is None or not any(
+                t.get("path") == caminho for t in al_atual.tracks)
+            # Com uma pausa entre tentativas: resolver um endereço varre o
+            # cache do Qobuz, e sem isto um disco que não resolve tentaria de
+            # dois em dois segundos pelo resto da sessão.
+            if fora and agora - self._tentei > 20.0:
+                self._tentei = agora
+                trocou = True
+        if trocou:
             self.pasta = chave
             self.lado = None                  # disco novo: recomeça a contar
             try:
@@ -212,7 +235,6 @@ class Olho:
         # Pausado não conta: parar para atender o telefone não é levantar a
         # agulha, e regravar a mesma linha a cada dois segundos com o disco
         # parado é escrita à toa.
-        agora = time.time()
         if not snap.get("paused") and agora - self._gravei >= GRAVA_CADA:
             gravar_agulha(al, idx, pos)
             self._gravei = agora

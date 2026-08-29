@@ -3386,6 +3386,105 @@ else
     printf '  %s—%s sem mutagen aqui; o sorteio não foi exercitado\n' "$y" "$z"
 fi
 
+sec "trocar de playlist do Qobuz troca o disco na mão do vigia"
+# **Sintoma:** o `dirname` de um ENDEREÇO é a mesma string para toda playlist
+# do Qobuz ("https:/o-servidor"), e o stylus-side-watch usava isso como chave
+# de "trocou de disco?". Ele ficava com a playlist ANTERIOR na mão: o "vira
+# em X", o aviso de fim de lado e a agulha.tsv falavam da lista de antes, e a
+# renovação da assinatura chegava a pendurar a cauda dela na fila do mpv — da
+# poltrona, a música troca de disco sozinha.
+saida=$(python3 - <<'VIGIAEOF' 2>&1
+import importlib.machinery as im, importlib.util, os, shutil, sys, tempfile
+import traceback
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+try:
+    spec = importlib.util.spec_from_loader(
+        "sw", im.SourceFileLoader("sw", "airootfs/usr/local/bin/stylus-side-watch"))
+    sw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sw)
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+tmp = tempfile.mkdtemp()
+os.environ["HOME"] = tmp
+sw.AGULHA = os.path.join(tmp, "agulha.tsv")
+
+URL = {"A": "https://o-servidor.invalid/a%d.flac",
+       "B": "https://o-servidor.invalid/b%d.flac"}
+
+
+class AlbumFalso:
+    def __init__(self, pasta):
+        self.folder = pasta
+        letra = os.path.basename(pasta)
+        self.tracks = [{"path": URL[letra] % i, "title": "t%d" % i,
+                        "duration": 300.0, "start": i * 300.0}
+                       for i in range(6)]
+        self.total = 1800.0
+        self.sides = [{"label": "LADO A", "start": 0.0, "end": 900.0,
+                       "tracks": [0, 1, 2]},
+                      {"label": "LADO B", "start": 900.0, "end": 1800.0,
+                       "tracks": [3, 4, 5]}]
+
+    def album_time(self, idx, pos):
+        return self.tracks[idx]["start"] + (pos or 0.0)
+
+    def side_for(self, t):
+        for i, sd in enumerate(self.sides):
+            if sd["start"] <= t < sd["end"]:
+                return i, sd
+        return len(self.sides) - 1, self.sides[-1]
+
+
+class SessaoFalsa:
+    agora = URL["A"] % 0
+
+    def snapshot(self):
+        return {"path": SessaoFalsa.agora, "artist": "", "album": "",
+                "paused": False}
+
+    def position(self):
+        return 10.0, 300.0
+
+
+sw.vinyl.Session = lambda: SessaoFalsa()
+sw.vinyl.resolve_album = lambda path=None, artist="", album="": os.path.join(
+    tmp, "B" if "/b" in path else "A")
+sw.vinyl.Album = lambda f, envelope=False: AlbumFalso(f)
+try:
+    olho = sw.Olho()
+    olho.onde()
+    primeiro = os.path.basename(olho.album.folder)
+    # a MESMA playlist, faixa seguinte: não pode reabrir nada
+    SessaoFalsa.agora = URL["A"] % 3
+    olho.onde()
+    mesmo = os.path.basename(olho.album.folder)
+    # outra playlist, mesmo servidor: TEM que trocar
+    SessaoFalsa.agora = URL["B"] % 0
+    olho.onde()
+    segundo = os.path.basename(olho.album.folder)
+    if primeiro != "A":
+        print("ERRO nem o primeiro disco resolveu: %s" % primeiro)
+    elif mesmo != "A":
+        print("ERRO trocou de disco andando na MESMA lista")
+    elif segundo != "B":
+        print("ERRO ficou com a playlist anterior na mão (%s)" % segundo)
+    else:
+        print("OK a lista nova entra e a faixa seguinte não reabre nada")
+except Exception:                                        # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+VIGIAEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o stylus-side-watch aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o vigia do lado erra o disco quando a playlist troca"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
