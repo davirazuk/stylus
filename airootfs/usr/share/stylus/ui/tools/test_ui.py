@@ -147,15 +147,19 @@ def main():
         Nomes compridos de propósito: é o comprimento que revela folga fixa.
 
         Também LIMPA o que estiver aberto por cima (o painel de saída de um
-        comando, o cartão de examinar, o formulário de conta). Isso não é
-        arrumação: a varredura de teclado deixa esses três abertos, e eles
-        são desenhados POR CIMA do corpo de propósito — medir colisão de
-        texto com um deles no ar acusa como defeito o que é o desenho certo.
+        comando, o cartão de examinar, o formulário de conta) e o estado de
+        "estou procurando". Isso não é arrumação: a varredura de teclado
+        deixa os três abertos, e eles são desenhados POR CIMA do corpo de
+        propósito — medir colisão de texto com um deles no ar acusa como
+        defeito o desenho certo.
+
+        DUAS VOLTAS, com uma pausa entre elas. Apertar `/` e depois ENTER
+        numa loja começa uma busca de VERDADE, numa thread; ela falha na hora
+        (não há `stylus-spotify` aqui) e, ao voltar, zera o `results` e
+        acende o `error` — DEPOIS de a arrumação ter acontecido. A seção
+        seguinte media então uma tela que não desenhou grade nenhuma, e só às
+        vezes: uma rodada em cada três.
         """
-        for tela in app.screens:
-            for campo in ("job", "entrada", "examing", "_setup"):
-                if hasattr(tela, campo):
-                    setattr(tela, campo, None)
         disco = {
             "id": "1", "display_title": "Um Disco De Nome Bastante Comprido",
             "display_subtitle": "Um Artista De Nome Também Comprido",
@@ -167,19 +171,31 @@ def main():
             "artist": "Um Artista De Nome Comprido",
             "album": "Um Disco De Nome Bastante Comprido Igualmente",
             "duration": "12:34", "uri": "spotify:track:1"}
-        for tela in app.screens:
-            if tela.name == "QOBUZ":
-                tela.results = [dict(disco, id=str(i)) for i in range(12)]
-                tela.favoritos = True
-            if tela.name == "SPOTIFY":
-                tela.results = [dict(faixa) for _ in range(12)]
-                tela._daemon, tela._daemon_ok = "ok", True
-                tela._np_t = time.time() + 1e6      # não pergunta ao sistema
-                tela._now_playing = {
-                    "artist": "Um Artista De Nome Comprido",
-                    "title": "Uma Faixa De Nome Bastante Comprido",
-                    "album": "Um Disco De Nome Bastante Comprido",
-                    "position": "1:23", "duration": "12:34"}
+        for volta in (1, 2):
+            if volta == 2:
+                time.sleep(0.2)          # as threads da busca voltam aqui
+            for tela in app.screens:
+                for campo in ("job", "entrada", "examing", "_setup"):
+                    if hasattr(tela, campo):
+                        setattr(tela, campo, None)
+                for campo, valor in (("loading", False), ("searching", False),
+                                     ("query", ""), ("error", None)):
+                    if hasattr(tela, campo):
+                        setattr(tela, campo, valor)
+                if tela.name == "QOBUZ":
+                    tela.results = [dict(disco, id=str(i))
+                                    for i in range(12)]
+                    tela.favoritos = True
+                if tela.name == "SPOTIFY":
+                    tela.results = [dict(faixa) for _ in range(12)]
+                    tela._daemon, tela._daemon_ok = "ok", True
+                    tela._np_t = time.time() + 1e6   # não pergunta ao sistema
+                    tela._now_playing = {
+                        "artist": "Um Artista De Nome Comprido",
+                        "title": "Uma Faixa De Nome Bastante Comprido",
+                        "album": "Um Disco De Nome Bastante Comprido",
+                        "position": "1:23", "duration": "12:34"}
+
     # Todas as teclas que alguma seção usa. Manda-se TODAS em TODAS: a que a
     # seção não conhece tem que ser devolvida, não estourar.
     teclas = [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
@@ -1829,6 +1845,75 @@ def main():
         bad("conferência de custo", traceback.format_exc())
 
     # ── o rato ────────────────────────────────────────────────────────────
+    secao("a linha de dicas não promete tecla que a seção ignora")
+    # A irmã da conferência do Mod+F1 no check.sh, do lado de cá: lá a lista
+    # de atalhos do i3 prometia teclas ligadas a OUTRA coisa; aqui o rodapé
+    # de cada seção anuncia as teclas dela. Uma tecla anunciada e não tratada
+    # não estoura, não vira traceback e não aparece em teste nenhum — ela só
+    # não faz nada, e quem apertou conclui que o programa travou.
+    #
+    # Só o `hint` (o rodapé), que fala das teclas DESTA tela. O `T.vazio` é
+    # outra coisa: ele manda para outra seção ("na estante, [s] empilha"), e
+    # exigir que a tela atual trate aquela tecla acusaria o texto certo.
+    try:
+        import re as _re2
+        import theme as _T3
+        anunciadas = {}
+        _hint_orig = A.App.hint
+
+        def _espia_hint(self, s_, r_, texto, contexto=None, **k):
+            anunciadas.setdefault(self.screens[self.cur].name, set()).update(
+                _re2.findall(r"\[([^\]]+)\]", texto))
+            return _hint_orig(self, s_, r_, texto, contexto, **k)
+
+        A.App.hint = _espia_hint
+        try:
+            for i, tela in enumerate(app.screens):
+                app._goto(i)
+                tela.draw(app.surf, corpo)
+        finally:
+            A.App.hint = _hint_orig
+
+        NOMES = {"enter": pygame.K_RETURN, "space": pygame.K_SPACE,
+                 "del": pygame.K_DELETE, "/": pygame.K_SLASH,
+                 "↑": pygame.K_UP, "↓": pygame.K_DOWN,
+                 "←": pygame.K_LEFT, "→": pygame.K_RIGHT}
+        # As que o App trata por cima de todas as seções.
+        GLOBAIS = {"esc", "tab", "f1", "1", "2", "3", "4", "5", "6", "7",
+                   "8", "9", "0"}
+        mudas = []
+        for i, tela in enumerate(app.screens):
+            app._goto(i)
+            for rotulo in sorted(anunciadas.get(tela.name, ())):
+                nome = rotulo.strip().lower()
+                if nome in GLOBAIS or "+" in nome:
+                    continue
+                tecla = NOMES.get(nome)
+                if tecla is None and len(nome) == 1 and nome.isalpha():
+                    tecla = getattr(pygame, "K_" + nome, None)
+                if tecla is None:
+                    continue
+                mod = pygame.KMOD_SHIFT if rotulo.strip().isupper() else 0
+                ev = pygame.event.Event(pygame.KEYDOWN, key=tecla,
+                                        unicode=nome, mod=mod)
+                try:
+                    if not tela.key(ev):
+                        mudas.append("%s: [%s]" % (tela.name, rotulo))
+                except Exception as e:                      # noqa: BLE001
+                    mudas.append("%s: [%s] estourou (%s)"
+                                 % (tela.name, rotulo, e))
+        # Apertar as teclas deixou as lojas "procurando" e com formulário
+        # aberto: quem vier depois mede uma tela que não desenha grade.
+        encher_as_lojas(app)
+        if mudas:
+            bad("%d teclas anunciadas e não tratadas" % len(mudas),
+                ", ".join(mudas[:8]))
+        else:
+            ok("as %d seções tratam toda tecla que o rodapé delas anuncia"
+               % len(app.screens))
+    except Exception:                                       # noqa: BLE001
+        bad("dicas contra teclas", traceback.format_exc())
+
     secao("trocar de playlist do Qobuz troca o disco da AGORA")
     # **Sintoma:** o `dirname` de um ENDEREÇO é a mesma string para toda
     # playlist do Qobuz, e sob mpv o artista e o álbum do snapshot vêm
@@ -1964,6 +2049,11 @@ def main():
 
         # 5. Toda tela que desenha grade tem que ANOTAR os alvos, senão o
         #    clique cai no vazio e o rato "não funciona" só naquela seção.
+        #
+        #    Com as lojas cheias e arrumadas: elas chegam aqui depois de duas
+        #    varreduras de teclado, com busca começada e formulário aberto, e
+        #    uma tela que sai cedo no "buscando…" não desenha alvo nenhum.
+        encher_as_lojas(app)
         sem_alvo = []
         for i, tela in enumerate(app.screens):
             app.cur = i
