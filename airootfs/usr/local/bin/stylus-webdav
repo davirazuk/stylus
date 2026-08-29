@@ -32,7 +32,13 @@ set -uo pipefail
 
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/stylus"
 CONF="$CONF_DIR/webdav"
-LIB_CONF="$CONF_DIR/library"
+# A estante NÃO segue o XDG_CONFIG_HOME, porque quem a lê não segue: o
+# vinyl.py, o `stylus library`, o first-run e o stylus-session escrevem
+# ~/.config/stylus/library com o caminho escrito. Com a variável posta — e
+# há quem a ponha — este arquivo escrevia num lugar que ninguém lê, e montar
+# o celular não punha nada na estante, em silêncio.
+LIB_DIR="$HOME/.config/stylus"
+LIB_CONF="$LIB_DIR/library"
 REMOTO=stylus-celular
 MONTAGEM="${STYLUS_WEBDAV_MOUNT:-$HOME/.local/share/stylus/celular}"
 
@@ -123,7 +129,7 @@ raiz_de_casa() {
 }
 
 pôr_na_estante() {
-    mkdir -p "$CONF_DIR"
+    mkdir -p "$LIB_DIR"
     na_estante && return 0
 
     # A pasta de casa PRIMEIRO, quando ainda não há arquivo de estante.
@@ -179,15 +185,12 @@ ligar() {
     [[ $url == http://* || $url == https://* ]] ||
         die "o endereço tem que começar com http:// ou https:// — veio \"$url\""
 
-    local usuario senha
+    local usuario="" senha="" mesmo=0 ja_existe=0
     if ler_conf && [[ $url == "$URL" ]]; then
         usuario=$USUARIO
-    else
-        read -rp "  Usuário (Enter se o servidor não pede): " usuario
+        mesmo=1
     fi
-    if [[ -n ${usuario:-} ]]; then
-        read -rsp "  Senha: " senha; echo
-    fi
+    rclone listremotes 2>/dev/null | grep -qxF "$REMOTO:" && ja_existe=1
 
     info "Guardando o endereço…"
     mkdir -p "$CONF_DIR"
@@ -196,12 +199,36 @@ ligar() {
     # guarda ofuscada. Este arquivo é só endereço e usuário.
     chmod 600 "$CONF"
 
-    info "Configurando o rclone…"
-    local -a cria=(rclone config create "$REMOTO" webdav
-                   url="$url" vendor=other)
-    [[ -n ${usuario:-} ]] && cria+=(user="$usuario")
-    [[ -n ${senha:-} ]] && cria+=(pass="$(rclone obscure "$senha")")
-    "${cria[@]}" >/dev/null 2>&1 || die "o rclone não aceitou essa configuração."
+    # MESMO ENDEREÇO E REMOTO JÁ EXISTENTE: não se reescreve nada.
+    #
+    # **Sintoma:** com o `stylus webdav sozinho` ligado e um servidor que pede
+    # senha, o celular montava na primeira vez e nunca mais. O serviço roda
+    # sem terminal: o `read` da senha volta na hora, vazio, e o `rclone config
+    # create` logo abaixo reescrevia o remoto SEM a linha da senha — apagando
+    # a que estava guardada ofuscada. Do segundo login em diante era 401,
+    # inclusive à mão, e nada na tela ligava uma coisa à outra.
+    if (( mesmo && ja_existe )); then
+        info "Endereço já configurado — a senha guardada continua valendo."
+        printf '  %s(para trocar usuário ou senha: stylus webdav esquecer)%s\n' \
+               "$c_d" "$c_0"
+    else
+        if [[ ! -t 0 ]]; then
+            die "falta configurar o acesso e não há terminal para perguntar.
+    Rode \`stylus webdav ligar\` uma vez à mão."
+        fi
+        (( mesmo )) || read -rp "  Usuário (Enter se o servidor não pede): " usuario
+        if [[ -n ${usuario:-} ]]; then
+            read -rsp "  Senha: " senha; echo
+            { printf 'URL=%q\n' "$url"; printf 'USUARIO=%q\n' "$usuario"; } > "$CONF"
+            chmod 600 "$CONF"
+        fi
+        info "Configurando o rclone…"
+        local -a cria=(rclone config create "$REMOTO" webdav
+                       url="$url" vendor=other)
+        [[ -n ${usuario:-} ]] && cria+=(user="$usuario")
+        [[ -n ${senha:-} ]] && cria+=(pass="$(rclone obscure "$senha")")
+        "${cria[@]}" >/dev/null 2>&1 || die "o rclone não aceitou essa configuração."
+    fi
 
     montado && { info "Desmontando o de antes…"; fusermount3 -u "$MONTAGEM" 2>/dev/null; }
     mkdir -p "$MONTAGEM"

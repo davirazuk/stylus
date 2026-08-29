@@ -2770,6 +2770,175 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "as duas metades da coleção, faixa por faixa"
+# **Sintoma:** de duas faixas chamadas "01 - Intro.flac", em álbuns
+# diferentes e nenhuma das duas no celular, só UMA era mandada. A outra não
+# aparecia em lista nenhuma e o `status` dizia que estava tudo sincronizado —
+# e "Intro", "Untitled" e "track01" repetem em dezenas de discos.
+saida=$(python3 - <<'PLANOEOF' 2>&1
+import importlib.machinery as im, importlib.util, traceback
+spec = importlib.util.spec_from_loader(
+    "sp", im.SourceFileLoader("sp", "airootfs/usr/local/bin/stylus-phone"))
+sp = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(sp)
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+try:
+    # 1. o mesmo NOME em álbuns diferentes, nada do outro lado: vão os dois
+    mandar, _t, _i = sp.plan({"A/01 - Intro.flac": 10, "B/01 - Intro.flac": 20,
+                              "A/02 - Outra.flac": 30}, {})
+    nomes = sorted(f for f, _s in mandar)
+    # 2. o mesmo arquivo em dois formatos na MESMA pasta: só o melhor
+    m2, _t, _i = sp.plan({"A/01 - Intro.flac": 5000, "A/01 - Intro.mp3": 500}, {})
+    # 3. do lado de lá vale a mesma coisa
+    _m, t3, _i = sp.plan({}, {"Intro.flac": 10, "p/Intro.flac": 20})
+    if len(nomes) != 3:
+        print("ERRO só %d de 3 seriam mandadas: %s" % (len(nomes), nomes))
+    elif [f for f, _s in m2] != ["A/01 - Intro.flac"]:
+        print("ERRO manda o mp3 junto do flac: %s" % [f for f, _s in m2])
+    elif len(t3) != 2:
+        print("ERRO só %d de 2 seriam trazidas" % len(t3))
+    else:
+        print("OK nome repetido em álbuns diferentes vai inteiro, formato pior fica")
+except Exception:                                        # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+PLANOEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o stylus-phone aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o plano de sincronia do celular perde faixa"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "o que tocou no celular entra no registro"
+# **Sintoma:** o `stylus phone scrobbles` dizia "memória da coleção
+# atualizada" e não atualizava nada. O agente do Termux escreve a quarta
+# coluna (a PASTA) vazia de propósito — "o PC resolve" — e essa resolução
+# nunca foi escrita: as linhas iam para o plays.tsv com pasta vazia, que não
+# é disco nenhum, e com o carimbo de AGORA em vez do carimbo do celular.
+saida=$(python3 - <<'SCROBEOF' 2>&1
+import importlib.machinery as im, importlib.util, os, shutil, sys, tempfile
+import traceback, types
+tmp = tempfile.mkdtemp()
+plays = os.path.join(tmp, "plays.tsv")
+fake = types.ModuleType("vinyl")
+fake.AUDIO_EXT = (".flac", ".mp3")
+fake.PLAYS_TSV = plays
+fake.library_root = lambda: tmp
+CAT = {("radiohead", "kid a"): os.path.join(tmp, "Radiohead", "Kid A")}
+fake.resolve_album = lambda path=None, artist="", album="": \
+    CAT.get((artist.lower(), album.lower()))
+
+
+def _play_rows():
+    try:
+        with open(plays, encoding="utf-8") as fh:
+            for ln in fh:
+                p = ln.rstrip("\n").split("\t")
+                if len(p) >= 4:
+                    yield float(p[0]), p[3]
+    except OSError:
+        return
+
+
+fake._play_rows = _play_rows
+sys.modules["vinyl"] = fake
+spec = importlib.util.spec_from_loader(
+    "sp", im.SourceFileLoader("sp", "airootfs/usr/local/bin/stylus-phone"))
+sp = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(sp)
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+try:
+    T0 = 1700000000
+    linhas = [(T0 + i * 240, "Radiohead", "Kid A") for i in range(12)]
+    linhas += [(T0 + 10800 + i * 240, "Radiohead", "Kid A") for i in range(4)]
+    linhas += [(T0 + i * 300, "Alguém", "Disco que não tenho") for i in range(3)]
+    tsv = os.path.join(tmp, "phone.tsv")
+    with open(tsv, "w", encoding="utf-8") as fh:
+        for ts, a, al in linhas:
+            fh.write("%d\t%s\t%s\t\n" % (ts, a, al))   # a PASTA vem vazia
+    novas, _rep, sem, _ex = sp.importar_scrobbles(tsv)
+    de_novo = sp.importar_scrobbles(tsv)[0]
+    escritas = [ln.rstrip("\n").split("\t")
+                for ln in open(plays, encoding="utf-8")]
+    if novas != 2:
+        print("ERRO 12 faixas de um álbum + 4 três horas depois deram %d "
+              "colocações (tem que dar 2)" % novas)
+    elif de_novo:
+        print("ERRO importar duas vezes anotou %d vez(es) de novo" % de_novo)
+    elif any(not l[3].strip() for l in escritas):
+        print("ERRO linha escrita sem pasta: %s" % escritas)
+    elif any(abs(int(l[0]) - T0) > 20000 for l in escritas):
+        print("ERRO o carimbo é o de agora, não o do celular: %s"
+              % [l[0] for l in escritas])
+    elif sem != 3:
+        print("ERRO %d linhas sem disco (eram 3)" % sem)
+    else:
+        print("OK 12 faixas viram uma colocação, com a data do celular, e "
+              "reimportar não dobra")
+except Exception:                                        # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+SCROBEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o stylus-phone aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o que tocou no celular não chega à memória da coleção"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "montar o celular de novo não apaga a senha"
+# **Sintoma:** com o `stylus webdav sozinho` ligado e um servidor que pede
+# senha, o celular montava uma vez e nunca mais. O serviço roda sem terminal:
+# o `read` da senha volta vazio na hora e o `rclone config create` reescrevia
+# o remoto SEM a senha guardada. Esta conferência RODA o comando com um
+# rclone de mentira e olha se ele o reescreveu.
+tmpw=$(mktemp -d)
+mkdir -p "$tmpw/bin" "$tmpw/casa"
+cat > "$tmpw/bin/rclone" <<'RCEOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+    listremotes) echo "stylus-celular:" ;;
+    config) echo "$*" >> "$FALSO/chamadas" ;;
+    mount)  mkdir -p "$3"; touch "$FALSO/montou" ;;
+    obscure) echo "xxx" ;;
+esac
+exit 0
+RCEOF
+cat > "$tmpw/bin/mountpoint" <<'MPEOF'
+#!/usr/bin/env bash
+[[ -f $FALSO/montou ]]
+MPEOF
+printf '#!/usr/bin/env bash\nexit 0\n' > "$tmpw/bin/fusermount3"
+chmod +x "$tmpw/bin"/*
+printf 'URL=http://192.168.0.10:8080/\nUSUARIO=eu\n' \
+    > "$tmpw/casa/.config-stylus-webdav"
+mkdir -p "$tmpw/casa/.config/stylus"
+cp "$tmpw/casa/.config-stylus-webdav" "$tmpw/casa/.config/stylus/webdav"
+saida=$(env -i PATH="$tmpw/bin:/usr/bin:/bin" HOME="$tmpw/casa" \
+        FALSO="$tmpw" STYLUS_WEBDAV_MOUNT="$tmpw/casa/celular" \
+        bash airootfs/usr/local/bin/stylus-webdav ligar </dev/null 2>&1)
+chamadas=$(cat "$tmpw/chamadas" 2>/dev/null || true)
+if [[ -n $chamadas ]]; then
+    bad "reescreveu o remoto do rclone sem terminal (apaga a senha): $chamadas"
+elif [[ ! -f $tmpw/montou ]]; then
+    bad "não montou nem reescreveu nada"
+    printf '%s\n' "$saida" | sed 's/^/      /'
+elif ! grep -qxF "$tmpw/casa/celular" "$tmpw/casa/.config/stylus/library" 2>/dev/null; then
+    bad "montou e não pôs o celular na estante (~/.config/stylus/library)"
+else
+    ok "o mesmo endereço remonta sem tocar na senha, e entra na estante"
+fi
+rm -rf "$tmpw"
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

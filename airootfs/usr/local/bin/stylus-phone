@@ -19,8 +19,10 @@
 #
 #  Isso é uma APROXIMAÇÃO e vale dizer qual: FLAC ganha de MP3, e entre dois
 #  do mesmo formato o maior ganha. Está errado no caso de um FLAC mal
-#  cortado ser maior que um bom — raro, e `--deep` existe para quando se
-#  quer a comparação cara de verdade.
+#  cortado ser maior que um bom — raro. Quando desconfiar de um arquivo,
+#  `stylus phone pull` traz aquele e você compara aqui: comparar de verdade
+#  quer o arquivo inteiro deste lado, que é exatamente a meia hora de USB
+#  que este desenho existe para não gastar.
 #
 #      stylus phone status                 o que tem de diferente
 #      stylus phone sync    [--apply]      reconcilia os dois lados
@@ -32,6 +34,7 @@
 #      stylus phone watch --enable         sincroniza sozinho ao plugar
 # ═══════════════════════════════════════════════════════════════════════════
 import argparse
+import bisect
 import json
 import os
 import shlex
@@ -150,13 +153,25 @@ def remote_root(c):
     """A pasta do celular: a configurada, ou descoberta e então lembrada."""
     if os.path.exists(CONF) and c["remote"] != DEFAULT_REMOTE:
         return c["remote"]
-    rc, out, _e = adb("shell", "ls", "-d", shlex.quote(c["remote"]), timeout=20)
     achou = detect_remote()
-    if achou and achou != c["remote"]:
-        print(f"  {D}a música do celular está em {O}{achou}{D}, "
-              f"não em {c['remote']} — anotado.{O}")
+    if achou:
+        if achou != c["remote"]:
+            print(f"  {D}a música do celular está em {O}{achou}{D}, "
+                  f"não em {c['remote']} — anotado.{O}")
+            c["remote"] = achou
+        # Anotado TAMBÉM quando a descoberta confirma o palpite. Sem isto,
+        # um celular que guarda a música em /sdcard/Music mesmo — o palpite —
+        # nunca escrevia nada, e toda execução recomeçava a varredura do
+        # aparelho inteiro (minutos) para chegar à mesma resposta.
         save_conf("remote", achou)
-        c["remote"] = achou
+        return c["remote"]
+    # Nada encontrado. Vale dizer se a pasta esperada ao menos existe: sem
+    # isto, um celular com a depuração ligada e o cartão não montado responde
+    # a tudo e a ferramenta só diz "0 faixas lá", que parece defeito daqui.
+    rc, _o, _e = adb("shell", "ls", "-d", shlex.quote(c["remote"]), timeout=20)
+    if rc:
+        print(f"  {W}não achei música no celular, e {c['remote']} nem existe lá.{O}")
+        print(f"  {D}o aparelho pode estar pedindo permissão na tela.{O}")
     return c["remote"]
 
 
@@ -319,9 +334,22 @@ def plan(local, remote_idx):
                 resta_r.pop(rel, None)
 
     # O que sobrou não existe do outro lado, em nenhuma das duas leituras.
-    for k, v in agrupa(resta_l, base_stem).items():
+    #
+    # Agrupado por CAMINHO e não por nome de arquivo. **Sintoma:** de duas
+    # faixas chamadas "01 - Intro.flac", em álbuns diferentes e nenhuma das
+    # duas no celular, só UMA era mandada — a outra sumia da lista sem
+    # aparecer em erro nenhum. Numa coleção de verdade isso é enorme:
+    # "Intro", "Untitled", "track01", "I. Allegro" repetem em dezenas de
+    # discos, e o `status` dizia que estava tudo sincronizado.
+    #
+    # Por nome faz sentido na passada de CIMA, onde o outro lado tem um
+    # arquivo parecido e é preciso escolher qual dos daqui é ele. Aqui não há
+    # o que escolher: nada casou, então tudo tem que ir. Continua sendo por
+    # caminho SEM extensão, que é o que junta o mesmo arquivo em dois
+    # formatos na mesma pasta (manda o flac, não o mp3 junto).
+    for _k, v in agrupa(resta_l, stem).items():
         mandar.append(_melhor_de(v))
-    for k, v in agrupa(resta_r, base_stem).items():
+    for _k, v in agrupa(resta_r, stem).items():
         trazer.append(_melhor_de(v))
     return mandar, trazer, iguais
 
@@ -467,7 +495,7 @@ def cmd_playlists(args):
         return 1
     c = conf()
     remote_root(c)
-    root = local_root()
+    root = os.path.normpath(local_root())
     listas = [os.path.join(dp, f) for dp, _d, fs in os.walk(root)
               for f in fs if f.lower().endswith((".m3u", ".m3u8"))]
     if not listas:
@@ -477,8 +505,20 @@ def cmd_playlists(args):
     tmp = os.path.join(STATE, "m3u")
     os.makedirs(tmp, exist_ok=True)
     n = 0
+    # No celular elas ficam soltas na pasta da música, porque é assim que os
+    # tocadores de lá as encontram — e por isso o NOME tem que ser único.
+    # "Favoritas.m3u" em duas pastas daqui viravam um arquivo só lá, com a
+    # segunda por cima da primeira, sem aviso nenhum.
+    repetidos = {}
+    for lst in listas:
+        repetidos[os.path.basename(lst).lower()] = \
+            repetidos.get(os.path.basename(lst).lower(), 0) + 1
     for lst in listas:
         nome = os.path.basename(lst)
+        if repetidos[nome.lower()] > 1:
+            pai = os.path.basename(os.path.dirname(lst)) or "raiz"
+            base, ext = os.path.splitext(nome)
+            nome = f"{base} ({pai}){ext}"
         try:
             with open(lst, encoding="utf-8", errors="replace") as fh:
                 linhas = fh.read().splitlines()
@@ -491,7 +531,10 @@ def cmd_playlists(args):
                 continue
             p = ln if os.path.isabs(ln) else os.path.join(os.path.dirname(lst), ln)
             p = os.path.normpath(p)
-            if p.startswith(root):
+            # Com a barra. Sem ela, a pasta "Music" casa também com uma
+            # "Musicas-velhas" ao lado, e o caminho reapontado para o celular
+            # sai com o resto do nome da vizinha colado na frente.
+            if p == root or p.startswith(root + os.sep):
                 saida.append(f"{c['remote']}/{os.path.relpath(p, root)}")
                 achou += 1
             else:
@@ -507,6 +550,108 @@ def cmd_playlists(args):
           else f"\n  {D}ensaio. `--apply` manda.{O}")
     print()
     return 0
+
+
+# Quanto tempo separa duas COLOCAÇÕES do mesmo disco, na leitura do celular.
+#
+# O celular anota por FAIXA e o registro daqui é por DISCO posto: um álbum de
+# doze faixas chega como doze linhas. Elas viram uma colocação só porque cada
+# uma cai dentro da janela da anterior — meia hora cobre até a faixa mais
+# comprida que um disco costuma ter. Ouvir o mesmo álbum de novo à noite fica
+# do lado de fora da janela e conta de novo, que é o certo.
+JANELA_CELULAR = 1800.0
+
+
+def _resolver(artista, album, cache):
+    """A pasta deste disco na estante daqui — o celular não sabe qual é.
+
+    O agente do Termux escreve a quarta coluna VAZIA de propósito, com um
+    comentário dizendo "o PC resolve para a pasta dele". Essa resolução nunca
+    foi escrita: as linhas iam para o registro com pasta vazia, e pasta vazia
+    não é disco nenhum. É a última ponta de fio faltando de novo — tudo o que
+    era preciso já existia no `vinyl.resolve_album`.
+    """
+    k = (artista.lower(), album.lower())
+    if k not in cache:
+        try:
+            cache[k] = vinyl.resolve_album(None, artista, album)
+        except OSError:
+            cache[k] = None
+    return cache[k]
+
+
+def importar_scrobbles(caminho):
+    """(novas, repetidas, sem_disco, exemplos) — o registro do celular, aqui.
+
+    Escreve o carimbo de tempo DO CELULAR e não o de agora. A versão antiga
+    passava cada linha pelo `vinyl.log_play`, que anota `time.time()`: um mês
+    de escuta longe de casa entrava no registro como se tivesse acontecido
+    toda no minuto da importação — e o diário, o "posto há" e o sorteio do
+    `stylus record` leem exatamente essa coluna.
+
+    Roda de novo sem estragar nada: o que já está no registro é reconhecido
+    pela janela e não entra duas vezes.
+    """
+    linhas = []
+    with open(caminho, encoding="utf-8", errors="replace") as fh:
+        for ln in fh:
+            parts = ln.rstrip("\n").split("\t")
+            if len(parts) < 3:
+                continue
+            try:
+                ts = float(parts[0])
+            except ValueError:
+                continue
+            if ts <= 0:
+                continue
+            linhas.append((ts, parts[1].strip(), parts[2].strip(),
+                           parts[3].strip() if len(parts) > 3 else ""))
+    linhas.sort()
+
+    # Os momentos que já se conhece de cada disco: o que está no registro mais
+    # o que já se leu deste arquivo. Uma linha vira colocação nova quando o
+    # momento conhecido MAIS PRÓXIMO dela está a mais de uma janela.
+    #
+    # Perto do mais próximo, e não da última: comparar só com a última anota
+    # de novo tudo o que for mais VELHO do que ela, e importar duas vezes
+    # dobrava o registro inteiro. E cada linha lida entra na lista mesmo
+    # quando não conta — é isso que faz as doze faixas de um álbum virarem uma
+    # colocação em cadeia, cada uma a quatro minutos da anterior.
+    conhecidos = {}
+    for ts, fold in vinyl._play_rows():
+        conhecidos.setdefault(os.path.normpath(fold), []).append(ts)
+    for v in conhecidos.values():
+        v.sort()
+
+    def perto(lista, ts):
+        i = bisect.bisect_left(lista, ts)
+        for j in (i - 1, i):
+            if 0 <= j < len(lista) and abs(lista[j] - ts) < JANELA_CELULAR:
+                return True
+        return False
+
+    cache, novas, repetidas, sem_disco = {}, [], 0, {}
+    for ts, art, alb, fold in linhas:
+        pasta = fold if fold and os.path.isdir(fold) else _resolver(art, alb, cache)
+        if not pasta:
+            nome = f"{art} — {alb}" if alb else art
+            sem_disco[nome] = sem_disco.get(nome, 0) + 1
+            continue
+        k = os.path.normpath(pasta)
+        vistos = conhecidos.setdefault(k, [])
+        if perto(vistos, ts):
+            repetidas += 1
+        else:
+            novas.append((ts, art, alb, pasta))
+        bisect.insort(vistos, ts)
+
+    if novas:
+        os.makedirs(os.path.dirname(vinyl.PLAYS_TSV), exist_ok=True)
+        with open(vinyl.PLAYS_TSV, "a", encoding="utf-8") as fh:
+            for ts, art, alb, pasta in novas:
+                fh.write(f"{int(ts)}\t{art}\t{alb}\t{pasta}\n")
+    exemplos = sorted(sem_disco.items(), key=lambda kv: -kv[1])
+    return len(novas), repetidas, sum(sem_disco.values()), exemplos
 
 
 def cmd_scrobbles(args):
@@ -547,20 +692,33 @@ def cmd_scrobbles(args):
         print(f"  {D}terceiro caminho. `stylus phone wifi` explica como pôr ele lá.{O}\n")
         return 1
     local = os.path.join(STATE, "phone-scrobbles.tsv")
-    adb("pull", "-a", achou, local, timeout=120)
-    novos = 0
+    os.makedirs(STATE, exist_ok=True)
+    rc, _o, err = adb("pull", "-a", achou, local, timeout=120)
+    if rc or not os.path.isfile(local):
+        print(f"\n  {R}não deu para trazer o registro: "
+              f"{err.strip() or 'o adb recusou'}{O}\n")
+        return 1
     try:
-        with open(local, encoding="utf-8", errors="replace") as fh:
-            for ln in fh:
-                parts = ln.rstrip("\n").split("\t")
-                if len(parts) >= 4 and parts[0].isdigit():
-                    if vinyl.log_play(parts[3], parts[1], parts[2],
-                                      cooldown=1800) :
-                        novos += 1
+        novas, repetidas, sem_disco, exemplos = importar_scrobbles(local)
     except OSError as e:
         print(f"\n  {R}não deu para ler: {e}{O}\n")
         return 1
-    print(f"\n  {OK}memória da coleção atualizada com o que tocou no celular.{O}\n")
+    print()
+    if novas:
+        print(f"  {OK}{novas}{O} colocação(ões) nova(s) na memória da coleção")
+    else:
+        print(f"  {D}nada de novo — o registro do celular já estava aqui.{O}")
+    if repetidas:
+        print(f"  {D}{repetidas} já estavam anotadas{O}")
+    if sem_disco:
+        # Dizer QUAIS. "312 linhas sem disco" não dá o que fazer; o nome do
+        # artista dá — ou o disco não está na estante, ou está com outro nome.
+        print(f"  {W}{sem_disco} sem disco correspondente na estante{O}")
+        for nome, n in exemplos[:5]:
+            print(f"    {D}{nome}  ({n}){O}")
+        if len(exemplos) > 5:
+            print(f"    {D}… e mais {len(exemplos) - 5}{O}")
+    print()
     return 0
 
 
@@ -612,10 +770,11 @@ def main():
     for nome in ("status", "sync", "push", "pull", "playlists", "scrobbles",
                  "wifi"):
         s = sub.add_parser(nome)
+        # Havia um `--deep` aqui, aceito e jamais lido por linha nenhuma do
+        # programa: opção que existe e não faz nada é pior do que não ter,
+        # porque quem a usa acha que fez a comparação cuidadosa.
         s.add_argument("--apply", action="store_true",
                        help="faz de verdade (o padrão é ensaio)")
-        s.add_argument("--deep", action="store_true",
-                       help="compara abrindo os arquivos, não só o tamanho")
     w = sub.add_parser("watch")
     w.add_argument("--enable", action="store_true")
     w.add_argument("--disable", action="store_true")
