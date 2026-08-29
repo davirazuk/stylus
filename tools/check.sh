@@ -1129,7 +1129,11 @@ import wave
 casa = tempfile.mkdtemp(prefix="stylus-sorteio-casa-")
 os.environ["HOME"] = casa
 sys.path.insert(0, "airootfs/usr/share/stylus/deck")
-import vinyl                                              # noqa: E402
+try:
+    import vinyl                                          # noqa: E402
+except BaseException as e:                                # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
 
 base = tempfile.mkdtemp(prefix="stylus-sorteio-")
 erros = []
@@ -1196,12 +1200,12 @@ for e in erros:
     print(e)
 SORTEOF
 )
-if [[ -z $sorteio ]]; then
-    ok "abre no máximo uma dúzia de discos, e o esquecido ganha"
-else
-    bad "o sorteio de disco:"
-    printf '%s\n' "$sorteio" | sed 's/^/      /'
-fi
+case "$sorteio" in
+    "")    ok "abre no máximo uma dúzia de discos, e o esquecido ganha" ;;
+    PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${sorteio#PULA }" ;;
+    *)     bad "o sorteio de disco:"
+           printf '%s\n' "$sorteio" | sed 's/^/      /' ;;
+esac
 
 # ── "1 faixas" ────────────────────────────────────────────────────────────
 # **Sintoma:** "1 faixas", "1 discos", "posto há 1 meses", "1 discos · 1
@@ -1303,7 +1307,11 @@ if not kt.is_file():
 fonte = kt.read_text(encoding="utf-8")
 
 sys.path.insert(0, "airootfs/usr/share/stylus/deck")
-import vinyl                                              # noqa: E402
+try:
+    import vinyl                                          # noqa: E402
+except BaseException as e:                                # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
 
 # O teto, em minutos, dos dois lados.
 m = re.search(r"sideMaxMs\s*=\s*(\d+)\s*\*\s*60\s*\*\s*1000L", fonte)
@@ -1325,12 +1333,12 @@ if "total - curStart" not in fonte:
     print("o alvo do equilíbrio no celular não vem do que RESTA")
 CELEOF
 )
-if [[ -z $cel ]]; then
-    ok "o teto do lado e a lei do corte são os mesmos nos dois lados"
-else
-    bad "o celular reparte o disco de outro jeito:"
-    printf '%s\n' "$cel" | sed 's/^/      /'
-fi
+case "$cel" in
+    "")    ok "o teto do lado e a lei do corte são os mesmos nos dois lados" ;;
+    PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${cel#PULA }" ;;
+    *)     bad "o celular reparte o disco de outro jeito:"
+           printf '%s\n' "$cel" | sed 's/^/      /' ;;
+esac
 
 # ── o aviso do fim do lado pede o GESTO certo ─────────────────────────────
 # **Sintoma:** num disco DUPLO o aviso mandava a coisa errada em dois dos
@@ -1365,7 +1373,7 @@ mod = _iu.module_from_spec(spec)
 try:
     spec.loader.exec_module(mod)
 except BaseException as e:                               # noqa: BLE001
-    print("não deu para carregar o stylus-side-watch: %s" % e)
+    print("PULA %s" % e)
     raise SystemExit(0)
 
 
@@ -1411,12 +1419,13 @@ except Exception as e:                                   # noqa: BLE001
     print("um álbum sem lados derruba o aviso: %r" % e)
 GESTOEOF
 )
-if [[ -z $gesto ]]; then
-    ok "vira o disco no lado ímpar, troca de disco no par"
-else
-    bad "o aviso do fim do lado manda a coisa errada:"
-    printf '%s\n' "$gesto" | sed 's/^/      /'
-fi
+case "$gesto" in
+    "")    ok "vira o disco no lado ímpar, troca de disco no par" ;;
+    PULA*) printf '  %s—%s sem o stylus-side-watch aqui: %s\n' \
+                  "$y" "$z" "${gesto#PULA }" ;;
+    *)     bad "o aviso do fim do lado manda a coisa errada:"
+           printf '%s\n' "$gesto" | sed 's/^/      /' ;;
+esac
 
 # ── unidade de usuário que ninguém liga ───────────────────────────────────
 # **Sintoma:** o scrobbler do last.fm e o botão do fone não existiam. Não
@@ -1729,7 +1738,7 @@ mod = _iu.module_from_spec(spec)
 try:
     spec.loader.exec_module(mod)
 except SystemExit:
-    print("o album.py saiu ao ser carregado")
+    print("PULA o album.py saiu ao ser carregado")
     raise SystemExit(0)
 
 
@@ -1764,12 +1773,12 @@ for n_l, linha in enumerate(open(alvo, encoding="utf-8"), 1):
               % n_l)
 BARRAEOF
 )
-if [[ -z $barra ]]; then
-    ok "o disco da rede chega ao módulo da barra, e o lado usa .get"
-else
-    bad "o módulo do disco na barra:"
-    printf '%s\n' "$barra" | sed 's/^/      /'
-fi
+case "$barra" in
+    "")    ok "o disco da rede chega ao módulo da barra, e o lado usa .get" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${barra#PULA }" ;;
+    *)     bad "o módulo do disco na barra:"
+           printf '%s\n' "$barra" | sed 's/^/      /' ;;
+esac
 
 # ── o que conta como música é UMA lista ───────────────────────────────────
 # **Sintoma:** `stylus covers`, `stylus suggest` e o gerador de playlist não
@@ -1842,10 +1851,17 @@ sys.path.insert(0, "airootfs/usr/share/stylus/tools")
 tmp = tempfile.mkdtemp(prefix="stylus-capa-")
 os.environ.setdefault("STYLUS_LIBRARY", tmp)
 
-import mutagen
-from mutagen.flac import FLAC, Picture
-from mutagen.mp4 import MP4Cover
-import extract_covers as EC
+# Guardado: o mutagen é dependência do sistema instalado, não deste
+# contêiner. Sem ele a conferência não tem como rodar — e um traceback aqui
+# se leria como "o extrator de capas quebrou", que é o contrário da verdade.
+try:
+    import mutagen
+    from mutagen.flac import FLAC, Picture
+    from mutagen.mp4 import MP4Cover
+    import extract_covers as EC
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
 
 erros = []
 
@@ -1908,12 +1924,12 @@ for e in erros:
     print(e)
 CAPAEOF
 )
-if [[ -z $capas ]]; then
-    ok "capa achada em FLAC, MP4/ALAC e Ogg/Opus (e nenhuma inventada)"
-else
-    bad "o extrator de capas não lê todo formato:"
-    printf '%s\n' "$capas" | sed 's/^/      /'
-fi
+case "$capas" in
+    "")    ok "capa achada em FLAC, MP4/ALAC e Ogg/Opus (e nenhuma inventada)" ;;
+    PULA*) printf '  %s—%s sem o mutagen aqui: %s\n' "$y" "$z" "${capas#PULA }" ;;
+    *)     bad "o extrator de capas não lê todo formato:"
+           printf '%s\n' "$capas" | sed 's/^/      /' ;;
+esac
 
 # ── a cerimônia é UMA só, nos dois lugares ────────────────────────────────
 # O deck e a tela cheia do lançador encenam o MESMO ritual — spinup → cue →
