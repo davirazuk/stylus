@@ -511,12 +511,25 @@ class NowScreen(Screen):
             # inteira (era o caso das playlists do Qobuz). Dado que falta
             # pode virar "LADO"; não pode virar tela de erro.
             rotulo = side.get("label", "LADO").replace("SIDE", "LADO")
+            # Numa caixa de quatro lados, "LADO C" não diz QUAL disco está no
+            # prato — e é o disco que a pessoa tem na mão. Lados vêm aos
+            # pares, então o disco é o índice do lado dividido por dois.
+            if getattr(al, "discos", 1) > 1:
+                try:
+                    i_lado = al.sides.index(side)
+                except ValueError:
+                    i_lado = 0
+                rotulo = "DISCO %d · %s" % (i_lado // 2 + 1, rotulo)
             # cor do lado respira com o áudio
             side_alpha = int(180 + level * 75) if level > 0.01 else 180
             side_cor = T.lerp(T.AMBER, (255, 255, 255), (side_alpha - 180) / 75)
-            T.text(s, rotulo, (x, y), 30, side_cor, bold=True)
+            r_lado = T.text(s, rotulo, (x, y), 30, side_cor, bold=True)
+            # MEDIDO, não `x + 150`: "DISCO 2 · LADO C" é o dobro da largura
+            # de "LADO A", e com a folga fixa o "vira em 6min" era desenhado
+            # por cima dele. É a mesma lição do nome do conversor na tela
+            # SINAL, e ela vale toda vez que dois textos dividem uma linha.
             T.text(s, ("acaba em " if ultimo else "vira em ") + humano(resta),
-                   (x + 150, y + 5), 22, T.TEXT_DIM)
+                   (r_lado.right + 24, y + 5), 22, T.TEXT_DIM, maxw=w - (r_lado.width + 24))
             self._groove(s, pygame.Rect(x, y + 48, w, 14), frac, wave)
             y += 84
 

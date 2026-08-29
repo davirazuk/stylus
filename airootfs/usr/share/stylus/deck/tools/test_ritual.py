@@ -454,6 +454,27 @@ def main():
           any(len(sd["tracks"]) == 1
               and sd["end"] - sd["start"] > vinyl.SIDE_MAX_SECONDS
               for sd in _g.sides))
+    # ── um disco tem DOIS lados, e um disco duplo tem quatro ──────────────
+    # **Sintoma:** um LP de 45 minutos — Abbey Road, Led Zeppelin IV, a forma
+    # mais comum que um disco tem — saía com TRÊS lados de quinze minutos. A
+    # conta arredondava o número de LADOS para cima (`ceil(45/22)`), e não
+    # existe disco de três lados: existe de dois, e disco duplo de quatro.
+    for minutos, esperado, quem in ((45, 2, "um LP comum"),
+                                    (74, 4, "um CD cheio, dois LPs"),
+                                    (90, 4, "um disco duplo"),
+                                    (113, 6, "um triplo")):
+        _n = _Falso([225] * int(minutos * 60 // 225))
+        if len(_n.sides) != esperado:
+            check("%s (%d min) dá %d lados" % (quem, minutos, esperado), False)
+        else:
+            check("%s (%d min) dá %d lados — e é par"
+                  % (quem, minutos, esperado), True)
+    _um = _Falso([210] * 6)
+    check("o que cabe num lado só continua sendo um lado só",
+          len(_um.sides) == 1)
+    check("e o número de DISCOS acompanha os lados",
+          _Falso([225] * 24).discos == 2 and _um.discos == 1)
+
     # Um disco curto continua sendo um lado só.
     _i = _Falso([330] * 8)
     check("44 min em 8 faixas dá dois lados parelhos",

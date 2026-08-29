@@ -70,11 +70,14 @@ R_SPINDLE    = 0.024   # spindle hole (3.6mm)
 RPM = 33.0 + 1.0 / 3.0
 REV_PER_SEC = RPM / 60.0
 
-# A side of a 12" LP holds about 22 minutes before the groove pitch has to
-# get tight enough to hurt. Albums longer than that were pressed as doubles,
-# so packing into <=22-minute sides and letting a long record become A/B/C/D
-# is not a gimmick, it is what the object would actually be.
-SIDE_MAX_SECONDS = 22 * 60
+# Quanto cabe num lado de 12" a 33⅓ antes de o sulco ficar apertado demais.
+#
+# Eram 22 minutos, e 22 é o lado CONFORTÁVEL, não o teto. Abbey Road tem
+# 23min30 no lado A; a maioria dos LPs de rock dos anos 70 passa dos 22 sem
+# cerimônia — o nível cai um pouco e é isso. Com o teto em 22, um disco de 45
+# minutos (que é o objeto mais comum que existe) não cabia em dois lados e
+# virava TRÊS, o que não existe.
+SIDE_MAX_SECONDS = 26 * 60
 
 # Groove rings across the program area. 96 across ~380px of band on a 1600px
 # screen is ~4px apart: fine enough to read as grooves rather than as a
@@ -1324,6 +1327,7 @@ class Album:
         leaving B with two songs on it."""
         if not self.tracks or self.total <= 0:
             self.sides = []
+            self.discos = 0
             return
         if getattr(self, "continuo", False):
             # O rótulo NÃO é opcional. Este lado saía sem ele — a etiqueta é
@@ -1335,8 +1339,37 @@ class Album:
             # sistema existe para marcar.
             self.sides = [{"start": 0.0, "end": self.total, "label": "CONTÍNUO",
                            "tracks": list(range(len(self.tracks)))}]
+            self.discos = 1
             return
-        n_sides = max(1, math.ceil(self.total / SIDE_MAX_SECONDS))
+        # ── quantos LADOS ─────────────────────────────────────────────────
+        # **Sintoma:** um LP de 45 minutos — Abbey Road, Led Zeppelin IV, a
+        # forma mais comum que um disco tem — saía com TRÊS lados de quinze
+        # minutos. A conta era `ceil(total / teto_do_lado)`, e com o teto em
+        # 22 minutos qualquer coisa acima de 44 pedia um terceiro lado; a
+        # regra de equilíbrio logo abaixo então repartia tudo em três pedaços
+        # parelhos. Não existe disco de três lados. Existe disco de dois e
+        # disco duplo de quatro.
+        #
+        # A conta certa arredonda o número de DISCOS, não o de lados, porque
+        # é o disco que é o objeto físico e ele tem dois lados sempre:
+        #
+        #     45 min  → 1 disco, 2 lados de 22min30   (era 3 de 15)
+        #     53 min  → 2 discos, 4 lados de 13       (OK Computer saiu assim
+        #                                              em 1997, dois LPs)
+        #     74 min  → 2 discos, 4 lados de 18min30
+        #     90 min  → 2 discos, 4 lados de 22min30  (era 5)
+        #
+        # A exceção é o que cabe INTEIRO num lado: um 12" de 21 minutos é um
+        # lado só, e mandar virar no meio dele seria inventar uma cerimônia
+        # que o objeto não tem.
+        if self.total <= SIDE_MAX_SECONDS:
+            n_sides = 1
+        else:
+            n_sides = 2 * math.ceil(self.total / (2.0 * SIDE_MAX_SECONDS))
+        # Quantos DISCOS este álbum seria. Não é usado no corte — é o que a
+        # tela precisa para dizer "disco 2 de 2, lado C" em vez de só "LADO
+        # C", que numa caixa de quatro lados não diz onde você está.
+        self.discos = max(1, (n_sides + 1) // 2)
         target = self.total / n_sides
         sides, cur, cur_start = [], [], 0.0
         for i, tr in enumerate(self.tracks):
