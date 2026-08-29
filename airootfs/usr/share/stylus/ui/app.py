@@ -415,77 +415,98 @@ class NowScreen(Screen):
             # vinheta suave nas bordas — profundidade
             T.vignette(s)
 
-        # ── a capa e a coluna de texto formam UM bloco, centrado junto ─────
+        # ── o disco SAINDO da capa, e a coluna de texto ao lado ───────────
+        # O vinil era um aro simétrico atrás da capa: um pouco maior que ela
+        # em todos os lados, o que na tela lê como um prato, ou como uma
+        # sombra redonda — não como um disco. Um disco de verdade só aparece
+        # assim quando está DENTRO da capa, e aí não se vê nada dele.
+        #
+        # O que se vê de verdade, e é a imagem que todo mundo tem na cabeça,
+        # é o disco meio PUXADO para fora: a bolacha e a beirada do sulco de
+        # fora, girando, e o resto ainda na capa. Então é isso — ele sai pela
+        # esquerda, que é onde a composição tem espaço (a coluna de texto
+        # está à direita), e a capa fica por cima, como fica.
+        #
+        # O bloco inteiro (o quanto o disco sai + a capa + a coluna) é que se
+        # centra. Sem contar a saliência, a capa ficava no meio e o disco
+        # saía por baixo do trilho.
         margem, gap, txt_teto = 64, 72, 620
         avail = max(320, r.w - margem * 2)
-        size = min(int(r.h * 0.62), int(avail * 0.44), 720)
-        size = max(280, size)
-        txt_w = min(txt_teto, avail - size - gap)
-        total = size + gap + txt_w
+        # 0.36 e não 0.44: a saliência do disco pede a diferença.
+        size = min(int(r.h * 0.62), int(avail * 0.36), 720)
+        size = max(260, size)
+        # O disco é um pouco MENOR que a capa (12" contra 12⅜"), e sai o
+        # bastante para a bolacha aparecer — é ela que diz que ele é um
+        # disco, e não uma sombra.
+        rm = int(size * 0.485)
+        desl = int(size * 0.56)
+        sai = max(0, desl + rm - size // 2)
+        txt_w = min(txt_teto, max(180, avail - sai - size - gap))
+        total = sai + size + gap + txt_w
 
         # AGORA usa 640px — 320 esticado ficava borrado (audit A-N1)
         cov = self.app.thumbs_hi.get(al.cover) if al.cover else None
         if cov is None and al.cover:
             cov = self.app.thumbs.get(al.cover)
-        cr = pygame.Rect(r.x + (r.w - total) // 2, r.y + (r.h - size) // 2,
-                         size, size)
+        cr = pygame.Rect(r.x + sai + max(0, (r.w - total) // 2),
+                         r.y + (r.h - size) // 2, size, size)
+        # O centro do DISCO, que é de onde sai toda a luz desta tela. Preso à
+        # borda esquerda do corpo: numa tela estreita ele sairia por baixo do
+        # trilho, e meio disco desenhado atrás do menu não é meio disco, é um
+        # corte reto no meio da imagem.
+        dx = max(r.x + 20 + rm, cr.centerx - desl)
+        dy = cr.centery
         # O som do momento em três números — esta tela inteira é desenhada a
         # partir deles, e o monitor (audio_live) já os calculou no fundo.
         level, wave, spec = self.app.audio_now()
 
-        # ── brilho reativo ao áudio: a capa "respira" com a música ──────────
+        # ── o halo, no disco ───────────────────────────────────────────────
         # O T.halo, e não um círculo CHEIO de alfa uniforme como era antes.
         # Aquilo não é um brilho, é um disco âmbar chapado atrás da capa, com
         # aresta dura no raio — a coisa exata que a §5.5 chama de app de um
         # dólar. O halo é forte na borda do disco e cai para fora, que é onde
-        # a luz de um objeto realmente está.
-        #
-        # E ele é EM CACHE. O círculo era uma superfície nova de meio megabyte
-        # por quadro, sessenta vezes por segundo, para desenhar sempre a mesma
-        # coisa com outro alfa; agora o alfa muda com `set_alpha`, que é uma
-        # multiplicação na hora de compor.
-        if level > 0.01:
-            # O raio é o do VINIL (0.60), não o da capa: o brilho do halo é
-            # mais forte na borda do disco e cai para fora, e é justamente
-            # esse anel de fora que se vê — o resto fica debaixo do disco e
-            # da capa. Com um raio menor que o do vinil, a luz inteira ficava
-            # escondida e o trabalho era desenhar o que ninguém veria.
-            hal = T.halo(int(size * 0.60), forca=int(90 + level * 165))
-            s.blit(hal, (cr.centerx - hal.get_width() // 2,
-                         cr.centery - hal.get_height() // 2))
+        # a luz de um objeto realmente está. Em cache, e a força vem assada
+        # nele (ver T.halo).
+        # O piso é alto de propósito: agora que o disco SAI da capa, ele é
+        # metade da imagem, e um disco preto sobre um fundo quase preto lê
+        # como buraco. A luz é o que faz dele um objeto (§5.5) — o áudio
+        # empurra a partir daí, não a partir do escuro.
+        hal = T.halo(int(rm * 1.06), forca=int(150 + min(1.0, level) * 105))
+        s.blit(hal, (dx - hal.get_width() // 2, dy - hal.get_height() // 2))
 
-        # ── o disco girando ATRÁS da capa ──────────────────────────────────
-        # A capa está no prato: o vinil é um pouco maior que a capa, sobra um
-        # aro ao redor — e o aro tem um reflexo girando, porque o vinil é
-        # simétrico e sem o reflexo não se vê que está girando. A velocidade
-        # dança com o som (e adormece na pausa); a fase anda com o lado, para
-        # o reflexo não aparecer sempre no mesmo sulco.
+        # ── o disco, girando ───────────────────────────────────────────────
+        # Fora do `if spec`: o disco é o OBJETO, não um efeito de áudio. Numa
+        # máquina sem PortAudio o `spec` é None o tempo todo, e o vinil
+        # simplesmente não era desenhado — a AGORA ficava só com a capa
+        # flutuando, e nada explicando por quê.
+        d = T.disco(rm)
+        s.blit(d, (dx - rm, dy - rm))
+        # O reflexo que passa: o vinil é simétrico, e sem ele não se vê que
+        # está girando. A velocidade dança com o som (e adormece na pausa); a
+        # fase anda com o lado, para o reflexo não cair sempre no mesmo sulco.
+        t = time.time()
+        ang = (t * (0.25 + level * 1.4) + frac * 5.0) % (2 * math.pi)
+        # Reaproveitada, não alocada. Não é mais rápido — está medido no
+        # T.rascunho — mas deixa de fazer quatro megabytes de lixo por quadro
+        # para desenhar 46 linhas.
+        bril = T.rascunho(rm * 2, rm * 2, "reflexo")
+        n, arco = 46, math.radians(40)
+        r0, r1 = rm * 0.93, rm * T.GROOVE_O
+        for i in range(n):
+            f = i / (n - 1)
+            aa = ang + (f - 0.5) * arco
+            a = int((26 + level * 44) * math.sin(f * math.pi) ** 2)
+            if a <= 0:
+                continue
+            pygame.draw.line(
+                bril, (*T.AMBER_GLOW, a),
+                (rm + math.cos(aa) * r0, rm + math.sin(aa) * r0),
+                (rm + math.cos(aa) * r1, rm + math.sin(aa) * r1), 2)
+        s.blit(bril, (dx - rm, dy - rm))
+
+        # ── o som, no aro do disco ─────────────────────────────────────────
         if spec is not None:
-            rm = int(size * 0.60)
-            d = T.disco(rm)
-            s.blit(d, (cr.centerx - rm, cr.centery - rm))
-            t = time.time()
-            ang = (t * (0.25 + level * 1.4) + frac * 5.0) % (2 * math.pi)
-            # Reaproveitada, não alocada. Não é mais rápido — está medido
-            # no T.rascunho — mas deixa de fazer quatro megabytes de lixo por
-            # quadro para desenhar 46 linhas.
-            bril = T.rascunho(rm * 2, rm * 2, "reflexo")
-            n, arco = 46, math.radians(40)
-            r0, r1 = rm * 0.93, rm * T.GROOVE_O
-            for i in range(n):
-                f = i / (n - 1)
-                aa = ang + (f - 0.5) * arco
-                a = int((14 + level * 26) * math.sin(f * math.pi) ** 2)
-                if a <= 0:
-                    continue
-                pygame.draw.line(
-                    bril, (*T.AMBER_GLOW, a),
-                    (rm + math.cos(aa) * r0, rm + math.sin(aa) * r0),
-                    (rm + math.cos(aa) * r1, rm + math.sin(aa) * r1), 2)
-            s.blit(bril, (cr.centerx - rm, cr.centery - rm))
-
-            # ── o som, no aro do disco ────────────────────────────────────
-            self._spectrum(s, cr, spec, level, rm)
+            self._spectrum(s, (dx, dy), spec, level, rm)
 
         T.sleeve(s, cr, cov)
         if not cov:
@@ -586,7 +607,7 @@ class NowScreen(Screen):
                             + ("[D] deck sozinho: ligado" if self.app.auto_deck
                                else "[D] deck sozinho: desligado"))
 
-    def _spectrum(self, s, cr, spec, level, rm):
+    def _spectrum(self, s, centro, spec, level, rm):
         """O som desenhado no ARO do disco — um anel que ondula com a música.
 
         ── o que havia antes, e por que saiu ──────────────────────────────
@@ -614,6 +635,7 @@ class NowScreen(Screen):
         lado = int(rm * 2.4)
         aro = T.rascunho(lado, lado, "espectro")
         c = lado // 2
+        cx_d, cy_d = centro
         pts = []
         for k in range(n):
             a = -math.pi / 2 + 2 * math.pi * k / n
@@ -638,7 +660,7 @@ class NowScreen(Screen):
         for larg, alfa in ((5, 22), (3, 55), (1, 150)):
             pygame.draw.lines(aro, (*T.AMBER, int(alfa * (0.35 + 0.65 * base))),
                               True, pts, larg)
-        s.blit(aro, (cr.centerx - c, cr.centery - c))
+        s.blit(aro, (cx_d - c, cy_d - c))
 
     def _groove(self, s, rect, frac, wave=None):
         """Barra de progresso como sulco — e o sulco desenha a música.
