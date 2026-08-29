@@ -411,6 +411,68 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("linha de dicas", traceback.format_exc())
 
+    secao("a estante anuncia tudo que ela faz")
+    # **Sintoma:** o [r] (sorteia um disco da prateleira) e o [f] (favorito)
+    # existiam desde sempre e não apareciam em lugar nenhum da tela. É o
+    # defeito do i3 ao contrário — lá a área de trabalho prometia comando que
+    # não existia; aqui a tela escondia o que existe.
+    #
+    # A conferência é sobre a ESTANTE porque é a seção que o teste consegue
+    # encher de verdade: com discos, o rodapé dela é o de sempre. As teclas
+    # do par vim (h/j/k/l) ficam de fora de propósito — quem é anunciado é a
+    # seta, e anunciar as duas encheria a linha com a mesma coisa duas vezes.
+    try:
+        import inspect
+        import re as _re
+        import theme as _T
+        estante = next(s for s in app.screens if s.name == "ESTANTE")
+        if estante.picking or estante.searching:
+            estante.key(pygame.event.Event(pygame.KEYDOWN,
+                                           key=pygame.K_ESCAPE, unicode="",
+                                           mod=0))
+        estante.artist = None
+        if not estante.items():
+            ok("(estante vazia: nada para anunciar)")
+        else:
+            original_f, original_t = _T.frase_com_teclas, _T.text
+            ditas = set()
+
+            def _colhe(txt):
+                for m in _re.finditer(r"\[([^\]]{1,6})\]", str(txt)):
+                    ditas.add(m.group(1).lower())
+
+            def _f(surf, txt, pos, size=18, colour=_T.TEXT_DIM,
+                   anchor="topleft", cor_tecla=None):
+                _colhe(txt)
+                return original_f(surf, txt, pos, size, colour, anchor,
+                                  cor_tecla)
+
+            def _t(surf, txt, pos, size=20, colour=_T.TEXT, bold=False,
+                   anchor="topleft", maxw=None):
+                _colhe(txt)
+                return original_t(surf, txt, pos, size, colour, bold, anchor,
+                                  maxw)
+
+            _T.frase_com_teclas, _T.text = _f, _t
+            app._goto(app.screens.index(estante))
+            # Numa tela larga: a linha de dicas encolhe quando não cabe, e o
+            # que se confere aqui é o que ela DIZ quando cabe tudo.
+            estante.draw(app.surf, pygame.Rect(230, 0, 3840 - 230, 2160))
+            _T.frase_com_teclas, _T.text = original_f, original_t
+
+            fonte = inspect.getsource(type(estante).key)
+            trata = set(_re.findall(r"pygame\.K_([a-z])\b", fonte))
+            vim = {"h", "j", "k", "l"}
+            caladas = sorted(trata - ditas - vim)
+            if caladas:
+                bad("a estante faz e não anuncia: %s" % " ".join(caladas),
+                    "anuncia: %s" % " ".join(sorted(ditas)))
+            else:
+                ok("as %d teclas da estante estão todas na tela"
+                   % len(trata - vim))
+    except Exception:                                       # noqa: BLE001
+        bad("teclas anunciadas", traceback.format_exc())
+
     secao("a pilha embaralha e muda de ordem")
     # A pilha é a ordem da NOITE, e mudá-la era coisa de esvaziar e empilhar
     # tudo de novo. Duas teclas resolvem: [e] embaralha, ←/→ sobe e desce o

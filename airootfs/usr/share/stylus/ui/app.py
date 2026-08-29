@@ -1024,7 +1024,16 @@ class ShelfScreen(Screen):
         sel = its[self.sel]
         self.app.hint(
             s, r,
-            "[enter] põe   [s] empilha   [a] artista   [o] ordem   [/] procura",
+            # O [r] e o [f] existiam desde sempre e não eram anunciados em
+            # lugar nenhum: sortear um disco da prateleira e marcar favorito
+            # são duas coisas que a estante FAZ e que ninguém tinha como
+            # descobrir. (É o mesmo defeito do i3 ao contrário: lá a tela
+            # prometia comando que não existia; aqui ela escondia o que
+            # existe.) A linha ficou longa, e tudo bem: quando não couber,
+            # o `hint` derruba a dica inteira do fim, nunca corta um atalho
+            # pela metade.
+            "[enter] põe   [s] empilha   [r] sorteia   [f] favorito   "
+            "[a] artista   [o] ordem   [/] procura",
             contexto=f"{sel['artist']} — {sel['name']}   ·   "
                      f"{ha_quanto(sel['last'])}")
 
@@ -2911,7 +2920,8 @@ class SpotifyScreen(Screen):
         if self.results:
             item = self.results[self.sel]
             self.app.hint(
-                s, r, "[/] procura   [enter] toca   [space] pausa   [c] conta",
+                s, r, "[/] procura   [enter] toca   [space] pausa   "
+                      "[r] atualiza   [c] conta",
                 contexto=f"{item.get('artist', '')} — {item.get('name', '')}")
 
         if self.job:
