@@ -3685,6 +3685,78 @@ else
     printf '  %s—%s sem o sync.sh\n' "$y" "$z"
 fi
 
+sec "o que a instalação copia, a atualização também copia"
+# Duas listas escritas à mão para o mesmo trabalho: o branding-sync.sh leva o
+# STYLUS para um sistema recém-instalado, o sync.sh leva para um sistema que
+# já existe. Elas tinham DERIVADO — o GRUB, o plymouth, o tema do SDDM e os
+# ícones estavam só na primeira. Quem instalou há dois meses e rodou
+# `stylus-update` recebia a paleta nova em tudo menos nas TRÊS PRIMEIRAS
+# telas que a máquina desenha.
+#
+# O que fica de fora fica com o motivo escrito aqui, e não por esquecimento.
+saida=$(python3 - <<'DUASEOF' 2>&1
+import re
+try:
+    bs = open("airootfs/usr/share/stylus/branding-sync.sh",
+              encoding="utf-8").read()
+    sy = open("airootfs/usr/share/stylus/sync.sh", encoding="utf-8").read()
+except OSError as e:
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+# O que a instalação copia (só linha de código).
+copiados = []
+for ln in bs.splitlines():
+    if ln.lstrip().startswith("#"):
+        continue
+    m = re.match(r'\s*copiar\s+"?([^"\s]+)"?', ln)
+    if m and "$" not in m.group(1):
+        copiados.append(m.group(1))
+
+# O que a atualização copia: a lista, mais os caminhos escritos à mão nela.
+lista = re.search(r"SYSTEM_PATHS=\(\n(.*?)\n\)", sy, re.S)
+# Sem o comentário de fim de linha: no bash, um `#` depois de espaço dentro
+# de um array começa comentário — e sem tirá-lo aqui a conferência não
+# reconhecia a própria linha que ela pediu para existir.
+cobertos = []
+for ln in lista.group(1).splitlines():
+    nu = ln.split("#")[0].strip()
+    if nu:
+        cobertos.append(nu)
+cobertos += re.findall(r'"\$SRC/(etc/[^"]+)"', sy)
+cobertos += re.findall(r"\$SRC/(etc/systemd/system)/stylus-", sy)
+
+# O que é do MEDIUM AO VIVO e não pode ir para um sistema instalado.
+FORA = {
+    "etc/sddm.conf.d/stylus.conf":
+        "tem [Autologin] User=stylus, que o instalador apaga de propósito",
+    "etc/skel":
+        "é a parte 2 do sync.sh, com a regra do pacman",
+    "etc/stylus":
+        "nasce no build; a máquina instalada tem a estante da pessoa",
+}
+faltando = []
+for c in copiados:
+    if c in FORA:
+        continue
+    if any(c == k or c.startswith(k.rstrip("/") + "/") for k in cobertos):
+        continue
+    faltando.append(c)
+if faltando:
+    print("ERRO a instalação copia e a atualização não: %s"
+          % ", ".join(sorted(set(faltando))))
+else:
+    print("OK %d caminhos da instalação chegam pela atualização também"
+          % len(copiados))
+DUASEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a atualização não leva o que a instalação leva"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

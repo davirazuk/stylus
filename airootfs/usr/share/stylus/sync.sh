@@ -44,6 +44,19 @@ SYSTEM_PATHS=(
     usr/share/Kvantum
     usr/share/qt5ct
     usr/share/qt6ct
+    # AS TRÊS TELAS QUE VÊM ANTES DA ÁREA DE TRABALHO. Elas estavam só no
+    # branding-sync.sh — que roda na INSTALAÇÃO — e não aqui, que é o caminho
+    # normal de receber um conserto. Quem instalou há dois meses e roda
+    # `stylus-update` recebia a paleta nova em tudo menos no GRUB, no plymouth
+    # e no login: as três primeiras coisas que a máquina desenha. É a mesma
+    # lição da lista escrita à mão do branding-sync, do outro lado.
+    usr/share/grub/themes/stylus
+    usr/share/plymouth/themes/stylus
+    usr/share/sddm/themes/stylus
+    usr/share/icons/hicolor
+    etc/os-release              # é o que faz a máquina se chamar STYLUS
+    etc/systemd/journald.conf.d/stylus-limits.conf
+    etc/systemd/zram-generator.conf
     etc/pipewire
     etc/wireplumber
     etc/udev/rules.d
@@ -51,6 +64,15 @@ SYSTEM_PATHS=(
     etc/modprobe.d
     etc/X11/xorg.conf.d
 )
+# O que NÃO entra na lista, e por quê:
+#
+#   etc/sddm.conf.d/stylus.conf   tem `[Autologin] User=stylus`, e o
+#       instalador APAGA essas duas linhas ao instalar de propósito (não há
+#       autologin sem senha numa máquina de verdade). Copiá-lo de volta a cada
+#       atualização ressuscitaria o autologin — para um usuário que na
+#       máquina instalada nem existe.
+#   etc/skel                      é a parte 2, com a regra do pacman.
+#   etc/systemd/system            veja o bloco abaixo.
 # ── as unidades do systemd, uma a uma ──────────────────────────────────────
 #  `etc/systemd/system` ESTAVA na lista acima, copiado inteiro. Só que essa
 #  pasta, dentro do airootfs, não é "as unidades do STYLUS": é o estado do
