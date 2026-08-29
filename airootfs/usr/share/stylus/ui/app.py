@@ -4533,9 +4533,17 @@ class App:
         uma playlist com outro nome, e playlist é justamente a coisa que este
         sistema não quer ser.
         """
+        # A estante é lida UMA vez, e não uma por disco sorteado. Sem o
+        # `candidates`, cada `draw_record` varre a coleção inteira do disco
+        # rígido de novo — três varreduras para escolher três discos, e o
+        # botão "monta uma noite" fica parado enquanto isso.
+        #
+        # E ela já está lida: o `self.shelf.items` é a mesma estante que a
+        # grade desenha.
+        prateleira = [i["folder"] for i in (self.shelf.items or [])]
         escolhidos, fora = [], [i["folder"] for i in self.stack]
         for _ in range(3):
-            d = vinyl.draw_record(exclude=fora)
+            d = vinyl.draw_record(prateleira or None, exclude=fora)
             if not d:
                 break
             fora.append(d)
