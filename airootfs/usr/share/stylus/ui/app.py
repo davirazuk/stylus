@@ -756,8 +756,8 @@ class NowScreen(Screen):
                             "[space] pausa   "
                             "[n]/[p] faixa   [←]/[→] busca   [v]/[b] lado   "
                             "[+]/[-] volume   "
-                            + ("[D] deck sozinho: ligado" if self.app.auto_deck
-                               else "[D] deck sozinho: desligado"))
+                            + ("[d] deck sozinho: ligado" if self.app.auto_deck
+                               else "[d] deck sozinho: desligado"))
 
     # A cerimônia, em segundos, VINDA DO DECK. O prato leva um tempo para
     # chegar aos 33 (SPIN), a agulha fica suspensa sobre a borda (CUE) e
@@ -1646,8 +1646,12 @@ class StackScreen(Screen):
         st = self.app.stack
         if not st:
             T.vazio(s, r, T.fantasma_pilha, "a pilha está vazia", [
-                "na estante, [S] empilha o disco escolhido",
-                "ou [T] monta uma noite inteira daqui",
+                # Minúsculas: é assim que o resto do sistema escreve tecla,
+                # e o `frase_com_teclas` desenha a letra dentro de uma
+                # tampinha — um [S] ali se lê como Shift+S, que não é a
+                # tecla. As duas são as mesmas do rodapé da estante.
+                "na estante, [s] empilha o disco escolhido",
+                "ou [t] monta uma noite inteira daqui",
             ])
             return
         total = 0.0
@@ -3424,7 +3428,7 @@ class SpotifyScreen(Screen):
                 return
             T.vazio(s, r, T.fantasma_busca, "a loja de streaming", [
                 "[/] procura uma faixa",
-                "[space] pausa   ·   [N] e [P] pulam",
+                "[space] pausa   ·   [n] e [p] pulam",
             ])
             return
 

@@ -3604,6 +3604,60 @@ case "$saida" in
          printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "letra maiúscula anunciada é tecla com Shift"
+# O `frase_com_teclas` desenha a letra dentro de uma tampinha, então um `[D]`
+# na tela se lê como Shift+D. Três anúncios estavam em maiúscula sobre teclas
+# que não pedem Shift nenhum — o `[D]` do "deck sozinho" e o `[N]`/`[P]` do
+# Spotify —, enquanto o `[R]` (repetir) e o `[L]` (playlists) pedem mesmo. A
+# tampinha é o contrato: se está em maiúscula, tem que ter Shift no
+# tratamento.
+saida=$(python3 - <<'MAIUSEOF' 2>&1
+import re
+try:
+    app = open("airootfs/usr/share/stylus/ui/app.py", encoding="utf-8").read()
+except OSError as e:
+    print("PULA %s" % e)
+    raise SystemExit(0)
+linhas = app.splitlines()
+# Onde cada letra é tratada COM Shift.
+com_shift = set()
+for ln in linhas:
+    m = re.search(r"pygame\.K_([a-z])\b.*KMOD_SHIFT", ln)
+    if m:
+        com_shift.add(m.group(1).upper())
+# O que a tela anuncia em maiúscula. Sem comentário e SEM DOCSTRING: as
+# explicações deste arquivo citam as teclas o tempo todo ("o `[X]` de teclas
+# vira quadradinho"), e contá-las faria a conferência acusar a prosa que
+# explica o defeito — a mesma armadilha de sempre.
+import ast
+docs = set()
+for no in ast.walk(ast.parse(app)):
+    if isinstance(no, ast.Expr) and isinstance(no.value, ast.Constant) \
+            and isinstance(no.value.value, str):
+        docs.update(range(no.lineno, (no.end_lineno or no.lineno) + 1))
+falhas = set()
+for n, ln in enumerate(linhas, 1):
+    if ln.lstrip().startswith("#") or n in docs:
+        continue
+    for m in re.findall(r"\[([A-Z])\]", ln):
+        if m not in com_shift:
+            falhas.add(m)
+if falhas:
+    print("ERRO anunciadas em maiúscula e tratadas sem Shift: %s"
+          % ", ".join(sorted(falhas)))
+else:
+    print("OK as maiúsculas anunciadas (%s) pedem Shift mesmo"
+          % ", ".join(sorted(com_shift)) if com_shift else
+          "OK nenhuma tecla anunciada em maiúscula")
+MAIUSEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a tampinha da tecla mente sobre o Shift"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
