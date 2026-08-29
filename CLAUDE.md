@@ -221,6 +221,33 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   para onde escurecer. Medido, a sombra que existia mudava no máximo 7
   unidades somando os três canais. Num fundo escuro, peso vem de LUZ — uma
   aresta iluminada, uma lombada. Ver `T.sleeve` no `ui/theme.py`.
+- **`set_alpha(None)` APAGA o SRCALPHA da superfície (pygame 2).** Não é
+  "tirar o alfa de superfície e ficar com o por-pixel": é pôr o modo de
+  mistura em NONE, e o blit vira cópia crua. O `T.halo` e o `T.disco`
+  terminavam com ele em nome de um blit "3,6x mais rápido" — rápido porque
+  não desenhava luz nenhuma, pintava por cima. Na tela: um quadrado PRETO de
+  meia tela (o canto (0,0,0,0) do halo) com um disco de mostarda chapado
+  dentro. O teste exigia o defeito (`get_alpha() is None`) e passava verde
+  em cima dele. Meça o RESULTADO — blite num fundo colorido e veja se o
+  canto continua colorido — nunca o atributo.
+- **Os ícones do Nerd Font v3 estão no PLANO 15, não na área de uso privado
+  do BMP.** O `fonte_para` tinha um atalho para `\ue000–\uf8ff` e não há um
+  único ícone nosso ali: os 27 que o app.py usa são Material Design
+  (F0000–FFFFD). Sem o atalho, numa máquina sem o Nerd Font o ícone escolhia
+  a fonte do RÓTULO INTEIRO — e quem "cobre" uso privado é uma fonte de
+  símbolos, sem letra latina. "Clone Hero" virava fileira de caixinhas.
+- **Segmento de comprimento zero desenha NADA.** O `build_segs`/`build_strip`
+  do ritual montam o quadrilátero a partir da normal do segmento: com
+  comprimento zero a normal é zero e os quatro vértices caem no mesmo ponto.
+  Duas coisas moravam no código sem nunca aparecer na tela por isso — as
+  faíscas da agulha (um ponto duplicado "to make a tiny segment") e uma das
+  poeiras (um ponto só num `build_strip`, que exige dois).
+- **Conferência que roda como root não confere: ela EXECUTA.** A do `stylus
+  app yay` no check.sh chamava o comando com um `sudo` de mentira — mas como
+  root o `precisa_root` volta na hora e o `pacman -S git base-devel`
+  acontece de verdade, o que é o caso do contêiner Arch da construção na
+  nuvem. Ela ficava vermelha dizendo que o argumento se perdia. Baixe para o
+  `nobody` (`setpriv`) antes de executar qualquer coisa que peça root.
 - **Folga fixa entre dois textos na mesma linha sempre quebra na máquina do
   outro.** O `- 300` reservado para o valor à direita não cabia o valor mais
   largo, e o nome do aparelho entrava por cima — só em quem tem placa de nome
@@ -273,10 +300,41 @@ reação ao som, mais luz com propósito — nunca mais realismo.
 - **Bit-perfect audio:** PipeWire was resampling everything to 48kHz because the audio device was being held open. Reduced `session.suspend-timeout-seconds` to 1 second in `airootfs/etc/wireplumber/wireplumber.conf.d/51-stylus-alsa.conf` to encourage bit-perfect playback.
 - **`stylus-deck` sync:** Repository version of `stylus-deck` was outdated and missing fixes, causing playback issues. Synced it with the working local installation.
 
+### Nesta leva (visual e defeitos, tudo commitado)
+- **A luz da AGORA era um quadrado preto.** Ver a lição do `set_alpha(None)`
+  na §4 — é a mais cara desta leva e a que mais parece inofensiva no código.
+- **O braço do deck virou o FACHO (§5.5).** Saíram tubo de alumínio em nove
+  cópias, contrapeso em barril, cabeçote, gimbal e o berço em U; a agulha é
+  uma cruz curta e quente, o corpo do braço começa a 38% do caminho e quase
+  toda a luz mora na ponta; levantado, apaga. O `stylus_xy` não mudou —
+  **o ritual é o mesmo**, o material é que deixou de ser metal. E saíram as
+  três poeiras de ambiente (uma aparecia; duas nunca desenharam nada).
+- **A ESTANTE diz qual disco está no prato:** halo âmbar atrás da capa,
+  respirando com o nível do áudio (piso de 110 para não sumir no silêncio
+  nem em máquina sem PortAudio), e o nome em âmbar. O halo vai numa passada
+  ANTES de todas as capas — desenhado junto com a sua, ele tingia a arte do
+  vizinho da esquerda.
+- **Três telas desenhavam fora do monitor** e o teste olhava só o eixo
+  vertical: a grade dos JOGOS (largura fixa de 940 px num corpo de 794, em
+  1024), as duas últimas dicas do rodapé da AGORA em 1280, e o veredito do
+  SINAL. O `hint` agora perde dicas INTEIRAS em vez de vazar ou cortar um
+  atalho pela metade.
+- **`audio_live` quebrava a interface inteira** numa máquina sem
+  python-pyaudio: o construtor chamava `np.zeros()` duas linhas antes de
+  conferir se o numpy existe, e o `audio_level()` roda em todo quadro.
+- **O teste do deck** morria num IndexError quando o álbum não tinha duração
+  (isto é: em toda máquina sem ffprobe). Agora diz o que falta e fecha a
+  contagem.
+
 ### Futuras Melhorias
-- **Ritual vinyl:** o primeiro rework entrou — no composto CRT o disco agora é tratado como OBJETO (`u_disc`/`u_record` em scope.py): dentro da máscara elíptica do disco o bloom cai a ~28%, o bombear com o volume quase some, aberração cromática/scanline/grão cedem. O taper do live_groove também voltou (era achatado pela média). Falta VER na máquina e afinar ganho se preciso.
-- **Launcher AGORA:** layout refeito — capa e coluna de texto formam um bloco só, centrado juntos; capa cresce com a tela (66% altura, teto 760); rodapé de meta-informaçã encosta no pé da capa em vez de na borda da tela. Miniatura ao vivo no bloco TOCANDO do trilho; disco selecionado na estante LEVANTA (inflate+12).
-- **Segunda leva (commitada e no GitHub):** letra em JANELA na AGORA (`App.lyric_state`, linha de agora grande, janela que cabe acima do rodapé); filtro por ARTISTA na estante ('a' abre lista de quem está na coleção, enter filtra, 'a' limpa — e 'a' é letra DENTRO do modo de busca, ordem dos ifs importa); deck ocioso: 4 min parado na AGORA sem pausa a tela chama o disco sozinha, uma vez por álbum; teclas de sofá ←/→ busca ±10s e +/- volume com pamixer; fade-in de abertura; capa do álbum vira notificação dunst na troca de faixa (`media.sh`, stack-tag para não empilhar).
-- **Lição do teste que enchia o /tmp:** a varredura de teclas do `test_ui.py` aperta ENTER em TODAS as telas — e JOGOS lança Steam Big Picture no ENTER. Quatro rodadas = quatro Steam descompactando ~13 GB dentro das pastas de mentira até a cota do tmpfs estourar e o check do branding-sync falhar com erro de DISCO, parecendo defeito do repositório. Conserto: `App.spawn` virou stub que grava durante o teste (e a pasta temporária se apaga via atexit). Moral: teste que aperta tudo precisa interceptar TUDO que lança processo.
-- **Missing commands:** Investigate and add any commands missing from the repository that are present in the local installation.
-- **check.sh reprova em `.aider.chat.history.md`:** arquivo de histórico de IA commitado por engano contém `/home/davirazuk/`. Limpar o arquivo (e `.aider.*`, se não quiser o histórico) ou ensinar o check a ignorá-lo.
+- **Ritual vinyl:** o rework do composto CRT (disco como OBJETO, `u_disc`/
+  `u_record` em scope.py) e o braço em luz estão no código; falta VER na
+  máquina e afinar ganho. O `deck/tools/vinyl_preview.py` mostra a
+  composição sem GL e é o jeito barato de conferir antes.
+- **O resto do vocabulário de "foto" no deck.** A paleta do vinyl.py ainda se
+  apresenta como "vinyl is plastic, not phosphor / honest materials: black
+  plastic reflects white specular", e o disco é desenhado nessa chave —
+  cinzas de plástico, não fósforo. Isso é a §5.5 pela metade: o braço virou
+  luz, o disco ainda não. É a próxima decisão de desenho, e é grande.
+- **Missing commands:** conferir se algum comando existe na instalação local
+  e não no repositório.
