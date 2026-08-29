@@ -27,6 +27,7 @@ cheia de música é poder usá-la do outro lado do quarto.
 import math
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -483,8 +484,8 @@ class NowScreen(Screen):
                     (rm + math.cos(aa) * r1, rm + math.sin(aa) * r1), 2)
             s.blit(bril, (cr.centerx - rm, cr.centery - rm))
 
-            # ── coluna de espectro, na beirada da capa ─────────────────────
-            self._spectrum(s, cr, spec, level)
+            # ── o som, no aro do disco ────────────────────────────────────
+            self._spectrum(s, cr, spec, level, rm)
 
         T.sleeve(s, cr, cov)
         if not cov:
@@ -569,27 +570,59 @@ class NowScreen(Screen):
                             + ("[D] deck sozinho: ligado" if self.app.auto_deck
                                else "[D] deck sozinho: desligado"))
 
-    def _spectrum(self, s, cr, spec, level):
-        """Uma coluna de faixas na beirada da capa — o esqueleto do som.
+    def _spectrum(self, s, cr, spec, level, rm):
+        """O som desenhado no ARO do disco — um anel que ondula com a música.
 
-        Faixas logarítmicas empilhadas, do grave embaixo ao agudo em cima;
-        cada uma vira uma barra âmbar mais larga quanto mais forte. Sem nível
-        não desenha nada: uma coluna de zeros não é informação, é ruído."""
-        if level < 0.015 or len(spec) == 0:
+        ── o que havia antes, e por que saiu ──────────────────────────────
+        Uma coluna de retângulos âmbar de canto vivo, colada na beirada
+        esquerda da capa: vinte e quatro caixinhas empilhadas, uma por faixa
+        de frequência, com o resto da tela sem nenhuma. Era um GRÁFICO
+        pendurado ao lado do disco — a única peça da AGORA que não era nem
+        luz nem objeto, e a §5.5 do CLAUDE.md diz o que fazer com isso: mais
+        vida, mais reação ao som, mais luz com propósito.
+
+        O disco já está ali, girando atrás da capa, e o que se vê dele é o
+        aro em volta — quatro fatias, porque a capa é quadrada e o disco é
+        redondo. Então o som mora nesse aro: um anel fechado cujo RAIO é o
+        espectro, grave no alto, agudo embaixo, espelhado à esquerda e à
+        direita para ler como objeto e não como leitura de instrumento.
+        Parado, ele é uma circunferência; com música, ele ondula.
+
+        Um traço só, fechado — não vinte e quatro peças —, o que também o
+        torna mais barato do que a coluna que ele substitui.
+        """
+        if level < 0.015 or spec is None or len(spec) == 0:
             return
-        n = len(spec)
-        banda = T.rascunho(24, cr.h, "espectro")
-        base = cr.h - 4
-        passo = (cr.h - 8) / n
-        for i in range(n):
-            v = float(spec[i])
-            y = base - passo * (i + 1)
-            larg = int(2 + v * 15)
-            cor = (*T.AMBER, int(60 + 150 * v))
-            pygame.draw.rect(banda, cor,
-                             (2, int(y), larg, max(1, int(passo) - 1)),
-                             border_radius=1)
-        s.blit(banda, (cr.left - 28, cr.top))
+        nb = len(spec)
+        n = 96                      # pontos do anel: liso a 60 fps, e barato
+        lado = int(rm * 2.4)
+        aro = T.rascunho(lado, lado, "espectro")
+        c = lado // 2
+        pts = []
+        for k in range(n):
+            a = -math.pi / 2 + 2 * math.pi * k / n
+            # A distância ao TOPO, de 0 (12 h) a 1 (6 h), igual dos dois
+            # lados: é o espelhamento que faz o anel ler como um objeto
+            # respirando em vez de um gráfico enrolado num círculo.
+            t = abs(((2 * math.pi * k / n) + math.pi) % (2 * math.pi)
+                    - math.pi) / math.pi
+            f = t * (nb - 1)
+            i0 = int(f)
+            i1 = min(nb - 1, i0 + 1)
+            v = float(spec[i0]) + (float(spec[i1]) - float(spec[i0])) * (f - i0)
+            # Colado no aro, não flutuando em volta: a onda é pequena de
+            # propósito. Com muita amplitude o anel perde a circunferência e
+            # o disco deixa de ter silhueta — vira uma mancha com contorno.
+            r = rm * (0.99 + 0.075 * v * (0.45 + 0.55 * min(1.0, level)))
+            pts.append((c + math.cos(a) * r, c + math.sin(a) * r))
+        # Três passadas: larga e fraca por fora, fina e forte no meio. É o
+        # jeito barato de um traço virar LUZ em vez de contorno vetorial —
+        # sem desfoque, que a esta altura custaria o quadro inteiro.
+        base = min(1.0, level)
+        for larg, alfa in ((5, 22), (3, 55), (1, 150)):
+            pygame.draw.lines(aro, (*T.AMBER, int(alfa * (0.35 + 0.65 * base))),
+                              True, pts, larg)
+        s.blit(aro, (cr.centerx - c, cr.centery - c))
 
     def _groove(self, s, rect, frac, wave=None):
         """Barra de progresso como sulco — e o sulco desenha a música.
@@ -1105,6 +1138,35 @@ class StackScreen(Screen):
             self.app.stack_save()
         elif ev.key == pygame.K_t:
             self.app.stack_tonight()
+        elif ev.key == pygame.K_e:
+            # Embaralhar a PILHA é a coisa física: você tira os discos do
+            # móvel e reencosta em outra ordem. Não toca em nada nem começa
+            # nada — a pilha continua sendo um compromisso que se cumpre um
+            # disco de cada vez, e a ordem é a única coisa que muda.
+            #
+            # Não é o [s] da AGORA: aquele embaralha as FAIXAS do que já está
+            # tocando, e este a ordem dos DISCOS que ainda não foram postos.
+            if len(st) > 1:
+                antes = [i["folder"] for i in st]
+                for _ in range(8):
+                    random.shuffle(st)
+                    if [i["folder"] for i in st] != antes:
+                        break
+                self.sel = 0
+                self.app.stack_save()
+                self.app.toast("pilha embaralhada")
+            else:
+                self.app.toast("um disco só: não há o que embaralhar")
+        elif ev.key in (pygame.K_LEFT, pygame.K_h, pygame.K_RIGHT,
+                        pygame.K_l):
+            # Sobe e desce o disco na pilha. A ordem da pilha é a ordem da
+            # noite, e mudá-la era coisa de esvaziar e empilhar de novo.
+            sobe = ev.key in (pygame.K_LEFT, pygame.K_h)
+            novo_i = self.sel - 1 if sobe else self.sel + 1
+            if 0 <= novo_i < len(st):
+                st[self.sel], st[novo_i] = st[novo_i], st[self.sel]
+                self.sel = novo_i
+                self.app.stack_save()
         else:
             return False
         return True
@@ -1141,6 +1203,7 @@ class StackScreen(Screen):
             T.text(s, f"{int(total)} min de disco encostado no móvel",
                    (x, y + 8), 19, T.TEXT_FAINT)
         self.app.hint(s, r, "[enter] põe este e tira da pilha   [x] descarta   "
+                            "[e] embaralha   [←][→] muda de lugar   "
                             "[t] monta uma noite")
 
 

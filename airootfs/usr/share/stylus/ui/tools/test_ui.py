@@ -132,6 +132,8 @@ def main():
               pygame.K_n, pygame.K_p, pygame.K_SLASH, pygame.K_DELETE,
               pygame.K_BACKSPACE, pygame.K_PAGEUP, pygame.K_PAGEDOWN,
               pygame.K_HOME, pygame.K_END,
+              # `e` embaralha a pilha.
+              pygame.K_e,
               # `d` baixa na loja do Qobuz e `c` abre o formulário de conta.
               # Só entraram na lista depois que o Job e o `rodar` viraram de
               # mentira: antes, apertar `d` aqui teria começado um download de
@@ -365,6 +367,64 @@ def main():
                     ok("'a' limpou o filtro")
     except Exception:                                       # noqa: BLE001
         bad("artista", traceback.format_exc())
+
+    secao("a pilha embaralha e muda de ordem")
+    # A pilha é a ordem da NOITE, e mudá-la era coisa de esvaziar e empilhar
+    # tudo de novo. Duas teclas resolvem: [e] embaralha, ←/→ sobe e desce o
+    # disco. E o mesmo cuidado das outras duas teclas desta leva — a de
+    # embaralhar tem que MUDAR alguma coisa, não só dizer que mudou.
+    try:
+        pilha = next(s for s in app.screens if s.name == "A PILHA")
+        i_p = app.screens.index(pilha)
+        app._goto(i_p)
+        app.stack = [{"folder": "/f/%d" % i, "name": "D%d" % i,
+                      "artist": "A%d" % i, "cover": "", "mins": 40}
+                     for i in range(6)]
+        pilha.sel = 0
+
+        def tk(k):
+            pilha.key(pygame.event.Event(pygame.KEYDOWN, key=k, unicode="",
+                                         mod=0))
+
+        antes = [i["folder"] for i in app.stack]
+        tk(pygame.K_e)
+        depois = [i["folder"] for i in app.stack]
+        if sorted(depois) != sorted(antes):
+            bad("embaralhar a pilha perdeu ou inventou disco",
+                "%d viraram %d" % (len(antes), len(depois)))
+        elif depois == antes:
+            bad("[e] não mudou a ordem da pilha")
+        else:
+            ok("[e] embaralha os %d discos sem perder nenhum" % len(depois))
+
+        # ←/→ trocam de lugar, e a seleção ANDA JUNTO com o disco: mover o
+        # disco e ficar com o cursor parado em cima do vizinho é o tipo de
+        # controle que faz a pessoa mover duas vezes sem querer.
+        pilha.sel = 2
+        alvo = app.stack[2]["folder"]
+        tk(pygame.K_LEFT)
+        if app.stack[1]["folder"] != alvo or pilha.sel != 1:
+            bad("← não subiu o disco (ou o cursor não foi junto)",
+                "sel=%d" % pilha.sel)
+        else:
+            tk(pygame.K_RIGHT)
+            if app.stack[2]["folder"] != alvo or pilha.sel != 2:
+                bad("→ não desceu o disco de volta")
+            else:
+                ok("←/→ movem o disco e levam o cursor junto")
+
+        # Nas pontas não anda para fora — e não estoura.
+        pilha.sel = 0
+        tk(pygame.K_LEFT)
+        pilha.sel = len(app.stack) - 1
+        tk(pygame.K_RIGHT)
+        if len(app.stack) != 6:
+            bad("mover na ponta mexeu no tamanho da pilha")
+        else:
+            ok("nas pontas, ←/→ não fazem nada")
+        app.stack = []
+    except Exception:                                       # noqa: BLE001
+        bad("a pilha", traceback.format_exc())
 
     secao("embaralhar e repetir falam com o tocador")
     # POR QUE ISTO EXISTE
