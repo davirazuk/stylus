@@ -929,6 +929,105 @@ elif (( ! FAST )); then
     else bad "o instalador escolheria o que não existe:"; echo "$ruins" | sed 's/^/      /'; fi
 fi
 
+# ── os dois terminais são o mesmo terminal ────────────────────────────────
+# **Sintoma:** o STYLUS tem dois terminais — o alacritty no i3 e o Konsole no
+# KDE — e eles tinham paletas DIFERENTES. O do i3 usava as cores do arquivo
+# `palette`; o do KDE usava um esquema próprio, com vermelho 200,80,80 onde a
+# paleta diz 238,122,130 e azul 0,102,204 onde ela diz 91,206,250.
+#
+# A conferência da paleta logo acima não pegava: ela varre o /etc/skel e
+# compara HEXADECIMAL, e este esquema mora dentro de um heredoc num script do
+# /usr/local/bin escrito em R,G,B decimal. Dois formatos e dois lugares é
+# exatamente onde a deriva se esconde.
+sec "o Konsole e o alacritty têm as mesmas cores"
+difere=$(python3 - <<'TERMEOF'
+import re, pathlib
+
+ala = pathlib.Path("airootfs/etc/skel/.config/alacritty/alacritty.toml").read_text()
+kde = pathlib.Path("airootfs/usr/local/bin/stylus-switch-kde").read_text()
+
+
+def hexa(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def bloco(texto, nome):
+    m = re.search(r"^\[colors\.%s\]\n((?:\w+\s*=.*\n)+)" % nome, texto, re.M)
+    return dict(re.findall(r"(\w+)\s*=\s*\"(#[0-9a-fA-F]{6})\"", m.group(1)))
+
+
+prim = bloco(ala, "primary")
+nor = bloco(ala, "normal")
+bri = bloco(ala, "bright")
+
+# O esquema do Konsole, de dentro do heredoc.
+esq = {}
+for sec_, cor in re.findall(r"^\[(\w+)\]\nColor=(\d+,\d+,\d+)$", kde, re.M):
+    esq[sec_] = tuple(int(v) for v in cor.split(","))
+
+ordem = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+esperado = {"Background": prim["background"], "Foreground": prim["foreground"]}
+for i, nome in enumerate(ordem):
+    esperado["Color%d" % i] = nor[nome]
+    esperado["Color%dIntense" % i] = bri[nome]
+
+for chave in sorted(esperado, key=lambda k: (len(k), k)):
+    quer = hexa(esperado[chave])
+    tem = esq.get(chave)
+    if tem is None:
+        print("%s: o Konsole não define" % chave)
+    elif tem != quer:
+        print("%s: alacritty=%s Konsole=%s"
+              % (chave, ",".join(str(v) for v in quer),
+                 ",".join(str(v) for v in tem)))
+TERMEOF
+)
+if [[ -z $difere ]]; then
+    ok "as 18 cores do Konsole são as do alacritty"
+else
+    bad "os dois terminais do sistema discordam:"
+    printf '%s\n' "$difere" | sed 's/^/      /'
+fi
+
+# ── módulo de barra escrito e nunca desenhado ─────────────────────────────
+# **Sintoma:** nenhum, e é sempre esse o sintoma desta família.
+#
+# O `[module/webdav]` estava escrito, tinha script próprio, acendia em verde
+# quando o celular estava montado e dizia quantas pastas vieram — e não
+# aparecia em NENHUMA das três linhas `modules-*`. A barra nunca o desenhou.
+# Quem rodava `stylus webdav` não tinha, na tela, nenhuma confirmação de que
+# tinha dado certo; o `[module/xwindow]` estava no mesmo estado.
+#
+# É a mesma família do `stylus-welcome` que o i3 abria e não existia: as duas
+# metades escritas, o fio entre elas faltando. Ler um arquivo por vez não
+# pega — o defeito só existe na relação entre as duas listas.
+sec "toda peça da barra é desenhada"
+sobrando=$(python3 - <<'BAREOF'
+import re, pathlib
+cfg = pathlib.Path("airootfs/etc/skel/.config/polybar/config.ini")
+texto = cfg.read_text(encoding="utf-8")
+definidos = set(re.findall(r"^\[module/([\w-]+)\]", texto, re.M))
+usados = set()
+for ln in re.findall(r"^modules-[\w-]+\s*=(.*)$", texto, re.M):
+    usados.update(ln.split())
+# `sep-*` são espaçadores; existir sem ser usado ali seria o mesmo defeito,
+# então eles NÃO são exceção. A exceção seria um módulo herdado por outra
+# barra, e não há outra barra neste arquivo.
+for m in sorted(definidos - usados):
+    print(m)
+falta = sorted(usados - definidos)
+for m in falta:
+    print("!" + m)
+BAREOF
+)
+if [[ -z $sobrando ]]; then
+    ok "todo [module/…] da polybar está numa linha modules-*"
+else
+    bad "a polybar tem peça escrita e não desenhada (ou o contrário):"
+    printf '%s\n' "$sobrando" | sed 's/^!/      NÃO EXISTE: /; s/^\([^ ]\)/      nunca desenhado: \1/'
+fi
+
 # ── o que o --help escreve é texto que a pessoa lê ────────────────────────
 # A regra do projeto é: texto que o usuário vê é em português; comentário
 # acompanha o arquivo em que está. O docstring de um módulo é as DUAS coisas

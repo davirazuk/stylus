@@ -214,15 +214,24 @@ cat > "$C/plasmarc" <<'EOF'
 name=Breeze Dark
 EOF
 
-mkdir -p "$C/gtk-3.0" "$C/gtk-4.0"
-cat > "$C/gtk-3.0/settings.ini" <<'EOF'
-[Settings]
-gtk-theme-name=adw-gtk3-dark
-gtk-icon-theme-name=Papirus-Dark
-gtk-cursor-theme-name=Adwaita
-gtk-font-name=Noto Sans 11
-EOF
-cp "$C/gtk-3.0/settings.ini" "$C/gtk-4.0/settings.ini"
+# O GTK vem do /etc/skel, não daqui.
+#
+# **Sintoma:** trocar para o KDE mudava o tamanho da letra dos aplicativos
+# GTK e apagava o `gtk-application-prefer-dark-theme=1`. Este bloco escrevia
+# uma SEGUNDA versão das mesmas configurações — Noto Sans 11 em vez de 10,
+# sem o modo escuro, sem o tamanho do cursor — por cima da do /etc/skel, e
+# ainda copiava o gtk-3.0 inteiro para o gtk-4.0 (que não lê
+# `gtk-theme-name`). Duas cópias à mão da mesma coisa derivam; é a mesma
+# lição do arquivo `palette`.
+#
+# E não sobrescreve o que já existe: quem mexeu no seu GTK mexeu de
+# propósito, e trocar de área de trabalho não é permissão para desfazer.
+for _g in gtk-3.0 gtk-4.0; do
+    mkdir -p "$C/$_g"
+    if [[ ! -f $C/$_g/settings.ini && -f /etc/skel/.config/$_g/settings.ini ]]; then
+        cp /etc/skel/.config/"$_g"/settings.ini "$C/$_g/settings.ini"
+    fi
+done
 
 for ver in qt5ct qt6ct; do
     mkdir -p "$C/$ver"
@@ -260,47 +269,72 @@ UseCustomFont=true
 HistoryMode=2
 EOF
 
+# As cores do Konsole são as MESMAS do alacritty, e as duas vêm do
+# /usr/share/stylus/palette.
+#
+# **Sintoma:** o STYLUS tinha dois terminais com paletas diferentes. O do i3
+# (alacritty) usava a paleta; este usava um esquema próprio que ninguém sabe
+# de onde veio — vermelho 200,80,80 onde a paleta diz 238,122,130, verde
+# 0,212,170 onde ela diz 126,217,158, azul 0,102,204 onde ela diz 91,206,250,
+# texto 204,208,224 onde ela diz 232,236,245. Ninguém vê isso comparando um
+# arquivo; vê-se abrindo os dois terminais lado a lado, e aí o sistema parece
+# montado de pedaços de origens diferentes — que é o defeito inteiro que o
+# arquivo `palette` existe para não deixar acontecer.
+#
+# O mapeamento ANSI é o do alacritty, de propósito e não por engano: verde é
+# o lavanda e vermelho é o rosa, porque a §5.5 diz que o âmbar é a ÚNICA cor
+# viva e um `ls` cheio de verde-fosforescente competiria com ele.
+#
+# E `Color8..15` NÃO são chaves do Konsole — as claras se chamam
+# `Color0Intense`. As oito que estavam escritas ali nunca foram lidas.
 cat > "$C/konsole/Stylus.colorscheme" <<'EOF'
+[General]
+Description=STYLUS Dark
+Opacity=0.92
+Blur=true
+
 [Background]
 Color=7,8,11
+[BackgroundIntense]
+Color=16,18,25
 [Foreground]
-Color=204,208,224
+Color=232,236,245
+[ForegroundIntense]
+Color=232,236,245
+
 [Color0]
-Color=26,29,36
+Color=26,30,40
 [Color1]
-Color=200,80,80
+Color=245,169,184
 [Color2]
-Color=0,212,170
+Color=183,160,255
 [Color3]
-Color=220,180,60
+Color=240,160,48
 [Color4]
-Color=0,102,204
+Color=91,206,250
 [Color5]
-Color=180,100,220
+Color=245,169,184
 [Color6]
-Color=0,180,180
+Color=127,215,255
 [Color7]
-Color=204,208,224
-[Color8]
-Color=61,65,80
-[Color9]
-Color=220,100,100
-[Color10]
-Color=0,230,190
-[Color11]
-Color=240,200,80
-[Color12]
-Color=0,120,230
-[Color13]
-Color=200,120,240
-[Color14]
-Color=0,200,200
-[Color15]
-Color=255,255,255
-[General]
-Description=Stylus Dark
-Opacity=0.95
-Blur=true
+Color=138,149,170
+
+[Color0Intense]
+Color=74,82,96
+[Color1Intense]
+Color=245,169,184
+[Color2Intense]
+Color=183,160,255
+[Color3Intense]
+Color=240,160,48
+[Color4Intense]
+Color=91,206,250
+[Color5Intense]
+Color=245,169,184
+[Color6Intense]
+Color=127,215,255
+[Color7Intense]
+Color=138,149,170
 EOF
 
 # ── 8. Autostart: tema e wallpaper ─────────────────────────────────────
