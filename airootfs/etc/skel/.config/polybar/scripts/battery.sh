@@ -21,7 +21,7 @@ cap=$(cat "$bat/capacity" 2>/dev/null) || exit 0
 status=$(cat "$bat/status" 2>/dev/null)
 
 # along with everything else: accent-2, then yellow, then red.
-colour="#5bcefa"
+colour="#768094"
 
 case "$status" in
     Charging) icon="󰂄" ;;
@@ -48,8 +48,8 @@ esac
 # sign. Nothing follows in this module, so neither branch emits a closing
 # colour tag; putting a `%{F…}` immediately after a literal `%` is how this
 # script once ended up printing "77%%" in the bar.
-if [ "$colour" = "#5bcefa" ]; then
-    printf '%%{F#5bcefa}%s%%{F#768094} %s%%\n' "$icon" "$cap"
+if [ "$colour" = "#768094" ]; then
+    printf '%%{F#768094}%s%%{F#8a95aa} %s%%\n' "$icon" "$cap"
 else
     printf '%%{F%s}%s %s%%\n' "$colour" "$icon" "$cap"
 fi

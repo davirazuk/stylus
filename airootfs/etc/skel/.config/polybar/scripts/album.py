@@ -26,7 +26,12 @@ try:
 except Exception:
     sys.exit(0)
 
-ACCENT = "#5bcefa"
+# O lado do disco é a única coisa VIVA nesta barra, e por isso é âmbar — a
+# mesma cor com que a AGORA escreve "LADO A". Era azul (#5bcefa), que na
+# barra era também a cor da rede, do bluetooth, da bateria, do perfil de
+# energia e das notificações: tudo da mesma cor viva não destaca nada, e ao
+# lado da tela cheia (preta com âmbar) a barra parecia de outro sistema.
+ACCENT = "#f0a030"
 DIM = "#768094"
 POLL = 5.0
 

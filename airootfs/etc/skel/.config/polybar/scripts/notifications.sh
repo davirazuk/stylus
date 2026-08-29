@@ -49,7 +49,7 @@ label() {
     fi
 
     if (( count )); then
-        printf '%%{F#5bcefa}%s%%{F#768094} %s\n' "$ICON_BELL" "$count"
+        printf '%%{F#768094}%s%%{F#8a95aa} %s\n' "$ICON_BELL" "$count"
     else
         # Nothing waiting: the bell in the dim colour, so the click target is
         # still there without drawing attention to itself.

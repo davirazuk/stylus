@@ -74,7 +74,7 @@ render() {
     # cutting mid-character would leave a broken glyph in the bar.
     (( ${#text} > MAX )) && text="${text:0:MAX-1}…"
 
-    printf '%%{F#5bcefa}%s%%{F#768094} %s\n' "$icon" "$text"
+    printf '%%{F#f0a030}%s%%{F#8a95aa} %s\n' "$icon" "$text"
 }
 
 # --follow keeps running across players starting and stopping, and prints a

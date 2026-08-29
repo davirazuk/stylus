@@ -44,7 +44,9 @@ SYNC_EVERY = 4.0       # how often the player is actually asked anything
 # sempre.
 MAX_CHARS = 32
 
-ACCENT = "#5bcefa"
+# A letra é TEXTO, não estado: ela não precisa de cor viva para ser lida, e
+# na barra a cor viva agora quer dizer "o disco". Era azul.
+ACCENT = "#8a95aa"
 DIM = "#768094"
 # TEXT_DIM da paleta. Era #a8b0bc — um quarto cinza, entre o TEXT_DIM e o
 # TEXT, que não existe em lugar nenhum do resto do sistema.

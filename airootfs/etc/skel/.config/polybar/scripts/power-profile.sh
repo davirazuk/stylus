@@ -57,7 +57,7 @@ icon_for() {
 
 # For the bar only.
 label_for() {
-    printf '%%{F#5bcefa}%s%%{F#768094} %s' "$(icon_for "$1")" "$(name_for "$1")"
+    printf '%%{F#768094}%s%%{F#8a95aa} %s' "$(icon_for "$1")" "$(name_for "$1")"
 }
 
 current_profile() {
