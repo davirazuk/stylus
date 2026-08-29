@@ -220,14 +220,20 @@ montar
 PROMPT=estante
 while :; do
     escolha=$(grade "$PROMPT"); rc=$?
+    # TODOS os códigos das teclas custom, e o 14 é o que faltava: o rofi
+    # devolve 9+N para o -kb-custom-N, o Alt+s é o custom-5, e sem o 14 nesta
+    # lista ele caía no `*) exit 0`. Ou seja: a tecla que toca uma playlist
+    # SORTEADA — anunciada no cabeçalho deste arquivo — apenas fechava a
+    # estante, e o recado "só playlist se sorteia", lá embaixo, nunca chegou
+    # a ser escrito na tela de ninguém.
     case $rc in
-        0|10|11|12|13) ;;
+        0|10|11|12|13|14) ;;
         *) exit 0 ;;
     esac
     # Alt+r: refaz os dois índices e volta para a grade.
     if (( rc == 13 )); then
         CACHE_Q="$HOME/.cache/stylus/shelf-qobuz.tsv"
-CACHE_L="$HOME/.cache/stylus/shelf-listas.tsv"
+        CACHE_L="$HOME/.cache/stylus/shelf-listas.tsv"
         indexar_local 1; indexar_qobuz || true
         montar; PROMPT=estante; continue
     fi

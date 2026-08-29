@@ -3541,6 +3541,69 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "toda tecla que o rofi anuncia tem um destino"
+# **Sintoma:** o `Alt+s` da estante — tocar a playlist do Qobuz em ordem
+# SORTEADA, anunciada no cabeçalho do próprio arquivo — apenas FECHAVA a
+# estante. O rofi devolve 9+N para o `-kb-custom-N`, o Alt+s é o custom-5, e o
+# `case` que filtra os códigos ia só até o 13: o 14 caía no `*) exit 0`. O
+# recado "só playlist se sorteia", escrito logo abaixo, nunca apareceu na tela
+# de ninguém.
+#
+# É a família do módulo da polybar que não estava em `modules-*`: a peça
+# existe, está certa, e a lista que a chama não a conhece.
+saida=$(python3 - <<'ROFIEOF' 2>&1
+import os
+import re
+falhas = []
+for base in ("airootfs/usr/local/bin", "airootfs/etc/skel/.config/rofi"):
+    for d, _s, fs in os.walk(base):
+        for nome in fs:
+            cam = os.path.join(d, nome)
+            try:
+                with open(cam, encoding="utf-8", errors="replace") as fh:
+                    txt = fh.read()
+            except OSError:
+                continue
+            custom = {int(m) for m in re.findall(r"-kb-custom-(\d+)", txt)}
+            if not custom:
+                continue
+            codigos = {9 + n for n in custom}
+            # O que interessa é o FILTRO, não o tratamento: quem tem um
+            # `case $rc in 0|10|…) ;; *) exit` decide ali quais códigos
+            # sobrevivem, e um código de fora morre antes de chegar ao
+            # `(( rc == N ))` que o trataria — que foi exatamente o defeito.
+            # Se o arquivo tem esse filtro, ele é a lista que vale.
+            passa, tem_filtro = set(), False
+            for ln in txt.splitlines():
+                if ln.lstrip().startswith("#"):
+                    continue
+                if re.match(r"\s*[\d|]+\)\s*;;\s*$", ln):
+                    tem_filtro = True
+                    for m in re.findall(r"\d+", ln.split(")")[0]):
+                        passa.add(int(m))
+            if not tem_filtro:
+                for ln in txt.splitlines():
+                    if ln.lstrip().startswith("#"):
+                        continue
+                    for m in re.findall(r"rc\s*==\s*(\d+)", ln):
+                        passa.add(int(m))
+            faltam = sorted(codigos - passa)
+            if faltam:
+                falhas.append("%s: %s (custom-%s)"
+                              % (cam, faltam,
+                                 ", ".join(str(c - 9) for c in faltam)))
+if falhas:
+    print("ERRO " + " | ".join(falhas))
+else:
+    print("OK todo -kb-custom tem o código de saída tratado")
+ROFIEOF
+)
+case "$saida" in
+    OK*) ok "${saida#OK }" ;;
+    *)   bad "tecla do rofi sem destino:"
+         printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
