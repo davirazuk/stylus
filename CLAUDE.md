@@ -353,6 +353,49 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   `test_ritual.py` ficaram de fora de tudo por precisarem de um `--album`
   que num contêiner não existe. O `check.sh` agora monta oito WAVs de
   silêncio com o módulo `wave` e roda.
+- **Uma forma escolhida a dedo prova o caso escolhido a dedo.** O teste
+  cobria "90 min → 4 lados" e passava verde enquanto um disco de 90 minutos
+  em dezoito faixas de cinco saía com CINCO lados: o teste usa faixas de
+  3min45, e a granularidade mais fina escondia o defeito. Varra a GRADE (de
+  20 a 130 minutos × faixas de 2 a 9) e o defeito aparece na primeira volta.
+  Vale para qualquer coisa com forma: resolução de tela, número de faixas,
+  tamanho de coleção.
+- **A mesma FRASE escrita em três telas deriva igual às cores.** "LADO A
+  acabou — vire o disco" era escrito pela notificação, pelo deck e pelo aviso
+  de tela cheia, e os três perguntavam "este é o último lado?". Num LP de
+  dois lados isso acerta por acidente; num DUPLO, o fim do lado B pede para
+  TROCAR de disco (você levanta e vai até a estante) e os três mandavam
+  virar. A frase mora no `Album.gesto_do_lado`, junto dos lados. E note a
+  condição que denuncia: `if ultimo and i == len(sides)-1` — a mesma coisa
+  escrita duas vezes é o rastro de quem não sabia o que queria perguntar.
+- **Teste com objeto de mentira passa por cima do caminho de verdade.** Ao
+  mover uma decisão para o `vinyl.Album`, os dois testes que a cobriam
+  continuaram com os seus fakes sem o método novo, caíram na reserva do
+  `try/except` e ficaram VERDES. Monte um `Album` de verdade com
+  `vinyl.Album.__new__(vinyl.Album)` — sem `__init__`, que iria ao disco.
+- **`{{duration(...)}}` e `{{position(...)}}` do playerctl FORMATAM.** Eles
+  devolvem "3:42" e "2:05", não números — e o código embaixo testava
+  `isdigit()`, que dá falso, e caía num zero silencioso. Efeito: a duração
+  era sempre 0, o limiar de scrobble caía nos 4 minutos fixos e **nenhuma
+  música de menos de quatro minutos era scroblada, nunca**. Peça
+  `{{mpris:length}}` cru (microssegundos) e `playerctl position` sem formato.
+- **Relógio de parede não é tempo de escuta.** O scrobbler contava
+  `time.time() - track_start`, então pausar não PARAVA o contador: almoço com
+  a música pausada scroblava a faixa inteira. A conta é sobre a AGULHA —
+  quanto a posição andou entre duas voltas do laço, e só quando o avanço é
+  plausível (busca para frente e para trás não contam).
+- **Unidade em `~/.config/systemd/user` com `[Install]` nunca sobe sozinha.**
+  O `WantedBy` só vale depois de um `systemctl --user enable`, e nada chamava
+  isso: o scrobbler e o botão do fone existiam e NUNCA rodaram. Pior, o lugar
+  estava errado de qualquer jeito — o `sync.sh` preserva o `~/.config`, então
+  unidade nova nunca alcança quem já instalou. Vigia novo vai no
+  `stylus-fundo`, com uma guarda para não subir onde não tem o que fazer.
+- **Quantas listas de extensão de áudio existem?** Eram SEIS, e discordavam:
+  o vinyl tinha `.wma` e não `.shn`, o `stylus-audio` `.ape` e não `.shn`, e
+  quatro ferramentas paravam em `.flac` e `.mp3`. Numa coleção em ALAC ou
+  Opus o `stylus covers`, o `stylus suggest` e o gerador de playlist não
+  achavam faixa nenhuma — e diziam que estava tudo bem. A resposta é uma só:
+  `_raiz.audio_ext()`, que pergunta ao `vinyl.AUDIO_EXT`.
 - **Folga fixa entre dois textos na mesma linha sempre quebra na máquina do
   outro.** O `- 300` reservado para o valor à direita não cabia o valor mais
   largo, e o nome do aparelho entrava por cima — só em quem tem placa de nome
@@ -537,6 +580,27 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   achou de cara uma divisão por zero no rastro do sulco (`passos` valia 0 e
   o laço dividia por ele). Custa nada e cobre os três momentos em que a
   agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
+
+### Sétima leva (bugs de verdade, achados variando as entradas)
+- **90 minutos ainda davam CINCO lados** e uma faixa de uma hora dava "DISCO
+  2 · LADO A". Ver as lições na §4.
+- **O aviso do fim do lado mandava a coisa errada num disco duplo**, nas três
+  telas que o dizem.
+- **Nenhuma música de menos de 4 minutos era scroblada, nunca**, e pausar não
+  parava o contador. O `get_position`, que responderia isso, existia e nunca
+  era chamado.
+- **O scrobbler e o botão do fone nunca subiram** na máquina de ninguém.
+- **Com o Qobuz tocando, o módulo do disco na barra ficava em branco** — o
+  `playing_path` recusava o endereço com um `os.path.isfile`, e o
+  `vinyl.resolve_album` trata `http(s)://` desde sempre.
+- **As playlists do Qobuz tinham o mesmo teto de 100 dos favoritos**, escrito
+  na linha de baixo do mesmo arquivo.
+- **Seis listas de extensão de áudio**, e o extrator de capas só lia FLAC e
+  MP3 (nem abria um .m4a). Junto: o `integrate_album` perguntava "sobrou
+  música na origem?" logo antes de um `rmtree` com uma lista sem `.aac`.
+- Conferências novas: função órfã, unidade nunca ligada, lista de extensão à
+  mão, capa em todo formato, o disco da rede na barra, o scrobble, o gesto
+  do fim do lado, e as playlists do Qobuz.
 
 ### Quinta leva (o que estava escrito e ninguém via)
 - **Duas polybars, uma paleta velha, um terminal que não existe.** Ver as
