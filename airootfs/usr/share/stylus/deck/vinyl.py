@@ -2126,7 +2126,19 @@ class Deck:
         return self.phase not in (STOP,)
 
     def stylus_down(self):
-        return self.phase in (PLAY,)
+        """A agulha está ENCOSTADA no sulco?
+
+        Não é a mesma pergunta que "a fase é PLAY": pausar levanta a alavanca
+        de cue (ver `update`), e durante a pausa a fase continua sendo PLAY
+        com a agulha no ar — que é justamente o gesto mais frequente do
+        aparelho.
+
+        Isto devolvia só `phase in (PLAY,)`, e ninguém a usava: o ritual.py
+        fazia a conta certa à mão, com o `arm_lift`. Duas respostas para a
+        mesma pergunta, e a errada de graça para quem encontrasse esta
+        primeiro.
+        """
+        return self.phase == PLAY and self.arm_lift() < 0.12
 
     def update(self, dt, playing):
         # A ALAVANCA DE CUE. `playing` chegava aqui e não era lido por

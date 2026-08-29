@@ -42,8 +42,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vinyl                                            # noqa: E402
 import theme as T                                       # noqa: E402
 import audio_live                                       # noqa: E402
-from model import (Playing, Shelf, Thumbs, ha_quanto,    # noqa: E402
-                   humano, relogio)
+from model import (THUMB_HI, Playing, Shelf, Thumbs,     # noqa: E402
+                   ha_quanto, humano, relogio)
 
 FPS = 60
 
@@ -3758,7 +3758,10 @@ class App:
 
         self.shelf = Shelf()
         self.thumbs = Thumbs()
-        self.thumbs_hi = Thumbs(px=640)
+        # THUMB_HI e não 640 escrito à mão: o model.py define os dois
+        # tamanhos e explica por que a AGORA precisa do grande. Dois lugares
+        # com o mesmo número é um lugar a mais para eles discordarem.
+        self.thumbs_hi = Thumbs(px=THUMB_HI)
         self.playing = Playing()
         self.shelf.load()
 

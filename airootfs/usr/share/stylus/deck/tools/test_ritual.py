@@ -576,6 +576,20 @@ def main():
         # O título sai do ÁLBUM e não do tocador: numa playlist do Qobuz o
         # manifesto diz "quem — o quê" e o mpv diz só "o quê", que numa lista
         # de artistas diferentes não diz nada.
+        # A agulha ENCOSTADA não é a mesma pergunta que "a fase é PLAY":
+        # pausar levanta a alavanca de cue e a fase continua sendo PLAY. O
+        # `stylus_down` respondia só pela fase e ninguém o usava — o ritual
+        # fazia a conta certa à mão. Duas respostas para a mesma pergunta.
+        d = vinyl.Deck()
+        d.phase = vinyl.PLAY
+        d.cue_ramp = 0.0
+        check("com a agulha no sulco, stylus_down é verdade", d.stylus_down())
+        d.cue_ramp = 1.0
+        check("pausado (cue no alto) ela NÃO está no sulco",
+              not d.stylus_down())
+        d.phase = vinyl.BREAK
+        check("na virada de lado também não", not d.stylus_down())
+
         check("e o nome vem do disco, não do tocador",
               cena.faixa_agora({"source": "mpv", "path": "/x/1.flac",
                                 "track_index": 0, "title": "outro nome"})
