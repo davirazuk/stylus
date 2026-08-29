@@ -325,6 +325,12 @@ class NowScreen(Screen):
     name = "AGORA"
     icon = "󰲸"
 
+    def __init__(self, app):
+        super().__init__(app)
+        # A volta do disco, acumulada. Ver o desenho: pausar pára o disco, e
+        # para parar é preciso guardar onde ele estava.
+        self._ang = None
+
     def key(self, ev):
         if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             # Abre O DECK no disco que JÁ está tocando, sem reiniciar nada: o
@@ -484,8 +490,19 @@ class NowScreen(Screen):
         # O reflexo que passa: o vinil é simétrico, e sem ele não se vê que
         # está girando. A velocidade dança com o som (e adormece na pausa); a
         # fase anda com o lado, para o reflexo não cair sempre no mesmo sulco.
-        t = time.time()
-        ang = (t * (0.25 + level * 1.4) + frac * 5.0) % (2 * math.pi)
+        # O ângulo ANDA; não é lido do relógio. Pausar tem que PARAR o
+        # disco — um toca-discos parado é a coisa mais visível que existe — e
+        # um ângulo calculado de `time.time()` não pára: ele salta para onde
+        # estaria quando a música volta, como se o disco tivesse girado
+        # sozinho no escuro. A fase inicial vem do `frac` para o reflexo não
+        # nascer sempre no mesmo sulco.
+        parado = bool((snap or {}).get("paused"))
+        if self._ang is None:
+            self._ang = (frac * 5.0) % (2 * math.pi)
+        if not parado:
+            dt_g = min(0.1, self.app.clock.get_time() / 1000.0)
+            self._ang = (self._ang + dt_g * (0.6 + level * 1.8)) % (2 * math.pi)
+        ang = self._ang
         # Reaproveitada, não alocada. Não é mais rápido — está medido no
         # T.rascunho — mas deixa de fazer quatro megabytes de lixo por quadro
         # para desenhar 46 linhas.

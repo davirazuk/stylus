@@ -531,6 +531,50 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("a pilha", traceback.format_exc())
 
+    secao("o disco pára quando a música pára")
+    # Um toca-discos parado é a coisa mais visível que existe. O ângulo do
+    # reflexo era lido de `time.time()`, e um ângulo lido do relógio não pára:
+    # ele salta para onde estaria quando a música volta, como se o disco
+    # tivesse girado sozinho no escuro.
+    try:
+        agora = next(s for s in app.screens if s.name == "AGORA")
+        app._goto(app.screens.index(agora))
+
+        class _Alb2:
+            folder, artist, name, year = "/x", "A", "B", ""
+            cover, plays, last_played, total = None, 1, 0, 400
+            tracks = [{"title": "t", "dur": 200}]
+            sides = [{"label": "SIDE A", "start": 0, "end": 400,
+                      "tracks": [0]}]
+
+        _al = _Alb2()
+        _antes = app.playing.where
+
+        def _gira(pausado, n=5):
+            app.playing.where = lambda: ({"paused": pausado}, _al,
+                                         _al.tracks[0], _al.sides[0],
+                                         100.0, 0.25)
+            vistos = []
+            for _ in range(n):
+                agora.draw(app.surf, corpo)
+                vistos.append(agora._ang)
+                app.clock.tick(60)
+            return vistos
+
+        try:
+            tocando = _gira(False)
+            pausado = _gira(True)
+        finally:
+            app.playing.where = _antes
+        if tocando[0] == tocando[-1]:
+            bad("o disco não gira enquanto toca")
+        elif pausado[0] != pausado[-1]:
+            bad("o disco continua girando com a música pausada")
+        else:
+            ok("gira tocando, pára pausado")
+    except Exception:                                       # noqa: BLE001
+        bad("a volta do disco", traceback.format_exc())
+
     secao("a pilha diz com o que você se comprometeu")
     # **Sintoma:** a PILHA soma `it.get("mins", 0)` para escrever "X min de
     # disco encostado no móvel" — e o item da estante NUNCA teve `mins`. O
