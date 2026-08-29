@@ -1381,7 +1381,12 @@ try:
                              "airootfs/usr/local/bin/stylus-side-watch"))
     sw = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sw)
-except Exception as e:                                   # noqa: BLE001
+except BaseException as e:                               # noqa: BLE001
+    # BaseException e não Exception: o stylus-side-watch responde a um vinyl
+    # ausente com `sys.exit(...)`, que levanta SystemExit — e SystemExit não
+    # é Exception. Com `except Exception` a saída escapava por cima do PULA,
+    # o stdout vinha vazio e a conferência ficava VERMELHA numa máquina que
+    # só não tem numpy (o contêiner da construção na nuvem, por exemplo).
     print("PULA %s" % e)
     raise SystemExit(0)
 
