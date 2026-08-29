@@ -593,9 +593,15 @@ def main():
         app._goto(app.screens.index(agora))
 
         # ── as fases, na ordem ────────────────────────────────────────────
+        # Os instantes vêm das CONSTANTES, não de números escolhidos aqui:
+        # as durações são as do vinyl.py (o deck e o lançador encenam a
+        # mesma cerimônia), e um teste com o relógio escrito à mão reprova
+        # quando alguém afina o ritual em vez de quando ele quebra.
+        _sp, _cu, _dr = agora.CER_SPIN, agora.CER_CUE, agora.CER_DROP
         _t = time.monotonic()
         vistas = []
-        for atraso in (0.0, 0.6, 1.4, 2.1, 5.0):
+        for atraso in (0.0, _sp * 0.5, _sp + _cu * 0.5,
+                       _sp + _cu + _dr * 0.5, _sp + _cu + _dr + 1.0):
             app.cerimonia_t0 = _t - atraso
             vistas.append(agora._cerimonia()[0])
         app.cerimonia_t0 = 0.0
@@ -749,7 +755,10 @@ def main():
         # estaria — que é onde este código erra. (Foi assim, com o `[f]`
         # apertado no meio de um `drop`, que apareceu uma divisão por zero
         # no rastro do sulco: `passos` valia 0 e o laço dividia por ele.)
-        _fases_cer = (0.0, 0.3, 1.5, 2.1)
+        _ns = next(s for s in app.screens if s.name == "AGORA")
+        _fases_cer = (0.0, _ns.CER_SPIN * 0.4,
+                      _ns.CER_SPIN + _ns.CER_CUE * 0.5,
+                      _ns.CER_SPIN + _ns.CER_CUE + _ns.CER_DROP * 0.4)
         quebras = []
         try:
             for _nome_estado, _onde_esta, _album in estados:

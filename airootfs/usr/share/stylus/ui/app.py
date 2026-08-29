@@ -718,11 +718,19 @@ class NowScreen(Screen):
                             + ("[D] deck sozinho: ligado" if self.app.auto_deck
                                else "[D] deck sozinho: desligado"))
 
-    # A cerimônia, em segundos. O prato leva um tempo para chegar aos 33
-    # (SPIN), a agulha fica um instante suspensa sobre a borda (CUE) e então
-    # desce (DROP). Os três juntos dão pouco mais de dois segundos: é uma
+    # A cerimônia, em segundos, VINDA DO DECK. O prato leva um tempo para
+    # chegar aos 33 (SPIN), a agulha fica suspensa sobre a borda (CUE) e
+    # então desce (DROP) — pouco mais de dois segundos ao todo: é uma
     # cerimônia, não uma espera.
-    CER_SPIN, CER_CUE, CER_DROP = 1.2, 0.7, 0.6
+    #
+    # Os números são os do `vinyl.py` de propósito, e não uns parecidos
+    # escritos aqui. É a MESMA cerimônia do mesmo sistema; duas cópias à mão
+    # do mesmo ritual derivam, e aí pôr um disco no deck e pôr um disco no
+    # lançador passam a ser dois gestos com durações diferentes — que é a
+    # deriva da paleta outra vez, em segundos em vez de hexadecimais.
+    CER_SPIN = getattr(vinyl, "SPINUP_T", 1.1)
+    CER_CUE = getattr(vinyl, "CUE_T", 1.05)
+    CER_DROP = getattr(vinyl, "DROP_T", 0.55)
 
     def _cerimonia(self):
         """(fase, f) — em que ponto da cerimônia estamos, e quanto dela já foi.

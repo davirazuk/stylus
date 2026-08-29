@@ -1102,6 +1102,33 @@ else
     printf '%s\n' "$ilegivel" "$ilegivel_kde" | grep -v '^$' | sed 's/^/      /'
 fi
 
+# ── a cerimônia é UMA só, nos dois lugares ────────────────────────────────
+# O deck e a tela cheia do lançador encenam o MESMO ritual — spinup → cue →
+# drop. As durações moram no `vinyl.py`, e o `app.py` as lê de lá em vez de
+# trazer três números parecidos escritos à mão. É a deriva da paleta outra
+# vez, em segundos no lugar de hexadecimais: pôr um disco no deck e pôr um
+# disco no lançador não podem virar dois gestos com durações diferentes.
+sec "o deck e o lançador encenam a mesma cerimônia"
+mesma=$(python3 - <<'CEREOF'
+import pathlib, re
+
+app = pathlib.Path("airootfs/usr/share/stylus/ui/app.py").read_text()
+for nome, cte in (("CER_SPIN", "SPINUP_T"), ("CER_CUE", "CUE_T"),
+                  ("CER_DROP", "DROP_T")):
+    m = re.search(r"^\s*%s\s*=\s*(.+)$" % nome, app, re.M)
+    if m is None:
+        print("%s sumiu do app.py" % nome)
+    elif cte not in m.group(1):
+        print("%s não vem do vinyl.%s: %s" % (nome, cte, m.group(1).strip()))
+CEREOF
+)
+if [[ -z $mesma ]]; then
+    ok "as 3 durações da cerimônia vêm do vinyl.py"
+else
+    bad "o lançador tem uma cerimônia própria:"
+    printf '%s\n' "$mesma" | sed 's/^/      /'
+fi
+
 # ── a lei do desenho do vinil, escrita em números ─────────────────────────
 # A §5.5 do CLAUDE.md diz que o disco é FÓSFORO e não plástico: preto frio no
 # corpo, âmbar como única cor viva. Ela já custou semanas, e o jeito de ela
