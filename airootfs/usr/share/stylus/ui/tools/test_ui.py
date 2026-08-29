@@ -729,6 +729,29 @@ def main():
         # que é contado uma vez, na varredura — o diário mostrava a escuta de
         # dois minutos atrás com um número ao lado que não a incluía, e que
         # só mudava quando a estante fosse varrida de novo.
+        # E a fileira de capas "OS QUE VOLTAM" depende desse mesmo número:
+        # ela filtra por `it.get("plays")`, então com todo mundo em zero ela
+        # não desenhava NADA — um bloco inteiro da tela sumia sem aviso, e a
+        # página parecia ter só metade do conteúdo.
+        import theme as _T2
+        _orig = _T2.text
+        vistos = []
+
+        def _espia(surf, txt, pos, size=20, colour=_T2.TEXT, bold=False,
+                   anchor="topleft", maxw=None):
+            vistos.append(str(txt))
+            return _orig(surf, txt, pos, size, colour, bold, anchor, maxw)
+
+        _T2.text = _espia
+        diario.page = 1
+        diario.draw(app.surf, corpo)
+        diario.page = 0
+        _T2.text = _orig
+        if "OS QUE VOLTAM" not in vistos:
+            bad("a fileira de capas dos discos que voltam não desenhou")
+        else:
+            ok("a fileira 'os que voltam' aparece quando há escuta")
+
         if diario.rows and diario.rows[0].get("plays") != 3:
             bad("o diário conta as escutas pela estante, não pelo registro",
                 "esperava 3, veio %s" % diario.rows[0].get("plays"))
