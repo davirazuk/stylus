@@ -1491,9 +1491,25 @@ def track_index_for(album, snap, cache=None):
 
     `cache` é uma lista de dois [caminho, índice] para não varrer as faixas a
     cada quadro; a busca em si é barata, mas 60 vezes por segundo não é.
+
+    ── e por que o caminho ganha do número TAMBÉM sob mpv ────────────────────
+    Havia um `if album is None or snap.get("source") == "mpv": return idx`
+    aqui, com a justificativa de que o lançador monta a lista com a mesma
+    `track_paths()` — então índice do mpv == índice do álbum, por construção.
+
+    Só que a lista do mpv pode ser REORDENADA depois de montada: o `[s]` da
+    tela cheia manda `playlist-shuffle`. A partir daí o `playlist-pos` é a
+    posição na lista embaralhada e não a faixa do disco, e tudo que se conta a
+    partir dele sai errado junto — o nome da faixa na AGORA, o LADO e o "vira
+    em 6 min", a agulha no sulco do deck, e o índice gravado na agulha.tsv
+    para retomar depois. O caminho não tem esse problema: ele é a faixa.
+
+    O número continua sendo a resposta quando o caminho não casa — disco que
+    vem pela rede depois de reassinado (o endereço muda), tocador que não
+    entrega caminho nenhum.
     """
     idx = snap.get("track_index", 0) or 0
-    if album is None or snap.get("source") == "mpv":
+    if album is None:
         return idx
     p = snap.get("path") or ""
     if p:

@@ -258,11 +258,22 @@ def main():
         check("e guarda no cache", cache == [p2, 2])
         check("o cache responde igual",
               vinyl.track_index_for(alb, mpris, cache) == 2)
-        # Sob mpv o número é autoridade: o lançador monta a lista com a mesma
-        # track_paths, então índice do mpv == índice do álbum.
-        check("sob mpv confia no número",
+        # Sob mpv o CAMINHO também ganha do número, e é isto que faz o
+        # embaralhar não estragar o resto da tela: `playlist-shuffle` reordena
+        # a lista, o `playlist-pos` passa a ser a posição na lista embaralhada
+        # e não a faixa do disco, e tudo que se conta a partir dele sai errado
+        # junto — nome da faixa, LADO, "vira em 6 min", a agulha no sulco, e o
+        # índice gravado para retomar depois.
+        check("sob mpv o caminho ganha do número (lista embaralhada)",
               vinyl.track_index_for(alb, {"source": "mpv", "path": p2,
-                                          "track_index": 7}, None) == 7)
+                                          "track_index": 7}, None) == 2)
+        # E o número continua sendo a resposta quando o caminho não casa: um
+        # disco da rede reassinado tem endereço novo, e aí o índice do mpv é
+        # a única coisa que sobra.
+        check("sem caminho que case, o número do mpv vale",
+              vinyl.track_index_for(alb, {"source": "mpv",
+                                          "path": "https://x.invalid/z.flac",
+                                          "track_index": 1}, None) == 1)
         check("caminho de fora do álbum não inventa faixa",
               vinyl.track_index_for(alb, {"source": "mpris", "path": "/x/y.flac",
                                           "track_index": 99}, None) == 0)
