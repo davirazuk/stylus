@@ -353,6 +353,16 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   `test_ritual.py` ficaram de fora de tudo por precisarem de um `--album`
   que num contêiner não existe. O `check.sh` agora monta oito WAVs de
   silêncio com o módulo `wave` e roda.
+- **Piso que não cabe não é piso, é vazamento com nome bonito.** A AGORA
+  tinha dois: 260 px para o disco e 180 para a coluna de texto. Juntos, mais
+  do que a largura de uma tela de 800 — e o bloco inteiro era desenhado para
+  FORA dela. Quando dois pisos dividem uma largura, um deles tem que ceder, e
+  quem cede é o DESENHO, não a informação.
+- **Teste que mede a tela com o prato VAZIO não mede a metade que tem
+  texto.** A conferência de colisão varria sete resoluções e passava verde
+  sobre um vazamento da AGORA, porque com nada tocando o `draw` sai cedo pelo
+  `_nothing`. Ela roda nos dois estados agora, e com nomes COMPRIDOS de
+  propósito: é o comprimento que revela folga fixa, não o nome curto do fake.
 - **Uma forma escolhida a dedo prova o caso escolhido a dedo.** O teste
   cobria "90 min → 4 lados" e passava verde enquanto um disco de 90 minutos
   em dezoito faixas de cinco saía com CINCO lados: o teste usa faixas de
@@ -580,6 +590,18 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   achou de cara uma divisão por zero no rastro do sulco (`passos` valia 0 e
   o laço dividia por ele). Custa nada e cobre os três momentos em que a
   agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
+
+### Oitava leva (o lançador em telas pequenas)
+- **Em 1024x600 — painel de carro, mini-PC, monitor velho — quatro telas
+  desenhavam fora da tela**: a fileira de ações dos JOGOS 60 px abaixo da
+  borda, o bloco inteiro da AGORA saindo pela direita em 800, o veredito do
+  SINAL por cima da linha de dicas, e o painel de saída da AJUSTES por cima
+  do rodapé. Tudo era número fixo: 120 px por fileira, 132 de passo, 560 de
+  coluna, 104 de altura de quadro.
+- **E o rodapé da AGORA cruzava com os ícones** de embaralhar/repetir/soneca,
+  que são desenhados encostados à direita quase na mesma linha.
+- O teste passou a varrer 800x600 e 1024x600, e nos DOIS estados (prato vazio
+  e disco no prato) — 11 seções × 7 resoluções × 2 estados.
 
 ### Sétima leva (bugs de verdade, achados variando as entradas)
 - **90 minutos ainda davam CINCO lados** e uma faixa de uma hora dava "DISCO
