@@ -134,14 +134,41 @@ def streams(dump):
     return out
 
 
-def playing_file():
-    """O arquivo que está tocando, via MPRIS, e a taxa REAL dele no disco."""
-    url = run(["playerctl", "metadata", "--format", "{{xesam:url}}"], timeout=12).strip()
+def _caminho_tocando():
+    """O arquivo que está tocando — o SOCKET do mpv primeiro, MPRIS depois.
+
+    Esta era a única pergunta deste comando que não passava pelo socket, e é
+    a pergunta central: sem o arquivo não há "no disco" nem "reamostrado", e
+    o comando terminava dizendo "ponha um disco e rode de novo" para quem
+    tinha acabado de pôr um. O deck e o lançador tocam com mpv, e o mpv só
+    aparece no playerctl quando o plugin mpv-mpris está carregado — ele está
+    nas listas de pacote, mas o socket é a fonte que não depende disso, e é a
+    mesma que a tela SINAL e o módulo da barra já usam.
+    """
+    if vinyl is not None:
+        try:
+            ipc = vinyl._MpvIPC()
+            if ipc.connect():
+                try:
+                    p = ipc.get("path") or ""
+                finally:
+                    ipc.close()
+                if p and os.path.isfile(p):
+                    return os.path.abspath(p)
+        except Exception:                                 # noqa: BLE001
+            pass
+    url = run(["playerctl", "metadata", "--format", "{{xesam:url}}"],
+              timeout=12).strip()
     if not url.startswith("file://"):
-        return None, 0, 0
+        return ""
     from urllib.parse import unquote
-    path = unquote(url[7:])
-    if not os.path.isfile(path):
+    return unquote(url[7:])
+
+
+def playing_file():
+    """(caminho, taxa, bits) do que está tocando, lidos do arquivo."""
+    path = _caminho_tocando()
+    if not path or not os.path.isfile(path):
         return None, 0, 0
     out = run(["ffprobe", "-v", "quiet", "-select_streams", "a:0",
                "-show_entries", "stream=sample_rate,bits_per_raw_sample,bits_per_sample",

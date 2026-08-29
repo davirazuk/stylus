@@ -27,9 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-CONF = os.path.join(
-    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
-    "stylus", "spotify.conf")
+CONF = os.path.expanduser("~/.config/stylus/spotify.conf")
 
 
 def responde(**campos):

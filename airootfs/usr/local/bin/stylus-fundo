@@ -59,7 +59,7 @@ de_pe() {
 # fazer é morrer no primeiro segundo e deixar erro no journal a cada login.
 tem_scrobble() {   # o last.fm só existe depois do `stylus-scrobble login`
     grep -q '"sk"' \
-        "${XDG_CONFIG_HOME:-$HOME/.config}/stylus/scrobble.json" 2>/dev/null
+        "$HOME/.config/stylus/scrobble.json" 2>/dev/null
 }
 tem_iem() {        # o fone com botão: o chip KTMicro, pelo par vendor:product
     grep -qi '31b2.*1132\|Vendor=31b2' /proc/bus/input/devices 2>/dev/null

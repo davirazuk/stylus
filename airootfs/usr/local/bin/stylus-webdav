@@ -30,7 +30,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/stylus"
+CONF_DIR="$HOME/.config/stylus"
 CONF="$CONF_DIR/webdav"
 # A estante NÃO segue o XDG_CONFIG_HOME, porque quem a lê não segue: o
 # vinyl.py, o `stylus library`, o first-run e o stylus-session escrevem

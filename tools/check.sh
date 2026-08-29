@@ -3041,6 +3041,123 @@ else
     printf '      %s\n' $fora
 fi
 
+sec "o caminho do sinal enxerga o tocador do sistema"
+# **Sintoma:** `stylus audio` respondia "nada tocando de um arquivo local
+# agora — ponha um disco e rode de novo" para quem tinha ACABADO de pôr um.
+# A pergunta central do comando (qual arquivo está tocando, para comparar a
+# taxa dele com a do grafo) era a única que não passava pelo socket do mpv:
+# ia por MPRIS, que só enxerga o mpv quando o plugin mpv-mpris está
+# carregado. É o mesmo defeito que o módulo do disco da barra teve.
+saida=$(python3 - <<'AUDIOEOF' 2>&1
+import importlib.machinery as im, importlib.util, os, sys, tempfile, traceback
+import types
+tmp = tempfile.mkdtemp()
+faixa = os.path.join(tmp, "01 faixa.flac")
+open(faixa, "w").close()
+
+chamou = []
+
+
+class IPC:
+    def connect(self):
+        return True
+
+    def get(self, prop):
+        chamou.append(prop)
+        return faixa if prop == "path" else None
+
+    def close(self):
+        pass
+
+
+fake = types.ModuleType("vinyl")
+fake.AUDIO_EXT = (".flac",)
+fake._MpvIPC = IPC
+sys.modules["vinyl"] = fake
+spec = importlib.util.spec_from_loader(
+    "sa", im.SourceFileLoader("sa", "airootfs/usr/local/bin/stylus-audio"))
+sa = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(sa)
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+try:
+    # Nenhum processo externo: se ele cair no playerctl, aparece aqui.
+    rodou = []
+    sa.run = lambda cmd, timeout=6: rodou.append(cmd) or ""
+    achou = sa._caminho_tocando()
+    if achou != faixa:
+        print("ERRO não achou pelo socket: %r" % achou)
+    elif rodou:
+        print("ERRO ainda perguntou ao %s" % rodou[0][0])
+    elif "path" not in chamou:
+        print("ERRO não perguntou `path` ao mpv")
+    else:
+        # E sem mpv o playerctl continua sendo a reserva.
+        fake._MpvIPC = lambda: types.SimpleNamespace(
+            connect=lambda: False, get=lambda p: None, close=lambda: None)
+        sa.run = lambda cmd, timeout=6: "file://" + faixa
+        if sa._caminho_tocando() != faixa:
+            print("ERRO sem mpv, o MPRIS deixou de ser a reserva")
+        else:
+            print("OK pelo socket do mpv, com o playerctl de reserva")
+except Exception:                                        # noqa: BLE001
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+AUDIOEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o stylus-audio aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o \`stylus audio\` não vê o que o sistema está tocando"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "a configuração do STYLUS mora num lugar só"
+# ~/.config/stylus, escrito assim. NÃO pelo XDG_CONFIG_HOME.
+#
+# Não é preferência: é que quem ESCREVE não o segue. O vinyl (a estante), o
+# stylus-mode, o stylus-wallpaper e o stylus-scrobble usam `~/.config`
+# literal; cinco leitores usavam a variável. Numa máquina que a define — e há
+# quem defina — o `stylus webdav` escrevia a estante num arquivo que ninguém
+# lê, o guarda do stylus-fundo não achava o scrobble.json e o scrobbler nunca
+# subia, e o stylus-kde-shortcuts não via o papel de parede escolhido e o
+# trocava por cima. É a mesma família das duas árvores da polybar: dois
+# lugares para a mesma coisa, e a metade que não é lida some em silêncio.
+achados=$(python3 - <<'XDGEOF'
+import os
+import re
+# A LINHA tem que falar das duas coisas: da variável e de uma pasta "stylus".
+# Casar pelo caminho do arquivo acusava o `first-run.sh` por causa do
+# user-dirs.dirs, que é arquivo do XDG e não nosso — e uma conferência que
+# reclama do que está certo é uma que se aprende a ignorar.
+alvo = re.compile(r"XDG_CONFIG_HOME")
+nosso = re.compile(r'["/]stylus["/]|"stylus"|, *"stylus"')
+for base in ("airootfs/usr/local/bin", "airootfs/usr/share/stylus"):
+    for d, _s, fs in os.walk(base):
+        if "__pycache__" in d:
+            continue
+        for nome in fs:
+            cam = os.path.join(d, nome)
+            try:
+                with open(cam, encoding="utf-8", errors="replace") as fh:
+                    linhas = fh.read().splitlines()
+            except OSError:
+                continue
+            for n, ln in enumerate(linhas, 1):
+                if ln.lstrip().startswith("#"):
+                    continue
+                if alvo.search(ln) and nosso.search(ln):
+                    print("%s:%d:%s" % (cam, n, ln.strip()[:90]))
+XDGEOF
+)
+if [[ -z $achados ]]; then
+    ok "nenhum caminho de configuração do STYLUS montado com XDG_CONFIG_HOME"
+else
+    bad "configuração do STYLUS por XDG_CONFIG_HOME (use \$HOME/.config/stylus):"
+    printf '%s\n' "$achados" | sed 's/^/      /'
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

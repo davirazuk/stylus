@@ -56,9 +56,7 @@ def credenciais():
     seg = os.environ.get("STYLUS_SPOTIFY_SECRET", "").strip()
     if cid and seg:
         return cid, seg
-    conf = os.path.join(os.environ.get("XDG_CONFIG_HOME",
-                                       os.path.expanduser("~/.config")),
-                        "stylus", "spotify.conf")
+    conf = os.path.expanduser("~/.config/stylus/spotify.conf")
     if os.path.exists(conf):
         cp = configparser.ConfigParser()
         try:

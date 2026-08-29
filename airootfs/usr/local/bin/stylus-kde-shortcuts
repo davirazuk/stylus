@@ -154,7 +154,7 @@ PLASMARC="$CONF/plasma-org.kde.plasma.desktop-appletsrc"
 #               troca de álbum.
 WALLPAPER="/usr/share/backgrounds/stylus/stylus.png"
 if [[ -f $WALLPAPER ]] \
-   && [[ ! -f ${XDG_CONFIG_HOME:-$HOME/.config}/stylus/wallpaper ]] \
+   && [[ ! -f $HOME/.config/stylus/wallpaper ]] \
    && command -v plasma-apply-wallpaperimage >/dev/null 2>&1 \
    && ninguem_escolheu "$PLASMARC" Image "$WALLPAPER" \
    && primeira_vez papel-de-parede; then
