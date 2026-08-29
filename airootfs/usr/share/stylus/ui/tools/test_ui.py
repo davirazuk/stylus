@@ -123,6 +123,53 @@ def main():
         ok(f"leu a estante ({len(app.shelf.items)} discos)")
 
     corpo = pygame.Rect(230, 0, app.W - 230, app.H)
+
+    def encher_as_lojas(app):
+        """AS DUAS LOJAS COM DISCO DENTRO.
+
+        Elas eram exercitadas VAZIAS: sem rede, `results` fica em [] e o
+        desenho para no "[/] procura um disco". A grade, que é a tela
+        inteira, não era medida nem apertada por ninguém — e é onde estavam
+        as duas colisões que esta chamada achou de cara (o nome do disco por
+        baixo da duração, na legenda da faixa e na barra do que está
+        tocando). Mesma lição da AGORA com o prato vazio.
+
+        Nomes compridos de propósito: é o comprimento que revela folga fixa.
+
+        Também LIMPA o que estiver aberto por cima (o painel de saída de um
+        comando, o cartão de examinar, o formulário de conta). Isso não é
+        arrumação: a varredura de teclado deixa esses três abertos, e eles
+        são desenhados POR CIMA do corpo de propósito — medir colisão de
+        texto com um deles no ar acusa como defeito o que é o desenho certo.
+        """
+        for tela in app.screens:
+            for campo in ("job", "entrada", "examing", "_setup"):
+                if hasattr(tela, campo):
+                    setattr(tela, campo, None)
+        disco = {
+            "id": "1", "display_title": "Um Disco De Nome Bastante Comprido",
+            "display_subtitle": "Um Artista De Nome Também Comprido",
+            "release_year": "1969", "tracks": 12, "quality": "24/192",
+            "hires": True, "cover": None,
+            "url": "https://play.qobuz.com/album/1"}
+        faixa = {
+            "name": "Uma Faixa De Nome Bastante Comprido Também",
+            "artist": "Um Artista De Nome Comprido",
+            "album": "Um Disco De Nome Bastante Comprido Igualmente",
+            "duration": "12:34", "uri": "spotify:track:1"}
+        for tela in app.screens:
+            if tela.name == "QOBUZ":
+                tela.results = [dict(disco, id=str(i)) for i in range(12)]
+                tela.favoritos = True
+            if tela.name == "SPOTIFY":
+                tela.results = [dict(faixa) for _ in range(12)]
+                tela._daemon, tela._daemon_ok = "ok", True
+                tela._np_t = time.time() + 1e6      # não pergunta ao sistema
+                tela._now_playing = {
+                    "artist": "Um Artista De Nome Comprido",
+                    "title": "Uma Faixa De Nome Bastante Comprido",
+                    "album": "Um Disco De Nome Bastante Comprido",
+                    "position": "1:23", "duration": "12:34"}
     # Todas as teclas que alguma seção usa. Manda-se TODAS em TODAS: a que a
     # seção não conhece tem que ser devolvida, não estourar.
     teclas = [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
@@ -754,6 +801,7 @@ def main():
         bad("a cerimônia", traceback.format_exc())
 
     secao("nenhuma tecla derruba a tela")
+    encher_as_lojas(app)          # as lojas com disco dentro, não vazias
     # A varredura lá de cima aperta VINTE E OITO teclas escolhidas a dedo,
     # uma vez cada, e só na tela recém-aberta. Isto aperta o teclado
     # INTEIRO — as 26 letras, os 10 dígitos, ESC, TAB, as setas, as de
@@ -1525,12 +1573,19 @@ def main():
                    anchor="topleft", maxw=None):
             r = original(surf, txt, pos, size, colour, bold, anchor, maxw)
             if str(txt).strip():
-                caixas.append((r.copy(), str(txt)))
+                # O RECORTE conta. As grades (estante, as duas lojas) desenham
+                # a fileira que está meio para fora e deixam o pygame cortar:
+                # medir o retângulo cru acusa "desenhado fora da tela" um
+                # texto que na tela não aparece — e uma conferência que grita
+                # sobre o que está certo é uma que se aprende a ignorar.
+                rec = surf.get_clip()
+                vis = r.clip(rec) if rec else r.copy()
+                if vis.w > 0 and vis.h > 0:
+                    caixas.append((vis, str(txt)))
             return r
 
         _T.text = espiao
-        # Um conversor de nome comprido, que é o caso que quebrava. Sem forçar
-        # isto o teste roda com o "—" de máquina sem áudio e não mede nada.
+        encher_as_lojas(app)
         for tela in app.screens:
             if tela.name == "SINAL":
                 tela.info = {"file": "faixa.flac", "frate": 44100,

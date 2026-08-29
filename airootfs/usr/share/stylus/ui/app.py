@@ -2869,7 +2869,11 @@ class QobuzScreen(Screen):
 
     def _corpo(self, s, r):
         pad, gap = 30, 14
-        head = 58
+        # 70 e não 58: o cabeçalho vai até 64 (o "12 que você marcou" começa
+        # em 46 e tem 18 de altura), e a grade era recortada a partir de 58 —
+        # seis pixels em que a legenda de um disco rolando para cima passava
+        # por baixo do número. Reserva quem escreve, não quem desenha depois.
+        head = 70
         self.COLS = max(3, min(8, r.w // 200))
 
         # ── header ──────────────────────────────────────────────────────────
@@ -2887,6 +2891,9 @@ class QobuzScreen(Screen):
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
                    (r.x + pad, r.y + 52), 24, T.AMBER)
+            # E a busca também empurra a grade: ela é escrita em corpo 24 e
+            # a primeira fileira começava por baixo dela.
+            head = 92
 
         if self.loading:
             T.text(s, "buscando…", (r.centerx, r.centery), 22,
@@ -3290,8 +3297,15 @@ class SpotifyScreen(Screen):
         T.text(s, name, (rect.x, ty), 15,
                T.TEXT if sel else T.TEXT_DIM, maxw=rect.w)
         T.text(s, artist, (rect.x, ty + 20), 13, T.TEXT_FAINT, maxw=rect.w)
+        # A duração é MEDIDA e descontada do nome do disco. Os dois eram
+        # desenhados na mesma linha, o disco com a largura inteira do quadro
+        # e a duração encostada à direita por cima dele — e como a grade
+        # nunca era medida com disco dentro (sem rede, `results` fica vazia),
+        # ninguém tinha visto. Ver a lição da folga fixa no CLAUDE.md §4.
+        larg_dur = (T.largura(duration, 12) + 10) if duration else 0
         if album:
-            T.text(s, album, (rect.x, ty + 36), 12, T.TEXT_FAINT, maxw=rect.w)
+            T.text(s, album, (rect.x, ty + 36), 12, T.TEXT_FAINT,
+                   maxw=max(24, rect.w - larg_dur))
         if duration:
             T.text(s, duration, (rect.right - 4, ty + 36), 12,
                    T.TEXT_FAINT, anchor="topright")
@@ -3311,7 +3325,11 @@ class SpotifyScreen(Screen):
 
     def _corpo(self, s, r):
         pad, gap = 30, 14
-        head = 58
+        # 70 e não 58, pelo mesmo motivo da loja do Qobuz: a contagem no
+        # canto começa em 46 e tem 18 de altura, e a grade era recortada a
+        # partir de 58 — a legenda de uma faixa rolando para cima passava por
+        # baixo do número.
+        head = 70
         self.COLS = max(3, min(8, r.w // 200))
 
         status = {"ok": "pronto", "parado": "spotifyd instalado, parado",
@@ -3329,20 +3347,27 @@ class SpotifyScreen(Screen):
             np_rect = pygame.Rect(r.x + pad, r.y + 50, r.w - pad * 2, 52)
             T.panel(s, np_rect, T.INK_LIFT, radius=10, border=T.LINE)
             T.text(s, "󰓇", (np_rect.x + 14, np_rect.y + 14), 24, T.AMBER)
-            T.text(s, f"{np['artist']} — {np['title']}",
-                   (np_rect.x + 46, np_rect.y + 10), 17, T.TEXT,
-                   maxw=np_rect.w - 60)
-            T.text(s, np['album'], (np_rect.x + 46, np_rect.y + 32), 13,
-                   T.TEXT_FAINT, maxw=np_rect.w - 60)
             pos = np.get('position', '0')
             dur = np.get('duration', '?')
-            T.text(s, f"{pos}/{dur}", (np_rect.right - 14, np_rect.y + 18),
+            relogio = f"{pos}/{dur}"
+            # O relógio fica à direita na MESMA faixa de linhas do nome e do
+            # disco: os três precisam dividir a largura por medida, não pelo
+            # `- 60` fixo que valia para os dois da esquerda como se o
+            # terceiro não existisse.
+            larg_rel = T.largura(relogio, 13) + 24
+            T.text(s, f"{np['artist']} — {np['title']}",
+                   (np_rect.x + 46, np_rect.y + 10), 17, T.TEXT,
+                   maxw=max(40, np_rect.w - 60 - larg_rel))
+            T.text(s, np['album'], (np_rect.x + 46, np_rect.y + 32), 13,
+                   T.TEXT_FAINT, maxw=max(40, np_rect.w - 60 - larg_rel))
+            T.text(s, relogio, (np_rect.right - 14, np_rect.y + 18),
                    13, T.TEXT_FAINT, anchor="topright")
             head = 116
 
         if self.searching or self.query:
             T.text(s, "/ " + self.query + ("▌" if self.searching else ""),
                    (r.x + pad, r.y + head + 4), 24, T.AMBER)
+            head += 38          # a grade começa DEPOIS da linha de busca
 
         if self.loading:
             T.text(s, "buscando…", (r.centerx, r.centery), 22,
