@@ -1211,6 +1211,25 @@ if [ "${STYLUS_NVIDIA:-0}" = 1 ] && [ -x /usr/local/bin/stylus-gpu ]; then
                      nvidia-resume.service 2>/dev/null || true
 fi
 
+# ── A tela de arranque ────────────────────────────────────────────────────
+# O tema do plymouth existe no repositório (logo.png, stylus.script), o hook
+# `plymouth` está na linha de HOOKS acima e o pacote está na lista — e nada
+# NUNCA escolheu o tema. O plymouth cai no padrão dele, então a tela que
+# aparece entre o GRUB e o login era a de fábrica: o STYLUS nunca foi visto
+# ali por ninguém. É a família do stylus-welcome — a peça inteira pronta,
+# faltando o fio.
+#
+# Sem `-R`: o `mkinitcpio -P` logo abaixo é quem assa o tema na imagem, e
+# rodar os dois seria assar duas vezes numa instalação que já é longa.
+if [ -d /usr/share/plymouth/themes/stylus ]; then
+    if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+        plymouth-set-default-theme stylus || true
+    else
+        mkdir -p /etc/plymouth
+        printf '[Daemon]\nTheme=stylus\n' > /etc/plymouth/plymouthd.conf
+    fi
+fi
+
 # ── A imagem de arranque, e por que ela é conferida em vez de suposta ──────
 # O `mkinitcpio -P` já foi um `|| die` — e derrubava a instalação por avisos
 # que não impedem nada, com o disco formatado e antes do grub-install. Virou

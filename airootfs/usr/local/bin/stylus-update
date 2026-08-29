@@ -144,6 +144,37 @@ if (( DO_STY )); then
         || die "a cópia falhou."
 fi
 
+# ── 4b. a tela de arranque, se ainda não é a nossa ─────────────────────────
+# O tema do plymouth chega pelo sync desde agora, mas ele mora DENTRO da
+# imagem de arranque: trocar o arquivo não muda a tela até a imagem ser
+# refeita. E numa máquina instalada antes disto o tema nem estava escolhido —
+# o plymouth caía no padrão dele, e a tela entre o GRUB e o login nunca foi a
+# do STYLUS.
+#
+# Só quando FALTA: é uma vez na vida da máquina, e refazer a imagem de
+# arranque a cada atualização seria caro e sem motivo.
+if (( DO_STY )) && [[ -d /usr/share/plymouth/themes/stylus ]] &&
+   command -v mkinitcpio >/dev/null; then
+    atual=$(sed -n 's/^ *Theme *= *//p' /etc/plymouth/plymouthd.conf 2>/dev/null | tail -1)
+    if [[ ${atual:-} != stylus ]]; then
+        info "Tela de arranque…"
+        if command -v plymouth-set-default-theme >/dev/null; then
+            $SUDO plymouth-set-default-theme stylus >/dev/null 2>&1 || true
+        else
+            $SUDO mkdir -p /etc/plymouth
+            printf '[Daemon]\nTheme=stylus\n' | $SUDO tee /etc/plymouth/plymouthd.conf >/dev/null
+        fi
+        # A imagem de arranque é o que o kernel carrega: se ela sair quebrada,
+        # a máquina não liga. Por isso o recado é claro e a falha não passa
+        # despercebida no meio da atualização.
+        if $SUDO mkinitcpio -P >/dev/null 2>&1; then
+            ok "a tela de arranque agora é a do STYLUS"
+        else
+            warn "o mkinitcpio reclamou; rode \`sudo mkinitcpio -P\` e veja"
+        fi
+    fi
+fi
+
 # ── 5. serviços que passaram a existir ─────────────────────────────────────
 # Tudo que o repositório trouxe e que o sistema ainda não conhece. Ler do
 # diretório em vez de manter uma lista aqui é o que evita a lista envelhecer

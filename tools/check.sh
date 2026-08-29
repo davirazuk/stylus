@@ -3757,6 +3757,71 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "o tema que o sistema instala é o tema que ele escolhe"
+# **Sintoma:** o tema do plymouth existe no repositório (logo.png,
+# stylus.script), o hook `plymouth` está na linha de HOOKS do mkinitcpio, o
+# pacote está nas duas listas — e NADA nunca escolheu o tema. O plymouth caía
+# no padrão dele: a tela entre o GRUB e o login era a de fábrica, e o desenho
+# do STYLUS nunca foi visto ali por ninguém. É a família do stylus-welcome —
+# a peça inteira pronta, faltando o fio.
+#
+# A regra, escrita de forma que valha para o próximo tema também: para cada
+# tema que o repositório traz em usr/share/<coisa>/themes/stylus, alguém tem
+# que ESCOLHÊ-LO em algum lugar.
+saida=$(python3 - <<'TEMAEOF' 2>&1
+import os
+import re
+alvos = {
+    "grub": ("usr/share/grub/themes/stylus",
+             r"GRUB_THEME=.*themes/stylus"),
+    "plymouth": ("usr/share/plymouth/themes/stylus",
+                 r"plymouth-set-default-theme\s+stylus|Theme=stylus"),
+    "sddm": ("usr/share/sddm/themes/stylus",
+             r"^\s*Current\s*=\s*stylus"),
+}
+fontes = []
+for base in ("airootfs/usr/local/bin", "airootfs/etc", "airootfs/usr/share/stylus"):
+    for d, _s, fs in os.walk(base):
+        if "__pycache__" in d:
+            continue
+        for n in fs:
+            cam = os.path.join(d, n)
+            try:
+                with open(cam, encoding="utf-8", errors="replace") as fh:
+                    fontes.append((cam, fh.read()))
+            except OSError:
+                continue
+faltam = []
+for nome, (pasta, padrao) in alvos.items():
+    if not os.path.isdir(os.path.join("airootfs", pasta)):
+        continue
+    rx = re.compile(padrao, re.M)
+    achou = False
+    for cam, txt in fontes:
+        for ln in txt.splitlines():
+            if ln.lstrip().startswith("#"):
+                continue
+            if rx.search(ln):
+                achou = True
+                break
+        if achou:
+            break
+    if not achou:
+        faltam.append(nome)
+if faltam:
+    print("ERRO tema no repositório e ninguém o escolhe: %s"
+          % ", ".join(sorted(faltam)))
+else:
+    print("OK os %d temas que o repositório traz são escolhidos em algum lugar"
+          % len(alvos))
+TEMAEOF
+)
+case "$saida" in
+    OK*) ok "${saida#OK }" ;;
+    *)   bad "tema instalado e nunca escolhido:"
+         printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
