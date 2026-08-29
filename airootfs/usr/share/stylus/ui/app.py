@@ -1284,6 +1284,24 @@ class StackScreen(Screen):
                    T.TEXT if sel else T.TEXT_DIM, maxw=row.w - 140)
             T.text(s, it["artist"], (cr.right + 20, row.y + 46), 18,
                    T.TEXT_FAINT, maxw=row.w - 140)
+            # O que este disco É, encostado à direita: a pilha é um
+            # compromisso, e um compromisso se mede. A linha inteira à
+            # direita da capa estava vazia — mil e duzentos pixels sem nada.
+            partes = []
+            if it.get("mins"):
+                partes.append("%d min" % it["mins"])
+            if it.get("lados"):
+                partes.append("%d lado%s" % (it["lados"],
+                                             "s" if it["lados"] > 1 else ""))
+            if it.get("discos", 1) > 1:
+                partes.append("%d discos" % it["discos"])
+            if partes:
+                T.text(s, "  ·  ".join(partes), (row.right - 8, row.y + 20),
+                       19, T.TEXT_DIM if sel else T.TEXT_FAINT,
+                       anchor="topright")
+            if it.get("last"):
+                T.text(s, ha_quanto(it["last"]), (row.right - 8, row.y + 48),
+                       16, T.TEXT_FAINT, anchor="topright")
             total += it.get("mins", 0)
             y += 104
         if total:
@@ -4017,9 +4035,43 @@ class App:
         if any(i["folder"] == item["folder"] for i in self.stack):
             self.toast("esse já está na pilha")
             return
-        self.stack.append(dict(item))
+        novo = dict(item)
+        self.stack.append(novo)
         self.stack_save()
+        self._medir_da_pilha(novo)
         self.toast(f"{item['name']} na pilha  ({len(self.stack)})")
+
+    def _medir_da_pilha(self, it):
+        """Quanto tempo e quantos lados este disco é. Numa thread.
+
+        **Sintoma:** a PILHA soma `it.get("mins", 0)` para escrever "X min de
+        disco encostado no móvel" — e o item da estante NUNCA teve `mins`. O
+        índice da estante não guarda duração de propósito (ele existe para a
+        grade desenhar rápido), então a soma dava zero e a linha, que só é
+        desenhada quando a soma é positiva, nunca apareceu na tela. Uma frase
+        escrita, um `if` que nunca foi verdade.
+        
+        Aqui é barato: a pilha tem três ou quatro discos, não quatrocentos, e
+        a medida é feita UMA vez e vai junto no arquivo da pilha. O que ela
+        responde é a pergunta da seção — com o que exatamente eu me
+        comprometi para hoje à noite.
+        """
+        pasta = it.get("folder")
+        if not pasta:
+            return
+
+        def _corre():
+            try:
+                al = vinyl.Album(pasta, envelope=False)
+                if al.total:
+                    it["mins"] = int(al.total // 60)
+                    it["lados"] = len(al.sides)
+                    it["discos"] = getattr(al, "discos", 1)
+                    self.stack_save()
+            except Exception:             # noqa: BLE001 — disco sumiu, e daí
+                pass
+
+        threading.Thread(target=_corre, daemon=True).start()
 
     def stack_tonight(self):
         """Monta uma noite: três discos, puxando para os esquecidos.
@@ -4041,6 +4093,8 @@ class App:
                 escolhidos.append(dict(it))
         self.stack.extend(escolhidos)
         self.stack_save()
+        for it in escolhidos:
+            self._medir_da_pilha(it)
         self.toast(f"{len(escolhidos)} discos para hoje à noite")
 
     # ── ações ──────────────────────────────────────────────────────────────

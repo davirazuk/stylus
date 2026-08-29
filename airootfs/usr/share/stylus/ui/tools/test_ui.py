@@ -531,6 +531,68 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("a pilha", traceback.format_exc())
 
+    secao("a pilha diz com o que você se comprometeu")
+    # **Sintoma:** a PILHA soma `it.get("mins", 0)` para escrever "X min de
+    # disco encostado no móvel" — e o item da estante NUNCA teve `mins`. O
+    # índice da estante não guarda duração de propósito (existe para a grade
+    # desenhar rápido), então a soma dava zero e a linha, que só é desenhada
+    # quando a soma é positiva, nunca apareceu na tela. Uma frase escrita e um
+    # `if` que nunca foi verdade.
+    try:
+        pilha = next(s for s in app.screens if s.name == "A PILHA")
+        app.stack = []
+
+        class _AlbFalso:
+            total = 45 * 60
+            sides = [{"label": "SIDE A"}, {"label": "SIDE B"}]
+            discos = 1
+
+            def __init__(self, *a, **k):
+                pass
+
+        _real_album = A.vinyl.Album
+        A.vinyl.Album = _AlbFalso
+        try:
+            app.stack_add({"folder": "/x/disco", "name": "D", "artist": "A",
+                           "cover": "", "last": 0, "plays": 0})
+            for _ in range(40):
+                if app.stack and app.stack[0].get("mins"):
+                    break
+                time.sleep(0.05)
+        finally:
+            A.vinyl.Album = _real_album
+
+        it = app.stack[0] if app.stack else {}
+        if it.get("mins") != 45 or it.get("lados") != 2:
+            bad("empilhar não mediu o disco",
+                "mins=%s lados=%s" % (it.get("mins"), it.get("lados")))
+        else:
+            ok("empilhar mede o disco: 45 min, 2 lados")
+
+        # E o total do rodapé, que era a frase que nunca aparecia.
+        import theme as _T3
+        _orig3 = _T3.text
+        ditas = []
+
+        def _espia3(surf, txt, pos, size=20, colour=_T3.TEXT, bold=False,
+                    anchor="topleft", maxw=None):
+            ditas.append(str(txt))
+            return _orig3(surf, txt, pos, size, colour, bold, anchor, maxw)
+
+        _T3.text = _espia3
+        app._goto(app.screens.index(pilha))
+        pilha.draw(app.surf, corpo)
+        _T3.text = _orig3
+        if not any("encostado no móvel" in d for d in ditas):
+            bad("a linha do total da pilha continua sem aparecer")
+        elif not any(d.startswith("45 min") for d in ditas):
+            bad("a linha do disco não diz o que ele é", str(ditas[-6:]))
+        else:
+            ok("e a tela diz o que cada disco é, e o total da noite")
+        app.stack = []
+    except Exception:                                       # noqa: BLE001
+        bad("a pilha medida", traceback.format_exc())
+
     secao("embaralhar e repetir falam com o tocador")
     # POR QUE ISTO EXISTE
     # -------------------
