@@ -518,11 +518,12 @@ def sleeve(surf, rect, art, selected=False, lombada="esq"):
     # ── contato: onde a capa encosta ──────────────────────────────────────
     # Curto e fechado de propósito. Sombra grande e difusa não é lida como
     # peso num fundo escuro; é lida como borrão.
+    alt_s = max(6, min(22, rect.w // 40))
     base = _sleeve_cache.get(("sombra", rect.w))
     if base is None:
-        base = pygame.Surface((rect.w, 10), pygame.SRCALPHA)
-        for k in range(10):
-            a = int(58 * (1.0 - k / 10.0) ** 2)
+        base = pygame.Surface((rect.w, alt_s), pygame.SRCALPHA)
+        for k in range(alt_s):
+            a = int(58 * (1.0 - k / alt_s) ** 2)
             pygame.draw.line(base, (0, 0, 0, a), (k // 2, k), (rect.w - k // 2, k))
         if len(_sleeve_cache) > 48:
             _sleeve_cache.clear()
@@ -554,11 +555,20 @@ def sleeve(surf, rect, art, selected=False, lombada="esq"):
                          (rect.x + lom, rect.bottom - 2))
 
     # ── a luz ─────────────────────────────────────────────────────────────
-    luz = pygame.Surface((rect.w, 1), pygame.SRCALPHA)
+    # A espessura ACOMPANHA o tamanho. Um fio de 1 px é o certo numa capa de
+    # 200 px na grade e some numa de 560 na AGORA — que é justamente onde a
+    # aresta iluminada teria mais trabalho a fazer, porque ali a capa é meia
+    # tela e um retângulo chapado de meia tela não é um objeto.
+    fio = max(1, rect.w // 260)
+    luz = pygame.Surface((rect.w, fio), pygame.SRCALPHA)
     luz.fill((255, 255, 255, 26))
     surf.blit(luz, rect.topleft)
-    lado = pygame.Surface((1, rect.h), pygame.SRCALPHA)
-    lado.fill((255, 255, 255, 14))
+    # A borda por onde o disco sai (a oposta à lombada) ganha um fio mais
+    # claro: é a boca da capa, e é o que faz o disco atrás dela ler como
+    # estando DENTRO dela e não simplesmente atrás.
+    boca = max(1, rect.w // 200)
+    lado = pygame.Surface((boca, rect.h), pygame.SRCALPHA)
+    lado.fill((255, 255, 255, 14 if lombada == "esq" else 30))
     surf.blit(lado, rect.topleft)
 
     # ── selecionado: o disco puxado meio palmo para fora ──────────────────
