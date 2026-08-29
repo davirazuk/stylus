@@ -575,6 +575,92 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("a volta do disco", traceback.format_exc())
 
+    secao("nenhuma tecla derruba a tela")
+    # A varredura lá de cima aperta VINTE E OITO teclas escolhidas a dedo,
+    # uma vez cada, e só na tela recém-aberta. Isto aperta o teclado
+    # INTEIRO — as 26 letras, os 10 dígitos, ESC, TAB, as setas, as de
+    # edição — duas voltas (para as teclas que alternam passarem pelos dois
+    # estados) e DESENHA depois de cada uma.
+    #
+    # O desenho depois de cada tecla é a metade que importa. Uma tecla que
+    # põe a tela num sub-estado quebrado não estoura ao ser apertada: estoura
+    # no quadro seguinte, e a varredura de cima só desenha no fim de tudo —
+    # onde a última tecla já desfez o estado da anterior. Foi assim que o
+    # lado sem `label` de uma playlist do Qobuz chegou à máquina de quem usa.
+    #
+    # Custa ~2 s e cobre 11 seções × 60 teclas × 2 voltas.
+    try:
+        letras = [getattr(pygame, "K_" + c) for c in "abcdefghijklmnopqrstuvwxyz"]
+        digitos = [getattr(pygame, "K_" + c) for c in "0123456789"]
+        outras = [pygame.K_ESCAPE, pygame.K_TAB, pygame.K_UP, pygame.K_DOWN,
+                  pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN,
+                  pygame.K_SPACE, pygame.K_BACKSPACE, pygame.K_DELETE,
+                  pygame.K_HOME, pygame.K_END, pygame.K_PAGEUP,
+                  pygame.K_PAGEDOWN, pygame.K_F1, pygame.K_PLUS,
+                  pygame.K_MINUS, pygame.K_EQUALS, pygame.K_SLASH,
+                  pygame.K_PERIOD, pygame.K_COMMA]
+        todas = letras + digitos + outras
+
+        # E em DOIS estados, porque com nada tocando metade da AGORA nem
+        # chega a ser desenhada: o `draw` sai cedo pelo `_nothing`, e o [f]
+        # (a tela cheia do disco) é desligado no caminho. Uma varredura que
+        # só roda com o prato vazio passa verde por cima de um traceback na
+        # tela cheia — medido, com o defeito posto de propósito.
+        class _AlbFuzz:
+            folder, artist, name, year = "/x", "A", "B", ""
+            cover, plays, last_played, total = None, 1, 0, 1680
+            discos = 1
+            tracks = [{"title": "t", "dur": 210, "path": "/x/01.flac"}]
+            sides = [{"label": "SIDE A", "start": 0, "end": 840,
+                      "tracks": [0]},
+                     {"label": "SIDE B", "start": 840, "end": 1680,
+                      "tracks": [0]}]
+
+        _af = _AlbFuzz()
+        _antes_w, _antes_al = app.playing.where, app.playing.album
+        estados = [
+            ("nada tocando", lambda: ({}, None, None, None, None, 0.0), None),
+            ("com disco no prato",
+             lambda: ({"status": "Playing"}, _af, _af.tracks[0], _af.sides[0],
+                      430.0, 0.51), _af),
+        ]
+        quebras = []
+        try:
+            for _nome_estado, _onde_esta, _album in estados:
+                app.playing.where = _onde_esta
+                app.playing.album = _album
+                for i, tela in enumerate(app.screens):
+                    app._goto(i)
+                    for _volta in (1, 2):
+                        for k in todas:
+                            onde = "tecla"
+                            try:
+                                tela.key(pygame.event.Event(
+                                    pygame.KEYDOWN, key=k, unicode="", mod=0))
+                                onde = "desenho"
+                                app.alvos = []
+                                tela.draw(app.surf, corpo)
+                            except Exception:               # noqa: BLE001
+                                quebras.append(
+                                    (tela.name + " (" + _nome_estado + ")",
+                                     pygame.key.name(k), onde,
+                                     traceback.format_exc()
+                                     .strip().splitlines()[-1]))
+        finally:
+            app.playing.where, app.playing.album = _antes_w, _antes_al
+        # Sem repetir a mesma pilha vinte vezes: o que interessa é QUAIS
+        # telas e por quê.
+        unicas = sorted({(n, o, m) for n, _t, o, m in quebras})
+        if quebras:
+            bad("%d teclas derrubam alguma seção" % len(quebras),
+                "\n".join("%s (no %s): %s" % u for u in unicas[:5]))
+        else:
+            ok("%d seções × %d teclas × 2 voltas × 2 estados, "
+               "desenhando a cada uma"
+               % (len(app.screens), len(todas)))
+    except Exception:                                       # noqa: BLE001
+        bad("a varredura de teclado", traceback.format_exc())
+
     secao("o disco na tela toda, dentro do lançador")
     # POR QUE ISTO EXISTE
     # -------------------
