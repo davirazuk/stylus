@@ -212,6 +212,7 @@ class Playing:
         self.album = None
         self._key = None
         self._resolving = False
+        self._tentei = 0.0
         self._ti_cache = [None, 0]
 
     def snapshot(self):
@@ -219,7 +220,26 @@ class Playing:
         path = snap.get("path") or ""
         folder = os.path.dirname(path) if path else ""
         key = (folder, snap.get("artist"), snap.get("album"))
-        if key != self._key and not self._resolving and any(key):
+        trocou = key != self._key and any(key)
+        # DISCO DA REDE: o `dirname` de um ENDEREÇO é a mesma string para toda
+        # playlist do Qobuz ("https:/o-servidor"), e sob mpv o artista e o
+        # álbum do snapshot vêm vazios — só o MPRIS os preenche. Ou seja: a
+        # chave acima é a MESMA para todas elas, e trocar de playlist deixava
+        # a AGORA com o disco anterior na mão: o nome da faixa, o LADO, o
+        # "vira em X" e a agulha no sulco, todos da lista de antes. O mesmo
+        # defeito que o stylus-side-watch tinha.
+        #
+        # A pergunta certa é se o endereço que está tocando ainda é uma das
+        # FAIXAS do disco que temos na mão. Com uma pausa entre tentativas,
+        # porque resolver um endereço varre o cache do Qobuz.
+        if not trocou and path.startswith(("http://", "https://")):
+            al = self.album
+            fora = al is None or not any(t.get("path") == path
+                                         for t in al.tracks)
+            if fora and time.time() - self._tentei > 20.0:
+                self._tentei = time.time()
+                trocou = True
+        if trocou and not self._resolving:
             self._key = key
             self._resolving = True
             threading.Thread(target=self._resolve, args=(snap,),

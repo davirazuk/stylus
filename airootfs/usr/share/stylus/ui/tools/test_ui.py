@@ -1829,6 +1829,75 @@ def main():
         bad("conferência de custo", traceback.format_exc())
 
     # ── o rato ────────────────────────────────────────────────────────────
+    secao("trocar de playlist do Qobuz troca o disco da AGORA")
+    # **Sintoma:** o `dirname` de um ENDEREÇO é a mesma string para toda
+    # playlist do Qobuz, e sob mpv o artista e o álbum do snapshot vêm
+    # vazios — então a chave de "trocou de disco?" era a MESMA para todas as
+    # playlists. A AGORA ficava com a lista anterior na mão: o nome da faixa,
+    # o LADO, o "vira em X" e a agulha no sulco, todos da lista de antes.
+    try:
+        import model as _M
+        URLS = {"A": "https://o-servidor.invalid/a%d.flac",
+                "B": "https://o-servidor.invalid/b%d.flac"}
+        pedidos = []
+
+        class _AlbFake:
+            def __init__(self, pasta):
+                self.folder = pasta
+                self.tracks = [{"path": URLS[pasta] % i, "title": "t%d" % i,
+                                "duration": 300.0} for i in range(4)]
+                self.total = 1200.0
+
+        class _SessaoFake:
+            atual = URLS["A"] % 0
+
+            def snapshot(self):
+                # como o mpv responde: sem artista e sem álbum
+                return {"path": _SessaoFake.atual, "artist": "", "album": "",
+                        "paused": False}
+
+        tocando = _M.Playing.__new__(_M.Playing)
+        tocando.session = _SessaoFake()
+        tocando.album = None
+        tocando._key = None
+        tocando._resolving = False
+        tocando._tentei = 0.0
+        tocando._ti_cache = [None, 0]
+
+        def _resolve_fake(snap):
+            pedidos.append(snap.get("path"))
+            tocando.album = _AlbFake("B" if "/b" in snap["path"] else "A")
+            tocando._resolving = False
+
+        tocando._resolve = _resolve_fake
+        # sem thread: o que se quer medir é a DECISÃO de reabrir
+        _antes = _M.threading.Thread
+        _M.threading.Thread = lambda target=None, args=(), daemon=None: type(
+            "T", (), {"start": lambda _s: target(*args)})()
+        try:
+            tocando.snapshot()
+            primeiro = tocando.album.folder if tocando.album else None
+            _SessaoFake.atual = URLS["A"] % 2          # mesma lista
+            tocando.snapshot()
+            meio = tocando.album.folder if tocando.album else None
+            n_meio = len(pedidos)
+            _SessaoFake.atual = URLS["B"] % 0          # outra lista
+            tocando.snapshot()
+            depois = tocando.album.folder if tocando.album else None
+        finally:
+            _M.threading.Thread = _antes
+        if primeiro != "A":
+            bad("nem o primeiro disco resolveu (%s)" % primeiro)
+        elif n_meio != 1 or meio != "A":
+            bad("reabriu o disco andando na MESMA playlist (%d pedidos)"
+                % n_meio)
+        elif depois != "B":
+            bad("ficou com a playlist anterior na mão (%s)" % depois)
+        else:
+            ok("a lista nova entra, a faixa seguinte não reabre nada")
+    except Exception:                                       # noqa: BLE001
+        bad("troca de playlist", traceback.format_exc())
+
     secao("o rato")
     try:
         # 1. Um clique só ESCOLHE; o segundo, no mesmo lugar, é que abre.
