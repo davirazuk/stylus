@@ -45,6 +45,16 @@ SPEC_MAX_HZ = 16000.0
 ATK, REL = 0.45, 0.10
 
 
+def _zeros(n):
+    """`n` zeros — matriz se houver numpy, lista se não houver.
+
+    Sem numpy ninguém vai desenhar com eles (o monitor nasce morto), mas os
+    campos têm que EXISTIR: quem pergunta o tamanho da onda não pode receber
+    None.
+    """
+    return np.zeros(n, dtype=np.float32) if np is not None else [0.0] * n
+
+
 def find_monitor_source():
     """O monitor que está com som agora, ou o primeiro que houver.
 
@@ -78,8 +88,17 @@ class AudioMonitor:
     def __init__(self):
         self.ok = False
         self.level = 0.0
-        self.wave = np.zeros(WAVE_N, dtype=np.float32)
-        self.spectrum = np.zeros(N_BANDS, dtype=np.float32)
+        # A ORDEM aqui é o conserto: o guarda do numpy vem ANTES de qualquer
+        # `np.`. Estas duas linhas eram `np.zeros(...)` DUAS linhas acima do
+        # `if np is None`, e numa máquina sem python-pyaudio (que derruba o
+        # import inteiro deste módulo para `np = pyaudio = None`) o que o
+        # docstring promete — "vira um monte de zeros e a tela fica parada" —
+        # virava `AttributeError: 'NoneType' object has no attribute 'zeros'`
+        # subindo pelo `get_monitor()` até o `audio_level()`, que é chamado
+        # em TODO quadro da AGORA. Ou seja: faltar um pacote de áudio não
+        # apagava o brilho, apagava a interface.
+        self.wave = _zeros(WAVE_N)
+        self.spectrum = _zeros(N_BANDS)
         self._last_block = 0.0
         self._lock = threading.Lock()
         if np is None or pyaudio is None:
@@ -209,7 +228,14 @@ def get_monitor():
     """A instância única. Fracassos não são repetidos a cada quadro."""
     global _monitor, _monitor_failed
     if _monitor is None and not _monitor_failed:
-        _monitor = AudioMonitor()
+        try:
+            _monitor = AudioMonitor()
+        except Exception:               # noqa: BLE001
+            # Quem chama isto desenha um quadro. Nenhuma surpresa de máquina
+            # (biblioteca faltando, PortAudio estranho, dispositivo sumido)
+            # pode virar tela preta: sem monitor, a tela só não respira.
+            _monitor, _monitor_failed = None, True
+            return None
         if not _monitor.ok:
             _monitor = None
             _monitor_failed = True

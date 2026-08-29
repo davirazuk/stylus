@@ -204,7 +204,22 @@ def fonte_para(texto, size=20, bold=False):
     for ch in texto:
         # ASCII e a área de ícones do Nerd Font são da nossa fonte por
         # definição; perguntar por elas seria o caso comum pagando o caro.
-        if ch < "\u0080" or "\ue000" <= ch <= "\uf8ff":
+        #
+        # **E "a área de ícones" são TRÊS.** Isto conferia só a do BMP
+        # (E000–F8FF), e não há um único ícone nossa ali: os 27 que o app.py
+        # usa — 󰝰 󰊴 󰲸 — são Material Design, que o Nerd Font v3 pôs no plano
+        # 15 (F0000–FFFFD). Ou seja, o atalho descrito no comentário nunca
+        # valia, e todo rótulo com ícone caía no caminho caro.
+        #
+        # Pior que lento: numa máquina sem o Nerd Font, o ícone "faltando"
+        # escolhia a fonte do RÓTULO INTEIRO — e quem cobre um caractere de
+        # uso privado é uma fonte de símbolos, que não tem letra latina. O
+        # resultado era "Clone Hero" desenhado como uma fileira de caixinhas.
+        # Ícone que falta tem que ser um glifo faltando, não um rótulo
+        # ilegível.
+        if (ch < "\u0080" or "\ue000" <= ch <= "\uf8ff"
+                or "\U000f0000" <= ch <= "\U000ffffd"
+                or "\U00100000" <= ch <= "\U0010fffd"):
             continue
         if not _cobre(principal, ch):
             faltando = ch
@@ -444,6 +459,26 @@ def frase_com_teclas(surf, texto, pos, size=18, colour=TEXT_DIM,
 def tecla_largura(letra, size=18):
     f = font(size - 2, bold=True)
     return f.size(letra.upper())[0] + max(7, (size - 2) // 2) * 2
+
+
+def frase_largura(texto, size=18):
+    """Quanto uma frase com `[X]` vai ocupar — contando o quadradinho.
+
+    A conta que o `frase_com_teclas` faz para desenhar, disponível para quem
+    precisa saber ANTES se a frase cabe. Havia um `largura(sem colchetes) +
+    18 por tecla` escrito à mão no rodapé da interface; 18 é um chute (o
+    quadradinho mede a letra em negrito de dois pontos a menos, mais 14 de
+    folga), e chute que erra para menos numa linha de rodapé é texto
+    desenhado fora da tela.
+    """
+    import re as _re
+    total = 0
+    for p in (q for q in _re.split(r"(\[[^\]]{1,6}\])", texto) if q):
+        if p.startswith("[") and p.endswith("]"):
+            total += tecla_largura(p[1:-1], size)
+        else:
+            total += largura(p, size)
+    return total
 
 
 # ── a capa como objeto ─────────────────────────────────────────────────────
@@ -906,10 +941,33 @@ def halo(raio, folga=None, forca=255):
     e cada degrau é desenhado uma vez e reusado para sempre. Quatro e não
     dezesseis porque cada um destes é uma superfície de cinco megabytes.
 
-    E `set_alpha(None)` no fim, que parece não fazer nada e faz 3,6 vezes:
-    uma superfície SRCALPHA nasce com alfa-de-superfície 255, e o SDL trata
-    "255" como um valor a multiplicar em cada pixel, não como "não tem". Com
-    None ele some do caminho — 1,09 ms viram 0,30 ms no mesmo blit.
+    ── E NÃO, o `set_alpha(None)` no fim não era de graça ────────────────────
+    Havia aqui um `h.set_alpha(None)` com "1,09 ms viram 0,30 ms" ao lado. O
+    número era verdade e o que ele mediu não era um blit mais rápido: era o
+    blit DEIXANDO DE ACONTECER. No pygame 2, `set_alpha(None)` numa superfície
+    SRCALPHA **apaga o próprio SRCALPHA** e põe o modo de mistura em NONE —
+    o blit vira cópia crua, alfa por pixel e tudo. Medido aqui:
+
+        superfície SRCALPHA recém-criada    flags SRCALPHA=True
+        depois de set_alpha(None)           flags SRCALPHA=False
+
+    E na tela: o canto transparente do halo, que é (0,0,0,0), passava a
+    pintar PRETO (0,0,0) por cima do fundo desfocado da capa, e o âmbar do
+    brilho passava a ser desenhado opaco. Ou seja, a AGORA desenhava um
+    QUADRADO PRETO de meia tela com um disco de mostarda chapado dentro —
+    exatamente o "app de um dólar" que a §5.5 do CLAUDE.md proíbe pelo nome.
+    Rápido porque não desenhava luz nenhuma: pintava por cima.
+
+    A economia de verdade continua sendo a de cima (força assada, cache); o
+    alfa por pixel é o trabalho que esta superfície EXISTE para fazer. E ele
+    cabe: medido de novo, já sem o `set_alpha(None)`, o blit CORRETO custa
+
+        halo de 938 px (a tela parada)      0,85 ms
+        halo de 694 px (tocando)            0,45 ms
+
+    contra os 4,2 ms do `set_alpha` por quadro que a tela parada fazia. Ou
+    seja: o desenho certo é cinco vezes mais barato do que o errado que
+    estava lá, e a "otimização" que faltava era não desenhar nada.
     """
     raio = max(8, int(raio))
     folga = max(4, int(raio * 0.3 if folga is None else folga))
@@ -946,7 +1004,6 @@ def halo(raio, folga=None, forca=255):
     # usa um raio por vez.
     if len(_halo_cache) > 10:
         _halo_cache.clear()
-    h.set_alpha(None)                 # ver a docstring: 1,09 ms → 0,30 ms
     _halo_cache[chave] = h
     return h
 
@@ -1042,9 +1099,10 @@ def disco(raio):
     d = pygame.transform.smoothscale(d, (raio * 2, raio * 2))
     if len(_disco_cache) > 6:
         _disco_cache.clear()
-    # O mesmo 3,6x do halo: uma superfície SRCALPHA nasce com alfa-de-
-    # superfície 255, e o SDL multiplica esse 255 em cada pixel em vez de
-    # pulá-lo. Ver a docstring do `halo`.
-    d.set_alpha(None)
+    # NÃO ponha `d.set_alpha(None)` aqui — havia um, copiado do halo com a
+    # mesma promessa de 3,6x. Ele apaga o SRCALPHA da superfície (ver a
+    # docstring do `halo`): o disco passava a ser blitado como CÓPIA, e o
+    # quadrado transparente em volta dele pintava preto por cima do fundo.
+    # O disco é redondo; o que existe fora dele tem que continuar existindo.
     _disco_cache[raio] = d
     return d

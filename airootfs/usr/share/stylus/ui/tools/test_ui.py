@@ -366,6 +366,76 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("artista", traceback.format_exc())
 
+    secao("a estante diz qual disco está no prato")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # A grade não dizia. Havia a tarja com o nome da faixa no rodapé, e numa
+    # parede de capas a pergunta é "qual delas" — a resposta estava em letra
+    # de dez pixels do outro lado da tela. O disco que toca ganha o halo da
+    # AGORA atrás da capa e o nome em âmbar.
+    try:
+        import theme as _T
+        estante = next(s for s in app.screens if s.name == "ESTANTE")
+        if estante.picking or estante.searching:
+            estante.key(pygame.event.Event(pygame.KEYDOWN,
+                                           key=pygame.K_ESCAPE, unicode="",
+                                           mod=0))
+        estante.artist = None
+        itens = estante.items()
+        if not itens:
+            ok("(coleção vazia: nada para marcar)")
+        else:
+            class _Tocando:                 # só o que o desenho pergunta
+                def __init__(self, folder):
+                    self.folder = folder
+            alvo = itens[-1]                # o último, não o selecionado
+            app.playing.album = _Tocando(alvo["folder"])
+
+            original = _T.text
+            cores = {}
+
+            def espiao_cor(surf, txt, pos, size=20, colour=_T.TEXT,
+                           bold=False, anchor="topleft", maxw=None):
+                cores.setdefault(str(txt), colour)
+                return original(surf, txt, pos, size, colour, bold, anchor,
+                                maxw)
+
+            _T.text = espiao_cor
+            i_est = app.screens.index(estante)
+            app._goto(i_est)
+            estante.draw(app.surf, corpo)
+            _T.text = original
+
+            if cores.get(alvo["name"]) != _T.AMBER:
+                bad("o disco que toca não vem em âmbar na estante",
+                    f'{alvo["name"]}: {cores.get(alvo["name"])}')
+            else:
+                ok(f'"{alvo["name"]}" marcado como o que está tocando')
+
+            # E os outros NÃO podem vir em âmbar: se tudo é o disco que toca,
+            # nada é.
+            outros = [n for it in itens[:-1]
+                      for n in (it["name"],) if cores.get(n) == _T.AMBER]
+            if outros:
+                bad(f"{len(outros)} discos parados também vieram em âmbar",
+                    ", ".join(outros[:3]))
+            else:
+                ok("os discos parados continuam apagados")
+
+            # Sem nada tocando, ninguém é marcado — e nada estoura.
+            app.playing.album = None
+            _T.text = espiao_cor
+            cores.clear()
+            estante.draw(app.surf, corpo)
+            _T.text = original
+            if [n for it in itens for n in (it["name"],)
+                    if cores.get(n) == _T.AMBER]:
+                bad("com nada tocando ainda há disco marcado")
+            else:
+                ok("com nada tocando, nenhum disco é marcado")
+    except Exception:                                       # noqa: BLE001
+        bad("o disco no prato", traceback.format_exc())
+
     secao("o botão B volta em vez de sair")
     try:
         # Sem a janela de desenvolvimento: é o modo música que interessa aqui.
@@ -667,7 +737,11 @@ def main():
         # de 104 px numa posição fixa: numa tela de 720 o calendário entrava
         # na lista, e nada disso aparece medindo só a resolução do
         # desenvolvedor. Da tela de notebook barato à de 4K.
-        for larg, alt in ((1280, 720), (1366, 768), (1920, 1080), (3840, 2160)):
+        # A de 1024 entrou depois: é a que a máquina virtual e o monitor
+        # velho dão, e foi nela que a quarta coluna dos JOGOS apareceu
+        # desenhada FORA da tela.
+        for larg, alt in ((1024, 768), (1280, 720), (1366, 768),
+                          (1920, 1080), (3840, 2160)):
             quadro = pygame.Rect(230, 0, larg - 230, alt)
             for i, tela in enumerate(app.screens):
                 app._goto(i)
@@ -685,9 +759,20 @@ def main():
                                            f"{sa[:26]!r} x {sb[:26]!r}")
                 # E nada pode ser desenhado fora da tela — que é como um
                 # layout apertado falha antes de chegar a se sobrepor.
+                #
+                # Os DOIS eixos. Isto conferia só o de cima e o de baixo, e
+                # foi pelo lado que a tela dos JOGOS falhou: a grade tinha
+                # quatro quadros de largura fixa, somando 940 px, num corpo
+                # de 794 — três jogos desenhados no vazio à direita da tela,
+                # com a seleção andando por eles. Passava verde: nenhum deles
+                # estava alto ou baixo demais.
                 for rr, ss in caixas:
                     if rr.bottom > alt + 2 or rr.y < -2:
-                        vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}")
+                        vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}"
+                                       " (embaixo)")
+                    if rr.right > larg + 2 or rr.right < quadro.x:
+                        vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}"
+                                       " (ao lado)")
         _T.text = original
         if batidas:
             bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))
@@ -732,6 +817,33 @@ def main():
         else:
             ok("só troca de fonte quem precisa (%s)"
                % (", ".join(trocas) or "ninguém"))
+        # ── o ícone nunca decide a fonte do rótulo ────────────────────────
+        # **Sintoma:** numa máquina sem o Nerd Font, "󰝰  Clone Hero" saía
+        # como uma fileira de caixinhas — o NOME junto com o ícone. O
+        # `fonte_para` decide por texto inteiro, e o ícone é um caractere de
+        # uso privado: quem "cobre" uso privado é uma fonte de símbolos, que
+        # não tem letra latina nenhuma. Escolhida por causa do ícone, ela
+        # desenhava o rótulo todo.
+        #
+        # O atalho que evita isso existia e apontava para a área errada: só a
+        # do BMP (E000–F8FF), onde este repositório não tem um ícone sequer.
+        # Os 27 que ele usa são Material Design, que o Nerd Font v3 pôs no
+        # plano 15.
+        icones = sorted({c for tela in app.screens
+                         for c in getattr(tela, "icon", "")
+                         if ord(c) > 0xFFFF})
+        rotulo_ruim = []
+        for ic in icones + ["\U000f0770"]:
+            f_ic = _T.fonte_para(f"{ic}  Clone Hero", 22)
+            f_puro = _T.fonte_para("Clone Hero", 22)
+            if f_ic is not f_puro:
+                rotulo_ruim.append(hex(ord(ic)))
+        if rotulo_ruim:
+            bad(f"{len(rotulo_ruim)} ícones arrastam o rótulo para outra fonte",
+                ", ".join(rotulo_ruim))
+        else:
+            ok(f"os {len(icones) + 1} ícones não mudam a fonte do rótulo")
+
         # E o custo tem que caber num quadro: isto roda por texto desenhado.
         t0 = time.time()
         for _ in range(20000):
@@ -748,19 +860,36 @@ def main():
     secao("o custo de um quadro")
     try:
         import theme as _T
-        # 1. Superfície em cache com alfa-de-superfície 255 é o caminho lento
-        #    do SDL: ele multiplica o 255 em cada pixel em vez de pular.
-        #    Medido num halo de 1040 px: 1,09 ms contra 0,30 ms no mesmo blit.
-        #    É invisível na leitura e são três quartos do custo.
-        lentas = []
-        for nome, sup2 in (("halo", _T.halo(300, forca=192)),
-                           ("disco", _T.disco(300))):
-            if sup2.get_alpha() is not None:
-                lentas.append("%s (alpha=%s)" % (nome, sup2.get_alpha()))
-        if lentas:
-            bad("superfície em cache no caminho lento do SDL", ", ".join(lentas))
+        # 1. O halo e o disco são REDONDOS: o canto da superfície deles tem
+        #    que continuar transparente ao ser blitado.
+        #
+        #    **Sintoma:** havia aqui uma conferência que exigia o contrário —
+        #    `get_alpha() is None` nas duas — em nome de um blit 3,6x mais
+        #    rápido. O `set_alpha(None)` que ela cobrava APAGA o SRCALPHA da
+        #    superfície no pygame 2: o blit deixa de misturar e vira cópia
+        #    crua. Era rápido porque não desenhava luz nenhuma — pintava por
+        #    cima. Na tela, a AGORA ficava com um quadrado preto de meia tela
+        #    (o canto (0,0,0,0) do halo) e um disco de mostarda chapado
+        #    dentro dele, que é o "app de um dólar" que o CLAUDE.md §5.5
+        #    proíbe pelo nome. O teste passava verde em cima disso.
+        #
+        #    Então a pergunta não é qual é o alfa da superfície: é o que
+        #    acontece com o FUNDO quando ela é desenhada por cima.
+        fundo = (40, 90, 160)
+        chapados = []
+        for nome, sup2 in (("halo", _T.halo(120, forca=192)),
+                           ("disco", _T.disco(120))):
+            prova = pygame.Surface(sup2.get_size())
+            prova.fill(fundo)
+            prova.blit(sup2, (0, 0))
+            if prova.get_at((1, 1))[:3] != fundo:
+                chapados.append("%s (canto virou %s)"
+                                % (nome, prova.get_at((1, 1))[:3]))
+        if chapados:
+            bad("superfície em cache pinta por cima do fundo",
+                ", ".join(chapados))
         else:
-            ok("as superfícies em cache saem do caminho lento")
+            ok("o halo e o disco desenham redondos, sem quadrado por baixo")
 
         # 2. O cache do halo tem que caber os degraus de força. Se não couber,
         #    ele se limpa a cada respiração e cada quadro redesenha um halo do

@@ -27,6 +27,7 @@ cheia de música é poder usá-la do outro lado do quarto.
 import math
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -645,9 +646,14 @@ class NowScreen(Screen):
         # Sem ele o disco fica recortado no nada. Respira em contratempo com
         # o eixo (fases diferentes) para as duas pulsações não baterem juntas
         # e virarem um piscar só.
+        # A respiração vai no `forca`, ASSADA na superfície em cache, e não
+        # num `set_alpha` por quadro. Duas razões, as duas medidas:
+        # o set_alpha custa 4,2 ms contra 0,4 ms num halo de 938 px (um quarto
+        # do quadro para desenhar uma luz parada, nesta que é a tela que fica
+        # ligada a noite inteira); e ele mexia na superfície do CACHE, ou
+        # seja, na luz de todo mundo que pedisse o mesmo halo depois.
         folga = int(R * 0.30)
-        h = T.halo(R, folga)
-        h.set_alpha(int(170 + 60 * math.sin(t * 0.55)))
+        h = T.halo(R, folga, forca=int(190 + 65 * math.sin(t * 0.55)))
         s.blit(h, (cx - R - folga, cy - R - folga))
 
         d = T.disco(R)
@@ -898,9 +904,41 @@ class ShelfScreen(Screen):
         alpha = 1.0 - pow(2.718281828, -dt * 12.0) if dt > 0 else 0.28
         self.scroll += (self.target - self.scroll) * alpha
 
+        # ── qual destes está tocando ───────────────────────────────────────
+        # A grade não dizia. Havia a tarja no rodapé com o nome da faixa, mas
+        # numa parede de capas a pergunta é "qual delas", e a resposta estava
+        # escrita em letra de dez pixels do outro lado da tela. O disco que
+        # está no prato ganha o mesmo halo da AGORA — a luz que aquela tela
+        # já usa para dizer "é este" — e ela respira com o som.
+        al_tocando = self.app.playing.album
+        pasta_tocando = (os.path.normpath(al_tocando.folder)
+                         if al_tocando is not None and al_tocando.folder
+                         else None)
+        i_tocando = None
+        if pasta_tocando:
+            for i, it in enumerate(its):
+                if (it["folder"] == pasta_tocando
+                        or os.path.normpath(it["folder"]) == pasta_tocando):
+                    i_tocando = i
+                    break
+
         clip = pygame.Rect(r.x, r.y + head, r.w, view_h)
         old = s.get_clip()
         s.set_clip(clip)
+        # O halo vem ANTES de todas as capas, e não junto com a sua.
+        # Desenhado no meio do laço, ele passava por cima da capa do vizinho
+        # da esquerda — a luz do disco que toca tingindo de âmbar a arte de
+        # outro disco. Luz atrás é atrás de TODAS.
+        if i_tocando is not None:
+            cx = r.x + pad + (i_tocando % self.COLS) * (cw + gap)
+            cy = r.y + head + (i_tocando // self.COLS) * ch - int(self.scroll)
+            nivel = min(1.0, self.app.audio_level())
+            # O piso de 110 é para a marca não sumir no silêncio: numa máquina
+            # sem PortAudio o nível é zero o tempo todo, e um disco tocando
+            # sem marca nenhuma é pior do que não ter marca.
+            hal = T.halo(int(cw * 0.62), forca=int(110 + nivel * 145))
+            s.blit(hal, (cx + cw // 2 - hal.get_width() // 2,
+                         cy + cw // 2 - hal.get_height() // 2))
         for i, it in enumerate(its):
             cx = r.x + pad + (i % self.COLS) * (cw + gap)
             cy = r.y + head + (i // self.COLS) * ch - int(self.scroll)
@@ -918,8 +956,14 @@ class ShelfScreen(Screen):
             # 14 e não 8: o disco selecionado levanta 6px para cada lado, e
             # com a legenda colada nela mesma ela encostava na capa levantada.
             ty = cy + cw + 14
+            # O nome do que está tocando vai em âmbar. O halo atrás da capa
+            # some entre as capas do meio da grade — sobram os 18 px de folga
+            # para ele aparecer — e o âmbar é a palavra que este sistema usa
+            # para "é aqui" (ver o cabeçalho do theme.py). As duas coisas
+            # juntas dizem qual disco está no prato de qualquer distância.
             T.text(s, it["name"], (cx, ty), 17,
-                   T.TEXT if i == self.sel else T.TEXT_DIM, maxw=cw)
+                   T.AMBER if i == i_tocando else
+                   (T.TEXT if i == self.sel else T.TEXT_DIM), maxw=cw)
             T.text(s, it["artist"], (cx, ty + 22), 15, T.TEXT_FAINT, maxw=cw)
         # O aviso de que a grade continua. Sem ele, a fileira cortada ao meio
         # se lê como fileira com defeito e não como "tem mais aqui embaixo".
@@ -1226,19 +1270,27 @@ class SignalScreen(Screen):
                                              (mx + 7, box.bottom + 22),
                                              (mx, box.bottom + 30)])
 
+        # O veredito fica dentro da MESMA coluna dos três quadros — as três
+        # linhas daqui para baixo não tinham largura nenhuma, e a explicação
+        # do reamostrado ("algo mais está segurando o grafo nessa taxa…") tem
+        # 84 caracteres: numa tela de 1024 ela terminava fora do monitor,
+        # justo a frase que existe para dizer o que fazer quando o caminho do
+        # som está errado.
         vy = by + 3 * 132 + 12
         if not frate:
             T.text(s, "ponha um disco para medir o caminho inteiro",
-                   (bx, vy), 21, T.TEXT_FAINT)
+                   (bx, vy), 21, T.TEXT_FAINT, maxw=bw)
         elif clean:
             T.text(s, "▸ sem conversão: o arquivo chega como foi gravado",
-                   (bx, vy), 24, T.GREEN, bold=True)
+                   (bx, vy), 24, T.GREEN, bold=True, maxw=bw)
         else:
             T.text(s, f"▸ reamostrado {frate / 1000:g} → {graph / 1000:g} kHz",
-                   (bx, vy), 24, T.RED, bold=True)
-            T.text(s, "algo mais está segurando o grafo nessa taxa, ou o "
-                      "conversor ainda não soltou a anterior",
-                   (bx, vy + 34), 18, T.TEXT_FAINT)
+                   (bx, vy), 24, T.RED, bold=True, maxw=bw)
+            # Em parágrafo, não cortada: uma explicação com reticências no
+            # meio não explica nada.
+            T.paragrafo(s, "algo mais está segurando o grafo nessa taxa, ou o "
+                           "conversor ainda não soltou a anterior",
+                        (bx, vy + 34), 18, T.TEXT_FAINT, maxw=bw, limite=2)
         self.app.hint(s, r, "atualiza sozinho   ·   [enter] força agora")
 
 
@@ -3038,9 +3090,18 @@ class GamesScreen(Screen):
         # Começar a grade em 96 punha a primeira fileira em cima da frase.
         x, y = r.x + 44, r.y + 132
         n_games = len(self.ACOES)
-        # games grid: 4 per row
+        # A grade tem quatro colunas, e a LARGURA DELAS vem da tela.
+        #
+        # **Sintoma:** numa tela de 1024 px (máquina virtual, monitor velho,
+        # televisão de 720p ligada por VGA) a quarta coluna era desenhada
+        # FORA da tela: quatro quadros de 220 com 20 de folga somam 940 px, e
+        # o corpo ali tem 794. Três jogos e o quadro de "estatísticas" ficavam
+        # invisíveis — e como a seta continua andando por eles, a seleção
+        # sumia no nada. A fileira de baixo já se ajustava (o `cw2` logo
+        # adiante); metade desta tela era elástica e a outra metade não.
+        gap = 20
         cols = min(4, n_games)
-        cw, gap = 220, 20
+        cw = min(220, max(120, (r.w - 88 - gap * (cols - 1)) // cols))
         for i, (nome, _cmd, binario, icon, kind, de_onde) in enumerate(self.ACOES):
             col = i % cols
             row = i // cols
@@ -3073,14 +3134,19 @@ class GamesScreen(Screen):
                            15, T.TEXT_FAINT, anchor="center", maxw=bx.w - 24)
 
         # CH songs row
-        y2 = y + (n_games // cols + 1) * 120 + 10
+        # Divisão para CIMA: com `n_games // cols + 1` um número de jogos
+        # múltiplo de quatro (doze, um dia) abriria uma fileira inteira de
+        # vazio entre a grade e esta linha, e empurraria a linha para fora da
+        # tela de 768.
+        linhas = (n_games + cols - 1) // cols
+        y2 = y + linhas * 120 + 10
         ch_actions = [
             ("buscar músicas", "󰍉", "buscar"),
             (f"baixadas ({len(self.downloaded)})", "󰀙", "baixadas"),
             ("sincronizar pro celular", "󰢶", "sync"),
             ("estatísticas", "󰎛", "stats"),
         ]
-        cw2 = min(220, (r.w - 88) // 4 - 10)
+        cw2 = min(cw, (r.w - 88 - gap * 3) // 4)
         for i, (label, icon, _sub) in enumerate(ch_actions):
             bx = pygame.Rect(x + i * (cw2 + gap), y2, cw2, 60)
             sel = i + n_games == self.sel
@@ -3979,8 +4045,7 @@ class App:
             T.text(s, contexto, (x, y), 17, T.TEXT_FAINT, maxw=cabe)
             return
 
-        larg_teclas = (T.largura(teclas.replace("[", "").replace("]", ""), 17)
-                       + teclas.count("[") * 18)
+        larg_teclas = T.frase_largura(teclas, 17)
         if contexto:
             sobra = cabe - larg_teclas - 20
             if sobra > 80:
@@ -3989,12 +4054,52 @@ class App:
                 # texto, o corte por reticências a comeria junto e o nome do
                 # disco ficaria colado no primeiro quadradinho.
                 x = rc.right + 22
-            elif larg_teclas > cabe:
-                # Nem as teclas cabem: sem moldura elas ainda entram.
-                T.text(s, teclas.replace("[", "").replace("]", ""), (x, y), 17,
-                       T.TEXT_FAINT, maxw=cabe)
+                # `sobra > 80` já garante `cabe > larg_teclas + 100`: as
+                # teclas cabem inteiras no que restou.
+                T.frase_com_teclas(s, teclas, (x, y), 17, T.TEXT_FAINT)
                 return
-        T.frase_com_teclas(s, teclas, (x, y), 17, T.TEXT_FAINT)
+        # A linha é só das dicas — e ela precisa CABER.
+        #
+        # **Sintoma:** a AGORA anuncia sete atalhos, e numa tela de 1280 os
+        # dois últimos ("[+]/[-] volume", "[D] deck sozinho: desligado") eram
+        # desenhados FORA da tela. O corte por largura existia, mas só dentro
+        # do `if contexto:` — e a AGORA, a ESTANTE e a maioria das seções
+        # chamam isto sem contexto nenhum, ou seja, justamente por onde não
+        # havia conferência.
+        cabem = self._dicas_que_cabem(teclas, cabe)
+        if not cabem:
+            # Nem a primeira dica cabe: sem os quadradinhos ela ainda entra.
+            T.text(s, teclas.replace("[", "").replace("]", ""), (x, y), 17,
+                   T.TEXT_FAINT, maxw=cabe)
+            return
+        T.frase_com_teclas(s, cabem, (x, y), 17, T.TEXT_FAINT)
+
+    @staticmethod
+    def _dicas_que_cabem(teclas, cabe, size=17):
+        """As dicas que couberem, INTEIRAS, na largura dada.
+
+        Cortar esta linha por reticências deixaria "…[D] deck sozinho: desl…",
+        que não é um atalho, é um enigma. Uma dica ou aparece por completo ou
+        não aparece: as primeiras da frase são as que mais importam, e a
+        separação entre elas (dois ou mais espaços) já diz onde uma acaba.
+        """
+        partes = [p for p in re.split(r"\s{2,}", teclas.strip()) if p]
+        if not partes:
+            return ""
+        sep = T.largura("   ", size)
+        usado, saida = 0, []
+        for p in partes:
+            w = T.frase_largura(p, size) + (sep if saida else 0)
+            if usado + w > cabe:
+                break
+            saida.append(p)
+            usado += w
+        # O separador de algumas linhas é um "·" sozinho entre os espaços.
+        # Cortando no meio, ele sobraria pendurado no fim da frase apontando
+        # para o que não está mais ali.
+        while saida and not any(c.isalnum() for c in saida[-1]):
+            saida.pop()
+        return "   ".join(saida)
 
     def lista_com_saida(self, s, r, titulo, sub, acoes, sel, job, dica,
                         size=20):
