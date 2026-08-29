@@ -504,11 +504,51 @@ class NowScreen(Screen):
                 (rm + math.cos(aa) * r1, rm + math.sin(aa) * r1), 2)
         s.blit(bril, (dx - rm, dy - rm))
 
+        # ── onde a agulha está, no próprio disco ───────────────────────────
+        # O raio É o tempo — é a frase da §5.5 e a única coisa que um disco
+        # diz de longe: dá para ver quanto falta olhando onde a agulha está.
+        # A tela tinha isso escrito em minutos ("vira em 6min") e não tinha
+        # no objeto, que é onde a pessoa olha.
+        #
+        # Marca à ESQUERDA, a 180°, porque é a metade que fica de fora da
+        # capa: o resto do sulco está atrás dela, e uma luz desenhada ali
+        # seria luz desenhada para ninguém.
+        if side and frac > 0.0:
+            rr = rm * (T.GROOVE_O - (T.GROOVE_O - T.GROOVE_I) * min(1.0, frac))
+            ax, ay = dx - rr, dy
+            # A parte JÁ TOCADA, do sulco de fora até onde a agulha está: um
+            # arco fino e fraco no que sobra à vista. É o mesmo que a barra
+            # de progresso diz, dito pelo disco.
+            tocado = T.rascunho(rm * 2, rm * 2, "tocado")
+            if rr < rm * T.GROOVE_O - 1:
+                pygame.draw.arc(tocado, (*T.AMBER_DIM, 95),
+                                pygame.Rect(int(rm - rm * T.GROOVE_O),
+                                            int(rm - rm * T.GROOVE_O),
+                                            int(rm * T.GROOVE_O * 2),
+                                            int(rm * T.GROOVE_O * 2)),
+                                math.radians(120), math.radians(240), 2)
+            s.blit(tocado, (dx - rm, dy - rm))
+            # Apertada e quente, não uma bolha grande e fraca: cinco
+            # círculos de alfa baixo sobre o disco escuro somam um disco
+            # ACINZENTADO com aresta, que é o contrário de um ponto de luz.
+            fr = max(5, int(rm * 0.055))
+            faisca = T.rascunho(fr * 2, fr * 2, "agulha")
+            for k in range(4, 0, -1):
+                pygame.draw.circle(faisca,
+                                   (*T.AMBER_GLOW, int(30 + level * 34)),
+                                   (fr, fr), int(fr * k / 4))
+            s.blit(faisca, (ax - fr, ay - fr))
+            pygame.draw.circle(s, T.AMBER, (int(ax), int(ay)),
+                               max(2, int(rm * 0.018)))
+
         # ── o som, no aro do disco ─────────────────────────────────────────
         if spec is not None:
             self._spectrum(s, (dx, dy), spec, level, rm)
 
-        T.sleeve(s, cr, cov)
+        # Lombada à DIREITA: a borda fechada da capa é a do outro lado de
+        # onde o disco sai. Com ela à esquerda, o disco estava saindo por
+        # dentro da própria costura.
+        T.sleeve(s, cr, cov, lombada="dir")
         if not cov:
             T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
 

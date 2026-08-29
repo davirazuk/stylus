@@ -485,7 +485,7 @@ def frase_largura(texto, size=18):
 _sleeve_cache = {}
 
 
-def sleeve(surf, rect, art, selected=False):
+def sleeve(surf, rect, art, selected=False, lombada="esq"):
     """Uma capa de disco desenhada como OBJETO, não como quadrado colorido.
 
     Vale de 46 px (a miniatura do trilho) a meia tela (a AGORA): é o único
@@ -536,12 +536,22 @@ def sleeve(surf, rect, art, selected=False):
         panel(surf, rect, INK_LIFT, radius=3)
 
     # ── a lombada ─────────────────────────────────────────────────────────
+    # De que LADO ela fica importa desde que a AGORA passou a puxar o disco
+    # para fora da capa: a lombada é a borda FECHADA, e o disco estava saindo
+    # exatamente por ela. Na grade tanto faz (vê-se a frente); ali não.
     lom = max(2, round(rect.w / 32))
     faixa = pygame.Surface((lom, rect.h), pygame.SRCALPHA)
     faixa.fill((0, 0, 0, 92))
-    surf.blit(faixa, rect.topleft)
-    pygame.draw.line(surf, lerp(INK, TEXT, 0.22),
-                     (rect.x + lom, rect.y + 1), (rect.x + lom, rect.bottom - 2))
+    if lombada == "dir":
+        surf.blit(faixa, (rect.right - lom, rect.y))
+        pygame.draw.line(surf, lerp(INK, TEXT, 0.22),
+                         (rect.right - lom - 1, rect.y + 1),
+                         (rect.right - lom - 1, rect.bottom - 2))
+    else:
+        surf.blit(faixa, rect.topleft)
+        pygame.draw.line(surf, lerp(INK, TEXT, 0.22),
+                         (rect.x + lom, rect.y + 1),
+                         (rect.x + lom, rect.bottom - 2))
 
     # ── a luz ─────────────────────────────────────────────────────────────
     luz = pygame.Surface((rect.w, 1), pygame.SRCALPHA)
