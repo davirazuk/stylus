@@ -39,10 +39,20 @@
   Mod+Shift+Espaço   flutuar
   Mod+1 … Mod+9      ir para a área de trabalho N
   Mod+Shift+1 … 9    mandar a janela para a área N
+  Mod+Tab            volta para a área de onde você veio
+  Mod+Ctrl+setas     área anterior / próxima
+  Alt+Tab            escolher uma janela pelo nome
+  Mod+A              focar o quadro que contém este
+  Mod+T              trocar entre lado a lado e em cima/embaixo
+  Mod+R              redimensionar com as setas (Enter ou Esc sai)
 
   ── música ────────────────────────────────────────────────────────────
   Play / Pause       pausa e volta
   Próxima / Anterior pula faixa
+  Mod+Shift+O        SORTEIA UM DISCO e põe para tocar
+                     (puxa para o que faz mais tempo que não toca)
+  Mod+O              o disco na tela, com a agulha andando (o deck)
+  Mod+/              a letra da música que está tocando
   Mod+Shift+V        VIRAR O LADO (põe a agulha no começo do outro lado)
   Mod+Shift+M        volume, por canal (pavucontrol)
 

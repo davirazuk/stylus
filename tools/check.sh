@@ -3211,6 +3211,52 @@ else
     printf '%s\n' "$saida" | sed 's/^/      /'
 fi
 
+sec "todo atalho NOSSO está no Mod+F1"
+# A conferência acima confere as teclas de foco/mover, que foi onde a ajuda
+# mentiu uma vez. Esta olha o outro lado do mesmo buraco: um atalho ligado no
+# i3 a um comando DO STYLUS e que não está escrito em lugar nenhum.
+#
+# **Sintoma:** o `Mod+Shift+O` sorteia um disco puxando para o que faz mais
+# tempo que não toca — a coisa de que este sistema mais se orgulha — e não
+# aparecia na lista de atalhos. Nem o `Mod+O` (o deck) nem o `Mod+/` (a
+# letra). Três teclas prontas, testadas, e ninguém tinha como descobri-las
+# sem ler o config do i3.
+#
+# Só os NOSSOS comandos: as teclas do próprio i3 (kill, layout, resize) são
+# documentadas em prosa e por faixa, e exigi-las uma a uma encheria a lista
+# de ruído.
+CFG=airootfs/etc/skel/.config/i3/config
+AJUDA=airootfs/usr/share/stylus/keybindings.txt
+if [[ -f $CFG && -f $AJUDA ]]; then
+    faltando=$(python3 - <<'ATALHOEOF'
+import re
+cfg = open("airootfs/etc/skel/.config/i3/config", encoding="utf-8").read()
+ajuda = open("airootfs/usr/share/stylus/keybindings.txt", encoding="utf-8").read()
+mapa = {"semicolon": ";", "slash": "/", "comma": ",", "period": ".",
+        "Return": "Enter", "space": "Espaço"}
+alvo = re.compile(r"\bstylus(-[a-z]+)?\b")
+for m in re.finditer(r"^bindsym\s+(\$mod\S*)\s+(.*)$", cfg, re.M):
+    tecla, acao = m.group(1), m.group(2)
+    if not alvo.search(acao):
+        continue
+    partes = tecla.replace("$mod", "Mod").split("+")
+    fim = partes[-1]
+    fim = mapa.get(fim, fim.upper() if len(fim) == 1 else fim)
+    nome = "+".join(p.replace("Control", "Ctrl") for p in partes[:-1] + [fim])
+    if nome.lower() not in ajuda.lower():
+        print("%s → %s" % (nome, acao.replace("exec --no-startup-id ", "")[:52]))
+ATALHOEOF
+)
+    if [[ -z $faltando ]]; then
+        ok "todo atalho do i3 que roda um comando do STYLUS está na lista"
+    else
+        bad "atalho ligado no i3 e ausente do Mod+F1:"
+        printf '%s\n' "$faltando" | sed 's/^/      /'
+    fi
+else
+    printf '  %s—%s sem config do i3 ou sem keybindings.txt\n' "$y" "$z"
+fi
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
