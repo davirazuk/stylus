@@ -51,13 +51,23 @@ def secao(nome):
 
 
 def coleção_de_mentira(base):
-    """Dois discos com capa, o suficiente para a grade ter o que desenhar."""
+    """Quatro discos com capa, o suficiente para a grade ter o que desenhar.
+
+    Os dois últimos têm nome COMPRIDO de propósito. Os dois primeiros — que
+    eram a estante inteira do teste — cabem em qualquer canto, e é o
+    comprimento que revela folga fixa e piso que não cabe: com eles, a
+    conferência de colisão mede a estante, o diário e a pilha como se todo
+    disco do mundo se chamasse "Abbey Road".
+    """
     try:
         from PIL import Image
     except ImportError:
         return None
     for artista, album in (("The Beatles", "Abbey Road"),
-                           ("Radiohead", "OK Computer")):
+                           ("Radiohead", "OK Computer"),
+                           ("Godspeed You! Black Emperor",
+                            "Lift Your Skinny Fists Like Antennas to Heaven"),
+                           ("Sigur Rós", "Ágætis byrjun (edição de aniversário)")):
         d = os.path.join(base, artista, album)
         os.makedirs(d, exist_ok=True)
         Image.new("RGB", (300, 300), (80, 120, 180)).save(

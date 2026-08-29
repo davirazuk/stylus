@@ -1989,13 +1989,24 @@ class DiaryScreen(Screen):
             # A mesma capa-objeto do resto do sistema. Aqui ela ainda era
             # colada chapada, e era a última lista que destoava.
             T.sleeve(s, cr, self.app.thumbs.get(it["cover"]))
+            # As três colunas dividem a linha por MEDIDA. Eram dois números
+            # fixos — `row.w - 380` para o nome e `row.right - 150` para a
+            # data — e "posto há 11 meses" mede mais do que os 150
+            # reservados: o fim do nome do disco ficava por baixo do começo
+            # da data. Numa tela de 800 acontecia até com "Abbey Road".
+            quando = ha_quanto(it["ts"])
+            vezes = f"{it['plays']}x"
+            x_vezes = row.right - 20
+            x_quando = x_vezes - T.largura(vezes, 21) - 16
+            maxw = max(60, x_quando - T.largura(quando, 19) - 16
+                       - (cr.right + 18))
             T.text(s, it["name"], (cr.right + 18, row.y + 8), 22,
-                   T.TEXT if sel else T.TEXT_DIM, maxw=row.w - 380)
+                   T.TEXT if sel else T.TEXT_DIM, maxw=maxw)
             T.text(s, it["artist"], (cr.right + 18, row.y + 38), 17,
-                   T.TEXT_FAINT, maxw=row.w - 380)
-            T.text(s, ha_quanto(it["ts"]), (row.right - 150, row.y + 20), 19,
+                   T.TEXT_FAINT, maxw=maxw)
+            T.text(s, quando, (x_quando, row.y + 20), 19,
                    T.TEXT_DIM, anchor="topright")
-            T.text(s, f"{it['plays']}x", (row.right - 20, row.y + 20), 21,
+            T.text(s, vezes, (x_vezes, row.y + 20), 21,
                    T.PINK, anchor="topright")
             y += 84
         # O calendário fica ENTRE o fim da lista e a linha de dicas, e fica
