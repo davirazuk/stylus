@@ -5013,17 +5013,24 @@ class App:
             return
         if self._lado_i is not None and i > self._lado_i:
             anterior = al.sides[self._lado_i]
-            ultimo = i >= len(al.sides) - 1
+            # A frase do gesto vem do Album — a mesma que a notificação e o
+            # deck dizem. Escrita aqui, ela perguntava "este é o último
+            # lado?", e num disco DUPLO isso manda virar quando o objeto
+            # pede trocar de disco.
+            try:
+                gesto = al.gesto_do_lado(i)
+            except Exception:                              # noqa: BLE001
+                gesto = "agora o %s" % (side.get("label", "LADO")
+                                        .replace("SIDE", "LADO"))
             self._flip = (time.time(),
                           anterior.get("label", "LADO").replace("SIDE", "LADO"),
-                          side.get("label", "LADO").replace("SIDE", "LADO"),
-                          f"{al.artist} — {al.name}", ultimo)
+                          gesto, f"{al.artist} — {al.name}")
         self._lado_i = i
 
     def _draw_flip(self, s):
         if not self._flip:
             return
-        t0, antes, agora, disco, ultimo = self._flip
+        t0, antes, gesto, disco = self._flip
         dt = time.time() - t0
         if dt > self.FLIP_DUR:
             self._flip = None
@@ -5049,8 +5056,8 @@ class App:
         T.text(camada, antes, (cx, cy - 96), 26, T.TEXT_DIM, anchor="center")
         T.text(camada, "ACABOU", (cx, cy - 44), 68, T.AMBER,
                bold=True, anchor="center")
-        T.text(camada, ("vire o disco para o " if ultimo else "agora é o ") + agora,
-               (cx, cy + 34), 30, T.TEXT, anchor="center")
+        T.text(camada, gesto, (cx, cy + 34), 30, T.TEXT, anchor="center",
+               maxw=self.W - 160)
         T.text(camada, disco, (cx, cy + 84), 20, T.TEXT_FAINT,
                anchor="center", maxw=self.W - 200)
 

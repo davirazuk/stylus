@@ -684,11 +684,15 @@ def main():
         cena._side = 1
         cena._ti_cache = [None, 0]
 
-        class _Alb:
-            sides = [{"label": "SIDE A"}, {"label": "SIDE B"}]
-            tracks = [{"title": "Come Together", "path": "/x/1.flac"}]
-
-        cena.album = _Alb()
+        # Um Album DE VERDADE (sem __init__, que iria ao disco): a frase do
+        # gesto do fim do lado mora no `Album.gesto_do_lado`, e um objeto de
+        # mentira sem esse método faz a legenda cair na reserva dela — o
+        # teste passaria verde por cima justamente do caminho que interessa.
+        _alb_falso = vinyl.Album.__new__(vinyl.Album)
+        _alb_falso.sides = [{"label": "SIDE A"}, {"label": "SIDE B"}]
+        _alb_falso.tracks = [{"title": "Come Together", "path": "/x/1.flac"}]
+        _alb_falso.discos = 1
+        cena.album = _alb_falso
 
         # ── nada é montado com menos de dois pontos ───────────────────────
         # **Sintoma:** peças inteiras do desenho que não aparecem, e nada
@@ -757,6 +761,19 @@ def main():
               esq == "LADO A acabou — vire o disco para o LADO B")
         check("e o recado do fim do lado tem a cor que a paleta guardou",
               cena.legenda_cor() == vinyl.ALARM)
+        # Num disco DUPLO o lado B não acaba pedindo para virar: acaba
+        # pedindo para TROCAR de disco. O deck dizia "vire o disco" nos
+        # quatro lados, e a frase agora é a mesma que a notificação usa.
+        _dup = vinyl.Album.__new__(vinyl.Album)
+        _dup.sides = [{"label": "SIDE " + c} for c in "ABCD"]
+        _dup.tracks = _alb_falso.tracks
+        _dup.discos = 2
+        _antes_al, _antes_side = cena.album, cena._side
+        cena.album, cena._side = _dup, 2
+        _esq_dup = cena.legendas({})[0]
+        cena.album, cena._side = _antes_al, _antes_side
+        check("num disco duplo, o fim do lado B manda TROCAR de disco",
+              _esq_dup == "LADO B acabou — ponha o DISCO 2, LADO C")
         check("um recado de ESTADO fica na tela",
               cena.caption_is_state() is True)
 

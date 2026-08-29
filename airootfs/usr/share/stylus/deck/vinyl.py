@@ -1510,6 +1510,37 @@ class Album:
             s["label"] = "SIDE " + chr(ord("A") + i)
         self.sides = sides
 
+    # ── o que o objeto pede quando um lado começa ─────────────────────────
+    # Três telas dizem esta mesma frase — a notificação do
+    # `stylus-side-watch`, a legenda do deck e o aviso de tela cheia do
+    # lançador — e as três a escreviam por conta própria, todas perguntando
+    # "este é o último lado?". Num LP de dois lados isso acerta por
+    # acidente; num DUPLO, A→B mandava "agora o LADO B" (e ali se vira o
+    # disco) e B→C mandava "agora o LADO C" (e ali se TROCA de disco, que é
+    # outro gesto: você levanta e vai até a estante).
+    #
+    # A pergunta certa é "que gesto o objeto pede?", e o objeto responde pelo
+    # ÍNDICE: lado ímpar é o verso do que já está no prato; lado par é o
+    # começo de outro disco. Mora aqui, junto dos lados, pelo mesmo motivo
+    # que as cores moram no `palette`: uma frase escrita em três lugares
+    # deriva, e derivou.
+
+    def rotulo_do_lado(self, i):
+        """LADO A, LADO B… — o vocabulário do sistema, do lado `i`."""
+        lados = self.sides or ()
+        if 0 <= i < len(lados):
+            return (lados[i].get("label") or "LADO").replace("SIDE", "LADO")
+        return "LADO"
+
+    def gesto_do_lado(self, i):
+        """"vire o disco para o LADO B" / "ponha o DISCO 2, LADO C"."""
+        rot = self.rotulo_do_lado(i)
+        if i % 2 == 1:
+            return "vire o disco para o %s" % rot
+        if i > 0 and getattr(self, "discos", 1) > 1:
+            return "ponha o DISCO %d, %s" % (i // 2 + 1, rot)
+        return "agora o %s" % rot
+
     def side_for(self, t):
         for i, s in enumerate(self.sides):
             if t < s["end"] - 1e-6:

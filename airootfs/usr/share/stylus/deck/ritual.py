@@ -584,10 +584,18 @@ class RitualScene:
         if self.deck.phase==vinyl.BREAK:
             # O `_side` já é o lado NOVO quando o LIFT começa: quem acabou é
             # o de trás. Mesmo texto que a notificação do stylus-side-watch,
-            # de propósito — é o mesmo acontecimento visto de dois lugares.
-            return ("%s acabou — vire o disco para o %s"
-                    % (self.lado_rotulo(max(0,(self._side or 0)-1)),
-                       self.lado_rotulo(self._side or 0)), None)
+            # de propósito — é o mesmo acontecimento visto de dois lugares —
+            # e agora literalmente a mesma FRASE, vinda do
+            # `Album.gesto_do_lado`. Antes cada um a escrevia por conta
+            # própria e este aqui mandava "vire o disco" mesmo quando o
+            # objeto pedia TROCAR de disco (o lado B→C de um duplo).
+            i = self._side or 0
+            try:
+                gesto = self.album.gesto_do_lado(i)
+            except Exception:                              # noqa: BLE001
+                gesto = "agora o %s" % self.lado_rotulo(i)
+            return ("%s acabou — %s"
+                    % (self.lado_rotulo(max(0, i - 1)), gesto), None)
         if self.deck.phase==vinyl.STOP: return ("o disco acabou", None)
         if ban: return (ban[0] or None, ban[1] or None)
         return (None, self.faixa_agora(snap))

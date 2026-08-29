@@ -1236,6 +1236,14 @@ def main():
             tracks = []
             sides = [{"label": "SIDE A", "start": 0, "end": 1200},
                      {"label": "SIDE B", "start": 1200, "end": 2400}]
+            discos = 1
+
+            # A frase do fim do lado mora no `Album.gesto_do_lado` — as três
+            # telas que a dizem (a notificação, o deck e este aviso de tela
+            # cheia) leem de lá. Um fake sem ela faria o aviso cair na
+            # reserva, e o teste passaria por cima do caminho de verdade.
+            gesto_do_lado = A.vinyl.Album.gesto_do_lado
+            rotulo_do_lado = A.vinyl.Album.rotulo_do_lado
 
             def lyrics_for(self, *a, **k):
                 return None
@@ -1300,12 +1308,49 @@ def main():
             ok("disco novo recomeça a contar")
 
         # e o aviso some sozinho depois do tempo dele
-        app._flip = (time.time() - app.FLIP_DUR - 1, "LADO A", "LADO B", "x", False)
+        app._flip = (time.time() - app.FLIP_DUR - 1, "LADO A",
+                     "vire o disco para o LADO B", "x")
         app._draw_flip(app.surf)
         if app._flip:
             bad("o aviso não sumiu sozinho")
         else:
             ok("some sozinho depois de alguns segundos")
+
+        # ── e o que ele ESCREVE ───────────────────────────────────────────
+        # O aviso perguntava "este é o último lado?" para escolher entre
+        # "vire o disco" e "agora é o". Num LP de dois lados acerta por
+        # acidente; num DUPLO, o fim do lado B pede para TROCAR de disco e
+        # ele mandava virar. A frase vem do `Album.gesto_do_lado`, que é a
+        # mesma que a notificação e o deck dizem.
+        disco.discos = 2
+        disco.sides = [{"label": "SIDE " + c, "start": i * 600,
+                        "end": (i + 1) * 600} for i, c in enumerate("ABCD")]
+        frases = []
+        original_t = _T.text
+
+        def _espia_flip(surf, txt, *a, **k):
+            frases.append(str(txt))
+            return original_t(surf, txt, *a, **k)
+
+        try:
+            for destino in (1, 2, 3):
+                app._flip = (time.time(), "LADO %s" % "ABCD"[destino - 1],
+                             disco.gesto_do_lado(destino), "x")
+                frases.clear()
+                _T.text = _espia_flip
+                app._draw_flip(app.surf)
+                _T.text = original_t
+                junto = " ".join(frases)
+                quer = "vire o disco" if destino % 2 else "DISCO 2"
+                if quer not in junto:
+                    bad("o aviso do lado %s não diz %r" % ("ABCD"[destino], quer),
+                        junto[:120])
+                    break
+            else:
+                ok("num disco duplo ele manda virar, trocar e virar")
+        finally:
+            _T.text = original_t
+            app._flip = None
     except Exception:                                       # noqa: BLE001
         bad("virar o lado", traceback.format_exc())
 

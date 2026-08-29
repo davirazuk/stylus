@@ -334,45 +334,24 @@ def rotulo(lado):
 def recado(al, de, para):
     """(título, corpo) do aviso quando o lado `de` acaba e começa o `para`.
 
-    POR QUE ISTO É UMA FUNÇÃO
-    -------------------------
-    Porque a decisão estava errada e ninguém tinha como ver. Ela morava
-    dentro do laço, e era:
+    A frase do GESTO vem do `Album.gesto_do_lado` — ela é dita por três
+    telas (esta notificação, a legenda do deck e o aviso de tela cheia do
+    lançador) e as três a escreviam por conta própria. Ver o comentário lá.
 
-        ultimo = i >= len(al.sides) - 1
-        if ultimo and i == len(al.sides) - 1:   # ← a mesma coisa duas vezes
-            "vire o disco para o LADO X"
-        else:
-            "agora o LADO X"
-
-    Ou seja: só o ÚLTIMO lado mandava virar. Num LP comum de dois lados isso
-    dá certo por acidente. Num disco DUPLO, não:
-
-      · A → B  dizia "agora o LADO B", e ali você tem que virar o disco;
-      · B → C  dizia "agora o LADO C", e ali você tem que TROCAR de disco,
-               que é outro gesto e outro objeto;
-      · C → D  dizia "vire o disco", que era o único certo dos três.
-
-    A pergunta não é "este é o último lado?", é "que gesto o objeto pede
-    agora?". E o objeto responde pelo índice: lado ÍMPAR (B, D, F) é o verso
-    do disco que já está no prato — vire. Lado PAR (C, E) é o começo de
-    outro disco — troque.
+    Isto continua sendo uma função e não um trecho dentro do laço porque a
+    decisão precisa ser conferível sem uma sessão de verdade tocando um
+    disco duplo até o fim do lado B.
     """
-    n_sides = len(getattr(al, "sides", ()) or ())
-    anterior = al.sides[de] if 0 <= de < n_sides else None
+    lados = getattr(al, "sides", ()) or ()
+    anterior = lados[de] if 0 <= de < len(lados) else None
     titulo = "%s acabou" % rotulo(anterior)
     nome = getattr(al, "name", "") or ""
-    if para % 2 == 1:
-        return titulo, "%s — vire o disco para o %s" % (nome, rotulo(para_lado(al, para)))
-    if para > 0 and getattr(al, "discos", 1) > 1:
-        return titulo, "%s — ponha o DISCO %d, %s" % (
-            nome, para // 2 + 1, rotulo(para_lado(al, para)))
-    return titulo, "%s — agora o %s" % (nome, rotulo(para_lado(al, para)))
-
-
-def para_lado(al, i):
-    lados = getattr(al, "sides", ()) or ()
-    return lados[i] if 0 <= i < len(lados) else None
+    try:
+        gesto = al.gesto_do_lado(para)
+    except Exception:                     # noqa: BLE001 — nunca calar o aviso
+        gesto = "agora o %s" % rotulo(lados[para] if 0 <= para < len(lados)
+                                      else None)
+    return titulo, "%s — %s" % (nome, gesto)
 
 
 def main():

@@ -1139,12 +1139,19 @@ except BaseException as e:                               # noqa: BLE001
     raise SystemExit(0)
 
 
-class _Alb:
-    name = "Disco"
+# Um Album DE VERDADE (sem __init__, que iria ao disco): a frase do gesto
+# mora no vinyl.Album, e um objeto de mentira sem esse método faria o
+# `recado` cair na reserva dele — o teste passaria por cima justamente do
+# caminho que interessa.
+import vinyl as _v
 
-    def __init__(self, n, discos):
-        self.sides = [{"label": "SIDE " + chr(65 + i)} for i in range(n)]
-        self.discos = discos
+
+def _Alb(n, discos):
+    a = _v.Album.__new__(_v.Album)
+    a.name = "Disco"
+    a.sides = [{"label": "SIDE " + chr(65 + i)} for i in range(n)]
+    a.discos = discos
+    return a
 
 
 # (lados, discos, índice de destino, o que TEM que aparecer no corpo)
@@ -1168,12 +1175,8 @@ for n, discos, para, esperado in casos:
         print("título %r, esperado %r" % (titulo, esperado_t))
 
 # E não pode estourar com um álbum sem lados nenhum.
-class _Vazio:
-    name, sides, discos = "X", [], 1
-
-
 try:
-    mod.recado(_Vazio(), 0, 1)
+    mod.recado(_Alb(0, 1), 0, 1)
 except Exception as e:                                   # noqa: BLE001
     print("um álbum sem lados derruba o aviso: %r" % e)
 GESTOEOF
