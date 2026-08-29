@@ -521,6 +521,23 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   `/etc/skel`: trocar para o KDE mudava o corpo da letra de 10 para 11 e
   apagava o `gtk-application-prefer-dark-theme`.
 
+### Sexta leva (a cerimônia entrou no lançador)
+- **A tela cheia do disco ganhou a CERIMÔNIA** — spinup → cue → drop. O
+  prato sai do zero e acelera, a agulha aparece suspensa FORA da borda e
+  desce até o sulco, acendendo. Vale nas duas telas da AGORA, não só na
+  cheia. Era a única coisa que o deck tinha de próprio depois que a tela
+  cheia nasceu; o que sobra de exclusivo dele agora é desenho de GPU (o
+  composto CRT, o acumulador aditivo com bloom, o osciloscópio, as marcas de
+  uso lidas do envelope) — nada disso é o ritual.
+- **Abrir a interface com música já tocando NÃO encena a cerimônia.** Ali o
+  disco não foi posto agora, foi encontrado no meio; encenar a descida da
+  agulha seria mentira sobre o que aconteceu. É a diferença entre um ritual
+  e uma animação de abertura.
+- **A varredura de teclado passou a girar entre as fases da cerimônia**, e
+  achou de cara uma divisão por zero no rastro do sulco (`passos` valia 0 e
+  o laço dividia por ele). Custa nada e cobre os três momentos em que a
+  agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
+
 ### Quinta leva (o que estava escrito e ninguém via)
 - **Duas polybars, uma paleta velha, um terminal que não existe.** Ver as
   lições na §4. Junto: o rofi ainda abria `xfce4-terminal`, consertado no i3

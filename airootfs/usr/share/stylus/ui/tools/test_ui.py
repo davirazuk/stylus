@@ -575,6 +575,125 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("a volta do disco", traceback.format_exc())
 
+    secao("a cerimônia: o prato acelera, a agulha desce")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # A cerimônia (spinup → cue → drop) é o RITUAL, e o CLAUDE.md §5.5 chama
+    # de sagrado: é o que separa "pôr um disco" de "dar play". Era a única
+    # coisa que o deck — um programa à parte, com OpenGL e venv — tinha e a
+    # tela cheia do lançador não.
+    #
+    # Ler o código não prova nada aqui: as três fases existem, têm nome, e
+    # cada uma faz alguma coisa. A pergunta é sobre o RESULTADO — o prato
+    # gira MENOS no começo do que depois, e a agulha só está no sulco quando
+    # ela já desceu. É a mesma lição do `[s]` que acendia o ícone e não
+    # falava com o mpv.
+    try:
+        agora = next(s for s in app.screens if s.name == "AGORA")
+        app._goto(app.screens.index(agora))
+
+        # ── as fases, na ordem ────────────────────────────────────────────
+        _t = time.monotonic()
+        vistas = []
+        for atraso in (0.0, 0.6, 1.4, 2.1, 5.0):
+            app.cerimonia_t0 = _t - atraso
+            vistas.append(agora._cerimonia()[0])
+        app.cerimonia_t0 = 0.0
+        if vistas != ["spinup", "spinup", "cue", "drop", None]:
+            bad("as fases da cerimônia saem fora de ordem", repr(vistas))
+        else:
+            ok("spinup → cue → drop → tocando, nessa ordem")
+        if agora._cerimonia() != (None, 1.0):
+            bad("sem cerimônia em curso a tela não volta ao normal")
+        else:
+            ok("sem disco novo, nenhuma cerimônia")
+
+        # ── o prato ACELERA: o giro do começo é menor que o de regime ─────
+        class _AlbCer:
+            folder, artist, name, year = "/x", "A", "B", ""
+            cover, plays, last_played, total = None, 1, 0, 1680
+            discos = 1
+            tracks = [{"title": "t", "dur": 210}]
+            sides = [{"label": "SIDE A", "start": 0, "end": 840,
+                      "tracks": [0]},
+                     {"label": "SIDE B", "start": 840, "end": 1680,
+                      "tracks": [0]}]
+
+        _ac = _AlbCer()
+        _antes = app.playing.where
+        app.playing.where = lambda: ({}, _ac, _ac.tracks[0], _ac.sides[0],
+                                     100.0, 0.25)
+
+        def _quanto_girou(atraso, quadros=6):
+            agora._ang = 0.0
+            for _ in range(quadros):
+                if atraso is not None:
+                    app.cerimonia_t0 = time.monotonic() - atraso
+                else:
+                    app.cerimonia_t0 = 0.0
+                agora.draw(app.surf, corpo)
+                app.clock.tick(60)
+            return agora._ang
+
+        try:
+            comeco = _quanto_girou(0.05)      # logo no início do spinup
+            regime = _quanto_girou(None)      # já tocando
+        finally:
+            app.playing.where = _antes
+            app.cerimonia_t0 = 0.0
+        if not (0.0 <= comeco < regime * 0.5):
+            bad("o prato não acelera: começo=%.4f, regime=%.4f"
+                % (comeco, regime))
+        else:
+            ok("o prato sai do zero e chega à rotação (%.3f → %.3f rad)"
+               % (comeco, regime))
+
+        # ── quem DISPARA a cerimônia ──────────────────────────────────────
+        # Disco novo, agulha desce. Menos numa hipótese: a interface acabou
+        # de abrir com música já tocando — ali o disco não foi posto agora,
+        # foi encontrado no meio, e encenar a descida seria mentira sobre o
+        # que aconteceu. É a diferença entre um ritual e uma animação de
+        # abertura.
+        _guarda = (app._disco_anterior, app.cerimonia_t0, app._born,
+                   app.playing.album, app.playing.session.snapshot)
+        try:
+            app.playing.album = _ac
+
+            # a) abrindo com música tocando: nada de cerimônia
+            app._disco_anterior = None
+            app.cerimonia_t0 = 0.0
+            app._born = time.time()
+            app._disco_novo()
+            recem = app.cerimonia_t0
+
+            # b) a mesma primeira leitura, mas com a interface aberta há
+            #    tempo (alguém pôs o disco de outro lugar: rofi, celular)
+            app._disco_anterior = None
+            app.cerimonia_t0 = 0.0
+            app._born = time.time() - 600
+            app._disco_novo()
+            de_fora = app.cerimonia_t0
+
+            # c) trocou de disco com a interface aberta
+            app.cerimonia_t0 = 0.0
+            _ac.folder = "/y"
+            app._disco_novo()
+            trocou = app.cerimonia_t0
+        finally:
+            _ac.folder = "/x"
+            (app._disco_anterior, app.cerimonia_t0, app._born,
+             app.playing.album, app.playing.session.snapshot) = _guarda
+        if recem:
+            bad("abrir a interface com música tocando encena uma cerimônia")
+        elif not de_fora:
+            bad("pôr um disco de fora da interface não encena nada")
+        elif not trocou:
+            bad("trocar de disco não começa a cerimônia")
+        else:
+            ok("disco novo começa; abrir com música tocando, não")
+    except Exception:                                       # noqa: BLE001
+        bad("a cerimônia", traceback.format_exc())
+
     secao("nenhuma tecla derruba a tela")
     # A varredura lá de cima aperta VINTE E OITO teclas escolhidas a dedo,
     # uma vez cada, e só na tela recém-aberta. Isto aperta o teclado
@@ -624,6 +743,13 @@ def main():
              lambda: ({"status": "Playing"}, _af, _af.tracks[0], _af.sides[0],
                       430.0, 0.51), _af),
         ]
+        # E a cerimônia junto, girando entre as fases a cada tecla: fora
+        # dela (0), spinup, cue e drop. Custa nada e cobre o desenho nos
+        # três momentos em que a agulha NÃO está onde ela normalmente
+        # estaria — que é onde este código erra. (Foi assim, com o `[f]`
+        # apertado no meio de um `drop`, que apareceu uma divisão por zero
+        # no rastro do sulco: `passos` valia 0 e o laço dividia por ele.)
+        _fases_cer = (0.0, 0.3, 1.5, 2.1)
         quebras = []
         try:
             for _nome_estado, _onde_esta, _album in estados:
@@ -632,7 +758,10 @@ def main():
                 for i, tela in enumerate(app.screens):
                     app._goto(i)
                     for _volta in (1, 2):
-                        for k in todas:
+                        for _ik, k in enumerate(todas):
+                            _dt = _fases_cer[_ik % len(_fases_cer)]
+                            app.cerimonia_t0 = (0.0 if not _dt
+                                                else time.monotonic() - _dt)
                             onde = "tecla"
                             try:
                                 tela.key(pygame.event.Event(
@@ -648,6 +777,7 @@ def main():
                                      .strip().splitlines()[-1]))
         finally:
             app.playing.where, app.playing.album = _antes_w, _antes_al
+            app.cerimonia_t0 = 0.0
         # Sem repetir a mesma pilha vinte vezes: o que interessa é QUAIS
         # telas e por quê.
         unicas = sorted({(n, o, m) for n, _t, o, m in quebras})
@@ -655,8 +785,8 @@ def main():
             bad("%d teclas derrubam alguma seção" % len(quebras),
                 "\n".join("%s (no %s): %s" % u for u in unicas[:5]))
         else:
-            ok("%d seções × %d teclas × 2 voltas × 2 estados, "
-               "desenhando a cada uma"
+            ok("%d seções × %d teclas × 2 voltas × 2 estados × 4 fases "
+               "da cerimônia, desenhando a cada uma"
                % (len(app.screens), len(todas)))
     except Exception:                                       # noqa: BLE001
         bad("a varredura de teclado", traceback.format_exc())

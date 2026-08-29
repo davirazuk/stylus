@@ -524,11 +524,16 @@ class NowScreen(Screen):
         # sozinho no escuro. A fase inicial vem do `frac` para o reflexo não
         # nascer sempre no mesmo sulco.
         parado = bool((snap or {}).get("paused"))
+        # A cerimônia vale nas DUAS telas. Ela é o ritual, não um enfeite da
+        # tela cheia: quem está na AGORA normal também acabou de pôr o disco.
+        fase, fcer = self._cerimonia()
+        giro = fcer ** 1.6 if fase == "spinup" else 1.0
         if self._ang is None:
             self._ang = (frac * 5.0) % (2 * math.pi)
         if not parado:
             dt_g = min(0.1, self.app.clock.get_time() / 1000.0)
-            self._ang = (self._ang + dt_g * (0.6 + level * 1.8)) % (2 * math.pi)
+            self._ang = (self._ang
+                         + dt_g * (0.6 + level * 1.8) * giro) % (2 * math.pi)
         ang = self._ang
         # Reaproveitada, não alocada. Não é mais rápido — está medido no
         # T.rascunho — mas deixa de fazer quatro megabytes de lixo por quadro
@@ -561,14 +566,27 @@ class NowScreen(Screen):
         # Marca à ESQUERDA, a 180°, porque é a metade que fica de fora da
         # capa: o resto do sulco está atrás dela, e uma luz desenhada ali
         # seria luz desenhada para ninguém.
-        if side and frac > 0.0:
+        # No `spinup` o braço ainda está no descanso; no `cue` a agulha fica
+        # suspensa FORA da borda, e no `drop` desce dali até o sulco. Ver
+        # `_cerimonia`.
+        rr_cue = rm * 1.09
+        if fase == "spinup":
+            pass
+        elif side and (frac > 0.0 or fase in ("cue", "drop")):
             rr = rm * (T.GROOVE_O - (T.GROOVE_O - T.GROOVE_I) * min(1.0, frac))
+            brilho, pousada = 1.0, True
+            if fase == "cue":
+                rr, brilho, pousada = rr_cue, 0.45, False
+            elif fase == "drop":
+                d = 1.0 - (1.0 - fcer) ** 2
+                rr = rr_cue + (rr - rr_cue) * d
+                brilho, pousada = 0.45 + 0.55 * d, d > 0.75
             ax, ay = dx - rr, dy
             # A parte JÁ TOCADA, do sulco de fora até onde a agulha está: um
             # arco fino e fraco no que sobra à vista. É o mesmo que a barra
             # de progresso diz, dito pelo disco.
             tocado = T.rascunho(rm * 2, rm * 2, "tocado")
-            if rr < rm * T.GROOVE_O - 1:
+            if pousada and rr < rm * T.GROOVE_O - 1:
                 pygame.draw.arc(tocado, (*T.AMBER_DIM, 95),
                                 pygame.Rect(int(rm - rm * T.GROOVE_O),
                                             int(rm - rm * T.GROOVE_O),
@@ -587,11 +605,11 @@ class NowScreen(Screen):
             for k in range(4, 0, -1):
                 pygame.draw.circle(
                     faisca,
-                    (*T.AMBER_GLOW, int((30 + pulse * 40) * k / 4)),
+                    (*T.AMBER_GLOW, int((30 + pulse * 40) * brilho * k / 4)),
                     (fr, fr), int(fr * k / 4))
             s.blit(faisca, (ax - fr, ay - fr))
-            pygame.draw.circle(s, T.AMBER, (int(ax), int(ay)),
-                               max(2, int(rm * 0.018)))
+            pygame.draw.circle(s, T.lerp(T.AMBER_DIM, T.AMBER, brilho),
+                               (int(ax), int(ay)), max(2, int(rm * 0.018)))
 
         # ── o som, no aro do disco ─────────────────────────────────────────
         if spec is not None:
@@ -700,6 +718,40 @@ class NowScreen(Screen):
                             + ("[D] deck sozinho: ligado" if self.app.auto_deck
                                else "[D] deck sozinho: desligado"))
 
+    # A cerimônia, em segundos. O prato leva um tempo para chegar aos 33
+    # (SPIN), a agulha fica um instante suspensa sobre a borda (CUE) e então
+    # desce (DROP). Os três juntos dão pouco mais de dois segundos: é uma
+    # cerimônia, não uma espera.
+    CER_SPIN, CER_CUE, CER_DROP = 1.2, 0.7, 0.6
+
+    def _cerimonia(self):
+        """(fase, f) — em que ponto da cerimônia estamos, e quanto dela já foi.
+
+        POR QUE ISTO EXISTE
+        -------------------
+        O deck é um programa à parte, com OpenGL e venv, e a única coisa que
+        ele tinha de próprio depois que a tela cheia do disco nasceu era
+        esta: a CERIMÔNIA. O CLAUDE.md §5.5 chama de sagrado, e com razão —
+        ela é o que separa "pôr um disco" de "dar play". Sem ela, a tela
+        cheia é uma foto bonita de um disco que já está tocando.
+
+        Fora da cerimônia devolve (None, 1.0), que é o estado normal: o
+        chamador multiplica o giro por 1.0 e desenha a agulha onde ela está.
+        """
+        t0 = getattr(self.app, "cerimonia_t0", 0.0)
+        if not t0:
+            return (None, 1.0)
+        dt = time.monotonic() - t0
+        if dt < self.CER_SPIN:
+            return ("spinup", dt / self.CER_SPIN)
+        dt -= self.CER_SPIN
+        if dt < self.CER_CUE:
+            return ("cue", dt / self.CER_CUE)
+        dt -= self.CER_CUE
+        if dt < self.CER_DROP:
+            return ("drop", dt / self.CER_DROP)
+        return (None, 1.0)
+
     def _cheia(self, s, r, snap, al, track, side, t_abs, frac):
         """O DISCO ocupando a tela — o deck, dentro do lançador.
 
@@ -716,10 +768,16 @@ class NowScreen(Screen):
         disco, o lado, e quanto falta. É a mesma leitura do deck sem o custo
         dele — e é a resposta honesta a "por que não tudo no lançador".
 
-        O que ela AINDA não faz, e é o que o deck tem de próprio: a cerimônia
-        (spinup → cue → drop) e o braço descendo. Isso é o ritual, e o
-        CLAUDE.md §5.5 chama de sagrado; enquanto não estiver aqui, o deck
-        continua sendo o lugar dele.
+        E a CERIMÔNIA está aqui (ver `_cerimonia`): disco novo, o prato sai
+        do zero, a agulha aparece suspensa fora da borda e desce até o sulco.
+        Era a única coisa que o deck tinha de próprio depois que esta tela
+        nasceu — o CLAUDE.md §5.5 chama o ritual de sagrado, e sem ele isto
+        aqui era uma foto bonita de um disco que já está tocando.
+
+        O que o deck ainda tem e isto não: o composto CRT (barril,
+        varredura, grão), o acumulador aditivo com bloom, o osciloscópio do
+        sinal e as marcas de uso lidas do envelope do áudio. É desenho de
+        GPU; nada disso é o ritual.
         """
         fundo = self.app.backdrop(al, r.size)
         if fundo is not None:
@@ -743,12 +801,18 @@ class NowScreen(Screen):
         s.blit(T.disco(rm), (dx - rm, dy - rm))
 
         parado = bool((snap or {}).get("paused"))
+        fase, fcer = self._cerimonia()
+        # O prato sai do zero: ao pôr o disco ele acelera até a rotação, e
+        # essa aceleração é metade do que faz a coisa parecer um objeto. O
+        # expoente é o que dá o peso — velocidade proporcional ao tempo lê
+        # como interpolação, não como massa.
+        giro = fcer ** 1.6 if fase == "spinup" else 1.0
         if self._ang is None:
             self._ang = (frac * 5.0) % (2 * math.pi)
         if not parado:
             self._ang = (self._ang
                          + min(0.1, self.app.clock.get_time() / 1000.0)
-                         * (0.6 + level * 1.8)) % (2 * math.pi)
+                         * (0.6 + level * 1.8) * giro) % (2 * math.pi)
         bril = T.rascunho(rm * 2, rm * 2, "reflexo")
         n, arco = 46, math.radians(40)
         r0, r1 = rm * 0.93, rm * T.GROOVE_O
@@ -781,12 +845,30 @@ class NowScreen(Screen):
         # que comparar. O que diz é o sulco inteiro em que ele anda, aceso
         # fraco: aí o raio vira o tempo à vista, que é a tese do deck.
         # A agulha é a mesma cruz curta e quente do vinyl.py — luz, não peça.
-        if side and frac > 0.0:
+        #
+        # Na CERIMÔNIA ela não está no sulco ainda: no `spinup` não existe
+        # (o braço está no descanso), no `cue` fica suspensa FORA da borda
+        # sem sulco aceso, e no `drop` desce dali até o sulco de verdade,
+        # acendendo. É a mesma coreografia do deck, sem OpenGL nenhum.
+        rr_cue = rm * 1.09
+        if fase == "spinup":
+            pass                       # o braço ainda está no descanso
+        elif side and (frac > 0.0 or fase in ("cue", "drop")):
             rr = rm * (T.GROOVE_O - (T.GROOVE_O - T.GROOVE_I) * min(1.0, frac))
+            if fase == "cue":
+                rr, brilho, sulco_vivo = rr_cue, 0.45, False
+            elif fase == "drop":
+                # desce com desaceleração: a agulha ENCOSTA, não aterrissa
+                d = 1.0 - (1.0 - fcer) ** 2
+                rr, brilho, sulco_vivo = (rr_cue + (rr - rr_cue) * d,
+                                          0.45 + 0.55 * d, d > 0.75)
+            else:
+                brilho, sulco_vivo = 1.0, True
             lado_s = int(rr * 2) + 8
             sul = T.rascunho(lado_s, lado_s, "sulco-vivo")
             cs = lado_s // 2
-            pygame.draw.circle(sul, (*T.AMBER, 46), (cs, cs), int(rr), 1)
+            if sulco_vivo:
+                pygame.draw.circle(sul, (*T.AMBER, 46), (cs, cs), int(rr), 1)
             # O rastro: o pedaço de sulco que ACABOU de passar pela agulha,
             # apagando para trás. Em SEGMENTOS e não em pontos — pontos com
             # o espaçamento do arco viram linha pontilhada, que lê como
@@ -794,7 +876,7 @@ class NowScreen(Screen):
             passos, arco = 40, math.radians(-72)
             gr = max(1, int(rm * 0.009))
             ant = None
-            for k in range(passos + 1):
+            for k in range(passos + 1 if sulco_vivo else 0):
                 f = k / float(passos)
                 a = math.pi + f * arco
                 pt = (cs + math.cos(a) * rr, cs + math.sin(a) * rr)
@@ -811,14 +893,16 @@ class NowScreen(Screen):
             faisca = T.rascunho(fr * 2, fr * 2, "agulha")
             for k in range(5, 0, -1):
                 pygame.draw.circle(
-                    faisca, (*T.AMBER_GLOW, int((26 + pulse * 44) * k / 5)),
+                    faisca,
+                    (*T.AMBER_GLOW, int((26 + pulse * 44) * brilho * k / 5)),
                     (fr, fr), int(fr * k / 5))
             s.blit(faisca, (ax - fr, ay - fr))
             braco = max(5, int(rm * 0.045))
             gros = max(2, int(rm * 0.010))
-            pygame.draw.line(s, T.AMBER_GLOW, (ax - braco, ay), (ax + braco, ay),
-                             gros)
-            pygame.draw.line(s, T.AMBER, (ax, ay - braco // 2),
+            cor_h = T.lerp(T.AMBER_DIM, T.AMBER_GLOW, brilho)
+            cor_v = T.lerp(T.AMBER_DIM, T.AMBER, brilho)
+            pygame.draw.line(s, cor_h, (ax - braco, ay), (ax + braco, ay), gros)
+            pygame.draw.line(s, cor_v, (ax, ay - braco // 2),
                              (ax, ay + braco // 2), gros)
         if spec is not None:
             self._spectrum(s, (dx, dy), spec, level, rm)
@@ -4201,6 +4285,9 @@ class App:
         # o embaralhar e o repetir moram no processo do mpv, e cada disco
         # posto sobe um mpv novo. Ver _disco_novo().
         self._disco_anterior = None
+        # Quando a agulha começou a descer neste disco. Zero = nenhuma
+        # cerimônia em curso. Ver NowScreen._cerimonia.
+        self.cerimonia_t0 = 0.0
         self.auto_deck = bool(_load_prefs().get("auto_deck", True))
         self._born = time.time()
         self.pads = []
@@ -5275,7 +5362,19 @@ class App:
         pasta = self._pasta_tocando()
         if not pasta or pasta == self._disco_anterior:
             return
+        anterior = self._disco_anterior
+        primeiro = anterior is None
         self._disco_anterior = pasta
+        # ── a cerimônia ───────────────────────────────────────────────────
+        # Disco novo, agulha desce: spinup → cue → drop. É o RITUAL, e o
+        # CLAUDE.md §5.5 chama de sagrado — era a única coisa que o deck
+        # tinha e a tela cheia do lançador não.
+        #
+        # Menos numa hipótese: a interface acabou de abrir com música já
+        # tocando. Ali o disco não foi posto agora, foi encontrado no meio, e
+        # encenar a descida da agulha seria mentira sobre o que aconteceu.
+        if not (primeiro and time.time() - self._born < 3.0):
+            self.cerimonia_t0 = time.monotonic()
         if self.shuffle:
             self.shuffle = False
         if self.repeat:
