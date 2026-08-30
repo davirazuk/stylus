@@ -2140,8 +2140,15 @@ class SignalScreen(Screen):
              + (f" · {i['codec']}" if i.get("codec") else "") if frate else "—"),
             ("O GRAFO", "PipeWire",
              f"{graph / 1000:g} kHz" if graph else "—"),
+            # **Sintoma:** sem NADA medido — sem PipeWire no ar, ou antes de
+            # a primeira leitura chegar — este quadro dizia "taxa travada",
+            # em âmbar, ao lado de um travessão. É uma acusação tirada da
+            # ausência de dado, na tela cuja segunda linha diz "medido
+            # agora, não prometido na caixa". Sem conversor conhecido a
+            # resposta honesta é o travessão, igual às outras duas.
             ("O CONVERSOR", i.get("dev", "—"),
-             "pode trocar de taxa" if i.get("multi") else "taxa travada"),
+             "—" if not i.get("dev") else
+             ("pode trocar de taxa" if i.get("multi") else "taxa travada")),
         ]
         by = y + 96
         # O passo e a altura dos quadros vêm da ALTURA que sobra. Eram 132 e
