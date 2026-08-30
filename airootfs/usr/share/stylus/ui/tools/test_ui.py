@@ -235,6 +235,10 @@ def main():
     # O resto do teste continua desenhando e apertando tecla depois daqui, e
     # devolver o de verdade no meio abriria de novo a porta que acabamos de
     # fechar.
+    # …mas o de VERDADE fica guardado num nome próprio, para a seção que
+    # confere o `spawn` em si poder exercitá-lo — ela troca o `Popen` por um
+    # falso, então nada é executado ali também.
+    spawn_de_verdade = A.spawn
     A.spawn = lambda cmd, *a, **k: spawn_reais.append(cmd)
 
     # O Job também, e pelo mesmo motivo do spawn.
@@ -2302,6 +2306,53 @@ def main():
             ok("vai para a AGORA, abre cheia só com música, e não põe nada")
     except Exception:                                       # noqa: BLE001
         bad("ver o disco", traceback.format_exc())
+
+    secao("o trilho não promete o que não vai acontecer")
+    # **Sintoma:** o item BLUETOOTH chamava
+    # `spawn(["~/.config/rofi/bluetooth-menu.sh"])`. Não há shell nenhum
+    # neste caminho — o `Popen` com lista vai direto ao `execve` — então o
+    # `~` era procurado como uma pasta de nome "~" dentro do diretório
+    # atual, e a função devolvia False. O chamador já tinha dito "abrindo
+    # bluetooth…" e não olhava o retorno: a tela prometia e nada acontecia.
+    try:
+        import app as _A2
+        vistos = []
+        _real_popen = _A2.subprocess.Popen
+
+        class _Falso:
+            def __init__(self, cmd, **k):
+                vistos.append(list(cmd))
+                # Um caminho que não existe TEM que estourar aqui, como o
+                # execve de verdade estoura: um falso mais educado que o
+                # sistema prova o caso fácil.
+                if not os.path.exists(cmd[0]) and "/" in cmd[0]:
+                    raise FileNotFoundError(cmd[0])
+
+        _A2.subprocess.Popen = _Falso
+        try:
+            casa = os.path.join(os.environ["HOME"], ".config", "rofi")
+            os.makedirs(casa, exist_ok=True)
+            alvo = os.path.join(casa, "bluetooth-menu.sh")
+            open(alvo, "w").write("#!/bin/sh\n")
+            ok_til = spawn_de_verdade(["~/.config/rofi/bluetooth-menu.sh"])
+            expandiu = bool(vistos) and vistos[-1][0] == alvo
+            os.unlink(alvo)
+            vistos.clear()
+            app._toast, app._toast_kind = "", "info"
+            faltando = spawn_de_verdade(["~/.config/rofi/bluetooth-menu.sh"])
+        finally:
+            _A2.subprocess.Popen = _real_popen
+            app._toast, app._toast_until = "", 0.0
+        if not expandiu:
+            bad("o ~ não foi expandido", str(vistos))
+        elif not ok_til:
+            bad("o script existia e o spawn disse que falhou")
+        elif faltando:
+            bad("o script não existe e o spawn disse que deu certo")
+        else:
+            ok("o ~ vira a casa de quem está usando, e a falha é falha")
+    except Exception:                                       # noqa: BLE001
+        bad("o trilho", traceback.format_exc())
 
     secao('"sem capa" só quando é verdade')
     # **Sintoma:** a frase piscava no meio da capa em toda troca de disco.

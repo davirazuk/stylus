@@ -67,8 +67,20 @@ def spawn(cmd):
 
     start_new_session porque o filho tem que sobreviver a esta janela: pôr um
     disco e depois fechar a tela cheia não pode parar a música.
+
+    O `~` é expandido AQUI, num lugar só.
+
+    **Sintoma:** o item BLUETOOTH do trilho chamava
+    `spawn(["~/.config/rofi/bluetooth-menu.sh"])`. Não há shell nenhum neste
+    caminho — o `Popen` com lista vai direto ao `execve` —, então o `~` era
+    procurado como uma pasta chamada "~" dentro do diretório atual, o
+    `FileNotFoundError` caía no `except` e a função devolvia False. O
+    chamador já tinha dito "abrindo bluetooth…" e não olhava o retorno: a
+    tela prometia e nada acontecia, sem erro em lugar nenhum.
     """
     try:
+        cmd = [os.path.expanduser(str(a)) if str(a).startswith("~") else a
+               for a in cmd]
         subprocess.Popen(cmd, start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
@@ -6384,8 +6396,13 @@ class App:
             elif ev.key in (pygame.K_RIGHT, pygame.K_l, pygame.K_RETURN,
                             pygame.K_KP_ENTER):
                 if self.rail_sel == len(self.screens):
-                    self.toast("abrindo bluetooth…")
-                    spawn(["~/.config/rofi/bluetooth-menu.sh"])
+                    # O retorno é olhado: prometer e não fazer é pior do
+                    # que não ter o item.
+                    if spawn(["~/.config/rofi/bluetooth-menu.sh"]):
+                        self.toast("abrindo bluetooth…")
+                    else:
+                        self.toast("não achei o menu de bluetooth",
+                                   kind="erro")
                 elif self.rail_sel > len(self.screens):
                     self.toast("indo para a área de trabalho…")
                     pygame.display.flip()
@@ -6459,8 +6476,13 @@ class App:
         for caixa, i in self._alvos_do_trilho:
             if caixa.collidepoint(ev.pos):
                 if i == len(self.screens):
-                    self.toast("abrindo bluetooth…")
-                    spawn(["~/.config/rofi/bluetooth-menu.sh"])
+                    # O retorno é olhado: prometer e não fazer é pior do
+                    # que não ter o item.
+                    if spawn(["~/.config/rofi/bluetooth-menu.sh"]):
+                        self.toast("abrindo bluetooth…")
+                    else:
+                        self.toast("não achei o menu de bluetooth",
+                                   kind="erro")
                 elif i > len(self.screens):
                     self.toast("indo para a área de trabalho…")
                     pygame.display.flip()
