@@ -1128,17 +1128,33 @@ def rascunho(w, h, tag=""):
     return sup
 
 
-def disco(raio):
+def disco(raio, intervalos=None):
     """O disco parado, pronto para desenhar. Superfície com alfa, em cache.
 
     Desenhado no dobro do tamanho e reduzido: o pygame não suaviza
     circunferência, e sulco serrilhado a 60 quadros por segundo cintila.
-    Como o resultado é sempre igual, o custo é pago uma vez só.
+    Como o resultado é sempre igual para os mesmos números, o custo é pago
+    uma vez só.
+
+    `intervalos` são as frações do raio em que uma faixa começa. Sem eles o
+    desenho cai nos cinco fixos do `_INTERVALOS`, que é o que ele sempre
+    fez — e é o que ESTAVA errado: o comentário deles diz "é o que faz um
+    disco parecer um disco a três metros: dá para CONTAR as músicas", e as
+    músicas contadas eram sempre cinco, no mesmo lugar, em todo disco da
+    coleção. Um disco de doze faixas mostrava cinco anéis; um single
+    mostrava cinco. A frase estava certa sobre o que o desenho DEVIA fazer e
+    o desenho não fazia.
+
+    Quem passa os de verdade é a AGORA, a partir do LADO que está tocando
+    (ver `NowScreen._intervalos`). É a mesma tese do resto: o desenho diz
+    alguma coisa verdadeira sobre este disco, ou não vale o pixel.
     """
     raio = int(raio)
     if raio < 8:
         raio = 8
-    pronto = _disco_cache.get(raio)
+    marcas = tuple(intervalos) if intervalos else _INTERVALOS
+    chave = (raio, marcas)
+    pronto = _disco_cache.get(chave)
     if pronto is not None:
         return pronto
 
@@ -1175,10 +1191,14 @@ def disco(raio):
     # desenhavam curvas de nível de mapa por cima do disco inteiro, mais
     # fortes que o próprio aro. Contar as faixas é para quem olha; não é o
     # assunto do quadro.
-    for frac in _INTERVALOS:
+    # Com muitas faixas os anéis ficam perto uns dos outros: menos alfa,
+    # senão vinte deles somam mais luz que o aro do disco. Cinco é o caso
+    # antigo (o fixo), e nele nada muda.
+    alfa = 105 if len(marcas) <= 6 else max(58, int(105 * 6 / len(marcas)))
+    for frac in marcas:
         rr = int(R * frac)
         if dentro < rr < fora:
-            pygame.draw.circle(d, (*AMBER_DIM, 105), (c, c), rr, e)
+            pygame.draw.circle(d, (*AMBER_DIM, alfa), (c, c), rr, e)
 
     # a bolacha do meio — escura, com o aro âmbar
     lr = int(R * LABEL_R)
@@ -1192,6 +1212,10 @@ def disco(raio):
     pygame.draw.circle(d, (*INK, 255), (c, c), max(e, int(R * SPINDLE_R)))
 
     d = pygame.transform.smoothscale(d, (raio * 2, raio * 2))
+    # O cache é por (raio, intervalos) agora: trocar de disco troca a chave,
+    # e sem um teto ele cresceria uma superfície por álbum da coleção. Seis
+    # é o bastante para a AGORA (dois tamanhos) e a tela cheia não
+    # regenerarem a cada quadro.
     if len(_disco_cache) > 6:
         _disco_cache.clear()
     # NÃO ponha `d.set_alpha(None)` aqui — havia um, copiado do halo com a
@@ -1199,5 +1223,5 @@ def disco(raio):
     # docstring do `halo`): o disco passava a ser blitado como CÓPIA, e o
     # quadrado transparente em volta dele pintava preto por cima do fundo.
     # O disco é redondo; o que existe fora dele tem que continuar existindo.
-    _disco_cache[raio] = d
+    _disco_cache[chave] = d
     return d

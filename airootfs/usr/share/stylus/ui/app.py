@@ -615,7 +615,7 @@ class NowScreen(Screen):
         # máquina sem PortAudio o `spec` é None o tempo todo, e o vinil
         # simplesmente não era desenhado — a AGORA ficava só com a capa
         # flutuando, e nada explicando por quê.
-        d = T.disco(rm)
+        d = T.disco(rm, self._intervalos(al, side))
         s.blit(d, (dx - rm, dy - rm))
         # O reflexo que passa: o vinil é simétrico, e sem ele não se vê que
         # está girando. A velocidade dança com o som (e adormece na pausa); a
@@ -867,6 +867,41 @@ class NowScreen(Screen):
                             + ("[d] disco sozinho: ligado" if self.app.auto_disco
                                else "[d] disco sozinho: desligado"))
 
+    def _intervalos(self, al, lado):
+        """As frações do raio em que começa cada faixa DESTE lado.
+
+        O desenho do disco tinha cinco anéis fixos (`theme._INTERVALOS`) e o
+        comentário deles diz, com todas as letras, "é o que faz um disco
+        parecer um disco a três metros: dá para CONTAR as músicas". Contavam
+        sempre cinco, no mesmo lugar, em todo disco da coleção — um LP de
+        doze faixas e um single de duas desenhavam o mesmo objeto. A frase
+        estava certa sobre o que o desenho devia fazer, e o desenho não
+        fazia.
+
+        O raio é o tempo (é a lei do desenho), então a faixa que começa aos
+        40% do lado é um anel a 40% do caminho entre o sulco de fora e o de
+        dentro. Sem lado (playlist contínua, disco que não mediu) devolve
+        None e o desenho cai nos fixos.
+        """
+        if al is None or not lado:
+            return None
+        dur = float(lado.get("end", 0.0)) - float(lado.get("start", 0.0))
+        if dur <= 1.0:
+            return None
+        fora, dentro = T.GROOVE_O, T.GROOVE_I
+        marcas = []
+        for i in (lado.get("tracks") or [])[1:]:      # a primeira é a borda
+            try:
+                t0 = float(al.tracks[i].get("start") or 0.0)
+            except (IndexError, TypeError, ValueError):
+                continue
+            f = (t0 - float(lado.get("start", 0.0))) / dur
+            if 0.02 < f < 0.98:
+                marcas.append(round(fora + (dentro - fora) * f, 4))
+        # Sem faixa nenhuma para marcar, os fixos mentem menos do que um
+        # disco liso: um disco sem sulco nenhum não lê como disco.
+        return tuple(marcas) or None
+
     # A cerimônia, em segundos, VINDA DO vinyl.py. O prato leva um tempo para
     # chegar aos 33 (SPIN), a agulha fica suspensa sobre a borda (CUE) e
     # então desce (DROP) — pouco mais de dois segundos ao todo: é uma
@@ -961,7 +996,7 @@ class NowScreen(Screen):
         hal = T.halo(int(rm * 1.06),
                      forca=int(150 + (level * 0.75 + pulse * 0.25) * 105))
         s.blit(hal, (dx - hal.get_width() // 2, dy - hal.get_height() // 2))
-        s.blit(T.disco(rm), (dx - rm, dy - rm))
+        s.blit(T.disco(rm, self._intervalos(al, side)), (dx - rm, dy - rm))
 
         parado = bool((snap or {}).get("paused"))
         fase, fcer = self._cerimonia()
@@ -1789,6 +1824,8 @@ class StackScreen(Screen):
                 self.app.toast("pilha embaralhada")
             else:
                 self.app.toast("um disco só: não há o que embaralhar")
+        elif ev.key == pygame.K_g and (ev.mod & pygame.KMOD_SHIFT):
+            self.app.guardar_pilha()
         elif ev.key in (pygame.K_LEFT, pygame.K_h, pygame.K_RIGHT,
                         pygame.K_l):
             # Sobe e desce o disco na pilha. A ordem da pilha é a ordem da
@@ -1858,7 +1895,7 @@ class StackScreen(Screen):
                    (x, y + 8), 19, T.TEXT_FAINT)
         self.app.hint(s, r, "[enter] põe este e tira da pilha   [x] descarta   "
                             "[e] embaralha   [←][→] muda de lugar   "
-                            "[t] monta uma noite")
+                            "[t] monta uma noite   [Shift+G] guarda como lista")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -5042,6 +5079,57 @@ class App:
             return False
         return True
 
+    def guardar_pilha(self):
+        """A pilha desta noite vira um .m3u na coleção.
+
+        A pilha é um compromisso com três discos, e ela some quando você
+        cumpre — o que é certo para uma noite e é uma perda quando a noite
+        deu certo. Guardá-la fecha o círculo que o sistema já tinha pela
+        metade: ele ESCREVE playlists (o `stylus suggest`) e agora também
+        toca (a ordem "listas" da estante); esta é a primeira que sai de um
+        gesto seu e não de uma heurística.
+
+        Caminho RELATIVO à raiz quando dá: um .m3u com caminho absoluto
+        morre no dia em que a coleção muda de pasta — e ela muda, é um HD
+        externo ou o celular montado.
+        """
+        if not self.stack:
+            self.toast("a pilha está vazia")
+            return
+        raiz = vinyl.library_root()
+        if not raiz or not os.path.isdir(raiz):
+            self.toast("não sei onde é a coleção")
+            return
+        nome = "Pilha de " + time.strftime("%d-%m-%Y")
+        alvo = os.path.join(raiz, nome + ".m3u")
+        n = 2
+        while os.path.exists(alvo):
+            alvo = os.path.join(raiz, f"{nome} ({n}).m3u")
+            n += 1
+        linhas, faixas = ["#EXTM3U"], 0
+        for it in self.stack:
+            pasta = it.get("folder") or ""
+            for caminho in vinyl.track_paths(pasta):
+                if not caminho:
+                    continue
+                try:
+                    rel = os.path.relpath(caminho, raiz)
+                except ValueError:
+                    rel = caminho
+                linhas.append(rel if not rel.startswith("..") else caminho)
+                faixas += 1
+        if not faixas:
+            self.toast("nenhuma faixa na pilha para guardar")
+            return
+        try:
+            with open(alvo, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(linhas) + "\n")
+        except OSError as e:                  # noqa: BLE001
+            self.toast(f"não deu para guardar: {e}")
+            return
+        self.shelf.rescan()
+        self.toast(f"{nome} — {plural(faixas, 'faixa')} guardadas")
+
     def ver_o_disco(self):
         """O disco na tela toda — aqui dentro, sem abrir programa nenhum.
 
@@ -6111,6 +6199,7 @@ class App:
             if not inteira:
                 self._draw_rail(self.surf, rail_w)
             self._watch_side()
+            self._anoitece(self.surf)
             self._gato_destrava()
             self._draw_flip(self.surf)
             self._draw_gato(self.surf)
@@ -6135,6 +6224,28 @@ class App:
             pygame.display.flip()
             self._soneca()
             self.clock.tick(FPS)
+
+    def _anoitece(self, s):
+        """A tela escurece junto com o som, quando a soneca está acabando.
+
+        O som some em vinte segundos (ver `_soneca`) e a tela ficava acesa
+        do mesmo jeito até o fim — do outro lado do quarto, o que se vê é a
+        música sumindo sem motivo aparente. Escurecendo junto, o quarto
+        inteiro conta a mesma história, e é a última coisa que a pessoa vê
+        antes de dormir.
+
+        Não apaga de todo: 88% é escuro o bastante para não iluminar o
+        quarto e claro o bastante para ainda se ver QUE disco parou.
+        """
+        if not self._sleep_fade:
+            return
+        f = min(1.0, max(0.0, (time.time() - self._sleep_fade) / self.ESMAECER))
+        if f <= 0.02:
+            return
+        veu = pygame.Surface((self.W, self.H))
+        veu.fill(T.INK)
+        veu.set_alpha(int(224 * f * f))
+        s.blit(veu, (0, 0))
 
     def _draw_gato(self, s):
         """A tela travada: o disco continua girando, por baixo de um véu.

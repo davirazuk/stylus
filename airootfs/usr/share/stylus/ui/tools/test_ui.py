@@ -1965,6 +1965,55 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("tela cheia e teclas", traceback.format_exc())
 
+    secao("os sulcos do disco são as faixas DESTE disco")
+    # **Sintoma:** o desenho tinha cinco anéis fixos, e o comentário deles
+    # dizia "é o que faz um disco parecer um disco a três metros: dá para
+    # CONTAR as músicas". Contavam sempre cinco, nos mesmos lugares, em todo
+    # disco da coleção — um LP de doze faixas e um single de duas desenhavam
+    # o mesmo objeto. A frase estava certa sobre o que o desenho devia
+    # fazer, e o desenho não fazia.
+    #
+    # Ler não pega: o método existe, tem nome certo e devolve alguma coisa.
+    # Este teste monta DOIS lados de tamanhos diferentes e exige que os
+    # anéis sejam diferentes entre si e diferentes dos fixos.
+    try:
+        import theme as _T4
+        agora = next(t for t in app.screens if t.name == "AGORA")
+        alb = A.vinyl.Album.__new__(A.vinyl.Album)
+        alb.tracks = [{"start": s * 60.0} for s in (0, 5, 11, 18, 26,
+                                                    32, 38, 45, 51)]
+        lado_a = {"label": "SIDE A", "start": 0.0, "end": 32 * 60.0,
+                  "tracks": [0, 1, 2, 3, 4]}
+        lado_b = {"label": "SIDE B", "start": 32 * 60.0, "end": 58 * 60.0,
+                  "tracks": [5, 6, 7, 8]}
+        a = agora._intervalos(alb, lado_a)
+        b = agora._intervalos(alb, lado_b)
+        sem = agora._intervalos(alb, None)
+        curto = agora._intervalos(alb, {"start": 0.0, "end": 0.5,
+                                        "tracks": [0, 1]})
+        if not a or len(a) != 4:
+            bad("o lado A tem 5 faixas: 4 sulcos entre elas", str(a))
+        elif a == b:
+            bad("dois lados diferentes desenharam os mesmos sulcos", str(a))
+        elif tuple(a) == tuple(_T4._INTERVALOS):
+            bad("caiu nos cinco fixos com um disco de verdade na mão")
+        elif not all(_T4.GROOVE_I < x < _T4.GROOVE_O for x in a + b):
+            bad("sulco desenhado fora da faixa de sulcos", str(a + b))
+        elif sem is not None or curto is not None:
+            bad("sem lado (ou com lado de meio segundo) devia cair no fixo",
+                f"{sem} {curto}")
+        else:
+            # e o desenho tem que ACEITAR: o cache é por (raio, intervalos).
+            d1 = _T4.disco(90, a)
+            d2 = _T4.disco(90, b)
+            if d1 is d2:
+                bad("o cache do disco ignora os intervalos: dois lados "
+                    "diferentes devolveram a MESMA superfície")
+            else:
+                ok(f"{len(a)} e {len(b)} sulcos, dos dois lados deste disco")
+    except Exception:                                       # noqa: BLE001
+        bad("os sulcos do disco", traceback.format_exc())
+
     secao("as playlists da coleção aparecem, e podem ser postas")
     # **Sintoma:** o sistema ESCREVIA .m3u (o `stylus suggest`, o
     # `make_new_playlist`, o `integrate_album`) e não sabia tocar nenhum: não
