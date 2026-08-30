@@ -673,6 +673,12 @@ def cmd_scrobbles(args):
         print(f"\n  {R}o vinyl.py não está aqui — instalação estranha.{O}\n")
         return 1
     caminhos = [
+        # O NOSSO primeiro: o aplicativo do STYLUS anota sozinho, uma linha
+        # por disco posto, no diretório dele — que o `adb pull` alcança sem
+        # root e sem permissão de armazenamento. Antes só havia o caminho do
+        # Pano, que pede instalar dois aplicativos e EXPORTAR à mão; na
+        # prática o computador nunca ficava sabendo o que tocou no celular.
+        "/sdcard/Android/data/io.stylus.player/files/stylus-scrobbles.tsv",
         "/sdcard/Android/data/com.arn.scrobble/files/scrobbles.tsv",
         "/sdcard/Pano/scrobbles.tsv",
         "/sdcard/stylus-scrobbles.tsv",
@@ -688,8 +694,9 @@ def cmd_scrobbles(args):
         print(f"  {D}procurei em:{O}")
         for p in caminhos:
             print(f"    {D}{p}{O}")
-        print(f"\n  {D}o agente do Termux (mobile/ no repositório) escreve o{O}")
-        print(f"  {D}terceiro caminho. `stylus phone wifi` explica como pôr ele lá.{O}\n")
+        print(f"\n  {D}o primeiro é o do aplicativo do STYLUS: ele anota sozinho{O}")
+        print(f"  {D}a cada disco posto. O último é o do agente do Termux{O}")
+        print(f"  {D}(mobile/ no repositório), para quem usa o Pano Scrobbler.{O}\n")
         return 1
     local = os.path.join(STATE, "phone-scrobbles.tsv")
     os.makedirs(STATE, exist_ok=True)

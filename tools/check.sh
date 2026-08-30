@@ -4274,6 +4274,73 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "o que você ouve no celular chega à memória da coleção"
+# O caminho que existia para trazer isso era: instalar o Pano Scrobbler,
+# instalar o Termux, EXPORTAR à mão do Pano para /sdcard, rodar o agente e só
+# então `stylus phone scrobbles`. Cinco passos, e um deles manual — ou seja,
+# na prática o computador nunca soube o que tocou no celular. O aplicativo
+# sabe: é ele que põe o disco.
+#
+# Duas listas que se referem uma à outra: o arquivo que o app ESCREVE e a
+# lista de caminhos que o `stylus phone scrobbles` LÊ. Mais o formato, que é
+# o mesmo TSV de quatro colunas com o carimbo em SEGUNDOS.
+saida=$(python3 - <<'ESCROBEOF' 2>&1
+import re
+try:
+    kt = open("android/app/src/main/kotlin/io/stylus/player/PlayTracker.kt",
+              encoding="utf-8").read()
+    ph = open("airootfs/usr/local/bin/stylus-phone", encoding="utf-8").read()
+    mf = open("android/app/src/main/AndroidManifest.xml",
+              encoding="utf-8").read()
+except OSError as e:
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+m = re.search(r'ARQUIVO\s*=\s*"([^"]+)"', kt)
+if not m:
+    print("ERRO o PlayTracker não diz mais o nome do arquivo")
+    raise SystemExit(0)
+arquivo = m.group(1)
+pacote = re.search(r'package="([^"]+)"', mf)
+pacote = pacote.group(1) if pacote else "io.stylus.player"
+# O que o computador procura, só em linha de código.
+procura = [ln for ln in ph.splitlines()
+           if '"/sdcard/' in ln and not ln.lstrip().startswith("#")]
+esperado = "/sdcard/Android/data/%s/files/%s" % (pacote, arquivo)
+if not any(esperado in ln for ln in procura):
+    print("ERRO o app escreve %s e o computador não procura lá" % esperado)
+elif "getExternalFilesDir" not in kt:
+    print("ERRO o app não escreve no diretório dele (adb não alcança o resto)")
+elif "quando / 1000L" not in kt:
+    print("ERRO o carimbo do app não está em segundos como o do computador")
+elif kt.count("\\t") < 3:
+    print("ERRO a linha do app não tem as quatro colunas do TSV")
+else:
+    # E o cooldown: contagem que mente é pior do que contagem nenhuma.
+    import sys
+    sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+    try:
+        import vinyl
+        cd = re.search(r"COOLDOWN_MS\s*=\s*([\d_]+)L", kt)
+        seg = int(cd.group(1).replace("_", "")) / 1000.0 if cd else -1
+        if abs(seg - vinyl.PLAY_COOLDOWN) > 1:
+            print("ERRO o celular deduplica em %gs e o computador em %gs"
+                  % (seg, vinyl.PLAY_COOLDOWN))
+            raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception:                                    # noqa: BLE001
+        pass
+    print("OK o app anota em %s e o computador procura lá" % esperado)
+ESCROBEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o que toca no celular não chega ao computador"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
