@@ -2224,7 +2224,27 @@ class SignalScreen(Screen):
         bw = min(r.w - 88, 900)
         bx = r.x + max(44, (r.w - bw) // 2)
 
-        y = r.y + 60
+        # ── onde o bloco começa ───────────────────────────────────────────
+        # O passo e a altura dos quadros vêm da ALTURA que sobra. Eram 132 e
+        # 104 fixos: três quadros mais o cabeçalho somam 552 px, e numa tela
+        # de 600 o veredito ("reamostrado 44,1 → 48 kHz", que é a frase que
+        # esta tela existe para dizer) era desenhado por cima da linha de
+        # dicas. Os 136 px reservados são o veredito (34), a explicação de
+        # duas linhas (44) e a linha de dicas (34), com folga.
+        y0 = r.y + 60
+        disp = max(210, r.bottom - 136 - (y0 + 96))
+        passo = min(132, max(76, disp // 3))
+        alt_box = max(62, passo - 28)
+        # E CENTRADO na vertical quando sobra altura.
+        #
+        # **Sintoma:** o bloco tinha topo fixo e passo com TETO, então numa
+        # tela de 1080 ele acabava aos 550 px e deixava meia tela vazia
+        # embaixo — a mesma composição encostada num canto que a largura
+        # máxima já tinha consertado na horizontal, e pelo mesmo motivo:
+        # número fixo é a tela de quem escreveu. O piso é o topo de antes,
+        # então em tela baixa nada muda.
+        alto = 96 + 3 * passo + 12 + 78
+        y = max(y0, r.y + (r.h - 34 - alto) // 2)
         T.text(s, "o caminho do sinal", (bx, y), 30, T.TEXT, bold=True)
         T.text(s, "medido agora, não prometido na caixa",
                (bx, y + 40), 19, T.TEXT_FAINT)
@@ -2247,15 +2267,6 @@ class SignalScreen(Screen):
              ("pode trocar de taxa" if i.get("multi") else "taxa travada")),
         ]
         by = y + 96
-        # O passo e a altura dos quadros vêm da ALTURA que sobra. Eram 132 e
-        # 104 fixos: três quadros mais o cabeçalho somam 552 px, e numa tela
-        # de 600 o veredito ("reamostrado 44,1 → 48 kHz", que é a frase que
-        # esta tela existe para dizer) era desenhado por cima da linha de
-        # dicas. Os 136 px reservados são o veredito (34), a explicação de
-        # duas linhas (44) e a linha de dicas (34), com folga.
-        disp = max(210, r.bottom - 136 - by)
-        passo = min(132, max(76, disp // 3))
-        alt_box = max(62, passo - 28)
         # As letras encolhem junto: num quadro de 62 px o valor em 26 pt
         # transborda por baixo dele.
         fs_val = 26 if alt_box >= 90 else 20
