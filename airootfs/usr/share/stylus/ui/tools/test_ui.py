@@ -2239,6 +2239,105 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("ver o disco", traceback.format_exc())
 
+    secao("PRIMEIRA VEZ: dita quando a agulha encosta, e só num disco novo")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # É a família do `set_text` do deck: o `play_banner` — "PRIMEIRA VEZ",
+    # dito no instante em que a agulha desce num disco nunca posto — existia
+    # no deck e não sobreviveu à mudança para o lançador. Ler não pega: a
+    # AGORA tem a frase escrita no rodapé, em cinza, no meio de outras
+    # quatro informações, e isso LÊ como se o recurso estivesse lá.
+    #
+    # Então o teste não pergunta "a frase existe?". Ele põe um disco e olha
+    # o que CHEGA na tela, e quando: nada antes de a agulha encostar, e nada
+    # nenhum num disco que já foi posto — um aviso que aparece toda vez é um
+    # aviso que não quer dizer nada.
+    try:
+        import time as _t
+        salvo_itens = list(app.shelf.items)
+        _ag = next(t for t in app.screens if t.name == "AGORA")
+        novo_d, velho_d = "/tmp/stylus-teste/Novo", "/tmp/stylus-teste/Velho"
+        app.shelf.items = [
+            {"folder": novo_d, "artist": "A", "name": "Novo", "tracks": 9,
+             "cover": None, "last": 0, "plays": 0},
+            {"folder": velho_d, "artist": "A", "name": "Velho", "tracks": 9,
+             "cover": None, "last": 0, "plays": 7},
+        ]
+
+        def _por(pasta):
+            """Põe o disco como o laço principal põe: troca a pasta e roda."""
+            app._pasta_tocando = lambda: pasta
+            app._disco_anterior = "/tmp/stylus-teste/anterior"
+            app._born = _t.time() - 60      # não é "abriu com música tocando"
+            app._primeira_em = 0.0
+            app._toast, app._toast_until, app._toast_kind = "", 0.0, "info"
+            app._disco_novo()
+
+        try:
+            app.shuffle, app.repeat = False, 0
+            _por(novo_d)
+            marcou = app._primeira_em > 0.0
+            # ainda girando: a agulha não encostou.
+            app._primeira_vez()
+            cedo, cedo_txt = bool(app._toast), app._toast
+            # o momento marcado é o FIM da cerimônia, não o começo dela.
+            atraso = app._primeira_em - app.cerimonia_t0
+            esperado = _ag.CER_SPIN + _ag.CER_CUE + _ag.CER_DROP
+            app._primeira_em = _t.monotonic() - 0.01
+            app._primeira_vez()
+            falou = app._toast
+            kind = app._toast_kind
+            # e fala UMA vez: o laço roda sessenta vezes por segundo.
+            app._toast, app._toast_until = "", 0.0
+            app._primeira_vez()
+            repetiu = bool(app._toast)
+
+            _por(velho_d)
+            marcou_velho = app._primeira_em > 0.0
+
+            # disco que a estante não conhece: não se afirma o que não se sabe
+            _por("/tmp/stylus-teste/Desconhecido")
+            marcou_estranho = app._primeira_em > 0.0
+
+            # E o último fio: o laço principal CHAMA isto. Sem esta linha o
+            # teste inteiro passa verde sobre um método que ninguém chama —
+            # que é precisamente o defeito (o `set_text` do deck) que esta
+            # seção existe para impedir. Medido: tirando a chamada do
+            # `run()`, tudo acima continuava verde.
+            import inspect as _insp
+            no_laco = "self._primeira_vez()" in _insp.getsource(type(app).run)
+        finally:
+            app.shelf.items = salvo_itens
+            app.__dict__.pop("_pasta_tocando", None)
+            app._disco_anterior = None
+            app._primeira_em = 0.0
+            app._toast, app._toast_until, app._toast_kind = "", 0.0, "info"
+            app.cerimonia_t0 = 0.0
+
+        if not marcou:
+            bad("disco nunca posto e nada foi marcado para dizer")
+        elif cedo:
+            bad("falou antes de a agulha encostar", cedo_txt)
+        elif abs(atraso - esperado) > 0.01:
+            bad("não é o instante da agulha",
+                f"{atraso:.2f}s contra {esperado:.2f}s de cerimônia")
+        elif "PRIMEIRA VEZ" not in (falou or ""):
+            bad("a agulha encostou e não disse nada", repr(falou))
+        elif kind != "primeira":
+            bad("dito como recado de máquina, não como acontecimento", kind)
+        elif repetiu:
+            bad("repete em todo quadro")
+        elif marcou_velho:
+            bad("um disco já posto foi anunciado como primeira vez")
+        elif marcou_estranho:
+            bad("disco que a estante não conhece foi chamado de novo")
+        elif not no_laco:
+            bad("o laço principal não chama _primeira_vez(): ninguém vê nada")
+        else:
+            ok("dita na descida da agulha, uma vez, e só num disco novo")
+    except Exception:                                       # noqa: BLE001
+        bad("a primeira vez", traceback.format_exc())
+
     secao("a trava do gato engole tudo, e só a combinação destrava")
     # POR QUE ISTO EXISTE
     # -------------------

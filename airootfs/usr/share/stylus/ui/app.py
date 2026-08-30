@@ -5092,6 +5092,10 @@ class App:
         # Quando a agulha começou a descer neste disco. Zero = nenhuma
         # cerimônia em curso. Ver NowScreen._cerimonia.
         self.cerimonia_t0 = 0.0
+        # Quando dizer "PRIMEIRA VEZ" — o instante em que a agulha ENCOSTA,
+        # não o em que o disco começou a girar. Zero = nada a dizer.
+        # Ver _primeira_vez().
+        self._primeira_em = 0.0
         # Lê a chave velha também: quem DESLIGOU isto uma vez não quer que
         # a máquina "esqueça" só porque a coisa mudou de nome.
         _pref = _load_prefs()
@@ -6153,12 +6157,18 @@ class App:
         panel_s = pygame.Surface((box.w, box.h), pygame.SRCALPHA)
         pygame.draw.rect(panel_s, (*T.INK_LIFT, alpha), panel_s.get_rect(),
                          border_radius=23)
-        # borda: cor do kind (ok=green, erro=red, info=default)
-        border_cor = {"ok": T.GREEN, "erro": T.RED}.get(self._toast_kind, T.LINE)
+        # borda: cor do kind (ok=green, erro=red, primeira=âmbar, info=default)
+        # O âmbar é a cor VIVA do sistema (§5.5) e por isso não é um "kind"
+        # a mais: é o que separa um acontecimento — a agulha encostando num
+        # disco que nunca foi posto — de um recado de máquina.
+        border_cor = {"ok": T.GREEN, "erro": T.RED,
+                      "primeira": T.AMBER}.get(self._toast_kind, T.LINE)
         pygame.draw.rect(panel_s, (*border_cor, alpha), panel_s.get_rect(),
                          width=1, border_radius=23)
         s.blit(panel_s, box.topleft)
-        txt_img = f.render(self._toast, True, T.TEXT)
+        txt_img = f.render(
+            self._toast, True,
+            T.AMBER if self._toast_kind == "primeira" else T.TEXT)
         txt_img.set_alpha(alpha)
         s.blit(txt_img, txt_img.get_rect(centerx=box.centerx, centery=box.centery))
 
@@ -6473,6 +6483,7 @@ class App:
             self._recado()
             self._recado_tardio()
             self._disco_novo()
+            self._primeira_vez()
             self._idle_disco()
             try:
                 self.screens[self.cur].draw(self.surf, body)
@@ -6644,6 +6655,12 @@ class App:
         # encenar a descida da agulha seria mentira sobre o que aconteceu.
         if not (primeiro and time.time() - self._born < 3.0):
             self.cerimonia_t0 = time.monotonic()
+            # E, se este disco nunca foi posto, marque a hora de dizer isso:
+            # no instante em que a agulha ENCOSTA. Ver _primeira_vez().
+            if self._nunca_posto(pasta):
+                self._primeira_em = (self.cerimonia_t0
+                                     + NowScreen.CER_SPIN + NowScreen.CER_CUE
+                                     + NowScreen.CER_DROP)
         if self.shuffle:
             self.shuffle = False
         if self.repeat:
@@ -6651,6 +6668,57 @@ class App:
                              "inf" if self.repeat == 1 else "no")
             self._ao_tocador("set_property", "loop-playlist",
                              "inf" if self.repeat == 2 else "no")
+
+    def _nunca_posto(self, pasta):
+        """Este disco já esteve no prato alguma vez?
+
+        A resposta vem da ESTANTE, que já conta as voltas de cada pasta no
+        `plays.tsv` — perguntar de novo aqui seria reler o registro inteiro
+        dentro do laço de desenho para responder uma pergunta que já está
+        respondida na memória.
+
+        Disco que a estante não conhece (uma playlist do Qobuz, uma pasta
+        fora da coleção) devolve False: "nunca posto" é uma afirmação, e
+        afirmar sem dado é como nasce o aviso que aparece toda vez e por
+        isso não quer dizer nada.
+        """
+        if not pasta:
+            return False
+        alvo = os.path.normpath(pasta)
+        for it in getattr(self.shelf, "items", ()):
+            if os.path.normpath(it.get("folder") or "") == alvo:
+                return not it.get("plays")
+        return False
+
+    # Quanto tempo o aviso da PRIMEIRA VEZ fica na tela.
+    PRIMEIRA_SEGS = 5.0
+
+    def _primeira_vez(self):
+        """"PRIMEIRA VEZ" — dito quando a agulha encosta, e só então.
+
+        POR QUE ISTO EXISTE
+        -------------------
+        O deck dizia isto (o `play_banner`), e era a única frase dele que a
+        tela cheia não herdou quando o deck saiu. A AGORA a diz — em cinza,
+        corpo 20, no meio de outras quatro informações no rodapé. Isso é uma
+        FICHA, não um acontecimento: pôr na agulha um disco que você nunca
+        ouviu é a segunda coisa mais importante que acontece nesta casa, e
+        ela não deveria ser lida junto com o bitrate.
+
+        Por que aqui e não dentro do desenho da AGORA: o aviso é sobre o
+        DISCO, não sobre a tela em que você está. Quem põe um disco pela
+        estante, pela pilha ou pelo terminal continua na tela em que estava,
+        e o recado tem que chegar lá — que é exatamente o que o toast já faz
+        em qualquer tela.
+
+        Por extenso e não "1ª vez": "1ª vez" é uma contagem; "PRIMEIRA VEZ"
+        é um acontecimento.
+        """
+        if not self._primeira_em or time.monotonic() < self._primeira_em:
+            return
+        self._primeira_em = 0.0
+        self.toast("PRIMEIRA VEZ — este disco nunca esteve no prato",
+                   self.PRIMEIRA_SEGS, kind="primeira")
 
     def _recado(self):
         """O que um `stylus deck` num terminal pediu, se pediu alguma coisa.
