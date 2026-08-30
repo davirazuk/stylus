@@ -135,3 +135,20 @@ def plural(n, um, muitos=None):
         return vinyl.plural(n, um, muitos)
     except Exception:                                      # noqa: BLE001
         return "%d %s" % (n, um if abs(n) == 1 else (muitos or um + "s"))
+
+
+def folder_names(pasta):
+    """(artista, disco) a partir do caminho — a leitura do `vinyl`.
+
+    A mesma de sempre: um disco solto na raiz da coleção não é da banda que
+    dá nome à pasta de cima. Ver a docstring lá.
+    """
+    _com_a_lib_no_caminho()
+    try:
+        import vinyl
+        return vinyl.folder_names(pasta)
+    except Exception:                                      # noqa: BLE001
+        import os
+        nome = os.path.basename(os.path.normpath(pasta))
+        art = os.path.basename(os.path.dirname(os.path.normpath(pasta)))
+        return art, nome

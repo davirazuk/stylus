@@ -53,6 +53,8 @@ cat <<EOF
     ${b}stylus check${o}              o que está quebrado aí dentro
     ${b}stylus gaps${o} ${d}ARTISTA${o}      que discos desse artista faltam
     ${b}stylus covers${o} ${d}[--apply]${o}  cover.jpg nas pastas que não têm
+                              ${d}--buscar${o} procura na rede as que não estão
+                              nem dentro dos arquivos
     ${b}stylus lyrics${o} ${d}[DISCO]${o}    procura e grava .lrc ao lado dos arquivos
     ${b}stylus tags${o} ${d}[DISCO]${o}      arruma tags e capa embutida
     ${b}stylus rip${o}                rasga o CD que está na gaveta, para a estante

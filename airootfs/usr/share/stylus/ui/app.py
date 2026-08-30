@@ -2655,6 +2655,11 @@ class ToolsScreen(Screen):
     ACOES = [
         ("o que está quebrado aí dentro", ["stylus", "check"]),
         ("pôr cover.jpg onde falta", ["stylus", "covers", "--apply"]),
+        # E as que não estão em lugar nenhum — nem na pasta, nem dentro do
+        # arquivo. Sem isto, um disco que chegou sem capa ficava sem capa
+        # para sempre, e a estante é uma grade de capas.
+        ("procurar na rede as capas que faltam",
+         ["stylus", "covers", "--buscar", "--apply"]),
         ("procurar letras dos discos sem .lrc", ["stylus", "lyrics", "--all"]),
         ("arrumar tags e capa embutida", ["stylus", "tags"]),
         ("rasgar o CD da gaveta", ["stylus", "rip"]),
@@ -2666,11 +2671,16 @@ class ToolsScreen(Screen):
         # interface existe para ser.
         ("o papel de parede vira o disco de agora",
          ["stylus-wallpaper"]),
-        # As playlists que a sua escuta sugere. A ferramenta existia desde
-        # sempre e não tinha entrada em tela nenhuma — e agora que o sistema
-        # SABE TOCAR .m3u (ver a ordem "listas" da estante), mandar escrever
-        # umas quantas é o outro lado do mesmo caminho.
-        ("escrever playlists a partir do que você ouve",
+        # As sugestões para as playlists, a partir dos discos que ENTRARAM
+        # (o manifesto do `stylus get`) — não do que você ouve, que é outra
+        # coisa e o rótulo tem que dizer qual. A ferramenta existia desde
+        # sempre e não tinha entrada em tela nenhuma; agora que o sistema
+        # sabe TOCAR .m3u, mandar escrever é o outro lado do mesmo caminho.
+        #
+        # E ela nunca mexe nas playlists de verdade: escreve arquivos
+        # "— sugestões.m3u" ao lado, para ouvir com calma e juntar ou jogar
+        # fora.
+        ("sugerir faixas novas para as suas playlists",
          ["stylus", "suggest"]),
         ("refazer o índice da estante", ["stylus", "reindex"]),
         ("cópia de segurança para o Drive", ["stylus", "backup"]),
@@ -5839,7 +5849,21 @@ class App:
             size -= 1
         larg = int(max(320, min(larg, teto)))
 
+        # O PASSO cabe na altura que existe, não em `size + 30` fixo.
+        #
+        # **Sintoma:** duas ações novas na OFICINA e a última — "atualizar o
+        # sistema" — era desenhada ABAIXO da borda em 800x600 e 1024x600.
+        # Não é defeito das duas ações: é a lista inteira medida contra uma
+        # tela que não existe. Uma lista que cresce e um passo que não é a
+        # mesma família do "número fixo de largura" da §4, do outro eixo.
+        #
+        # O piso de 26 px é o dedo num touchscreen; abaixo disso a lista
+        # ainda desenha, e aí quem cede é o rodapé (a dica é a última coisa
+        # que se lê numa tela cheia de ações).
+        sobra = r.bottom - 54 - y          # 54 = a linha de dicas
         passo = size + 30
+        if acoes and passo * len(acoes) > sobra:
+            passo = max(26, int(sobra // len(acoes)))
         for i, item in enumerate(acoes):
             rotulo = item[0]
             escolhido = i == sel
