@@ -4211,9 +4211,25 @@ class GamesScreen(Screen):
     ACOES = [
         ("Clone Hero", ["clonehero"], "clonehero", "󰝰", "controller",
          ["stylus-term", "Clone Hero", "stylus", "app", "clonehero"]),
-        ("Keyboard Warriors", [os.path.expanduser(
-            "~/Documentos/coiso/keyboardwarrior/keyboardwarrior")],
-            "keyboardwarrior", "󰌑", "keyboard", None),
+        # **Sintoma:** o comando era
+        # `~/Documentos/coiso/keyboardwarrior/keyboardwarrior` — a pasta de
+        # UMA pessoa, e nem essa: quem diz se o jogo está instalado é o
+        # `_is_installed`, que faz `which("keyboardwarrior")` e nunca olha
+        # aquele caminho. Ou seja, os dois lados do mesmo quadro
+        # discordavam: a tela dizia "não encontrado" numa máquina onde o
+        # jogo está no PATH, e num caminho que só existe num computador do
+        # mundo. É a família da coleção de uma pessoa escrita à mão dentro
+        # das ferramentas, disfarçada de `~` — e a conferência de casa
+        # escrita à mão não pegava esta, porque não há caminho absoluto
+        # nenhum escrito aqui.
+        #
+        # O comando é o BINÁRIO, o mesmo nome que a detecção procura. E como
+        # ele não vem de repositório nenhum, o campo de "de onde vem" deixou
+        # de ser None: sem ele o ENTER em cima do quadro não fazia nada e
+        # não dizia nada.
+        ("Keyboard Warriors", ["keyboardwarrior"], "keyboardwarrior", "󰌑",
+         "keyboard", "não vem de repositório: ponha o binário no PATH "
+                     "(~/.local/bin serve)"),
         ("StepMania", ["stepmania"], "stepmania", "󰝰", "keyboard",
          "vem do AUR:  yay -S stepmania"),
         ("Etterna", ["etterna"], "etterna", "󰝰", "keyboard",

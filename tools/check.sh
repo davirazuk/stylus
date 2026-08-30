@@ -4076,6 +4076,73 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "o jogo que a tela mostra é o jogo que o ENTER abre"
+# **Sintoma:** o quadro "Keyboard Warriors" abria
+# `~/Documentos/coiso/keyboardwarrior/keyboardwarrior` — a pasta de UMA
+# pessoa —, enquanto quem decide se ele aparece como instalado é o
+# `_is_installed`, que faz `which("keyboardwarrior")` e nunca olha aquele
+# caminho. Os dois lados do mesmo quadro discordavam, em silêncio: a tela
+# dizia "não encontrado" numa máquina onde o jogo está no PATH, e apontava
+# para um caminho que existe num computador do mundo.
+#
+# É a família das duas listas que se referem uma à outra (o `[module/webdav]`
+# da barra, o `stylus-welcome` do i3): ler um lado por vez não pega nada,
+# porque o defeito só existe na RELAÇÃO. E a conferência de casa escrita à
+# mão não pegava esta, porque não há `/home/` nenhum escrito aqui.
+jogos=$(python3 - <<'JOGOEOF'
+import ast
+import os
+
+p = "airootfs/usr/share/stylus/ui/app.py"
+arv = ast.parse(open(p, encoding="utf-8").read())
+linhas = None
+for no in ast.walk(arv):
+    if (isinstance(no, ast.ClassDef) and no.name == "GamesScreen"):
+        for c in no.body:
+            if (isinstance(c, ast.Assign) and c.targets
+                    and getattr(c.targets[0], "id", "") == "ACOES"):
+                linhas = c.value
+if linhas is None:
+    print("não achei o ACOES da tela JOGOS")
+    raise SystemExit
+
+def texto(no):
+    return no.value if isinstance(no, ast.Constant) else None
+
+for linha in linhas.elts:
+    campos = linha.elts
+    if len(campos) != 6:
+        print("linha com %d campos (esperava 6)" % len(campos))
+        continue
+    nome, cmd, binario, _ic, _kind, de_onde = campos
+    nome_s, bin_s = texto(nome), texto(binario)
+    if not isinstance(cmd, (ast.List, ast.Tuple)) or not cmd.elts:
+        print("%s: comando vazio" % nome_s)
+        continue
+    prim = texto(cmd.elts[0])
+    if prim is None:
+        # Um caminho montado (expanduser, join…) não é um binário do PATH, e
+        # é exatamente assim que a pasta de uma pessoa entra aqui.
+        print("%s: o comando não é um nome de binário, é um caminho montado"
+              % nome_s)
+        continue
+    if os.path.basename(prim) != bin_s:
+        print("%s: abre %r mas a tela pergunta por %r"
+              % (nome_s, prim, bin_s))
+    # "Onde não há receita, o ENTER ao menos DIZ de onde aquilo vem" — está
+    # escrito no comentário da lista. Um None ali é o ENTER não fazendo nada
+    # e não explicando, que é o defeito que o campo existe para impedir.
+    if isinstance(de_onde, ast.Constant) and de_onde.value is None:
+        print("%s: sem receita e sem dizer de onde vem" % nome_s)
+JOGOEOF
+)
+if [[ -z $jogos ]]; then
+    ok "todo jogo abre o binário que a tela procura, e todos dizem de onde vêm"
+else
+    bad "a tela dos JOGOS discorda de si mesma:"
+    printf '%s\n' "$jogos" | sed 's/^/      /'
+fi
+
 sec "toda tecla que o rofi anuncia tem um destino"
 # **Sintoma:** o `Alt+s` da estante — tocar a playlist do Qobuz em ordem
 # SORTEADA, anunciada no cabeçalho do próprio arquivo — apenas FECHAVA a
