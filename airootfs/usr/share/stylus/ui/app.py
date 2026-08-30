@@ -5686,6 +5686,12 @@ class App:
         if contexto:
             sobra = cabe - larg_teclas - 20
             if sobra > 80:
+                # Cortar no SEPARADOR, não no meio da palavra. A estante
+                # manda "Artista — Disco · posto há 2 meses", e o corte por
+                # reticências deixava a linha terminando em "· p…", que lê
+                # como defeito de desenho e não como texto que não coube. O
+                # que sobra assim é sempre uma frase inteira.
+                contexto = self._contexto_que_cabe(contexto, sobra)
                 rc = T.text(s, contexto, (x, y), 17, T.TEXT_FAINT, maxw=sobra)
                 # A folga é somada DEPOIS de desenhar: se ela fosse parte do
                 # texto, o corte por reticências a comeria junto e o nome do
@@ -5710,6 +5716,29 @@ class App:
                    T.TEXT_FAINT, maxw=cabe)
             return
         T.frase_com_teclas(s, cabem, (x, y), 17, T.TEXT_FAINT)
+
+    @staticmethod
+    def _contexto_que_cabe(contexto, cabe, size=17):
+        """O contexto cortado num separador, ou no fim de uma palavra.
+
+        Devolve o texto inteiro quando ele cabe. Quando não cabe, tira do fim
+        pedaço por pedaço — primeiro os que vêm depois de um "·", depois
+        palavras — até caber. Se nem a primeira palavra couber, devolve o
+        texto como está e o `T.text` corta com reticências, que aí é o menos
+        pior.
+        """
+        if T.largura(contexto, size) <= cabe:
+            return contexto
+        for sep in (" · ", " — ", " "):
+            if sep not in contexto:
+                continue
+            partes = contexto.split(sep)
+            while len(partes) > 1:
+                partes.pop()
+                tentativa = sep.join(partes)
+                if T.largura(tentativa, size) <= cabe:
+                    return tentativa
+        return contexto
 
     @staticmethod
     def _dicas_que_cabem(teclas, cabe, size=17):
