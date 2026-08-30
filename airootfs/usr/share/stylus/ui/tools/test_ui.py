@@ -74,6 +74,15 @@ def coleção_de_mentira(base):
             os.path.join(d, "cover.jpg"))
         for i in range(1, 6):
             open(os.path.join(d, f"{i:02d} faixa.flac"), "wb").write(b"\0" * 32)
+    # Uma PLAYLIST, com nome comprido pela mesma razão dos discos: a estante
+    # passou a mostrá-las na ordem "listas", e uma tela medida sem elas é uma
+    # tela não medida. Caminho relativo de propósito — é como um .m3u de
+    # verdade é escrito.
+    with open(os.path.join(base, "Shoegaze & Dreampop para dormir.m3u"),
+              "w", encoding="utf-8") as fh:
+        fh.write("#EXTM3U\n")
+        for i in range(1, 4):
+            fh.write(f"Radiohead/OK Computer/{i:02d} faixa.flac\n")
     return base
 
 
@@ -1955,6 +1964,189 @@ def main():
             ok("[esc] e [f] voltam, e o trilho nunca fica invisível")
     except Exception:                                       # noqa: BLE001
         bad("tela cheia e teclas", traceback.format_exc())
+
+    secao("as playlists da coleção aparecem, e podem ser postas")
+    # **Sintoma:** o sistema ESCREVIA .m3u (o `stylus suggest`, o
+    # `make_new_playlist`, o `integrate_album`) e não sabia tocar nenhum: não
+    # havia tela em que aparecessem nem comando que as listasse. Arquivos que
+    # o sistema cria e o sistema não abre.
+    try:
+        estante = next(t for t in app.screens if t.name == "ESTANTE")
+        app._goto(app.screens.index(estante))
+        estante.order, estante.query, estante.artist = "artista", "", None
+        # A estante em memória aqui é a DE MENTIRA que uma seção anterior
+        # deixou (dois discos de nome comprido, para medir colisão). Esta
+        # conferência é sobre a VARREDURA, então ela relê a coleção de
+        # verdade — e devolve a de mentira no fim, senão as seções seguintes
+        # medem outra tela.
+        guardados = list(app.shelf.items)
+        app.shelf.rescan()
+        for _ in range(80):
+            if not app.shelf.scanning:
+                break
+            time.sleep(0.05)
+        discos = estante.items()
+        entre_os_discos = [i for i in discos if i.get("playlist")]
+        estante.order = "listas"
+        listas = estante.items()
+        estante.order = "artista"
+        # e a lista tem que ser PONÍVEL: o put_on recusava arquivo.
+        posto = None
+        if listas:
+            real = A.spawn
+            A.spawn = lambda cmd, **k: posto_cmd.append(cmd) or True
+            posto_cmd = []
+            try:
+                posto = app.put_on(listas[0]["folder"])
+            finally:
+                A.spawn = real
+        if entre_os_discos:
+            bad("uma playlist se disfarçou de disco na grade",
+                str([i["name"] for i in entre_os_discos]))
+        elif not listas:
+            bad("a ordem 'listas' não mostrou nenhuma playlist")
+        elif not posto:
+            bad("o enter numa playlist não põe nada",
+                "o put_on recusa arquivo (só isdir)?")
+        else:
+            ok(f"{len(listas)} playlist(s) fora da grade de discos, e o "
+               f"enter põe")
+        app.shelf.items = guardados
+    except Exception:                                       # noqa: BLE001
+        bad("as playlists", traceback.format_exc())
+
+    secao("a trava do gato engole tudo, e só a combinação destrava")
+    # POR QUE ISTO EXISTE
+    # -------------------
+    # Uma trava que deixa passar UMA tecla não é uma trava: o gato anda por
+    # cima do teclado inteiro, e a que passar é a que troca de disco. Então o
+    # teste não pergunta "o `g` funciona?", ele varre o teclado inteiro
+    # travado e exige que NADA tenha acontecido — nem seção trocada, nem
+    # tela cheia, nem trilho aberto.
+    #
+    # E o destravar é por ESTADO (segurar), não por evento: quem lê só o
+    # KEYDOWN destravaria com um toque, que é o que um gato dá.
+    try:
+        agora = next(t for t in app.screens if t.name == "AGORA")
+        app._goto(app.screens.index(agora))
+        app.rail = False
+        agora.tela_cheia = False
+        app.travar_gato(True)
+        antes = (app.cur, app.rail, agora.tela_cheia)
+        for k in (pygame.K_f, pygame.K_ESCAPE, pygame.K_TAB, pygame.K_RETURN,
+                  pygame.K_SPACE, pygame.K_s, pygame.K_n, pygame.K_1,
+                  pygame.K_q, pygame.K_RIGHT, pygame.K_g):
+            app._key(pygame.event.Event(pygame.KEYDOWN, key=k, unicode="",
+                                        mod=0))
+        app._clique(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(10, 10),
+                                       button=1))
+        depois = (app.cur, app.rail, agora.tela_cheia)
+        if depois != antes:
+            bad("travado, uma tecla atravessou", f"{antes} -> {depois}")
+        elif app.gato_tentativas != 12:
+            bad("a contagem do gato", f"contou {app.gato_tentativas}, esperado 12")
+        else:
+            ok("12 tentativas contadas e nenhuma atravessou")
+
+        # ── e o desenho ─────────────────────────────────────────────────
+        app._gato_ultima = time.time()
+        app._gato_segurando = time.time() - 0.5
+        import theme as _T
+        app.surf.fill(_T.INK)
+        app._draw_gato(app.surf)
+        ok("a tela travada desenha")
+
+        # ── destravar: segurar os três ──────────────────────────────────
+        pressed = {pygame.K_ESCAPE: 1}
+        classe_get = pygame.key.get_pressed
+        classe_mods = pygame.key.get_mods
+        pygame.key.get_pressed = lambda: [pressed.get(i, 0) for i in range(600)]
+        pygame.key.get_mods = lambda: pygame.KMOD_CTRL | pygame.KMOD_ALT
+        try:
+            app._gato_segurando = 0.0
+            app._gato_destrava()                    # primeiro quadro: arma
+            travado_no_toque = app.gato
+            app._gato_segurando = time.time() - (app.GATO_SEGURAR + 0.1)
+            app._gato_destrava()
+            destravou = not app.gato
+            # e um toque solto não destrava
+            app.travar_gato(True)
+            pygame.key.get_mods = lambda: 0
+            app._gato_segurando = time.time() - 9.0
+            app._gato_destrava()
+            sem_mods = app.gato
+        finally:
+            pygame.key.get_pressed = classe_get
+            pygame.key.get_mods = classe_mods
+            app.travar_gato(False)
+        if not travado_no_toque:
+            bad("um TOQUE na combinação destravou (tem que ser segurando)")
+        elif not destravou:
+            bad("segurar ctrl+alt+esc não destravou")
+        elif not sem_mods:
+            bad("o ESC sozinho destrava — o gato faz isso deitando")
+        else:
+            ok("segurar destrava, tocar não, e sem os modificadores não")
+    except Exception:                                       # noqa: BLE001
+        bad("a trava do gato", traceback.format_exc())
+
+    secao("a soneca esmaece e levanta a agulha")
+    # **Sintoma que isto impede:** um `playerctl pause` seco no meio de uma
+    # faixa. O que acorda alguém quase dormindo é o CORTE, não o silêncio.
+    # E o defeito da família "tecla que muda um campo e acende um ícone": o
+    # teste põe um mpv de mentira e olha o que CHEGA nele.
+    try:
+        recebidos = []
+        real = app._ao_tocador
+        app._ao_tocador = lambda *c: (recebidos.append(c),
+                                      100.0 if c[:2] == ("get_property", "volume")
+                                      else {"error": "success"})[1]
+        try:
+            # o ciclo inteiro do [t]
+            app._sleep_minutes, app._sleep_lado = 0, False
+            vistos = []
+            for _ in range(len(app.SONECA)):
+                app.toggle_sleep()
+                vistos.append(-1 if app._sleep_lado else app._sleep_minutes)
+            ciclo_ok = sorted(vistos) == sorted(app.SONECA)
+
+            # esmaecimento: 20s de rampa, e no fim a agulha levanta
+            app._sleep_lado = False
+            app._sleep_minutes = 30
+            app._sleep_end = time.time() - 1        # já passou
+            app._sleep_fade = 0.0
+            app._vol_antes = None
+            recebidos.clear()
+            app._soneca()
+            app._sleep_passo = 0.0
+            app._sleep_fade = time.time() - (app.ESMAECER * 0.5)
+            app._soneca()
+            meio = [c for c in recebidos if c[:2] == ("set_property", "volume")]
+            app._sleep_passo = 0.0
+            app._sleep_fade = time.time() - (app.ESMAECER + 1)
+            app._soneca()
+            pausou = any(c[:3] == ("set_property", "pause", True)
+                         for c in recebidos)
+            devolveu = recebidos[-1][:2] == ("set_property", "volume") and \
+                recebidos[-1][2] == 100.0
+        finally:
+            app._ao_tocador = real
+            app._sleep_minutes, app._sleep_lado = 0, False
+            app._sleep_fade, app._vol_antes = 0.0, None
+        if not ciclo_ok:
+            bad("o [t] não passa por todas as sonecas", str(vistos))
+        elif not meio or meio[-1][2] >= 100.0:
+            bad("o volume não desceu durante o esmaecimento", str(meio[-3:]))
+        elif not pausou:
+            bad("a soneca não levantou a agulha no fim")
+        elif not devolveu:
+            bad("o volume não voltou: o disco de amanhã começa mudo",
+                str(recebidos[-1]))
+        else:
+            ok(f"{len(app.SONECA)} sonecas, o volume desce em {app.ESMAECER:.0f}s "
+               f"e volta depois")
+    except Exception:                                       # noqa: BLE001
+        bad("a soneca", traceback.format_exc())
 
     secao("a linha de dicas não promete tecla que a seção ignora")
     # A irmã da conferência do Mod+F1 no check.sh, do lado de cá: lá a lista

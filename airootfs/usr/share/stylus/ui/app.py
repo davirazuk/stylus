@@ -429,9 +429,16 @@ class NowScreen(Screen):
         if ev.key == pygame.K_p:
             spawn(["playerctl", "previous"])
             return True
-        # Sleep timer: t cicla 30m → 60m → 90m → off
+        # A soneca: [t] cicla 15 → 30 → 45 → 60 → 90 → fim do lado → desligado
         if ev.key == pygame.K_t:
             self.app.toggle_sleep()
+            return True
+        # A trava do gato: [Shift+G]. Com SHIFT de propósito — uma letra
+        # solta que trava a tela inteira é fácil demais de acertar sem
+        # querer, e destravar custa segurar três teclas por um segundo e
+        # meio. Travar tem que ser tão deliberado quanto destravar.
+        if ev.key == pygame.K_g and (ev.mod & pygame.KMOD_SHIFT):
+            self.app.travar_gato(True)
             return True
         # Shuffle toggle: s
         if ev.key == pygame.K_s:
@@ -807,7 +814,9 @@ class NowScreen(Screen):
             icones.append(T.icon("󰑙"))  # nf-md-repeat_once
         elif self.app.repeat == 2:
             icones.append(T.icon("󰑖"))  # nf-md-repeat
-        if self.app._sleep_minutes > 0:
+        if self.app._sleep_lado:
+            icones.append(f"{T.icon('󰅐')}lado")  # nf-md-timer
+        elif self.app._sleep_minutes > 0:
             faltam_min = max(0, int((self.app._sleep_end - time.time()) / 60))
             icones.append(f"{T.icon('󰅐')}{faltam_min}m")  # nf-md-timer
         txt_icones = "  ".join(icones)
@@ -846,10 +855,14 @@ class NowScreen(Screen):
         # sem tecla não se descobre: quem quisesse repetir o disco não tinha
         # como saber que existe. É a mesma família do Mod+Shift+O do i3, que
         # sorteia um disco e não estava escrito em lugar nenhum.
+        # O `[t]` e o `[g]` estavam no mesmo caso do `[s]`: existiam, tinham
+        # ícone no canto, e não estavam escritos em lugar nenhum. Ícone sem
+        # tecla não se descobre.
         self.app.hint(s, r, "[f] o disco na tela toda   [enter] o disco   "
                             "[space] pausa   "
                             "[n]/[p] faixa   [←]/[→] busca   [v]/[b] lado   "
                             "[s] embaralha   [Shift+R] repete   "
+                            "[t] soneca   [Shift+G] trava do gato   "
                             "[+]/[-] volume   "
                             + ("[d] disco sozinho: ligado" if self.app.auto_disco
                                else "[d] disco sozinho: desligado"))
@@ -1352,6 +1365,14 @@ class ShelfScreen(Screen):
     # ── quais discos, nesta ordem ──────────────────────────────────────────
     def items(self):
         its = self.app.shelf.items
+        # As playlists ficam fora da grade de discos, e aparecem em três
+        # casos: na ordem "listas", na busca (quem digita o nome de uma
+        # lista quer a lista) e no filtro por artista nunca — playlist não
+        # tem artista.
+        if self.order == "listas":
+            its = [i for i in its if i.get("playlist")]
+        elif not self.query:
+            its = [i for i in its if not i.get("playlist")]
         if self.artist:
             its = [i for i in its if i["artist"] == self.artist]
         if self.query:
@@ -1417,7 +1438,8 @@ class ShelfScreen(Screen):
             self.searching, self.query = True, ""
             return True
         if ev.key == pygame.K_o:
-            ordens = ["artista", "esquecidos", "mais postos", "favoritos"]
+            ordens = ["artista", "esquecidos", "mais postos", "favoritos",
+                      "listas"]
             self.order = ordens[(ordens.index(self.order) + 1) % len(ordens)]
             self.sel = 0
             return True
@@ -1577,6 +1599,15 @@ class ShelfScreen(Screen):
             # favorito: estrela âmbar no canto superior direito
             if os.path.normpath(it["folder"]) in favs:
                 T.text(s, "★", (cx + cw - 8, cy + 4), 18, T.AMBER, anchor="topright")
+            # LISTA: uma playlist não é um disco, e sem a tarja ela se
+            # disfarça de disco na grade — com a capa do primeiro álbum dela,
+            # que é a de OUTRA coisa.
+            if it.get("playlist") and cw >= 90:
+                txt = "LISTA"
+                lw = T.largura(txt, 12) + 16
+                tarja = pygame.Rect(cx + 6, cy + cw - 24, lw, 18)
+                T.panel(s, tarja, T.INK, radius=9, border=T.AMBER_DIM)
+                T.text(s, txt, tarja.center, 12, T.AMBER, anchor="center")
             # 14 e não 8: o disco selecionado levanta 6px para cada lado, e
             # com a legenda colada nela mesma ela encostava na capa levantada.
             ty = cy + cw + 14
@@ -4749,6 +4780,22 @@ class App:
         # Sleep timer: minutes remaining, 0 = off
         self._sleep_minutes = 0
         self._sleep_end = 0.0
+        # 0 = nada; "lado" = para quando o LADO acabar. Ver `toggle_sleep`.
+        self._sleep_lado = False
+        self._sleep_fade = 0.0            # quando o esmaecimento começou
+        self._ti_soneca = [None, 0]       # cache do track_index_for
+        self._sleep_passo = 0.0           # último degrau do esmaecimento
+        self._vol_antes = None            # volume a devolver depois
+        # ── a TRAVA DO GATO ──────────────────────────────────────────────
+        # Um gato em cima do teclado troca de disco, embaralha a lista e
+        # muda de seção — de madrugada, com a pessoa dormindo. A trava é da
+        # TELA e não do sistema: a música continua, o disco continua girando,
+        # e nenhuma tecla, clique ou botão de controle atravessa.
+        self.gato = False
+        self.gato_desde = 0.0
+        self.gato_tentativas = 0
+        self._gato_ultima = 0.0           # última tentativa, para o aviso
+        self._gato_segurando = 0.0        # desde quando a combinação está de pé
         # Shuffle/repeat state — persisted across restarts
         _prefs = _load_prefs()
         # Nasce desligado SEMPRE, e não do arquivo de gosto: embaralhar é uma
@@ -4980,10 +5027,16 @@ class App:
         return "stylus-deck"
 
     def put_on(self, folder):
-        if not os.path.isdir(folder):
+        # Uma PLAYLIST é um arquivo .m3u, não uma pasta. Sem esta linha o
+        # `isdir` recusava toda lista com "disco não existe" — a estante
+        # mostrava a lista e o enter em cima dela não fazia nada.
+        lista = vinyl.e_playlist(folder)
+        if not (os.path.isdir(folder) or (lista and os.path.isfile(folder))):
             self.toast(f"disco não existe: {os.path.basename(folder)}")
             return False
-        self.toast(f"pondo {os.path.basename(folder)}…")
+        nome = os.path.splitext(os.path.basename(folder))[0] if lista \
+            else os.path.basename(folder)
+        self.toast(f"pondo {nome}…")
         if not spawn([self._tocador_bin(), "--no-scope", folder]):
             self.toast("não consegui pôr o disco (erro ao iniciar)")
             return False
@@ -5115,22 +5168,121 @@ class App:
         self._toast_t = time.time()
         self._toast_kind = kind
 
+    # A soneca, em minutos. O -1 é o FIM DO LADO, e ele existe porque é o
+    # jeito certo de um sistema sobre discos parar: ninguém adormece no meio
+    # de um lado por vontade própria — o lado acaba, e é aí que a agulha
+    # levanta. Nas outras opções o esmaecimento cuida do meio da música.
+    SONECA = (0, 15, 30, 45, 60, 90, -1)
+    # Quanto dura o esmaecimento, em segundos. Um corte seco no meio de uma
+    # faixa acorda; vinte segundos descendo, não.
+    ESMAECER = 20.0
+
     def toggle_sleep(self):
-        """Cicla o "parar sozinho": desligado → 30m → 60m → 90m → desligado.
+        """Cicla o "parar sozinho". Ver SONECA.
 
         Chamava-se "sleep timer" na tela, em inglês, e o celular dizia a
         mesma coisa com outra caixa alta em dois arquivos diferentes. Texto
         que o usuário lê é em português, e é o MESMO português dos dois
         lados: a coleção é a mesma nos dois, o vocabulário também tem que ser.
         """
-        cycle = [0, 30, 60, 90]
-        idx = cycle.index(self._sleep_minutes) if self._sleep_minutes in cycle else 0
-        self._sleep_minutes = cycle[(idx + 1) % len(cycle)]
-        if self._sleep_minutes > 0:
-            self._sleep_end = time.time() + self._sleep_minutes * 60
-            self.toast(f"para sozinho em {self._sleep_minutes} minutos")
+        atual = -1 if self._sleep_lado else self._sleep_minutes
+        i = self.SONECA.index(atual) if atual in self.SONECA else 0
+        prox = self.SONECA[(i + 1) % len(self.SONECA)]
+        self._sleep_fade = 0.0
+        self._devolve_volume()
+        if prox == -1:
+            self._sleep_lado = True
+            self._sleep_minutes = 0
+            self.toast("para no fim deste lado")
+        elif prox > 0:
+            self._sleep_lado = False
+            self._sleep_minutes = prox
+            self._sleep_end = time.time() + prox * 60
+            self.toast(f"para sozinho em {prox} minutos")
         else:
+            self._sleep_lado = False
+            self._sleep_minutes = 0
             self.toast("não para mais sozinho")
+
+    def _devolve_volume(self):
+        """Põe o volume de volta onde estava antes do esmaecimento.
+
+        Sem isto, cancelar a soneca no meio do fade deixava o disco tocando
+        a 20% pelo resto da noite — e o sintoma é "o som ficou baixo e não
+        sei por quê", que é o pior tipo de sintoma que existe.
+        """
+        if self._vol_antes is None:
+            return
+        self._ao_tocador("set_property", "volume", self._vol_antes)
+        self._vol_antes = None
+
+    def _soneca(self):
+        """Roda uma vez por quadro: esmaece, e no fim levanta a agulha.
+
+        **O que havia antes:** um `playerctl pause` seco quando o relógio
+        batia. No meio de uma faixa, com a pessoa quase dormindo, um corte
+        seco é exatamente o que acorda — e a metade do sistema que fala de
+        ritual não tinha nada a dizer sobre a hora de parar.
+        """
+        agora = time.time()
+        # ── fim do lado ──────────────────────────────────────────────────
+        if self._sleep_lado:
+            al = self.playing.album
+            if al is None or not getattr(al, "sides", None):
+                return
+            if getattr(al, "continuo", False):
+                # Playlist não tem lado que acabe. Cair para "quando a lista
+                # acabar" seria uma promessa que a tela não fez.
+                return
+            snap = self.playing.session.snapshot()
+            idx = vinyl.track_index_for(al, snap, self._ti_soneca)
+            pos, _d = self.playing.session.position()
+            try:
+                t_abs = al.album_time(idx, pos)
+                _i, lado = al.side_for(t_abs)
+            except Exception:             # noqa: BLE001
+                return
+            if not lado:
+                return
+            restam = lado["end"] - t_abs
+            if restam > self.ESMAECER:
+                return
+            self._sleep_fade = self._sleep_fade or (agora - (self.ESMAECER - restam))
+        elif self._sleep_minutes > 0:
+            if agora < self._sleep_end - self.ESMAECER:
+                return
+            self._sleep_fade = self._sleep_fade or agora
+        else:
+            return
+
+        f = min(1.0, max(0.0, (agora - self._sleep_fade) / self.ESMAECER))
+        # Cinco degraus por segundo, não sessenta. O `_ao_tocador` é uma ida
+        # e volta pelo socket e o cabeçalho dele diz, com todas as letras,
+        # "chamado da tecla, nunca do desenho" — isto aqui roda no desenho.
+        # Cinco por segundo é imperceptível no ouvido e é 1/12 do tráfego.
+        if f < 1.0 and agora - self._sleep_passo < 0.2:
+            return
+        self._sleep_passo = agora
+        if self._vol_antes is None:
+            v = self._ao_tocador("get_property", "volume")
+            self._vol_antes = float(v) if isinstance(v, (int, float)) else 100.0
+        # Em POTÊNCIA e não linear: o ouvido é logarítmico, e uma rampa
+        # linear soa como "nada, nada, nada, sumiu".
+        self._ao_tocador("set_property", "volume",
+                         round(self._vol_antes * (1.0 - f) ** 2, 1))
+        if f < 1.0:
+            return
+        # Chegou ao fim: levanta a agulha e devolve o volume, para o disco
+        # de amanhã não começar mudo.
+        self._ao_tocador("set_property", "pause", True) or spawn(["playerctl", "pause"])
+        vol = self._vol_antes
+        self._vol_antes = None
+        self._ao_tocador("set_property", "volume", vol)
+        quanto = "no fim do lado" if self._sleep_lado else f"{self._sleep_minutes} min"
+        self.toast(f"boa noite — o disco parou {quanto}")
+        self._sleep_minutes = 0
+        self._sleep_lado = False
+        self._sleep_fade = 0.0
 
     def _ao_tocador(self, *cmd):
         """Manda um comando ao mpv que está tocando. None se não há mpv.
@@ -5644,7 +5796,63 @@ class App:
         s.blit(txt_img, txt_img.get_rect(centerx=box.centerx, centery=box.centery))
 
     # ── entrada ────────────────────────────────────────────────────────────
+    # ═══════════════════════════════════════════════════════════════════
+    #  A TRAVA DO GATO
+    # ═══════════════════════════════════════════════════════════════════
+    #  Segurar Ctrl + Alt + ESC por um segundo e meio destrava. Os três de
+    #  uma vez, e por tempo, de propósito: um gato deitado no teclado segura
+    #  teclas — às vezes muitas — mas não segura ESTAS três juntas por um
+    #  segundo e meio. Uma sequência de teclas soltas não serviria pelo
+    #  mesmo motivo: andando por cima do teclado ele acaba digitando
+    #  qualquer sequência.
+    GATO_SEGURAR = 1.5
+
+    def travar_gato(self, ligar=True):
+        self.gato = bool(ligar)
+        self.gato_desde = time.time()
+        self.gato_tentativas = 0
+        self._gato_segurando = 0.0
+        if self.gato:
+            self.toast("trava do gato: LIGADA — ctrl+alt+esc destrava")
+        else:
+            self.toast("destravado")
+
+    def _gato_destrava(self):
+        """A combinação está de pé há tempo bastante? Roda uma vez por quadro.
+
+        Lê o ESTADO das teclas em vez de esperar um evento: o que destrava é
+        SEGURAR, e um evento de tecla só conta o instante em que ela desceu.
+        """
+        if not self.gato:
+            return False
+        try:
+            teclas = pygame.key.get_pressed()
+            mods = pygame.key.get_mods()
+        except Exception:                 # noqa: BLE001
+            return False
+        combo = (teclas[pygame.K_ESCAPE]
+                 and (mods & pygame.KMOD_CTRL) and (mods & pygame.KMOD_ALT))
+        agora = time.time()
+        if not combo:
+            self._gato_segurando = 0.0
+            return False
+        if not self._gato_segurando:
+            self._gato_segurando = agora
+            return False
+        if agora - self._gato_segurando >= self.GATO_SEGURAR:
+            self.travar_gato(False)
+            return True
+        return False
+
     def _key(self, ev):
+        # A TRAVA vem antes de tudo, inclusive do aviso de virar o lado e do
+        # formulário: travado é travado. O que a tecla faz aqui é só CONTAR
+        # — e a contagem não é enfeite, é o que responde de manhã à pergunta
+        # "ele mexeu?".
+        if self.gato:
+            self.gato_tentativas += 1
+            self._gato_ultima = time.time()
+            return None
         self._ultima_entrada = time.time()
         # O aviso de virar o lado cobre a tela; a primeira tecla tira ele e
         # não faz mais nada. Deixar a tecla ATRAVESSAR o aviso faria o botão
@@ -5773,6 +5981,12 @@ class App:
         implementação por baixo — que é o que impede o rato de fazer uma
         terceira coisa que ninguém previu.
         """
+        # Travado, o rato conta como tentativa e não faz mais nada: um gato
+        # anda em cima do trackpad do mesmo jeito que anda no teclado.
+        if self.gato:
+            self.gato_tentativas += 1
+            self._gato_ultima = time.time()
+            return None
         if ev.button == 3:                # direito = voltar
             pygame.event.post(pygame.event.Event(
                 pygame.KEYDOWN, key=pygame.K_ESCAPE, unicode="", mod=0))
@@ -5836,6 +6050,11 @@ class App:
                                  pygame.JOYDEVICEREMOVED):
                     self._sync_pads(announce=True)
                 elif ev.type == pygame.JOYBUTTONDOWN:
+                    if self.gato:
+                        # O controle no sofá é onde o gato deita primeiro.
+                        self.gato_tentativas += 1
+                        self._gato_ultima = time.time()
+                        continue
                     self._ultima_entrada = time.time()
                     # Os ombros pulam faixa em QUALQUER tela, não só na AGORA:
                     # do sofá, "próxima" é a coisa que se quer poder fazer sem
@@ -5892,7 +6111,9 @@ class App:
             if not inteira:
                 self._draw_rail(self.surf, rail_w)
             self._watch_side()
+            self._gato_destrava()
             self._draw_flip(self.surf)
+            self._draw_gato(self.surf)
             self._draw_toast(self.surf)
             # Fade de transição: rápido e sutil, só para o corte seco entre
             # seções não parecer um engasgo.
@@ -5912,12 +6133,72 @@ class App:
                 v.set_alpha(int(255 * (1.0 - ease)))
                 self.surf.blit(v, (0, 0))
             pygame.display.flip()
-            # Sleep timer: pause when time runs out
-            if self._sleep_minutes > 0 and time.time() >= self._sleep_end:
-                spawn(["playerctl", "pause"])
-                self.toast(f"o disco para aqui — {self._sleep_minutes} min")
-                self._sleep_minutes = 0
+            self._soneca()
             self.clock.tick(FPS)
+
+    def _draw_gato(self, s):
+        """A tela travada: o disco continua girando, por baixo de um véu.
+
+        Não é uma tela preta de propósito. O que está acontecendo é que a
+        música SEGUE — é para isso que a trava existe — e apagar tudo diria o
+        contrário. O véu é forte o bastante para a tela não iluminar o quarto
+        e fraco o bastante para o disco continuar sendo visível de longe.
+        """
+        if not self.gato:
+            return
+        veu = pygame.Surface((self.W, self.H))
+        veu.fill(T.INK)
+        veu.set_alpha(214)
+        s.blit(veu, (0, 0))
+
+        agora = time.time()
+        cx, cy = self.W // 2, self.H // 2
+        # O ícone respira devagar: a tela tem que parecer viva, não travada
+        # por defeito. Um quadro parado de madrugada lê como pane.
+        pulso = 0.72 + 0.28 * math.sin(agora * 0.9)
+        T.text(s, T.icon("󰄛"), (cx, cy - 54), 64,
+               T.lerp(T.INK_LIFT, T.AMBER, 0.35 + 0.4 * pulso),
+               anchor="center")
+        T.text(s, "TRAVADO", (cx, cy + 22), 30, T.AMBER, bold=True,
+               anchor="center")
+
+        # A instrução só aparece quando ALGUÉM MEXEU. Ficar escrita o tempo
+        # todo é acender a tela a noite inteira por nada; e no instante em
+        # que a pessoa aperta uma tecla é exatamente quando ela precisa.
+        desde = agora - self._gato_ultima
+        if self._gato_ultima and desde < 6.0:
+            forca = min(1.0, (6.0 - desde) / 1.5)
+            T.frase_com_teclas(
+                s, "segure [ctrl]+[alt]+[esc] para destravar",
+                (cx, cy + 66), 21,
+                T.lerp(T.INK, T.TEXT_DIM, forca), anchor="center")
+            # Quanto tempo travado, e quantas vezes ele tentou. As duas
+            # coisas respondem à pergunta que se faz de manhã — "ele mexeu?"
+            # — e é para isso que a contagem existe.
+            # O `ha_quanto` do model responde em DIAS e começa a frase com
+            # "posto": é sobre discos, não sobre isto. Aqui a escala é de
+            # minutos e horas — uma noite.
+            seg = max(0, int(agora - self.gato_desde)) if self.gato_desde else 0
+            if seg < 90:
+                linha = "travado agora"
+            elif seg < 5400:
+                linha = "travado há " + plural(seg // 60, "minuto")
+            else:
+                linha = "travado há " + plural(seg // 3600, "hora")
+            if self.gato_tentativas:
+                linha += "  ·  " + plural(self.gato_tentativas,
+                                          "tentativa") + " do gato"
+            T.text(s, linha, (cx, cy + 100), 17,
+                   T.lerp(T.INK, T.TEXT_FAINT, forca), anchor="center")
+        # Segurando a combinação: uma barrinha enchendo. Sem ela, segurar um
+        # segundo e meio no escuro é indistinguível de não estar funcionando.
+        if self._gato_segurando:
+            f = min(1.0, (agora - self._gato_segurando) / self.GATO_SEGURAR)
+            larg = int(self.W * 0.18)
+            r = pygame.Rect(cx - larg // 2, cy + 132, larg, 6)
+            pygame.draw.rect(s, T.INK_LIFT, r, border_radius=3)
+            pygame.draw.rect(s, T.AMBER,
+                             (r.x, r.y, int(larg * f), r.h), border_radius=3)
 
     def _pasta_tocando(self):
         """A pasta do disco que está tocando — a do ÁLBUM quando ela é sabida.

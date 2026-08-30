@@ -239,6 +239,102 @@ MUSIC_ROOTS = _Roots()
 AUDIO_EXT = (".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac",
              ".wma", ".shn", ".ape")
 
+# ── a PLAYLIST em arquivo ─────────────────────────────────────────────────
+# **Sintoma:** este sistema ESCREVIA playlists e não sabia tocar nenhuma. O
+# `stylus suggest`, o `make_new_playlist` e o `integrate_album` põem .m3u na
+# raiz da coleção há muito tempo — "Shoegaze & Dreampop.m3u", "Novidades
+# 2026-08-30.m3u", "coleção.m3u" — e não havia caminho nenhum daqui até o
+# tocador. Arquivos que o sistema cria e o sistema não abre.
+#
+# Uma playlist NÃO é um disco, e a diferença importa: ela entra como um lado
+# só e contínuo (`continuo`), sem "vire o disco" — o aviso que é a tese deste
+# projeto é verdade sobre um objeto que tem dois lados, e numa lista de 200
+# faixas viraria um alarme a cada vinte minutos. É a mesma decisão que a
+# playlist do Qobuz já tomava.
+PLAYLIST_EXT = (".m3u", ".m3u8")
+
+
+def ler_m3u(caminho):
+    """[(caminho ou endereço, título, duração)] de um .m3u, na ordem dele.
+
+    O que um .m3u tem de traiçoeiro, e por que cada linha abaixo existe:
+
+      · caminho RELATIVO é o normal, e é relativo à pasta do .m3u — não à
+        pasta de onde alguém rodou o comando.
+      · barra invertida: playlist escrita no Windows. Um acervo que veio de
+        lá tem `Artista\Album\01.flac` e nada abre.
+      · `#EXTINF:213,Artista - Título` traz duração e nome de graça; sem ele
+        o nome sai do arquivo. Ler o EXTINF é o que evita um ffprobe por
+        faixa numa lista de trezentas.
+      · endereço http(s): playlist de rádio, e o mpv toca. Não é para virar
+        caminho de arquivo.
+      · `#EXTM3U` e o resto dos comentários não são faixas.
+    """
+    base = os.path.dirname(os.path.abspath(caminho))
+    saida, titulo, dur = [], "", 0.0
+    try:
+        with open(caminho, encoding="utf-8", errors="replace") as fh:
+            linhas = fh.read().splitlines()
+    except OSError:
+        return []
+    for ln in linhas:
+        ln = ln.strip()
+        if not ln:
+            continue
+        if ln.startswith("#"):
+            if ln.upper().startswith("#EXTINF:"):
+                resto = ln.split(":", 1)[1]
+                seg, _sep, nome = resto.partition(",")
+                try:
+                    d = float(seg.split(",")[0])
+                    dur = d if d > 0 else 0.0
+                except ValueError:
+                    dur = 0.0
+                titulo = nome.strip()
+            continue
+        if ln.startswith(("http://", "https://")):
+            saida.append((ln, titulo, dur))
+        else:
+            alvo = ln.replace("\\", "/")
+            alvo = os.path.expanduser(alvo)
+            if not os.path.isabs(alvo):
+                alvo = os.path.normpath(os.path.join(base, alvo))
+            saida.append((alvo, titulo, dur))
+        titulo, dur = "", 0.0
+    return saida
+
+
+def e_playlist(caminho):
+    """Este caminho é um arquivo de playlist?"""
+    return bool(caminho) and str(caminho).lower().endswith(PLAYLIST_EXT)
+
+
+def playlists(raizes=None):
+    """As playlists da coleção, ordenadas por nome.
+
+    Só o primeiro nível de cada raiz, de propósito: playlist mora ao lado da
+    coleção, não dentro de um disco — e um `lista.m3u` de dentro de uma pasta
+    de álbum (que é o que o Qobuz escreve no cache) não é uma playlist da
+    pessoa, é encanamento.
+    """
+    achadas = []
+    for raiz in (raizes if raizes is not None else library_roots()):
+        try:
+            for n in sorted(os.listdir(raiz)):
+                if n.lower().endswith(PLAYLIST_EXT) and not n.startswith("."):
+                    achadas.append(os.path.join(raiz, n))
+        except OSError:
+            continue
+    vistas, saida = set(), []
+    for p in achadas:
+        real = os.path.realpath(p)
+        if real in vistas:
+            continue
+        vistas.add(real)
+        saida.append(p)
+    return sorted(saida, key=lambda p: os.path.basename(p).lower())
+
+
 # A CAPA. Mesma história das extensões de áudio: havia QUATRO listas de nome
 # de capa espalhadas (aqui, no model da interface, no extract_covers e no
 # embed_metadata) e elas discordavam — duas tinham `folder.png`, as outras
@@ -908,6 +1004,13 @@ def track_paths(folder):
     para um da assinatura. Sem esta linha o lançador não achava faixa nenhuma
     e entregava a PASTA ao mpv, que tentava tocar a capa.
     """
+    # Uma PLAYLIST é um arquivo, não uma pasta: a ordem é a que está escrita
+    # nela. Sem esta linha o `stylus deck lista.m3u` caía no os.listdir de
+    # uma "pasta" que é um arquivo, achava nada, e entregava o .m3u ao mpv —
+    # que até toca, mas aí o índice da faixa não é o índice do Album e o
+    # LADO, a agulha e a letra falam todos da faixa errada.
+    if e_playlist(folder):
+        return [c for c, _t, _d in ler_m3u(folder)]
     m = manifesto(folder)
     if m:
         return [t.get("url") or "" for t in m.get("tracks") or [] if t.get("url")]
@@ -1398,6 +1501,8 @@ class Album:
         # que é o que importa. Sem isto o aviso de virar o lado — a única
         # coisa que este sistema faz e mais nenhum faz — simplesmente não
         # acontecia para quem estava ouvindo pela assinatura.
+        if self._ler_playlist():
+            return
         if self._ler_manifesto():
             return
         # usa o mesmo coletor que track_paths para garantir índice idêntico
@@ -1409,6 +1514,48 @@ class Album:
         self.cover = find_cover(self.folder) or self.cover
         if self.tracks:
             self._read_tags(self.tracks[0]["path"])
+
+    def _ler_playlist(self):
+        """Um .m3u no lugar de uma pasta. True quando era um.
+
+        A `folder` de um Album normalmente é uma pasta; aqui ela é o ARQUIVO
+        da playlist. Isso é de propósito e não uma gambiarra: tudo que já
+        sabe ler um Album — o LADO, o "vira em X", a agulha no sulco, a letra
+        no tempo — passa a valer para uma playlist sem uma segunda
+        implementação de nada. É o mesmo caminho que o disco da rede usa.
+
+        O ARTISTA sai da coleção quando dá: se todas as faixas moram sob a
+        mesma pasta de artista, é o artista dela. Numa lista de vários, fica
+        vazio — que é honesto. E a CAPA é a do primeiro disco que aparecer:
+        uma playlist não tem capa, e a alternativa é o quadrado cinza.
+        """
+        if not e_playlist(self.folder) or not os.path.isfile(self.folder):
+            return False
+        itens = ler_m3u(self.folder)
+        if not itens:
+            return False
+        artistas, capa = set(), None
+        for caminho, titulo, dur in itens:
+            nome = os.path.basename(caminho)
+            if not titulo:
+                titulo = re.sub(r"^\s*\d+\s*[-._)]\s*", "",
+                                os.path.splitext(nome)[0]).strip()
+            self.tracks.append({"path": caminho, "title": titulo,
+                                "duration": float(dur or 0.0), "start": 0.0})
+            if not caminho.startswith(("http://", "https://")):
+                pasta = os.path.dirname(caminho)
+                art, _disco = folder_names(pasta)
+                if art:
+                    artistas.add(art)
+                if capa is None:
+                    capa = find_cover(pasta)
+        self.name = os.path.splitext(os.path.basename(self.folder))[0]
+        self.artist = artistas.pop() if len(artistas) == 1 else ""
+        self.cover = capa
+        # Uma playlist não tem lado para virar. Ver o `continuo` do
+        # manifesto: a mesma decisão, pelo mesmo motivo.
+        self.continuo = True
+        return True
 
     def _ler_manifesto(self):
         """disco.json no lugar dos arquivos. True quando havia um."""

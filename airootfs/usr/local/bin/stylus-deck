@@ -5,6 +5,7 @@
 #      stylus deck "Radiohead/In Rainbows"    o disco inteiro, na ordem
 #      stylus deck loveless                   acha pelo nome, sem o caminho
 #      stylus deck                            sorteia um da estante
+#      stylus deck "Novidades 2026-08-30"     uma playlist .m3u da coleção
 #      stylus deck --quiet   DISCO            toca num sink nulo: silêncio na sala
 #      stylus deck --no-scope DISCO           só toca, sem tela  (= stylus play)
 #      stylus deck --recomeçar DISCO          do começo, ignorando onde parou
@@ -68,7 +69,7 @@ while [[ $# -gt 0 ]]; do
         --no-scope|--sem-tela) TELA=0; shift ;;
         --view|--observar|--monitor) VIEW=1; shift ;;
         --recomeçar|--recomecar|--do-inicio|--restart) RETOMAR=0; shift ;;
-        -h|--help)  sed -n '4,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        -h|--help)  sed -n '5,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *)          TARGET=$1; shift ;;
     esac
 done
@@ -93,6 +94,15 @@ elif [[ ! -e $TARGET ]]; then
     FOUND=$("$PY" - "$TARGET" <<'PYEOF'
 import os, sys, difflib, vinyl
 want = sys.argv[1].lower()
+# As PLAYLISTS entram na busca junto com os discos, e na frente: quem digita
+# o nome de uma playlist quer a playlist, e um disco com nome parecido não
+# tem por que ganhar. Sem isto o sistema escrevia .m3u que ninguém conseguia
+# tocar — nem pelo nome, nem por caminho.
+for pl in vinyl.playlists():
+    nome = os.path.splitext(os.path.basename(pl))[0].lower()
+    if nome == want or want in nome:
+        print(pl, end="")
+        raise SystemExit
 cands = vinyl.shelf(min_tracks=1)
 # casamento exato de pasta primeiro, depois "artista/disco", depois o mais
 # parecido — nessa ordem porque digitar o nome inteiro certo tem que ganhar
@@ -176,8 +186,12 @@ fi
 # "tocar" a imagem e fecha, além de reportar um índice de faixa que não existe
 # no álbum. A lista sai do vinyl.track_paths, a MESMA que o Album lê, então o
 # índice do mpv e o índice do disco são o mesmo número por construção.
+# Uma playlist é um ARQUIVO, e o track_paths sabe lê-la. O `-d` sozinho a
+# deixava de fora: o mpv recebia o .m3u e até tocava, mas aí o índice da
+# faixa não é o índice do Album e o LADO, a agulha e a letra falam todos da
+# faixa errada.
 _tracks=()
-if [[ -d $TARGET ]]; then
+if [[ -d $TARGET ]] || [[ -f $TARGET && $TARGET == *.m3u ]] || [[ -f $TARGET && $TARGET == *.m3u8 ]]; then
     # Usar arquivo temporário para evitar problemas de shell com caminhos e bytes nulos
     _tmp_tracks=$(mktemp)
     "$PY" -c '

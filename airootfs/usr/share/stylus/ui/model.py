@@ -103,6 +103,27 @@ class Shelf:
                             "tracks": n, "cover": cover,
                             "last": seen.get(k, 0), "plays": plays.get(k, 0)})
             out.sort(key=lambda d: (d["artist"].lower(), d["name"].lower()))
+            # ── as PLAYLISTS, no fim ────────────────────────────────────
+            # Elas fazem parte da coleção — o `stylus suggest` escreve, o
+            # `integrate_album` acrescenta — e não havia nenhuma tela em que
+            # aparecessem. No fim da lista e marcadas: a estante é sobre
+            # DISCOS, e uma lista no meio da grade de capas se disfarçaria
+            # de disco. Quem quiser só elas usa o [o] (ordem: listas).
+            for pl in vinyl.playlists():
+                itens = vinyl.ler_m3u(pl)
+                capa = None
+                for caminho, _t, _d in itens:
+                    if caminho.startswith(("http://", "https://")):
+                        continue
+                    capa = vinyl.find_cover(os.path.dirname(caminho))
+                    if capa:
+                        break
+                k = os.path.normpath(pl)
+                out.append({"folder": pl, "artist": "",
+                            "name": os.path.splitext(os.path.basename(pl))[0],
+                            "tracks": len(itens), "cover": capa,
+                            "last": seen.get(k, 0), "plays": plays.get(k, 0),
+                            "playlist": True})
             self.items = out
             self.ready = True
             try:
@@ -117,8 +138,22 @@ class Shelf:
             self.scanning = False
 
     def artists(self):
+        """{artista: [discos]} — sem os sem-artista e sem as playlists.
+
+        **Sintoma:** a lista de artistas ganhava uma linha VAZIA, e escolhê-la
+        deixava a estante num filtro que não dá para tirar: `self.artist` fica
+        `""`, que é falso, então o `items()` não filtra nada e o `a` — que
+        limpa o filtro perguntando `if self.artist` — também não vê filtro
+        nenhum para limpar. A tela dizia "filtrou por  (1 de 1)" com um buraco
+        no meio da frase.
+        
+        Quem tem artista vazio: os discos SOLTOS na raiz da coleção (ver
+        `folder_names`) e, agora, as playlists — que não têm artista mesmo.
+        """
         out = {}
         for it in self.items:
+            if not it.get("artist") or it.get("playlist"):
+                continue
             out.setdefault(it["artist"], []).append(it)
         return out
 

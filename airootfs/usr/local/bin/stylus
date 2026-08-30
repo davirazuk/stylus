@@ -59,6 +59,8 @@ cat <<EOF
     ${b}stylus get${o} ${d}URL|FILA${o}      baixa e arquiva na estante
     ${b}stylus qobuz${o} ${d}[...]${o}       a interface do qobuz-dl, e a fila que
                               baixa e arquiva disco por disco
+    ${b}stylus playlists${o} ${d}[NOME]${o}   as listas .m3u da coleção — com o nome,
+                              põe aquela para tocar
     ${b}stylus suggest${o}            playlists sugeridas pela sua escuta
     ${b}stylus reindex${o}            limpa o cache da estante e recria
 
@@ -107,8 +109,8 @@ cmd=${1:-}
 # o teclado da sessão — conferido, ele desiste depois de 5001 tentativas. Um
 # `--help` que sequestra a tela é o pior caso desta lista, não o menor.
 SABEM_AJUDAR=" now deck play record library diary stats check gaps
-covers lyrics tags rip get qobuz suggest phone webdav audio gpu kde fontes
-mode parede wallpaper spotify instalar install update "
+covers lyrics tags rip get qobuz suggest playlists phone webdav audio gpu kde
+fontes mode parede wallpaper spotify instalar install update "
 
 if [[ ${1:-} == -h || ${1:-} == --help ]] && [[ -n $cmd ]]; then
     if [[ $SABEM_AJUDAR != *" $cmd "* ]]; then
@@ -172,6 +174,8 @@ case "$cmd" in
     # estavam aqui e não havia como chegar nelas nem como pôr a interface no ar.
     qobuz)       exec stylus-qobuz "$@" ;;
     suggest)     exec "$PY" "$TOOLS/suggest_playlists.py" "$@" ;;
+    playlists|listas)
+                 exec "$PY" "$TOOLS/playlists.py" "$@" ;;
     reindex)
         # A interface guarda um índice da estante para abrir instantaneamente.
         # Apagá-lo é como se manda ela reler o disco.
