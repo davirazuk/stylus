@@ -483,6 +483,25 @@ class _MpvIPC:
 
     def connect(self):
         if self.sock is not None:
+            # Verifica se o socket ainda está vivo: dados pendentes ou
+            # fechamento remoto. Sem isto, um socket morto (mpv crashou,
+            # arquivo .socket ainda existe) engolia os dados em `sendall`
+            # sem erro, e `recv` retornava vazio — o poll parecia funcionar
+            # enquanto na verdade estava cego.
+            try:
+                self.sock.setblocking(False)
+                peek = self.sock.recv(1, socket.MSG_PEEK)
+                # b"" = socket fechado pelo outro lado
+                if peek == b"":
+                    self.close()
+                    return False
+                self.sock.setblocking(True)
+            except BlockingIOError:
+                # Nenhum dado pendente — socket vivo, normal
+                self.sock.setblocking(True)
+            except (OSError, OverflowError):
+                self.close()
+                return False
             return True
         if not os.path.exists(self.path):
             return False
@@ -522,6 +541,13 @@ class _MpvIPC:
                 self._buf += chunk
                 lines = self._buf.split(b"\n")
                 self._buf = lines.pop()
+                # Limpa eventos não-solicitados que acumulam: o mpv manda
+                # keep_property_change, renamed, etc. a cada variação, e o
+                # buffer cresce entre polls. Se ficou maior que 64 KiB, joga
+                # fora o que já passou — o request_id que procuramos NÃO
+                # está lá dentro (é de um ciclo anterior).
+                if len(self._buf) > 65536:
+                    self._buf = b""
                 for line in lines:
                     if not line.strip():
                         continue
@@ -761,12 +787,26 @@ class Session:
     # o modo ritual e a barra simplesmente não achavam o disco que estava
     # tocando, sem erro nenhum à vista. Foi assim que o suporte a MPRIS
     # pareceu funcionar por meses sem nunca ter funcionado com o Strawberry.
-    MPRIS_TIMEOUT = 12.0
+    #
+    # COM 12s: se o mpv morre, cada poll trava a thread por 12s (status) +
+    # 12s (metadata) = até 24s. A interface congela — nada muda, nada reage.
+    # COM 4s: a primeira chamada fria ainda passa (Strawberry responde em 5-20s
+    # mas a maioria dos players responde em <1s), e quando demora de verdade
+    # o backoff impede que a thread fique presa em subprocess.
+    MPRIS_TIMEOUT = 4.0
+    _mpris_backoff = 0.0       # segundos para dormir antes do próximo MPRIS
+    _mpris_last_fail = 0.0
 
     def _poll_mpris(self):
         if not self._have_playerctl:
             with self._lock:
                 self.source = "none"
+            return False
+        # Backoff: depois de uma falha MPRIS, espera antes de tentar de novo.
+        # Sem isto, cada poll de 0.5s fazia um subprocess que travava por 4s,
+        # e a thread inteira ficava presa em cascata.
+        now = time.time()
+        if now - self._mpris_last_fail < self._mpris_backoff:
             return False
         try:
             status = subprocess.run(["playerctl", "status"], capture_output=True,
@@ -810,15 +850,22 @@ class Session:
                 # na mão, casando o caminho: RitualScene._track_index.
                 self.playlist = []
                 self.track_index = 0
+            self._mpris_backoff = 0.0
             return True
         except subprocess.TimeoutExpired:
             # Uma consulta lenta não é "não há nada tocando". Mantém o último
             # estado bom: o braço continua onde estava até a próxima resposta,
             # que é muito melhor do que o disco sumir da tela por um segundo.
+            # Backoff exponencial: 2s, 4s, 8s (máx 10s). A primeira falha
+            # pode ser Strawberry esquentando; as seguintes são problema real.
+            self._mpris_last_fail = time.time()
+            self._mpris_backoff = min(10.0, max(2.0, self._mpris_backoff * 2))
             return False
         except Exception:
             with self._lock:
                 self.source = "none"
+            self._mpris_last_fail = time.time()
+            self._mpris_backoff = 2.0
             return False
 
 
