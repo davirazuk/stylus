@@ -1845,6 +1845,29 @@ def main():
         bad("conferência de custo", traceback.format_exc())
 
     # ── o rato ────────────────────────────────────────────────────────────
+    secao("o fundo desfocado não estica a capa")
+    # **Sintoma:** a capa é quadrada e a tela é 16:9, e o borrão de fundo era
+    # escalado direto para o tamanho da tela — quase o DOBRO da largura. Numa
+    # capa com círculo ou com letra grande isso se vê na hora, mesmo desfocado
+    # e por baixo do véu. É `cover`, não `stretch`: escala pelo lado que
+    # precisa de mais e corta o resto.
+    try:
+        erros = []
+        for iw, ih in ((600, 600), (1400, 1400), (500, 300), (300, 500)):
+            for larg, alt in ((1920, 1080), (800, 600), (1024, 600)):
+                cw, ch = A._cobre(iw, ih, larg, alt)
+                if cw < larg or ch < alt:
+                    erros.append("%dx%d em %dx%d não cobre" % (iw, ih, larg, alt))
+                elif abs((cw / ch) - (iw / ih)) > 0.02:
+                    erros.append("%dx%d em %dx%d deforma (%.3f → %.3f)"
+                                 % (iw, ih, larg, alt, iw / ih, cw / ch))
+        if erros:
+            bad("%d casos deformam o fundo" % len(erros), ", ".join(erros[:4]))
+        else:
+            ok("a capa cobre a tela sem deformar, em 12 casos")
+    except Exception:                                       # noqa: BLE001
+        bad("fundo desfocado", traceback.format_exc())
+
     secao("na tela cheia do disco, as teclas continuam respondendo")
     # **Sintoma:** com o disco na tela toda, apertar B no controle (que chega
     # como ESC) parecia não fazer nada — e a partir dali NADA respondia: o [f]

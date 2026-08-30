@@ -79,6 +79,19 @@ def spawn(cmd):
 _FAV_FILE = os.path.join(vinyl.STATE_DIR, "favorites.json")
 _fav_cache = None
 
+def _cobre(iw, ih, w, h):
+    """O tamanho que uma imagem iw×ih tem que ter para COBRIR w×h.
+
+    Sem deformar: escala pelo lado que precisa de mais, e o excesso do outro
+    lado é para cortar. É o `background-size: cover` da web, e existe aqui
+    porque o borrão de fundo da AGORA era esticado direto para o tamanho da
+    tela — capa quadrada numa tela 16:9 saía com quase o dobro da largura.
+    """
+    iw, ih = max(1, int(iw)), max(1, int(ih))
+    escala = max(w / float(iw), h / float(ih))
+    return max(w, int(iw * escala + 0.5)), max(h, int(ih * escala + 0.5))
+
+
 def _lados_de(faixas):
     """(lados, duração total, discos) de uma lista de faixas do Qobuz.
 
@@ -4930,17 +4943,26 @@ class App:
         except Exception:                     # noqa: BLE001 — capa ruim, tela limpa
             return None
         w, h = int(size[0]), int(size[1])
-        pequeno = (max(2, w // 16), max(2, h // 16))
+        # COBRIR, não esticar. **Sintoma:** a capa é quadrada e a tela é
+        # 16:9, e o `smoothscale` direto para (w, h) achatava a arte — o
+        # borrão de fundo saía esticado quase o dobro na horizontal, o que
+        # numa capa com círculo ou com letra grande se vê na hora, mesmo
+        # desfocado e por baixo do véu. Agora escala pelo LADO MAIOR e corta
+        # o que sobra, que é o que "cobrir" quer dizer.
+        cw, ch = _cobre(im.get_width(), im.get_height(), w, h)
+        pequeno = (max(2, cw // 16), max(2, ch // 16))
         blur = pygame.transform.smoothscale(
-            pygame.transform.smoothscale(im, pequeno), (w, h))
+            pygame.transform.smoothscale(im, pequeno), (cw, ch))
         blur = pygame.transform.smoothscale(
-            pygame.transform.smoothscale(blur, pequeno), (w, h))
+            pygame.transform.smoothscale(blur, pequeno), (cw, ch))
+        fundo = pygame.Surface((w, h))
+        fundo.blit(blur, ((w - cw) // 2, (h - ch) // 2))
         veil = pygame.Surface((w, h), pygame.SRCALPHA)
         veil.fill((*T.INK, 205))
-        blur.blit(veil, (0, 0))
+        fundo.blit(veil, (0, 0))
         self._backdrops.clear()               # uma capa quente basta
-        self._backdrops[al.cover] = blur
-        return blur
+        self._backdrops[al.cover] = fundo
+        return fundo
 
     def toast(self, msg, secs=3.0, kind="info"):
         self._toast, self._toast_until = msg, time.time() + secs
