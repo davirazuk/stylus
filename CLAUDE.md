@@ -55,14 +55,14 @@ de execução.
 
 Construir a ISO leva ~30 min. `check.sh` leva segundos e pega quase tudo.
 
-O deck e a tela cheia têm testes próprios, sem GL e sem janela — os dois
-rodam com o vídeo "dummy" do SDL, então não precisam de X:
+A biblioteca e a tela cheia têm testes próprios, sem janela — os dois rodam
+com o vídeo "dummy" do SDL, então não precisam de X:
 ```
-airootfs/usr/share/stylus/deck/tools/test_ritual.py   # a cerimônia, o disco
-airootfs/usr/share/stylus/ui/tools/test_ui.py         # todas as seções
+airootfs/usr/share/stylus/tools/test_vinyl.py   # o disco, os lados, a memória
+airootfs/usr/share/stylus/ui/tools/test_ui.py   # todas as seções
 ```
-O `check.sh` já chama o da interface. O do deck quer um álbum de verdade:
-`test_ritual.py --album PASTA`.
+O `check.sh` chama os dois (o do vinyl com um álbum de mentira montado na
+hora, oito WAVs de silêncio). À mão, o do vinyl aceita `--album PASTA`.
 
 E há uma construção de verdade, na nuvem, para quando `check.sh` não basta:
 `.github/workflows/build-iso.yml`. Ela roda o `check.sh` dentro de um Arch
@@ -90,10 +90,15 @@ airootfs/
   etc/skel/                a área de trabalho (i3, polybar, rofi, fish)
   usr/local/bin/stylus*    todos os comandos
   usr/share/stylus/
-    deck/                  o disco na tela (scope.py + vinyl.py)
-    ui/                    a tela cheia (theme, model, app)
+    lib/vinyl.py           A BIBLIOTECA: o disco, os lados, a coleção, a
+                              memória, o .lrc, o socket do mpv. Chamava-se
+                              deck/ e o deck não existe mais.
+    ui/                    a tela cheia (theme, model, app) — é ELA que
+                              desenha o disco desde que o deck saiu
     tools/                 as ferramentas de coleção, em python
       _raiz.py             onde fica a coleção — UMA resposta para todas elas
+      test_vinyl.py        a biblioteca exercitada sem tela (o check.sh roda)
+      playlists.py         as listas .m3u da coleção
     packages.install       o que uma máquina INSTALADA recebe (o instalador lê)
     packages.live-only     o que fica só na ISO, com o motivo escrito
     branding-sync.sh       copia o STYLUS para o sistema recém-instalado
@@ -101,7 +106,17 @@ airootfs/
                              comandos /aplicar e /diagnostico
     ui/tools/test_ui.py    a tela cheia exercitada sem X (o check.sh roda)
     sync.sh                copia o airootfs por cima do sistema vivo
+android/app/…/player/      o app do celular, em Kotlin. NADA aqui compila
+                              Kotlin: o que prova a lógica dele é o check.sh
+                              traduzindo-a de volta para Python.
 ```
+
+**O DECK NÃO EXISTE MAIS.** Era um segundo programa — OpenGL, um venv de
+sistema só dele, PortAudio, uma janela por cima do lançador. A tela cheia da
+AGORA (`[f]`) desenha o mesmo disco com pygame, incluindo a cerimônia, e o
+que sobrava de exclusivo dele era desenho de GPU. O `stylus-deck` continua
+existindo e é quem PÕE o disco (acha o álbum, sobe o mpv com as travas de
+áudio, retoma a agulha) — a tela dele é que virou a do lançador.
 
 As três listas de pacote andam juntas por regra, não por disciplina: todo
 pacote de `packages.x86_64` tem que estar em `packages.install` OU em
@@ -520,6 +535,69 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   e o Qobuz manda as faixas de graça no `get_album_meta`. Os lados saem do
   mesmo `_build_sides` da estante: uma segunda implementação diria "2 lados"
   na loja e "4" depois de baixar, sobre o mesmo disco.
+- **Busca binária devolve a linha SEGUINTE, não a atual.** A letra da AGORA
+  ia uma linha adiantada, sempre: quem canta é `lo - 1`. O mesmo código no
+  celular estava certo — o `lyricAt` de lá já subtraía — e ninguém comparou
+  os dois. Vale para qualquer "onde estou nesta lista ordenada".
+- **`[00:42][02:15]refrão` é UMA linha com DOIS momentos.** É como todo
+  refrão de .lrc é escrito, e o regex casava o primeiro carimbo e mandava o
+  resto para o texto: o refrão aparecia uma vez só, com os outros colchetes
+  impressos na tela. Junto: o `[offset:±ms]` (o conserto que quem sincronizou
+  deixou escrito) era ignorado nos dois lados, e no celular `[01:23]` sem
+  centésimos não casava com nada — a linha sumia.
+- **Página curta não quer dizer "acabou" quando a resposta diz o TOTAL.** A
+  assinatura do Qobuz parava em CINQUENTA discos: o `favorite/getUserFavorites`
+  apara o limite em 50 do lado dele, o laço pedia 100, via 50 e desistia —
+  enquanto o `total` na mesma resposta dizia 213. O falso da conferência era
+  mais educado que o servidor de verdade (devolvia os 100 pedidos), então
+  passava verde. Um falso que não faz o que o servidor faz prova o caso fácil.
+- **O DIÁRIO só era escrito onde ninguém usa.** A memória da coleção era
+  anotada em dois lugares: o módulo da polybar (que só existe no modo área de
+  trabalho) e a cerimônia do deck. Pôr um disco pela tela cheia — o jeito
+  normal de usar isto — não anotava nada, e o diário, o "OS QUE VOLTAM" e o
+  sorteio dos esquecidos ficavam vazios sem nada explicando. Quem anota agora
+  é o `stylus-side-watch`, que sobe nos DOIS modos.
+- **Tecla que a tela desenha como ícone e não anuncia não existe.** O `[t]`
+  (soneca) e o `[Shift+G]` (trava do gato) tinham ícone no canto e não estavam
+  escritos em lugar nenhum — a mesma família do `[s]`/`[Shift+R]` de antes.
+- **Um filtro cujo valor é `""` não dá para tirar.** A lista de artistas da
+  estante ganhava uma linha VAZIA (disco solto na raiz, ou uma playlist), e
+  escolhê-la punha `self.artist = ""`: falso, então o `items()` não filtrava e
+  o `a` não achava filtro para limpar. A tela dizia "filtrou por  (1 de 1)"
+  com um buraco no meio da frase.
+- **O que o desenho promete, ele tem que dizer sobre ESTE disco.** Os cinco
+  anéis âmbar do vinil tinham escrito ao lado "é o que faz um disco parecer um
+  disco a três metros: dá para CONTAR as músicas" — e eram cinco fixos, nos
+  mesmos lugares, em todo disco da coleção. Um LP de doze faixas e um single
+  desenhavam o mesmo objeto. Agora saem do LADO que está tocando.
+- **O celular tocava o disco em ordem ALFABÉTICA.** O `trackSortKey` do
+  Library.kt TIRAVA o número da frente e comparava o que sobrava, enquanto o
+  cabeçalho do arquivo afirmava "mantém mesma ordem que o desktop para o
+  índice do braço bater". Como os lados são repartidos por tempo acumulado na
+  ordem da lista, tudo que depende dela saía errado junto — sem erro nenhum.
+- **Em Kotlin, função órfã não gera nem aviso**, porque nada aqui compila
+  Kotlin. Seis peças estavam escritas e nunca ligadas ao mesmo tempo: o
+  `Texto.humano` (enquanto o arquivo ao lado formatava duração à mão e
+  divergia do computador), o `Deck.stylusDown()` (com `phase == Phase.PLAY`
+  escrito à mão em quatro lugares), o `Library.lyricAt` (com um laço linear
+  refazendo a conta a cada quadro), o `CastManager.stopCast` (dava para
+  começar a transmitir e não para parar), um `onUsbDacAttached` que arrancava
+  o driver do DAC com `claimInterface(force=true)` para nada, e um cliente
+  WebDAV inteiro que nenhuma tela abria.
+- **Ler um arquivo por quadro é I/O por quadro.** A tela da letra do celular
+  chamava `lyricsFor` a cada tique: consulta ao ContentResolver mais leitura e
+  parse do .lrc inteiro, na thread da interface, com a tela parada. O
+  computador guardava a dele desde sempre.
+- **Chamada de Kotlin com lambda no fim não tem parênteses.** Uma conferência
+  de função órfã que procura `nome(` acusa `CastManager.discover { … }` de
+  órfã, duas linhas depois de ela ser chamada. Conferência que grita sobre o
+  que está certo é uma que se aprende a ignorar.
+- **A trava tem que engolir TUDO.** Uma trava de tela que deixa passar uma
+  tecla não é trava: o gato anda por cima do teclado inteiro e a que passar é
+  a que troca de disco. O teste varre o teclado travado e exige que nada tenha
+  mudado. E destravar é por ESTADO (segurar três teclas por um segundo e
+  meio), não por evento — quem lê só o KEYDOWN destrava com um toque, que é o
+  que um gato dá.
 
 ---
 
@@ -699,6 +777,34 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   achou de cara uma divisão por zero no rastro do sulco (`passos` valia 0 e
   o laço dividia por ele). Custa nada e cobre os três momentos em que a
   agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
+
+### Décima terceira leva (o deck saiu, e o que ele levava junto)
+- **O deck não existe mais.** Ver a §3. O que ele desenhava, a tela cheia do
+  lançador desenha melhor; o que ele tinha de próprio era GPU, não ritual.
+  Saíram com ele: o venv de sistema (e os quatro lugares que o criavam), ~600
+  linhas de geometria numpy do vinyl.py, a classe `Deck`, a paleta em ponto
+  flutuante, o `stylus scope`. A pasta `deck/` virou `lib/`.
+- **A conferência da §5.5 mudou de arquivo junto.** Ela lia a paleta do
+  vinyl.py; agora lê o `ui/theme.py`, que é onde o disco é desenhado. Uma
+  conferência apontada para um arquivo que não existe mais passa verde para
+  sempre — é o pior desfecho possível para uma conferência.
+- **Playlists .m3u passaram a existir de verdade.** O sistema escrevia
+  (`stylus suggest`, `make_new_playlist`, `integrate_album`) e não sabia tocar
+  nenhuma. Agora o `vinyl.Album` abre um .m3u como abre uma pasta — então o
+  lado, o "vira em X", a agulha e a letra valem para uma lista sem uma segunda
+  implementação de nada — e existem `stylus playlists`, a ordem "listas" da
+  estante e o `[Shift+G]` da PILHA, que guarda a noite empilhada como lista.
+- **A soneca virou uma soneca.** Era um `playerctl pause` seco no meio da
+  faixa; agora esmaece em vinte segundos (em potência, que é como o ouvido
+  ouve), a tela escurece junto, e existe a opção FIM DO LADO — que é o jeito
+  certo de um sistema sobre discos parar.
+- **A trava do gato** (`[Shift+G]` na AGORA): a música segue, o disco continua
+  girando por baixo de um véu, e nenhuma tecla, clique ou botão de controle
+  atravessa. Ver a lição na §4.
+- Conferências novas: a letra (o índice, o offset, o carimbo repetido), a
+  ordem do disco no celular, a letra do celular contra a do computador, a
+  função órfã em Kotlin, e a assinatura do Qobuz com um servidor de mentira
+  que apara o limite como o de verdade.
 
 ### Décima segunda leva (o disco do celular era um toca-discos desenhado)
 - **A §5.5 valia no computador e não no celular**, e ela diz o contrário com
