@@ -598,6 +598,40 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   mudado. E destravar é por ESTADO (segurar três teclas por um segundo e
   meio), não por evento — quem lê só o KEYDOWN destrava com um toque, que é o
   que um gato dá.
+- **Seis segundos podem virar um disco duplo.** Um LP de 50 minutos saía com
+  quatro lados: com o teto do lado em 26 min, nenhum corte em dois cabia
+  (as somas parciais pulam de 21,8 para 26,1), e 26,1 passa por seis
+  segundos. Um lado de 12" aguenta uns 30 minutos com o nível abaixo, e é o
+  que uma prensagem faz. Agora são DOIS tetos com papéis diferentes: o
+  confortável decide quantos lados planejar, o físico só entra quando o
+  plano não fecha. Toda vez que um limite decide algo caro, pergunte se ele
+  é o limite duro ou o confortável.
+- **Comparar as duas metades por MARCADOR não é comparar.** A conferência que
+  garante que o celular reparte o disco como o computador olhava o teto e
+  alguns trechos de código — as peças podiam estar todas lá e o corte sair
+  diferente, que foi exatamente o que aconteceu quando o teto físico entrou
+  só de um lado. Agora ela reparte a MESMA grade de 184 formas pelas duas
+  regras e compara lado a lado.
+- **O rótulo da tecla e o desenho dele são duas metades.** `[Shift+R]` era
+  desenhado como TEXTO CRU, com os colchetes na cara, no meio de uma linha em
+  que todas as outras teclas eram tampinhas: o regex aceitava rótulo de até
+  SEIS caracteres e "Shift+R" tem sete. A convenção foi conferida; o desenho
+  dela, não.
+- **O "(s)" é o plural que desistiu de si mesmo.** A regra morava no
+  `ui/model.py`, que é da INTERFACE — as ferramentas de linha de comando não
+  o importam, então reescreviam a regra à mão ou punham "(s)": "2 lado(s)",
+  "3 problema(s) claro(s)", "0 álbum(ns)". Agora ela mora no `vinyl.plural`,
+  que os dois lados alcançam, e a conferência recusa uma segunda definição.
+- **Acusação tirada da AUSÊNCIA de dado.** Sem PipeWire no ar, o SINAL dizia
+  "taxa travada" em âmbar ao lado de um travessão — na tela cuja segunda
+  linha é "medido agora, não prometido na caixa". Sem medida, travessão.
+- **Corte de texto no meio da palavra lê como defeito.** O rodapé da estante
+  terminava em "· p…" (de "posto há 2 meses"). Cortar no SEPARADOR deixa
+  sempre uma frase inteira.
+- **O fim do DISCO não tinha acontecimento.** O fim do lado tinha aviso desde
+  sempre; o do disco passava em silêncio, igual a uma playlist acabando —
+  que é o contrário do que este sistema faz. E o aviso só vale se responder
+  "e agora qual?": a pilha primeiro, o sorteio depois.
 
 ---
 
@@ -805,6 +839,24 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   ordem do disco no celular, a letra do celular contra a do computador, a
   função órfã em Kotlin, e a assinatura do Qobuz com um servidor de mentira
   que apara o limite como o de verdade.
+
+### Décima quarta leva (a noite, as listas, e o que a tela não dizia)
+- **A soneca**, dos dois lados: esmaece em vinte segundos (em potência), a
+  tela escurece junto, e existe a opção FIM DO LADO. O ganho digital desses
+  vinte segundos é exceção consciente à tese, escrita ao lado do código.
+- **A trava do gato** (`[Shift+G]`), a **PLAYLIST .m3u** que o sistema
+  escrevia e não tocava, o **fim do disco** que passava em silêncio, e a
+  **AGORA vazia** que agora oferece um disco (a pilha primeiro, o mais
+  esquecido depois) em vez de mandar a pessoa para outra tela.
+- **Os sulcos do disco viraram as faixas DESTE disco** e, na tela cheia, a
+  banda da faixa em que a agulha está. Disco sem capa é desenhado como
+  disco.
+- **No celular:** a ordem alfabética, a letra (três faltas), o `lyricsFor`
+  lido a cada quadro, seis funções órfãs, a soneca seca. Ver a §4.
+- Conferências novas: a letra, a ordem do disco no celular, a letra do
+  celular, a função órfã em Kotlin, a soneca nos dois lados, o Qobuz com um
+  servidor que apara o limite como o de verdade, o plural em todas as
+  ferramentas, o fim do disco, e o corte dos lados comparado em 184 formas.
 
 ### Décima segunda leva (o disco do celular era um toca-discos desenhado)
 - **A §5.5 valia no computador e não no celular**, e ela diz o contrário com
