@@ -898,6 +898,11 @@ class NowScreen(Screen):
         """
         if al is None or not lado:
             return None
+        # Uma PLAYLIST não é um disco, e o lado dela é a lista inteira: numa
+        # de duzentas faixas seriam duzentos anéis, que é moiré e não
+        # informação. O desenho volta ao disco genérico — que é o que ela é.
+        if getattr(al, "continuo", False):
+            return None
         dur = float(lado.get("end", 0.0)) - float(lado.get("start", 0.0))
         if dur <= 1.0:
             return None
@@ -911,6 +916,10 @@ class NowScreen(Screen):
             f = (t0 - float(lado.get("start", 0.0))) / dur
             if 0.02 < f < 0.98:
                 marcas.append(round(fora + (dentro - fora) * f, 4))
+        # Acima de quarenta, contar deixa de ser possível e os anéis viram
+        # textura: o ponto deles é "dá para CONTAR as músicas".
+        if len(marcas) > 40:
+            return None
         # Sem faixa nenhuma para marcar, os fixos mentem menos do que um
         # disco liso: um disco sem sulco nenhum não lê como disco.
         return tuple(marcas) or None
@@ -2657,6 +2666,12 @@ class ToolsScreen(Screen):
         # interface existe para ser.
         ("o papel de parede vira o disco de agora",
          ["stylus-wallpaper"]),
+        # As playlists que a sua escuta sugere. A ferramenta existia desde
+        # sempre e não tinha entrada em tela nenhuma — e agora que o sistema
+        # SABE TOCAR .m3u (ver a ordem "listas" da estante), mandar escrever
+        # umas quantas é o outro lado do mesmo caminho.
+        ("escrever playlists a partir do que você ouve",
+         ["stylus", "suggest"]),
         ("refazer o índice da estante", ["stylus", "reindex"]),
         ("cópia de segurança para o Drive", ["stylus", "backup"]),
         ("atualizar o sistema", ["stylus-update", "--check"]),

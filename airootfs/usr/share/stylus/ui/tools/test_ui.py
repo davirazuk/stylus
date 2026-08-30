@@ -2065,6 +2065,22 @@ def main():
             bad("sem lado (ou com lado de meio segundo) devia cair no fixo",
                 f"{sem} {curto}")
         else:
+            # Uma PLAYLIST não é um disco: o lado dela é a lista inteira, e
+            # numa de duzentas faixas seriam duzentos anéis — moiré, não
+            # informação.
+            alb.continuo = True
+            lista = agora._intervalos(alb, lado_a)
+            alb.continuo = False
+            muitas = A.vinyl.Album.__new__(A.vinyl.Album)
+            muitas.tracks = [{"start": i * 60.0} for i in range(60)]
+            demais = agora._intervalos(
+                muitas, {"start": 0.0, "end": 3600.0,
+                         "tracks": list(range(60))})
+            if lista is not None:
+                bad("uma playlist desenhou um anel por faixa", str(lista[:6]))
+            elif demais is not None:
+                bad("sessenta anéis: contar deixou de ser possível",
+                    str(len(demais)))
             # e o desenho tem que ACEITAR: o cache é por (raio, intervalos).
             d1 = _T4.disco(90, a)
             d2 = _T4.disco(90, b)
