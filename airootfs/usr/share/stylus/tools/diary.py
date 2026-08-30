@@ -75,7 +75,8 @@ def main():
               f"    {D}{quando(ts):<14}{O}{art[:24]:<26}{A}{nome[:38]}{O}")
         if len(vistos) >= args.n:
             break
-    print(f"\n  {D}{len(vistos)} discos, {len(linhas)} vezes ao todo.{O}\n")
+    print(f"\n  {D}{vinyl.plural(len(vistos), 'disco')}, "
+          f"{vinyl.plural(len(linhas), 'vez', 'vezes')} ao todo.{O}\n")
     return 0
 
 

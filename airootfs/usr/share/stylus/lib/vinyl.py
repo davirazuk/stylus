@@ -125,6 +125,23 @@ _SYSTEM_LIBRARY_CONF = "/etc/stylus/library"
 _FALLBACK_ROOTS = ("~/Music", "~/Músicas", "~/Musica", "~/Musique", "/srv/music")
 
 
+def plural(n, um, muitos=None):
+    """"1 disco", "2 discos" — a regra do plural, UMA vez.
+
+    **Sintoma:** "1 faixas", "1 discos", "posto há 1 meses", "1 lado(s)",
+    "3 problema(s) claro(s)". Não derruba nada e não aparece em teste
+    nenhum; só faz o sistema parecer traduzido por máquina, e o texto que a
+    pessoa vê é a única parte dele que ela lê inteira.
+
+    Ela já morava no `ui/model.py`, e o `model` é da INTERFACE: as
+    ferramentas de linha de comando não o importam, então elas escreviam a
+    regra à mão de novo — e o "(s)" é o que se escreve quando se desiste de
+    escrevê-la. Aqui é onde os dois lados alcançam.
+    """
+    muitos = muitos or (um + "s")
+    return "%d %s" % (n, um if abs(n) == 1 else muitos)
+
+
 def _read_library_conf(path):
     try:
         with open(path, encoding="utf-8") as fh:

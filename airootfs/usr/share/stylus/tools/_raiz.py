@@ -119,3 +119,19 @@ def find_cover(pasta, entries=None):
             if nome + ext in porordem:
                 return os.path.join(pasta, porordem[nome + ext])
     return None
+
+
+def plural(n, um, muitos=None):
+    """A regra do plural, do `vinyl`. Ver lá o porquê de ela ser uma só.
+
+    As ferramentas de linha de comando não importam o `ui/model`, e por isso
+    escreviam a regra à mão — ou desistiam dela com um "(s)", que é a mesma
+    coisa dita em voz baixa. Este atalho é o que faz elas alcançarem a regra
+    de verdade.
+    """
+    _com_a_lib_no_caminho()
+    try:
+        import vinyl
+        return vinyl.plural(n, um, muitos)
+    except Exception:                                      # noqa: BLE001
+        return "%d %s" % (n, um if abs(n) == 1 else (muitos or um + "s"))

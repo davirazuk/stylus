@@ -39,7 +39,7 @@ import unicodedata
 import urllib.error
 import urllib.request
 
-from _raiz import raiz   # onde fica a coleção, decidido num lugar só
+from _raiz import raiz, plural   # a coleção e o plural, num lugar só
 
 API = os.environ.get("STYLUS_QOBUZ_API") or "http://127.0.0.1:8765/api"
 QOBUZ_DIR = os.environ.get("STYLUS_QOBUZ_DIR") or os.path.expanduser("~/Qobuz Downloads")
@@ -276,7 +276,7 @@ def main():
         fpath = os.path.join(QOBUZ_DIR, folder)
         n_disc = flatten_discs(folder)
         if n_disc:
-            print(f"  {n_disc} faixas trazidas das subpastas de disco", flush=True)
+            print(f"  {plural(n_disc, 'faixa')} trazidas das subpastas de disco", flush=True)
         n_flac = len([f for f in os.listdir(fpath) if f.lower().endswith(".flac")])
         if not n_flac:
             counts["fail"] += 1

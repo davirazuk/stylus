@@ -49,10 +49,12 @@ def faixa(valores):
                    for v in valores)
 
 
-def plural(n, um, muitos):
-    """"1 disco, posto 1 vez" e não "1 discos, postos 1 vezes". É pequeno e é
-    a diferença entre um texto escrito e um texto montado."""
-    return f"{n} {um if abs(n) == 1 else muitos}"
+# "1 disco, posto 1 vez" e não "1 discos, postos 1 vezes". É pequeno e é a
+# diferença entre um texto escrito e um texto montado. A regra é a do
+# `vinyl.plural` — era mais uma cópia dela aqui, e a cópia daqui exigia o
+# plural sempre (sem `muitos` ela nem rodava), o que fez as duas frases do
+# `quando()` logo abaixo escreverem "há 1 meses" à mão.
+plural = vinyl.plural
 
 
 def quando(ts):
@@ -62,9 +64,9 @@ def quando(ts):
     if d < 2:
         return "ontem"
     if d < 30:
-        return f"há {int(d)} dias"
+        return "há " + vinyl.plural(int(d), "dia")
     if d < 365:
-        return f"há {int(d / 30)} meses"
+        return "há " + vinyl.plural(int(d / 30), "mês", "meses")
     return f"há {int(d / 365)} anos"
 
 
@@ -131,10 +133,10 @@ def main():
 
     de_pe, melhor = sequencias({m.date() for m in momentos})
     dias_com = len({m.date() for m in momentos})
-    print(f"    {D}{plural(dias_com, 'dia', 'dias')} com música, "
-          f"de {dias_corridos}"
-          f"{f' · {de_pe} dias seguidos agora' if de_pe > 1 else ''}"
-          f"{f' · a maior foi de {melhor}' if melhor > 1 else ''}{O}")
+    seguidos = (" · %s seguidos agora" % plural(de_pe, "dia")) if de_pe > 1 else ""
+    maior = (" · a maior foi de %d" % melhor) if melhor > 1 else ""
+    print(f"    {D}{plural(dias_com, 'dia')} com música, "
+          f"de {dias_corridos}{seguidos}{maior}{O}")
 
     # ── o que volta ────────────────────────────────────────────────────────
     voltam = [(c, f) for f, c in contagem.items() if c > 1]
@@ -209,7 +211,7 @@ def main():
     if estante:
         nunca = [f for f in estante if os.path.normpath(f) not in ultima]
         print(f"\n  {B}a prateleira parada{O}\n")
-        print(f"    {P}{len(nunca)}{O} dos {len(estante)} discos "
+        print(f"    {P}{len(nunca)}{O} dos {plural(len(estante), 'disco')} "
               f"{'nunca foi posto' if len(nunca) == 1 else 'nunca foram postos'}"
               f"{D} — `stylus record` sorteia puxando para eles{O}")
         for f in sorted(nunca)[:args.n]:

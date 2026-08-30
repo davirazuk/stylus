@@ -34,8 +34,9 @@ def humano(seg):
     return f"{m} min"
 
 
-def plural(n, um, muitos=None):
-    return f"{n} {um if n == 1 else (muitos or um + 's')}"
+# A regra é a do `vinyl.plural`: uma cópia nova aqui seria a próxima a
+# esquecer o caso do 1.
+plural = vinyl.plural
 
 
 def main():

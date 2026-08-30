@@ -29,7 +29,7 @@ import datetime
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 
-from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
+from _raiz import raiz, audio_ext, plural   # a coleção, a música e o plural
 
 LIB = raiz()
 # Era um subdiretório com o nome da coleção de uma pessoa; a coleção é a
@@ -103,7 +103,7 @@ def main():
         f.write("\n".join(lines) + "\n")
 
     print(f"escrevi {out}")
-    print(f"  {len(found)} discos, {len(lines)} faixas")
+    print(f"  {plural(len(found), 'disco')}, {plural(len(lines), 'faixa')}")
     by_artist = {}
     for artist, album, n in found:
         by_artist.setdefault(artist, []).append(album)

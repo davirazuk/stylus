@@ -22,6 +22,7 @@ import urllib.request
 
 sys.path.insert(0, "/usr/share/stylus/lib")
 import vinyl  # noqa: E402
+from vinyl import plural  # noqa: E402
 
 D = "\033[2m"; A = "\033[38;5;117m"; OK = "\033[38;5;114m"
 W = "\033[38;5;215m"; O = "\033[0m"
@@ -61,7 +62,7 @@ def disco(folder, forcar=False):
             print(f"    {OK}✓{O} {nome}")
         else:
             print(f"    {D}·{O} {D}{nome}{O}")
-    print(f"  {D}{achou} nova(s), {pulou} já tinham.{O}")
+    print(f"  {D}{plural(achou, 'nova')}, {pulou} já tinham.{O}")
     return achou
 
 
@@ -115,7 +116,8 @@ def main():
             break
         except Exception as e:            # noqa: BLE001
             print(f"    {W}{type(e).__name__}: {e}{O}")
-    print(f"\n  {OK}{total} letra(s) novas.{O}\n")
+    print(f"\n  {OK}{plural(total, 'letra')} nova"
+          f"{'' if total == 1 else 's'}.{O}\n")
     return 0
 
 

@@ -58,7 +58,7 @@ def main():
         marca = OK + "✓" + O if os.path.isdir(p) else D + "·" + O
         print(f"    {marca} {p}")
     n = len(vinyl.shelf(min_tracks=1))
-    print(f"\n  {n} discos.\n")
+    print(f"\n  {vinyl.plural(n, 'disco')}.\n")
     return 0
 
 

@@ -54,7 +54,8 @@ def load(spec):
     env = alb.envelope_snapshot()
     if env is None or not len(env):
         sys.exit("não consegui medir a intensidade deste álbum")
-    print(f"  {alb.artist} — {alb.name}: {len(alb.tracks)} faixas, "
+    print(f"  {alb.artist} — {alb.name}: "
+          f"{vinyl.plural(len(alb.tracks), 'faixa')}, "
           f"{len(env)} amostras de intensidade")
     return alb, np.asarray(env, dtype=np.float64)
 

@@ -915,6 +915,37 @@ class NowScreen(Screen):
         # disco liso: um disco sem sulco nenhum não lê como disco.
         return tuple(marcas) or None
 
+    def _banda_da_faixa(self, al, lado, track):
+        """(raio de fora, raio de dentro) da FAIXA que está tocando, em
+        fração do raio do disco — ou None.
+
+        Os anéis dizem onde uma faixa começa; isto diz em qual delas você
+        está. Com os dois, o disco parado responde "quantas faixas tem" e o
+        disco tocando responde "estou na quarta" — sem número nenhum, que é
+        a tese do desenho: o raio é o tempo.
+        """
+        if al is None or not lado or track is None:
+            return None
+        dur = float(lado.get("end", 0.0)) - float(lado.get("start", 0.0))
+        if dur <= 1.0:
+            return None
+        try:
+            i = al.tracks.index(track)
+        except ValueError:
+            return None
+        t0 = float(track.get("start") or 0.0)
+        t1 = t0 + float(track.get("duration") or 0.0)
+        if t1 <= t0:
+            # Faixa sem duração medida: a banda seria um traço. Melhor nada.
+            return None
+        ini = float(lado.get("start", 0.0))
+        f0 = max(0.0, min(1.0, (t0 - ini) / dur))
+        f1 = max(0.0, min(1.0, (t1 - ini) / dur))
+        if f1 - f0 < 0.004:
+            return None
+        fora, dentro = T.GROOVE_O, T.GROOVE_I
+        return (fora + (dentro - fora) * f0, fora + (dentro - fora) * f1)
+
     # A cerimônia, em segundos, VINDA DO vinyl.py. O prato leva um tempo para
     # chegar aos 33 (SPIN), a agulha fica suspensa sobre a borda (CUE) e
     # então desce (DROP) — pouco mais de dois segundos ao todo: é uma
@@ -1080,6 +1111,20 @@ class NowScreen(Screen):
             cs = lado_s // 2
             if sulco_vivo:
                 pygame.draw.circle(sul, (*T.AMBER, 46), (cs, cs), int(rr), 1)
+            # ── a BANDA da faixa: em qual delas a agulha está ────────────
+            # Fraquíssima de propósito (16 de 255): ela é o CHÃO da agulha,
+            # não uma segunda coisa acesa. Forte, ela competiria com o
+            # próprio sulco vivo, e o quadro voltaria a ter duas respostas
+            # para "onde estou".
+            banda = self._banda_da_faixa(al, side, track)
+            if banda and sulco_vivo:
+                b0, b1 = int(rm * banda[0]), int(rm * banda[1])
+                largura = max(1, b0 - b1)
+                bnd = T.rascunho(b0 * 2 + 4, b0 * 2 + 4, "banda")
+                cb = b0 + 2
+                pygame.draw.circle(bnd, (*T.AMBER, 16), (cb, cb),
+                                   b0 - largura // 2, largura)
+                s.blit(bnd, (dx - cb, dy - cb))
             # O rastro: o pedaço de sulco que ACABOU de passar pela agulha,
             # apagando para trás. Em SEGMENTOS e não em pontos — pontos com
             # o espaçamento do arco viram linha pontilhada, que lê como

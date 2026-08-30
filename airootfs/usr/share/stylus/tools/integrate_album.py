@@ -1,7 +1,7 @@
 import os, re, sys, shutil, requests
 from mutagen.flac import FLAC
 
-from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
+from _raiz import raiz, audio_ext, plural   # a coleção, a música e o plural: um lugar só
 
 QOBUZ_DIR = os.environ.get("STYLUS_QOBUZ_DIR") or os.path.expanduser("~/Qobuz Downloads")
 LIB_ROOT = raiz()
@@ -122,10 +122,12 @@ def integrate(folder_name, artist, album_clean):
               f"em {src}. Confira o formato dos arquivos antes de rodar de novo.")
         return []
     if restou:
-        print(f"  aviso: {len(restou)} arquivo(s) de áudio ficaram em {src}; não apaguei nada.")
+        print(f"  aviso: {plural(len(restou), 'arquivo')} de áudio "
+              f"ficaram em {src}; não apaguei nada.")
     else:
         shutil.rmtree(src, ignore_errors=True)
-    print(f"Integrado: {artist} - {album_clean} ({len(new_paths)} faixas) -> {dest_dir}")
+    print(f"Integrado: {artist} - {album_clean} "
+          f"({plural(len(new_paths), 'faixa')}) -> {dest_dir}")
     return new_paths
 
 

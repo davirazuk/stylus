@@ -15,7 +15,7 @@ fora inteiro — essas são decisões sobre como uma faixa específica soa, que
 """
 import os
 
-from _raiz import raiz, audio_ext   # a coleção e o que é música: um lugar só
+from _raiz import raiz, audio_ext, plural   # a coleção, a música e o plural
 
 LIB = raiz()
 # A coleção e o lugar das playlists são a mesma pasta: o subdiretório fixo
@@ -114,7 +114,7 @@ def main():
         out = os.path.join(LIB, f"{pl} — sugestões.m3u")
         with open(out, "w", encoding="utf-8") as f:
             f.write("\n".join(fresh) + "\n")
-        print(f"{os.path.basename(out)}: {len(fresh)} faixas "
+        print(f"{os.path.basename(out)}: {plural(len(fresh), 'faixa')} "
               f"(existing playlist has {len(existing)})")
 
     if skipped:

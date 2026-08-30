@@ -20,7 +20,7 @@ import re
 import sys
 from collections import defaultdict
 
-from _raiz import raiz, audio_ext, find_cover   # a coleção, a música, a capa
+from _raiz import raiz, audio_ext, find_cover, plural   # a coleção, a música, a capa, o plural
 
 # A lista vem do _raiz, que a pega do vinyl: havia quatro cópias dela
 # neste diretório e elas já discordavam (esta não tinha .wma).
@@ -117,7 +117,8 @@ def main():
     if no_audio or empty:
         for rel, n in sorted(no_audio):
             print(f"    {c_red}✗{c_off} {rel}")
-            print(f"      {c_dim}{n} arquivo(s), nenhum de música{c_off}")
+            print(f"      {c_dim}{plural(n, 'arquivo')}, "
+                  f"nenhum de música{c_off}")
         for r in sorted(empty):
             print(f"    {c_red}✗{c_off} {r}  {c_dim}(0 byte){c_off}")
     else:
@@ -147,15 +148,16 @@ def main():
         for rel, miss, have, last in sorted(gaps):
             m = ", ".join(str(x) for x in miss[:8]) + ("…" if len(miss) > 8 else "")
             print(f"    {c_yel}!{c_off} {rel}")
-            print(f"      {c_dim}tem {have} faixa(s), falta [{m}], numeração vai até {last}{c_off}")
+            print(f"      {c_dim}tem {plural(have, 'faixa')}, "
+                  f"falta [{m}], numeração vai até {last}{c_off}")
     else:
         print(f"    {c_grn}✓{c_off} nenhum")
 
     total = len(no_audio) + len(empty)
     print(f"\n  {c_dim}{n_albums} pastas com áudio varridas · "
-          f"{total} problema(s) claro(s) · "
+          f"{plural(total, 'problema')} claro{'' if total == 1 else 's'} · "
           f"{len(sem_capa)} sem capa · "
-          f"{len(gaps)} álbum(ns) para você olhar{c_off}\n")
+          f"{plural(len(gaps), 'álbum', 'álbuns')} para você olhar{c_off}\n")
     return 0
 
 

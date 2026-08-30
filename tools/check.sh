@@ -1295,12 +1295,38 @@ if model.ha_quanto(0) != "nunca posto":
 import pathlib
 import re
 
-for arq in (pathlib.Path("airootfs/usr/share/stylus/ui/app.py"),):
+# Ninguém pode voltar a escrever a regra à mão nas telas — nem nas
+# FERRAMENTAS, que era onde ela estava sendo reescrita: elas não importam o
+# `model` (ele é da interface), então a regra ali virava "(s)", que é a
+# mesma desistência dita em voz baixa. "1 lado(s)", "3 problema(s)
+# claro(s)", "2 arquivo(s)", "1 letra(s)" — tudo isso estava na tela.
+alvos = [pathlib.Path("airootfs/usr/share/stylus/ui/app.py")]
+alvos += sorted(pathlib.Path("airootfs/usr/share/stylus/tools").glob("*.py"))
+for arq in alvos:
     for n_l, linha in enumerate(arq.read_text(encoding="utf-8").splitlines(), 1):
         nu = linha.split("#", 1)[0]
         if re.search(r'\{[^{}]*\}\s*(faixas|discos|vezes)\b', nu):
             erros.append("%s:%d escreve o plural à mão: %s"
                          % (arq.name, n_l, linha.strip()[:60]))
+        # O "(s)" é o plural que desistiu de si mesmo — mas só DENTRO
+        # de texto: `T.vignette(s)` e `def norm(s):` são código, e uma
+        # conferência que os acusa é uma que se aprende a ignorar.
+        for _lit in re.findall(r"'[^'\n]*'|\"[^\"\n]*\"", nu):
+            if re.search(r"\w\(s\)|\w\(ns\)|\w\(es\)", _lit):
+                erros.append("%s:%d desiste do plural com um \"(s)\": %s"
+                             % (arq.name, n_l, linha.strip()[:60]))
+                break
+
+# E a regra tem que ser UMA: uma cópia nova em qualquer lugar é a próxima a
+# esquecer o caso do 1 (a do stats.py exigia o plural sempre, e por isso as
+# duas frases do `quando()` dela o escreviam à mão).
+for arq in alvos + [pathlib.Path("airootfs/usr/share/stylus/ui/model.py"),
+                    pathlib.Path("airootfs/usr/share/stylus/lib/vinyl.py")]:
+    txt = arq.read_text(encoding="utf-8")
+    m = re.search(r"^def plural\(.*?(?=\n\S|\Z)", txt, re.M | re.S)
+    if m and arq.name != "vinyl.py" and "vinyl.plural" not in m.group(0):
+        erros.append("%s define um `plural` PRÓPRIO; a regra é a do vinyl"
+                     % arq.name)
 for e in erros:
     print(e)
 PLUREOF

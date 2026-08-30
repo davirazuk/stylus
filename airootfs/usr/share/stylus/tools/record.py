@@ -60,9 +60,10 @@ def mostra(alb):
     else:
         dias = int((time.time() - quando) // 86400)
         nota = ("posto hoje" if dias == 0 else
-                "posto ontem" if dias == 1 else f"último toque há {dias} dias")
-    print(f"  {c_dim}{len(alb.tracks)} faixas · {mins} min · "
-          f"{len(alb.sides)} lado(s) · {nota}{c_off}\n")
+                "posto ontem" if dias == 1 else
+                "último toque há " + vinyl.plural(dias, "dia"))
+    print(f"  {c_dim}{vinyl.plural(len(alb.tracks), 'faixa')} · {mins} min · "
+          f"{vinyl.plural(len(alb.sides), 'lado')} · {nota}{c_off}\n")
     for sd in alb.sides:
         dur = int((sd["end"] - sd["start"]) // 60)
         print(f"  {c_pink}{sd['label'].replace('SIDE', 'LADO')}{c_off}  {c_dim}{dur} min{c_off}")

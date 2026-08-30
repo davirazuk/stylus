@@ -316,20 +316,13 @@ class Playing:
         return snap, al, track, side, t_abs, frac
 
 
-def plural(n, um, muitos=None):
-    """"1 disco", "2 discos" — o `s` que faltava em quinze lugares.
-
-    **Sintoma:** "1 faixas", "1 discos", "posto há 1 meses", "1 discos · 1
-    vezes". Não derruba nada e não aparece em teste nenhum; só faz o sistema
-    parecer traduzido por máquina, e o texto que a pessoa vê é a única parte
-    dele que ela lê inteira.
-
-    Estava escrito à mão em cada lugar (`f"{n} faixas"`), que é a mesma
-    doença das cores e das listas de extensão: a regra existe uma vez e é
-    copiada quinze — e basta uma cópia esquecer o caso do 1.
-    """
-    muitos = muitos or (um + "s")
-    return "%d %s" % (n, um if abs(n) == 1 else muitos)
+# "1 disco", "2 discos" — o `s` que faltava em quinze lugares.
+#
+# A regra mora no `vinyl.plural` e não aqui: este arquivo é da INTERFACE, e
+# as ferramentas de linha de comando não o importam — então elas acabavam
+# escrevendo a regra à mão de novo, ou desistindo dela com um "(s)". O nome
+# continua exportado daqui porque doze telas o chamam assim.
+plural = vinyl.plural
 
 
 def humano(seg):
