@@ -1318,7 +1318,7 @@ esac
 # não existe.
 #
 # A coleção é a mesma dos dois lados, e a promessa do sistema é que ela SE
-# PARECE a mesma. Agora o `buildSides` do VinylActivity.kt é a transliteração
+# PARECE a mesma. Agora o `Lados.repartir` do celular é a transliteração
 # do `Album._build_sides`, conferida contra ele em 192 formas de disco antes
 # de entrar.
 #
@@ -1348,7 +1348,7 @@ except BaseException as e:                                # noqa: BLE001
 # O teto, em minutos, dos dois lados.
 m = re.search(r"SIDE_MAX_MS\s*=\s*(\d+)L?\s*\*\s*60L?\s*\*\s*1000L", fonte)
 if m is None:
-    print("não achei o teto do lado no VinylActivity.kt")
+    print("não achei o teto do lado no Lados.kt")
 else:
     daqui = int(vinyl.SIDE_MAX_SECONDS // 60)
     de_la = int(m.group(1))
@@ -4184,6 +4184,93 @@ case "$saida" in
     OK*)   ok "${saida#OK }" ;;
     PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
     *)     bad "o monitor da tela cheia força a reamostragem"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "o celular pede o mesmo GESTO que o computador"
+# O aviso de virar o disco passou a existir no celular — era a metade da tese
+# que faltava lá: o corte em lados já existia (o raio da agulha andava lado a
+# lado) e o ACONTECIMENTO não, a música passava de um lado para o outro
+# sozinha e em silêncio.
+#
+# A frase tem que ser a MESMA dos dois lados, e pela mesma regra: lado ÍMPAR é
+# o verso do que está no prato (vire), lado PAR é outro disco (troque). Nada
+# neste repositório compila o app, então a prova é traduzir o Kotlin de volta
+# para Python e comparar com o `vinyl.Album.gesto_do_lado` em toda forma de
+# disco de 1 a 8 lados.
+saida=$(python3 - <<'GESTOKTEOF' 2>&1
+import re
+import sys
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+try:
+    import vinyl
+    kt = open("android/app/src/main/kotlin/io/stylus/player/Lados.kt",
+              encoding="utf-8").read()
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+
+# ── a transliteração do Kotlin, linha a linha ──────────────────────────────
+def discos_kt(n_lados):
+    return max(1, (n_lados + 1) // 2)
+
+
+def rotulo_kt(i):
+    return "LADO " + chr(ord("A") + i)
+
+
+def gesto_kt(i, n_lados):
+    rot = rotulo_kt(i)
+    if i % 2 == 1:
+        return "vire o disco para o %s" % rot
+    if i > 0 and discos_kt(n_lados) > 1:
+        return "ponha o DISCO %d, %s" % (i // 2 + 1, rot)
+    return "agora o %s" % rot
+
+
+# E a garantia de que a transliteração acima ainda é o que o arquivo diz: se
+# alguém mexer no Kotlin, estas linhas têm que continuar lá.
+marcas = [
+    'if (i % 2 == 1) return "vire o disco para o $rot"',
+    'return "ponha o DISCO ${i / 2 + 1}, $rot"',
+    'return "agora o $rot"',
+    'maxOf(1, (nLados + 1) / 2)',
+]
+faltando = [m for m in marcas if m not in kt]
+if faltando:
+    print("ERRO o Lados.kt não diz mais o que esta conferência traduz: %s"
+          % faltando[0])
+    raise SystemExit(0)
+
+
+def alb(n_lados):
+    a = vinyl.Album.__new__(vinyl.Album)
+    a.name = "Disco"
+    a.sides = [{"label": "SIDE " + chr(ord("A") + i)} for i in range(n_lados)]
+    a.discos = max(1, (n_lados + 1) // 2)
+    return a
+
+
+erros = []
+for n in range(1, 9):
+    a = alb(n)
+    for i in range(n):
+        aqui = a.gesto_do_lado(i)
+        la = gesto_kt(i, n)
+        if aqui != la:
+            erros.append("%d lados, lado %d: %r aqui, %r no celular"
+                         % (n, i, aqui, la))
+if erros:
+    print("ERRO " + " | ".join(erros[:4]))
+else:
+    print("OK o gesto é o mesmo em 36 lados, de 1 a 8 por disco")
+GESTOKTEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o celular pede um gesto diferente do computador"
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
