@@ -18,7 +18,7 @@
 #     Alt+r          refaz o índice
 #     Alt+s          toca a playlist do Qobuz em ordem SORTEADA
 #
-# Na grade: sem marca é seu, ◆ é disco do Qobuz, ▤ é playlist do Qobuz.
+# Na grade: sem marca é seu, ◆ é disco do Qobuz, ▤ é playlist (sua ou do Qobuz).
 set -uo pipefail
 SHARE=${STYLUS_SHARE:-/usr/share/stylus}
 PY=python3
@@ -26,6 +26,7 @@ export PYTHONPATH=$SHARE/lib
 CACHE="$HOME/.cache/stylus/shelf.tsv"
 CACHE_Q="$HOME/.cache/stylus/shelf-qobuz.tsv"
 CACHE_L="$HOME/.cache/stylus/shelf-listas.tsv"
+CACHE_P="$HOME/.cache/stylus/shelf-playlists.tsv"
 mkdir -p "$(dirname "$CACHE")"
 TEMA=$SHARE/rofi-shelf.rasi
 
@@ -108,6 +109,38 @@ PYEOF
         # apagar o índice que abria a estante ontem.
         rm -f "$CACHE.novo"
     fi
+    # ── as PLAYLISTS da coleção ────────────────────────────────────────
+    # Esta grade já mostrava as playlists do QOBUZ (o ▤) e não as SUAS, que
+    # estão na mesma pasta da coleção — enquanto a tela cheia passou a
+    # mostrá-las na ordem "listas". Duas telas para a mesma estante têm que
+    # dizer a mesma coisa sobre ela.
+    #
+    # Índice próprio e não junto com os discos: a coluna do artista é a
+    # marca que o menu usa, e uma playlist não tem artista.
+    if "$PY" - <<'PLEOF' > "$CACHE_P.novo"
+import os, vinyl
+for pl in vinyl.playlists():
+    nome = os.path.splitext(os.path.basename(pl))[0]
+    itens = vinyl.ler_m3u(pl)
+    # A capa é a do primeiro disco que aparecer na lista: uma playlist não
+    # tem capa, e a alternativa é o quadrado cinza.
+    cap = ""
+    for caminho, _t, _d in itens:
+        if not caminho.startswith(("http://", "https://")):
+            cap = vinyl.find_cover(os.path.dirname(caminho)) or ""
+            if cap:
+                break
+    # O nome primeiro: a primeira coluna é o que a grade mostra à esquerda,
+    # e "2 faixas — Noite de domingo" lê de trás para frente. E o plural é o
+    # do vinyl, como em todo lugar.
+    print("%s\t%s\t%s\t%s" % (nome, vinyl.plural(len(itens), "faixa"),
+                                cap, pl))
+PLEOF
+    then
+        mv -f "$CACHE_P.novo" "$CACHE_P"
+    else
+        rm -f "$CACHE_P.novo"
+    fi
 }
 
 # Seis horas: favoritar um disco no celular e querer ele aqui na hora é raro;
@@ -165,14 +198,20 @@ LIXO+=("$MENU")
 # ▤ para playlist, ◆ para disco do Qobuz, nada para o que é seu. Três coisas
 # que tocam de jeitos diferentes têm que se distinguir ANTES de apertar enter.
 montar() { { linhas_de "$CACHE"; linhas_de "$CACHE_Q" "◆ "
-             linhas_de "$CACHE_L" "▤ "; } > "$MENU"; }
+             linhas_de "$CACHE_L" "▤ "; linhas_de "$CACHE_P" "▤ "; } > "$MENU"; }
 montar_qobuz() { linhas_de "$CACHE_Q" "◆ " > "$MENU"; }
 
 # O alvo de uma linha escolhida: caminho de pasta, ou `qobuz:ID`.
 alvo_de() {
     local q=$1
     if [[ $q == "▤ "* ]]; then
-        awk -F'\t' -v q="${q#▤ }" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE_L" 2>/dev/null
+        # As duas: a do Qobuz e a da coleção. O ▤ diz "isto é uma lista", e
+        # de onde ela vem é problema de quem for tocá-la — a do Qobuz é um
+        # `qobuz:ID`, a sua é um caminho de .m3u, e o `stylus-deck` lê os
+        # dois. Procurar só num dos índices deixaria metade das listas
+        # marcadas na grade e mudas no enter.
+        awk -F'\t' -v q="${q#▤ }" '{ if ($1" — "$2 == q) { print $4; exit } }' \
+            "$CACHE_L" "$CACHE_P" 2>/dev/null | head -1
     elif [[ $q == "◆ "* ]]; then
         awk -F'\t' -v q="${q#◆ }" '{ if ($1" — "$2 == q) { print $4; exit } }' "$CACHE_Q"
     else

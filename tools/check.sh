@@ -1521,6 +1521,45 @@ esac
 # pelo índice: lado ÍMPAR é o verso do que já está no prato — vire; lado PAR
 # é o começo de outro disco — troque. Isto é a tese do sistema inteiro, e
 # estava errado justamente no disco que mais precisa dela.
+sec "as duas estantes mostram as mesmas playlists"
+# **Sintoma:** a grade do rofi mostrava as playlists do QOBUZ (o ▤) e não as
+# SUAS, que estão na mesma pasta da coleção — enquanto a tela cheia passou a
+# mostrá-las na ordem "listas". Duas telas para a mesma estante têm que
+# dizer a mesma coisa sobre ela; foi essa a lição das duas frentes da loja.
+duas=$(python3 - <<'DUASEOF' 2>&1
+import pathlib
+import re
+
+rofi = pathlib.Path("airootfs/usr/local/bin/stylus-shelf").read_text()
+app = pathlib.Path("airootfs/usr/share/stylus/ui/app.py").read_text()
+model = pathlib.Path("airootfs/usr/share/stylus/ui/model.py").read_text()
+erros = []
+
+if "vinyl.playlists()" not in rofi:
+    erros.append("a estante do rofi não indexa as suas playlists")
+if "vinyl.playlists()" not in model:
+    erros.append("a estante da tela cheia não indexa as suas playlists")
+# E o ENTER numa delas tem que achar o caminho: a marca ▤ é a mesma das
+# playlists do Qobuz, e procurar só num dos dois índices deixaria metade
+# delas marcadas na grade e mudas no enter.
+m = re.search(r'if \[\[ \$q == "▤ "\*.*?\n(.*?)\n    elif', rofi, re.S)
+if not m:
+    erros.append("não achei a resolução do ▤ no stylus-shelf")
+elif "CACHE_P" not in m.group(0) or "CACHE_L" not in m.group(0):
+    erros.append("o ▤ procura em um índice só: metade das listas fica muda")
+if 'order == "listas"' not in app:
+    erros.append("a tela cheia não tem a ordem 'listas'")
+for e in erros:
+    print(e)
+DUASEOF
+)
+if [[ -z $duas ]]; then
+    ok "as playlists da coleção aparecem nas duas estantes, e as duas abrem"
+else
+    bad "as duas estantes discordam sobre as playlists:"
+    printf '%s\n' "$duas" | sed 's/^/      /'
+fi
+
 sec "o --lado B começa no lado B"
 # **Sintoma:** dava para VIRAR o disco depois de posto e não para começar
 # pelo lado que se quer ouvir — e quem começa pelo B tem um motivo.
