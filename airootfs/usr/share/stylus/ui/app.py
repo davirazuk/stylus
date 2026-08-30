@@ -928,6 +928,12 @@ class NowScreen(Screen):
         # altura o nome da faixa caía FORA da tela em 1080p — e o que se
         # perdia era justamente a informação, não a decoração.
         txt_h = 28 + 26 + 56 + 40 + 30 + 46
+        # A LETRA, quando o disco tem .lrc. Ela entra na conta ANTES de o
+        # disco escolher o raio: acrescentar texto depois de o desenho já ter
+        # tomado a altura é como o nome da faixa saía da tela em 1080p.
+        letra = self.app.lyric_state(al, track)
+        if letra:
+            txt_h += 74
         topo = r.y + max(16, int(r.h * 0.03))
         rm = int(min((r.bottom - txt_h - topo) / 2, r.w * 0.30))
         rm = max(120, rm)
@@ -1071,6 +1077,35 @@ class NowScreen(Screen):
             n_t = (al.tracks.index(track) + 1) if track in al.tracks else 0
             T.text(s, "%02d  %s" % (n_t, track.get("title") or ""),
                    (r.centerx, y), 22, T.TEXT_DIM, anchor="midtop", maxw=larg)
+            y += 30
+        # ── a letra, no tempo dela ────────────────────────────────────────
+        # A linha que está sendo cantada, grande, e a seguinte apagada — que
+        # é como uma legenda se lê: você acompanha e sabe o que vem.
+        #
+        # Existiam ~3000 .lrc nesta coleção lidos por NADA além do módulo da
+        # barra, de trinta e dois caracteres. A tela que mostra o disco
+        # inteiro é o lugar óbvio para eles, e é a resposta para "o que mais
+        # o deck poderia ter": a letra no tempo é ritual também.
+        if letra:
+            linhas, agora_i = letra
+            atual = (linhas[agora_i][1] or "").strip() if linhas else ""
+            proxima = ""
+            for k in range(agora_i + 1, min(len(linhas), agora_i + 4)):
+                if (linhas[k][1] or "").strip():
+                    proxima = linhas[k][1].strip()
+                    break
+            if atual:
+                T.text(s, atual, (r.centerx, y + 8), 30, T.LAV, bold=True,
+                       anchor="midtop", maxw=larg)
+            elif proxima:
+                # Trecho instrumental: em vez de um vazio que parece defeito,
+                # a próxima linha já aparece, apagada — é o que um karaokê
+                # faz e é o que a pessoa quer saber ali.
+                T.text(s, "♪", (r.centerx, y + 8), 26, T.TEXT_FAINT,
+                       anchor="midtop")
+            if proxima and atual:
+                T.text(s, proxima, (r.centerx, y + 46), 20, T.TEXT_FAINT,
+                       anchor="midtop", maxw=larg)
         self.app.hint(s, r, "[f] ou [esc] volta ao lançador   [space] pausa   "
                             "[n]/[p] faixa   [v] vira o lado")
 

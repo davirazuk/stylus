@@ -961,6 +961,13 @@ def main():
         _antes = app.playing.where
         app.playing.where = lambda: ({}, _alc, _alc.tracks[0], _alc.sides[2],
                                      1500.0, 0.42)
+        # COM LETRA. Ela entra na conta da altura antes de o disco escolher o
+        # raio, e é a última coisa desenhada antes da linha de dicas: medir a
+        # tela sem ela é medir a metade fácil — a mesma lição do prato vazio.
+        _lyr = app.lyric_state
+        _linhas_lrc = [(0.0, "uma linha de letra bastante comprida para medir"),
+                       (6.0, ""), (9.0, "e a seguinte, que aparece apagada")]
+        app.lyric_state = lambda al, tr: (_linhas_lrc, 0)
 
         class _Ev:
             def __init__(self, k):
@@ -1023,6 +1030,7 @@ def main():
                 ok("acabou o disco, ela se fecha sozinha")
         finally:
             app.playing.where = _antes
+            app.lyric_state = _lyr
             agora.tela_cheia = False
     except Exception:                                       # noqa: BLE001
         bad("a tela cheia do disco", traceback.format_exc())
