@@ -18,8 +18,21 @@ package io.stylus.player
  */
 object Lados {
 
-    /** O teto FÍSICO de um lado. 26 min: o lado A de Abbey Road tem 23min30. */
+    /** O lado CONFORTÁVEL. 26 min: o lado A de Abbey Road tem 23min30. */
     const val SIDE_MAX_MS = 26L * 60L * 1000L
+
+    /**
+     * E o teto FÍSICO, que é outra coisa: um lado de 12" a 33⅓ aguenta uns
+     * 30 minutos com o nível um pouco abaixo.
+     *
+     * **Sintoma:** um disco de 50 minutos em doze faixas saía como DISCO
+     * DUPLO. Com o teto em 26, nenhum corte em dois lados cabia — as somas
+     * parciais pulam de 21,8 para 26,1 minutos, e 26,1 passa por SEIS
+     * SEGUNDOS. O de cima decide quantos lados PLANEJAR; este só entra
+     * quando o plano não fecha, porque preferir o disco duplo é a coisa mais
+     * cara que esta conta pode decidir.
+     */
+    const val SIDE_HARD_MS = 30L * 60L * 1000L
 
     data class Lado(val start: Long, val end: Long, val rotulo: String)
 
@@ -69,6 +82,11 @@ object Lados {
                      else 2 * (((total + 2L * SIDE_MAX_MS - 1L) / (2L * SIDE_MAX_MS)).toInt())
 
         var sides = cortar(durs, total, nSides)
+        // O disco simples antes do duplo: ver SIDE_HARD_MS.
+        if (sides.size > nSides) {
+            val folgado = cortar(durs, total, nSides, SIDE_HARD_MS)
+            if (folgado.size <= nSides) sides = folgado
+        }
         var tries = 0
         while (tries < 3 && sides.size > 1 && sides.size % 2 == 1) {
             nSides = sides.size + 1
@@ -81,7 +99,7 @@ object Lados {
 
     /** Um corte em `nSides` lados. Pode devolver mais: o teto é físico. */
     private fun cortar(
-        durs: List<Long>, total: Long, nSides: Int
+        durs: List<Long>, total: Long, nSides: Int, teto: Long = SIDE_MAX_MS
     ): MutableList<Pair<Long, Long>> {
         val sides = mutableListOf<Pair<Long, Long>>()
         var curStart = 0L
@@ -92,7 +110,7 @@ object Lados {
             // 1. o teto, que é físico: fecha ANTES de pôr a faixa que
             //    estoura. Um lado vazio nunca fecha — não se corta uma
             //    música ao meio.
-            if (curCount > 0 && end - curStart > SIDE_MAX_MS) {
+            if (curCount > 0 && end - curStart > teto) {
                 sides.add(curStart to start)
                 curStart = start
                 curCount = 0

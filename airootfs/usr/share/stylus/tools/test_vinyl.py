@@ -315,6 +315,26 @@ def main():
     check("o que cabe num lado só continua sendo um lado só",
           len(_um.sides) == 1)
 
+    # ── seis segundos não fazem um disco duplo ───────────────────────────
+    # **Sintoma:** um LP de 50 minutos em doze faixas saía com QUATRO lados.
+    # Com o teto confortável em 26 minutos, nenhum corte em dois lados cabia
+    # — as somas parciais pulam de 21,8 para 26,1 — e 26,1 passa por seis
+    # segundos. A prensagem de verdade resolve isso baixando um pouco o
+    # nível e pondo os 26,1 no lado; a conta aqui preferia o disco duplo,
+    # que é a coisa mais cara que ela pode decidir.
+    _duplo = _Falso([180 + i * 11 for i in range(1, 13)])
+    check("50 min em 12 faixas é UM disco, não dois", _duplo.discos == 1)
+    check("e são dois lados", len(_duplo.sides) == 2)
+    _longas = _Falso([600] * 5)
+    check("cinco faixas de dez minutos também", _longas.discos == 1)
+    # E o plano continua sendo feito com o teto CONFORTÁVEL: um disco que
+    # cabe folgado em dois lados não passa a usar os trinta minutos.
+    _folgado = _Falso([225] * 12)
+    check("um disco de 45 min continua em dois lados de 22min30",
+          len(_folgado.sides) == 2
+          and abs((_folgado.sides[0]["end"] - _folgado.sides[0]["start"])
+                  - 22.5 * 60) < 60)
+
     # ── e em TODA forma de disco, não só nas quatro escolhidas a dedo ─────
     # **Sintoma:** um disco de 90 minutos em 18 faixas de 5 saía com CINCO
     # lados. Número ímpar é um objeto que não existe — disco tem dois lados
@@ -339,8 +359,14 @@ def main():
             # O teto só vale para lado com mais de uma faixa: não se corta
             # uma música ao meio.
             for sd in a.sides:
+                # Contra o teto FÍSICO (30 min) e não contra o confortável
+                # (26): o confortável decide quantos lados PLANEJAR, e o
+                # físico é o que um lado de 12" aguenta de verdade, com o
+                # nível um pouco abaixo. Um disco de 50 minutos cujas somas
+                # parciais pulam de 21,8 para 26,1 não cabe em dois lados
+                # confortáveis — e virava DISCO DUPLO por seis segundos.
                 if (len(sd["tracks"]) > 1
-                        and sd["end"] - sd["start"] > vinyl.SIDE_MAX_SECONDS + 1):
+                        and sd["end"] - sd["start"] > vinyl.SIDE_HARD_SECONDS + 1):
                     estouros.append("%s → lado de %.1f min"
                                     % (forma, (sd["end"] - sd["start"]) / 60))
             if a.discos != max(1, (len(a.sides) + 1) // 2):

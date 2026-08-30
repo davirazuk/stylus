@@ -79,6 +79,20 @@ REV_PER_SEC = RPM / 60.0
 # virava TRÊS, o que não existe.
 SIDE_MAX_SECONDS = 26 * 60
 
+# E o teto FÍSICO, que é outra coisa. Um lado de 12" a 33⅓ aguenta uns 30
+# minutos com o nível um pouco abaixo — é o que se faz num disco que não se
+# deixa repartir de outro jeito, e é o que a prensagem de verdade faz.
+#
+# **Sintoma:** um disco de 50 minutos em doze faixas saía como DISCO DUPLO,
+# com quatro lados. Não é erro de conta: com o teto em 26, nenhum corte em
+# dois lados cabia — as somas parciais pulam de 21,8 para 26,1 minutos, e
+# 26,1 passa por SEIS SEGUNDOS. Seis segundos transformavam um LP em dois.
+#
+# Então: o teto de cima decide QUANTOS lados planejar (é o lado confortável)
+# e este só entra quando o plano não fecha — na ordem certa, que é preferir
+# o disco simples ao duplo, e não o contrário.
+SIDE_HARD_SECONDS = 30 * 60
+
 # Groove rings across the program area. 96 across ~380px of band on a 1600px
 # screen is ~4px apart: fine enough to read as grooves rather than as a
 # target, coarse enough that each ring still covers a chunk of time big
@@ -1729,7 +1743,7 @@ class Album:
         else:
             n_sides = 2 * math.ceil(self.total / (2.0 * SIDE_MAX_SECONDS))
 
-        def cortar(quantos):
+        def cortar(quantos, teto=SIDE_MAX_SECONDS):
             """Reparte as faixas em `quantos` lados. Pode devolver mais.
 
             O teto físico (regra 1) corta quando precisa, e não pede licença
@@ -1758,7 +1772,7 @@ class Album:
                 # nunca fecha: uma faixa maior que o lado inteiro fica
                 # sozinha nele, que é o que acontece de verdade — não se
                 # corta uma música ao meio.
-                if cur and (end - cur_start) > SIDE_MAX_SECONDS:
+                if cur and (end - cur_start) > teto:
                     sides.append({"start": cur_start, "end": tr["start"],
                                   "tracks": cur})
                     cur, cur_start = [], tr["start"]
@@ -1802,6 +1816,16 @@ class Album:
         # (uma faixa maior que um lado, por exemplo), e inventar um lado
         # vazio para fechar a conta seria pior do que a contagem estranha.
         sides = cortar(n_sides)
+        # ── o disco simples antes do duplo ────────────────────────────────
+        # Quando o corte devolve MAIS lados do que o plano pedia, é porque as
+        # faixas não se deixam repartir abaixo do lado confortável. Antes de
+        # aceitar um disco a mais — que é a coisa mais cara que esta função
+        # pode decidir —, tenta com o teto físico: 30 minutos, que é o que um
+        # lado de verdade aguenta com o nível um pouco abaixo.
+        if len(sides) > n_sides:
+            folgado = cortar(n_sides, SIDE_HARD_SECONDS)
+            if len(folgado) <= n_sides:
+                sides = folgado
         for _ in range(3):
             if len(sides) <= 1 or len(sides) % 2 == 0:
                 break

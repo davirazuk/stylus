@@ -1384,16 +1384,112 @@ else:
         print("o teto do lado é %d min no celular e %d min aqui"
               % (de_la, daqui))
 
-# As duas peças da lei que o celular não tinha.
+# E o teto FÍSICO, que é o que impede um LP de 50 minutos de virar disco
+# duplo por seis segundos.
+mh = re.search(r"SIDE_HARD_MS\s*=\s*(\d+)L?\s*\*\s*60L?\s*\*\s*1000L", fonte)
+if mh is None:
+    print("o celular não tem o teto físico (SIDE_HARD_MS)")
+elif int(mh.group(1)) != int(vinyl.SIDE_HARD_SECONDS // 60):
+    print("o teto físico é %s min no celular e %d min aqui"
+          % (mh.group(1), vinyl.SIDE_HARD_SECONDS // 60))
+
+# As peças da lei que o celular não tinha.
 if "nSides = " not in fonte or "2 *" not in fonte:
     print("o celular não arredonda o número de DISCOS (lados em par)")
 if "sides.size % 2 == 1" not in fonte:
     print("o celular não refaz o corte quando dá um número ímpar de lados")
 if "total - curStart" not in fonte:
     print("o alvo do equilíbrio no celular não vem do que RESTA")
+if "if (sides.size > nSides)" not in fonte:
+    print("o celular não tenta o teto físico antes de virar disco duplo")
+
+# ── e o RESULTADO, que é o que importa ───────────────────────────────────
+# As peças acima podem estar todas lá e o corte sair diferente: foi o que
+# aconteceu quando o teto físico entrou só de um lado.
+#
+# A tradução abaixo é FEITA À MÃO a partir do `Lados.repartir` — nada aqui
+# compila Kotlin, e nenhum tradutor automático de Kotlin para Python existe
+# neste repositório. Quem amarra esta cópia ao arquivo de verdade são as
+# buscas por marcador logo acima: elas exigem que cada peça da lei continue
+# escrita LÁ, e esta função prova que a lei, assim escrita, dá o mesmo
+# resultado que a do vinyl.py. Mexeu no Lados.kt? Mexa aqui também — e é de
+# propósito que dê trabalho.
+def kotlin(durs_ms, teto_ms, hard_ms):
+    total = sum(durs_ms)
+    if total <= 0:
+        return [(0, 1)]
+
+    def cortar(n_sides, teto):
+        sides, cur_start, cur_count, start = [], 0, 0, 0
+        for i, d in enumerate(durs_ms):
+            end = start + d
+            if cur_count > 0 and end - cur_start > teto:
+                sides.append((cur_start, start))
+                cur_start, cur_count = start, 0
+            cur_count += 1
+            faltam = max(1, n_sides - len(sides))
+            alvo = cur_start + (total - cur_start) // faltam
+            if faltam > 1 and end >= alvo and (len(durs_ms) - i - 1) >= (faltam - 1):
+                sides.append((cur_start, end))
+                cur_start, cur_count = end, 0
+            start = end
+        if cur_count > 0:
+            sides.append((cur_start, total))
+        return sides
+
+    n = 1 if total <= teto_ms else 2 * (-(-total // (2 * teto_ms)))
+    s = cortar(n, teto_ms)
+    if len(s) > n:
+        folgado = cortar(n, hard_ms)
+        if len(folgado) <= n:
+            s = folgado
+    for _ in range(3):
+        if len(s) <= 1 or len(s) % 2 == 0:
+            break
+        n = len(s) + 1
+        s = cortar(n, teto_ms)
+    return s or [(0, max(1, total))]
+
+
+def daqui(durs_s):
+    a = vinyl.Album.__new__(vinyl.Album)
+    a.tracks, t = [], 0.0
+    for d in durs_s:
+        a.tracks.append({"path": "x", "title": "t", "duration": float(d),
+                         "start": t})
+        t += d
+    a.total, a.sides, a.continuo = t, [], False
+    a._build_sides()
+    return a.sides
+
+
+teto_ms = int(vinyl.SIDE_MAX_SECONDS * 1000)
+hard_ms = int(vinyl.SIDE_HARD_SECONDS * 1000)
+formas = 0
+for minutos in range(20, 131, 5):
+    for dur_s in (120, 180, 225, 250, 300, 420, 540, 600):
+        n = max(1, round(minutos * 60 / dur_s))
+        durs_s = [dur_s] * n
+        formas += 1
+        pc = [(round(s["start"]), round(s["end"])) for s in daqui(durs_s)]
+        cel = [(round(a / 1000), round(b / 1000))
+               for a, b in kotlin([d * 1000 for d in durs_s], teto_ms, hard_ms)]
+        if pc != cel:
+            print("%d min em %d faixas de %ds: PC %s / celular %s"
+                  % (minutos, n, dur_s,
+                     [round((b - a) / 60, 1) for a, b in pc],
+                     [round((b - a) / 60, 1) for a, b in cel]))
+            break
+    else:
+        continue
+    break
+else:
+    if formas:
+        print("FORMAS %d" % formas)
 CELEOF
 )
 case "$cel" in
+    FORMAS*) ok "os dois repartem igual em ${cel#FORMAS } formas de disco" ;;
     "")    ok "o teto do lado e a lei do corte são os mesmos nos dois lados" ;;
     PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${cel#PULA }" ;;
     *)     bad "o celular reparte o disco de outro jeito:"

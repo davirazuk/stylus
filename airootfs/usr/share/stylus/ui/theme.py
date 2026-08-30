@@ -432,7 +432,12 @@ def frase_com_teclas(surf, texto, pos, size=18, colour=TEXT_DIM,
     à mão para saber onde encaixar o quadradinho.
     """
     import re as _re
-    pedacos = [p for p in _re.split(r"(\[[^\]]{1,6}\])", texto) if p]
+    # {1,9} e não {1,6}: "Shift+R" tem SETE caracteres, e com o teto em
+    # seis a frase saía com os colchetes na cara — "[Shift+R] repete" em
+    # texto cru, no meio de uma linha em que todas as outras teclas eram
+    # tampinhas desenhadas. A convenção do rótulo e o desenho dele são
+    # duas metades que têm que concordar, e ninguém as tinha comparado.
+    pedacos = [p for p in _re.split(r"(\[[^\]]{1,9}\])", texto) if p]
     f = font(size)
     larg = 0
     for p in pedacos:
@@ -473,7 +478,7 @@ def frase_largura(texto, size=18):
     """
     import re as _re
     total = 0
-    for p in (q for q in _re.split(r"(\[[^\]]{1,6}\])", texto) if q):
+    for p in (q for q in _re.split(r"(\[[^\]]{1,9}\])", texto) if q):
         if p.startswith("[") and p.endswith("]"):
             total += tecla_largura(p[1:-1], size)
         else:
@@ -814,7 +819,7 @@ def passos(surf, rect, titulo, porque, lista, rodape=None):
             # agora. Quem tem marcação vira tecla; quem não tem continua
             # sendo o comando que se digita.
             import re as _re
-            e_tecla = bool(_re.search(r"\[[^\]]{1,6}\]", fazer))
+            e_tecla = bool(_re.search(r"\[[^\]]{1,9}\]", fazer))
             larg_f = (frase_largura(fazer, 17) if e_tecla
                       else font(17).size(fazer)[0])
             cr = pygame.Rect(x + 30, y - 6, larg_f + 24, 30)
