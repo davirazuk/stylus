@@ -45,6 +45,7 @@ Não tem suíte de escritório. Nunca vai ter.
 | `stylus deck [DISCO]` | põe um disco: a cerimônia inteira, na tela toda |
 | `stylus record` | sorteia um da estante, puxando para os esquecidos |
 | `stylus shelf` | a estante em grade de capas |
+| `stylus playlists [NOME]` | as listas `.m3u` da coleção — com o nome, põe |
 | `stylus lado` | em que lado do disco você está, e quanto falta |
 | `stylus parede` | o papel de parede vira o disco que está tocando |
 | `stylus ui` | a tela cheia (é o que o modo música abre) |
@@ -117,6 +118,57 @@ faixa. Dois discos diferentes dão duas paredes diferentes, e a sua não existe
 na máquina de mais ninguém. Medir custa — o primeiro disco leva de segundos a
 minutos — então o resultado fica em cache e o segundo login é instantâneo.
 Desligado até você pedir: papel de parede é seu.
+
+---
+
+## A noite
+
+Três coisas para a hora em que a casa fica quieta, todas na tela cheia
+(a seção **AGORA**):
+
+```
+[t]         a soneca: 15 → 30 → 45 → 60 → 90 minutos → FIM DO LADO
+[Shift+G]   a trava do gato
+[f]         o disco ocupando a tela inteira
+```
+
+A **soneca** não corta o som: ele desce em vinte segundos e a tela escurece
+junto, porque do outro lado do quarto a música sumindo com a tela acesa
+parece defeito. E a opção que interessa é o **fim do lado** — ninguém
+adormece no meio de um lado por vontade própria; o lado acaba, e é aí que a
+agulha levanta.
+
+A **trava do gato** é da tela, não do sistema: a música segue, o disco
+continua girando por baixo de um véu, e nenhuma tecla, clique ou botão de
+controle atravessa. Destrava segurando **ctrl+alt+esc por um segundo e
+meio** — os três juntos e por tempo, porque um gato deitado no teclado
+segura teclas, e às vezes muitas, mas não segura estas três. De manhã a tela
+diz há quanto tempo está travada e quantas vezes ele tentou.
+
+---
+
+## Playlists
+
+O sistema escrevia `.m3u` desde sempre (`stylus suggest` escreve por gênero,
+`stylus get` acrescenta o que chega) e não sabia tocar nenhuma. Agora sabe:
+
+```
+stylus playlists                       o que existe, e quantas faixas
+stylus playlists "Novidades 2026-08"   põe aquela
+stylus deck "Shoegaze & Dreampop"      idem — o nome acha lista antes de disco
+```
+
+Na estante de tela cheia, o `[o]` cicla a ordem até **listas**. Elas ficam
+fora da grade de discos de propósito: uma lista com a capa do primeiro álbum
+dela se disfarçaria de disco.
+
+Uma playlist **não é um disco**, e a diferença aparece: ela entra como um
+lado só e contínuo, sem "vire o disco". O aviso de virar o lado é verdade
+sobre um objeto que tem dois lados; numa lista de duzentas faixas viraria um
+alarme a cada vinte minutos.
+
+E o caminho de volta: na **PILHA**, o `[Shift+G]` guarda a noite que você
+empilhou como uma lista na coleção.
 
 ---
 

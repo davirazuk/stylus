@@ -74,6 +74,15 @@ class VinylActivity : AppCompatActivity() {
     private var lastTracks: List<Library.Track> = emptyList()
     private var isLandscape = false
     private var sleepTimerEnd = 0L
+    // A soneca no FIM DO LADO, e o esmaecimento. As mesmas duas coisas do
+    // lançador do computador (ver `App._soneca`): lá o corte seco no meio da
+    // faixa era o que acordava quem estava quase dormindo, e aqui era igual
+    // — um `player?.pause()` no instante em que o relógio batia.
+    private var sleepAtSideEnd = false
+    private var sleepFadeFrom = 0L
+    private var volumeAntes = -1f
+    // Quanto falta do lado que está tocando, em ms. -1 = ainda não se sabe.
+    private var restaNoLado = -1L
     private var pendingDrop = false
     private var dropAt = 0f  // nanoTime/1e9f when arm should drop
     private var cachedTracks: List<Library.Track>? = null
@@ -236,6 +245,9 @@ class VinylActivity : AppCompatActivity() {
                         virouOLado(iLado, sides)
                     }
                     ladoAtual = iLado
+                    // Quanto falta DESTE lado — a soneca "no fim do lado"
+                    // pergunta isto, e a conta já estava feita aqui.
+                    restaNoLado = (sideEnd - posMs).coerceAtLeast(0L)
                     val span = maxOf(1L, sideEnd - sideStart)
                     renderer.playProgress = ((posMs - sideStart).toFloat() / span).coerceIn(0f, 1f)
                     val gaps = mutableListOf<Float>()
@@ -471,20 +483,32 @@ class VinylActivity : AppCompatActivity() {
             textSize = 14f
             setPadding(dp(20), dp(8), dp(20), dp(8))
             setOnClickListener {
-                val options = arrayOf("não parar", "15 min", "30 min", "60 min", "90 min")
-                val values = longArrayOf(0, 15*60000, 30*60000, 60*60000, 90*60000)
+                // As MESMAS opções do computador (`App.SONECA`), na mesma
+                // ordem e com as mesmas palavras: a coleção é a mesma nos
+                // dois lados e o vocabulário também tem que ser. O "fim do
+                // lado" é o que interessa num sistema sobre discos —
+                // ninguém adormece no meio de um lado por vontade própria.
+                val options = arrayOf("não parar", "15 min", "30 min",
+                                      "45 min", "60 min", "90 min",
+                                      "no fim do lado")
+                val values = longArrayOf(0, 15*60000, 30*60000, 45*60000,
+                                         60*60000, 90*60000, -1)
                 androidx.appcompat.app.AlertDialog.Builder(this@VinylActivity)
                     .setTitle("Parar sozinho")
                     .setItems(options) { _, which ->
                         val editor = getSharedPreferences("stylus", MODE_PRIVATE).edit()
+                        devolveVolume()
+                        sleepFadeFrom = 0L
+                        sleepAtSideEnd = values[which] < 0
                         if (values[which] > 0) {
                             sleepTimerEnd = System.currentTimeMillis() + values[which]
                             editor.putLong("sleep_timer_end", sleepTimerEnd).apply()
-                            android.widget.Toast.makeText(this@VinylActivity, options[which], android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             sleepTimerEnd = 0
                             editor.remove("sleep_timer_end").apply()
                         }
+                        android.widget.Toast.makeText(this@VinylActivity,
+                            options[which], android.widget.Toast.LENGTH_SHORT).show()
                     }.show()
             }
         }
@@ -599,11 +623,7 @@ class VinylActivity : AppCompatActivity() {
         // Progress updater
         val progressUpdater = object : Runnable {
             override fun run() {
-                if (sleepTimerEnd > 0 && System.currentTimeMillis() >= sleepTimerEnd) {
-                    sleepTimerEnd = 0; playing = false; player?.pause()
-                    if (deck.stylusDown()) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
-                    android.widget.Toast.makeText(this@VinylActivity, "o disco para aqui", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                soneca()
                 val p = player
                 if (p != null && p.duration > 0) {
                     seekBarRef?.progress = ((p.currentPosition.toFloat() / p.duration) * 100).toInt()
@@ -612,9 +632,11 @@ class VinylActivity : AppCompatActivity() {
                     val rem = (p.duration - p.currentPosition) / 1000
                     var timeStr = String.format("%d:%02d  \u2014  -%d:%02d", cur / 60, cur % 60, rem / 60, rem % 60)
                     // Sleep timer countdown
-                    if (sleepTimerEnd > 0) {
+                    if (sleepAtSideEnd) {
+                        timeStr += "  \u2022  para no fim do lado"
+                    } else if (sleepTimerEnd > 0) {
                         val sleepRem = ((sleepTimerEnd - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
-                        timeStr += "  \u2022  Sleep ${sleepRem / 60}:${String.format("%02d", sleepRem % 60)}"
+                        timeStr += "  \u2022  soneca ${sleepRem / 60}:${String.format("%02d", sleepRem % 60)}"
                     }
                     timeView?.text = timeStr
                     // Lyrics + track info
@@ -1084,6 +1106,62 @@ class VinylActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
         }
+    }
+
+    /** Quanto dura o esmaecimento. O mesmo do computador (`App.ESMAECER`). */
+    private val ESMAECER_MS = 20_000L
+
+    private fun devolveVolume() {
+        val v = volumeAntes
+        if (v >= 0f) {
+            player?.exo?.volume = v
+            volumeAntes = -1f
+        }
+    }
+
+    /**
+     * A soneca: esmaece e levanta a agulha. Roda no laço do relógio.
+     *
+     * **O que havia antes:** um `player?.pause()` seco no instante em que o
+     * relógio batia. No meio de uma faixa, com a pessoa quase dormindo, o
+     * CORTE é justamente o que acorda — e o computador tinha o mesmo defeito
+     * até pouco tempo atrás.
+     *
+     * O ganho digital destes vinte segundos é uma exceção CONSCIENTE à tese
+     * do sistema (o áudio sai sem tocar no volume; ver o `--volume=100` do
+     * stylus-deck). A alternativa é o corte seco, e ele é pior.
+     */
+    private fun soneca() {
+        val agora = System.currentTimeMillis()
+        if (sleepAtSideEnd) {
+            if (restaNoLado < 0 || restaNoLado > ESMAECER_MS) return
+            if (sleepFadeFrom == 0L) sleepFadeFrom = agora - (ESMAECER_MS - restaNoLado)
+        } else if (sleepTimerEnd > 0) {
+            if (agora < sleepTimerEnd - ESMAECER_MS) return
+            if (sleepFadeFrom == 0L) sleepFadeFrom = agora
+        } else {
+            return
+        }
+        val f = ((agora - sleepFadeFrom).toFloat() / ESMAECER_MS).coerceIn(0f, 1f)
+        val p = player ?: return
+        if (volumeAntes < 0f) volumeAntes = p.exo.volume
+        // Em POTÊNCIA e não linear: o ouvido é logarítmico, e uma rampa
+        // linear soa como "nada, nada, nada, sumiu".
+        p.exo.volume = volumeAntes * (1f - f) * (1f - f)
+        if (f < 1f) return
+        playing = false
+        p.pause()
+        if (deck.stylusDown()) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+        // O volume volta ANTES de tudo: senão o disco de amanhã começa mudo.
+        devolveVolume()
+        val quanto = if (sleepAtSideEnd) "no fim do lado" else "a soneca acabou"
+        android.widget.Toast.makeText(this, "boa noite \u2014 $quanto",
+            android.widget.Toast.LENGTH_SHORT).show()
+        sleepTimerEnd = 0
+        sleepAtSideEnd = false
+        sleepFadeFrom = 0L
+        getSharedPreferences("stylus", MODE_PRIVATE).edit()
+            .remove("sleep_timer_end").apply()
     }
 
     private fun castToDevice(device: CastManager.DlnaDevice) {

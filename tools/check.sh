@@ -4387,6 +4387,82 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "a soneca é a mesma nos dois lados"
+# A coleção é a mesma no computador e no celular, e a soneca também tem que
+# ser: as mesmas opções, com as mesmas palavras, e o mesmo jeito de acabar.
+#
+# **O que os dois tinham:** um pause SECO no instante em que o relógio batia.
+# No meio de uma faixa, com a pessoa quase dormindo, o corte é justamente o
+# que acorda. Os dois esmaecem agora, e os dois têm a opção que interessa num
+# sistema sobre discos — o FIM DO LADO.
+saida=$(python3 - <<'SONECAEOF' 2>&1
+import re
+import pathlib
+
+app = pathlib.Path("airootfs/usr/share/stylus/ui/app.py").read_text()
+kt = pathlib.Path(
+    "android/app/src/main/kotlin/io/stylus/player/VinylActivity.kt")
+if not kt.exists():
+    print("PULA sem o app do celular aqui")
+    raise SystemExit(0)
+kt = kt.read_text()
+codigo = "\n".join(l for l in kt.splitlines() if not l.lstrip().startswith("//"))
+erros = []
+
+m = re.search(r"SONECA = \(([^)]*)\)", app)
+if not m:
+    erros.append("não achei o App.SONECA no lançador")
+else:
+    pc = [int(x) for x in re.findall(r"-?\d+", m.group(1))]
+    mv = re.search(r"val values = longArrayOf\(([^)]*)\)", codigo, re.S)
+    if not mv:
+        erros.append("não achei as opções da soneca no celular")
+    else:
+        bruto = mv.group(1)
+        cel = []
+        for parte in bruto.split(","):
+            parte = parte.strip()
+            if not parte:
+                continue
+            m2 = re.match(r"^(-?\d+)(\*60000)?$", parte)
+            if not m2:
+                erros.append("opção que não sei ler no celular: %r" % parte)
+                break
+            cel.append(int(m2.group(1)))
+        if sorted(cel) != sorted(pc):
+            erros.append("as opções diferem:\n        PC : %s\n        cel: %s"
+                         % (pc, cel))
+
+# O esmaecimento, dos dois lados, com a mesma duração.
+me = re.search(r"ESMAECER = ([\d.]+)", app)
+mk = re.search(r"ESMAECER_MS = ([\d_]+)L", codigo)
+if not me or not mk:
+    erros.append("um dos dois lados não esmaece (ESMAECER/ESMAECER_MS)")
+elif abs(float(me.group(1)) * 1000 - int(mk.group(1).replace("_", ""))) > 1:
+    erros.append("o esmaecimento dura %ss no PC e %sms no celular"
+                 % (me.group(1), mk.group(1)))
+
+# E o volume tem que VOLTAR nos dois: senão o disco de amanhã começa mudo.
+if "_devolve_volume" not in app:
+    erros.append("o lançador não devolve o volume depois do esmaecimento")
+if "devolveVolume" not in codigo:
+    erros.append("o celular não devolve o volume depois do esmaecimento")
+
+if erros:
+    for e in erros:
+        print("ERRO %s" % e)
+else:
+    print("OK as %d opções e os 20s de esmaecimento valem nos dois lados"
+          % len(pc))
+SONECAEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a soneca não é a mesma nos dois lados:"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 sec "no celular, função escrita é função chamada"
 # A irmã da conferência de função órfã do lado do Python, e ela faz mais
 # falta aqui: NADA neste repositório compila Kotlin, então uma função que

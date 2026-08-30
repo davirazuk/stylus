@@ -5453,6 +5453,12 @@ class App:
             self._vol_antes = float(v) if isinstance(v, (int, float)) else 100.0
         # Em POTÊNCIA e não linear: o ouvido é logarítmico, e uma rampa
         # linear soa como "nada, nada, nada, sumiu".
+        #
+        # E sim, isto é GANHO DIGITAL — a coisa que o `--volume=100` do
+        # stylus-deck existe para impedir. É uma exceção consciente e
+        # limitada a vinte segundos no fim da noite: a alternativa é o corte
+        # seco, e ele é pior. O volume volta ao que era assim que a agulha
+        # levanta, para o disco de amanhã não começar atenuado.
         self._ao_tocador("set_property", "volume",
                          round(self._vol_antes * (1.0 - f) ** 2, 1))
         if f < 1.0:
