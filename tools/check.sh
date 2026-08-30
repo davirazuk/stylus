@@ -1331,8 +1331,9 @@ import pathlib
 import re
 import sys
 
-kt = pathlib.Path(
-    "android/app/src/main/kotlin/io/stylus/player/VinylActivity.kt")
+# A regra dos lados mora no Lados.kt desde que o aviso de virar o disco
+# passou a existir no celular; o VinylActivity.kt só a usa.
+kt = pathlib.Path("android/app/src/main/kotlin/io/stylus/player/Lados.kt")
 if not kt.is_file():
     raise SystemExit(0)
 fonte = kt.read_text(encoding="utf-8")
@@ -1345,7 +1346,7 @@ except BaseException as e:                                # noqa: BLE001
     raise SystemExit(0)
 
 # O teto, em minutos, dos dois lados.
-m = re.search(r"sideMaxMs\s*=\s*(\d+)\s*\*\s*60\s*\*\s*1000L", fonte)
+m = re.search(r"SIDE_MAX_MS\s*=\s*(\d+)L?\s*\*\s*60L?\s*\*\s*1000L", fonte)
 if m is None:
     print("não achei o teto do lado no VinylActivity.kt")
 else:
@@ -4070,6 +4071,119 @@ case "$saida" in
     OK*)   ok "${saida#OK }" ;;
     PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
     *)     bad "o texto do celular não é o do computador"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "a tela que desenha o som não reamostra a música"
+# **Sintoma (relatado):** a tela SINAL mostrava a música sendo REAMOSTRADA.
+#
+# O monitor da tela cheia abria a captura do PipeWire em 48000 escrito à mão
+# e a mantinha aberta o tempo todo. Duas consequências, as duas contra a
+# única promessa da máquina:
+#
+#   · numa coleção que é quase toda 44,1k, essa captura é um segundo fluxo
+#     pedindo OUTRA taxa em cima do disco que está tocando;
+#   · e a placa nunca ficava ociosa, então o `session.suspend-timeout-
+#     seconds = 1` do wireplumber nunca vencia e o dispositivo não podia ser
+#     reaberto na taxa do disco seguinte.
+#
+# Ou seja: a tela que desenha o som desfazia a tese do sistema, e a tela
+# SINAL, ao lado, mostrava o resultado sem saber a causa.
+#
+# Esta conferência roda o monitor com um PortAudio de mentira e olha três
+# coisas: em que taxa ele abre, se solta a placa no silêncio, e se acompanha
+# a taxa quando ela muda.
+saida=$(python3 - <<'MONEOF' 2>&1
+import sys
+import time
+import types
+sys.path.insert(0, "airootfs/usr/share/stylus/ui")
+try:
+    import numpy as np
+except Exception as e:                                   # noqa: BLE001
+    print("PULA sem numpy: %s" % e)
+    raise SystemExit(0)
+
+SILENCIO = [False]
+
+
+class Fluxo:
+    def __init__(self, rate):
+        self.rate, self.rodando = rate, False
+
+    def start_stream(self):
+        self.rodando = True
+
+    def stop_stream(self):
+        self.rodando = False
+
+    def read(self, n, exception_on_overflow=True):
+        return (b"\x00\x00" if SILENCIO[0] else b"\x10\x27") * 2 * n
+
+
+class PA:
+    def __init__(self):
+        self.abertos = []
+
+    def get_device_count(self):
+        return 1
+
+    def get_device_info_by_index(self, _i):
+        return {"name": "pulse", "maxInputChannels": 2}
+
+    def open(self, **kw):
+        f = Fluxo(kw["rate"])
+        self.abertos.append(f)
+        return f
+
+
+falso = types.ModuleType("pyaudio")
+falso.paInt16 = 8
+falso.PyAudio = PA
+sys.modules["pyaudio"] = falso
+try:
+    import audio_live as al
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+al.pyaudio, al.np = falso, np
+TAXA = [44100]
+al.taxa_do_grafo = lambda: TAXA[0]
+# Só há monitor RODANDO quando há som — é assim que o pactl responde.
+al.find_monitor_source = lambda so_rodando=False: (
+    None if (so_rodando and SILENCIO[0]) else "monitor.falso")
+try:
+    m = al.AudioMonitor()
+    time.sleep(0.5)
+    abriu = m._taxa
+    SILENCIO[0] = True
+    time.sleep(1.8)
+    soltou = m._stream is None
+    TAXA[0] = 96000
+    SILENCIO[0] = False
+    time.sleep(1.2)
+    seguiu = m._taxa
+    taxas = [f.rate for f in m._p.abertos]
+    m._stop = True
+    if abriu != 44100:
+        print("ERRO abriu em %s com o grafo em 44100" % abriu)
+    elif not soltou:
+        print("ERRO continuou segurando a placa no silêncio")
+    elif seguiu != 96000:
+        print("ERRO não acompanhou a taxa nova (ficou em %s)" % seguiu)
+    elif taxas != [44100, 96000]:
+        print("ERRO abriu fluxos demais: %s" % taxas)
+    else:
+        print("OK abre na taxa do grafo, solta no silêncio e segue a troca")
+except Exception as e:                                   # noqa: BLE001
+    import traceback
+    print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
+MONEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o monitor da tela cheia força a reamostragem"
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 

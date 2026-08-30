@@ -64,6 +64,9 @@ class VinylActivity : AppCompatActivity() {
     private var dropAt = 0f  // nanoTime/1e9f when arm should drop
     private var cachedTracks: List<Library.Track>? = null
     private var cachedAlbumId: Long = -1
+    // Em que LADO a agulha estava na volta passada. -1 = ainda não se sabe:
+    // abrir o disco no meio do lado B não é "acabou o lado A".
+    private var ladoAtual = -1
     private var lastCoverW = 0; private var lastCoverH = 0
     private var lastLyricIdx = -1
     private var lastTrackIdx = -1
@@ -177,6 +180,10 @@ class VinylActivity : AppCompatActivity() {
                 if (cachedAlbumId != albumIdField) {
                     cachedAlbumId = albumIdField
                     cachedTracks = Library.albumTracks(this@VinylActivity, albumIdField)
+                    // Disco novo: o lado volta a ser desconhecido, senão o
+                    // primeiro quadro do disco seguinte contaria como uma
+                    // virada de lado.
+                    ladoAtual = -1
                 }
                 val tracks = cachedTracks
                 if (tracks != null && tracks.isNotEmpty()) {
@@ -193,12 +200,20 @@ class VinylActivity : AppCompatActivity() {
                         }
                         else -> 0L
                     }
-                    val sides = buildSides(tracks.map { it.duration })
-                    var sideStart = sides[0].first; var sideEnd = sides[0].second
-                    for ((s, e) in sides) {
-                        if (posMs in s until e) { sideStart = s; sideEnd = e; break }
-                        if (posMs >= e) { sideStart = s; sideEnd = e }
+                    val sides = Lados.repartir(tracks.map { it.duration })
+                    val iLado = Lados.indiceEm(sides, posMs)
+                    val sideStart = sides[iLado].start
+                    val sideEnd = sides[iLado].end
+                    // O FIM DO LADO É UM ACONTECIMENTO. Sem isto a música
+                    // passava de um lado para o outro sozinha, em silêncio —
+                    // que é o que um tocador digital faz e o que este
+                    // sistema existe para não fazer. Só para FRENTE: buscar
+                    // para trás não é o disco virando, é você procurando uma
+                    // faixa.
+                    if (playing && ladoAtual >= 0 && iLado > ladoAtual) {
+                        virouOLado(iLado, sides)
                     }
+                    ladoAtual = iLado
                     val span = maxOf(1L, sideEnd - sideStart)
                     renderer.playProgress = ((posMs - sideStart).toFloat() / span).coerceIn(0f, 1f)
                     val gaps = mutableListOf<Float>()
@@ -1118,57 +1133,75 @@ class VinylActivity : AppCompatActivity() {
      * gradle no check.sh nem na construção da nuvem. O que o check.sh
      * confere é que o teto daqui é o mesmo do vinyl.py.
      */
-    private fun buildSides(durs: List<Long>): List<Pair<Long, Long>> {
-        val sideMaxMs = 26 * 60 * 1000L
-        var total = 0L
-        for (d in durs) total += d
-        if (total <= 0L) return listOf(0L to 1L)
-
-        var nSides = if (total <= sideMaxMs) 1
-                     else 2 * (((total + 2L * sideMaxMs - 1L) / (2L * sideMaxMs)).toInt())
-
-        var sides = cutSides(durs, total, nSides, sideMaxMs)
-        var tries = 0
-        while (tries < 3 && sides.size > 1 && sides.size % 2 == 1) {
-            nSides = sides.size + 1
-            sides = cutSides(durs, total, nSides, sideMaxMs)
-            tries++
+    /**
+     * Acabou o lado: a agulha sobe, a música pára e a tela pede o GESTO.
+     *
+     * É a única coisa que este sistema faz e nenhum outro tocador faz. O
+     * corte em lados já existia aqui (o raio da agulha andava lado a lado) e
+     * o acontecimento não: a música passava de um lado para o outro sozinha,
+     * em silêncio.
+     *
+     * Não retoma sozinho de propósito. Um toca-discos não vira o disco por
+     * você — é o gesto que separa ouvir um disco de ouvir uma playlist.
+     */
+    private fun virouOLado(iLado: Int, sides: List<Lados.Lado>) {
+        val now = System.nanoTime() / 1e9f
+        playing = false
+        player?.pause()
+        if (deck.phase == Phase.PLAY || deck.phase == Phase.DROP) {
+            deck.go(Phase.LIFT, now)
         }
-        if (sides.isEmpty()) sides = mutableListOf(0L to maxOf(1L, total))
-        return sides
+        mostrarGesto(Lados.rotulo(iLado - 1),
+                     Lados.gesto(iLado, sides.size))
     }
 
-    /** Um corte em `nSides` lados. Pode devolver mais: o teto é físico. */
-    private fun cutSides(
-        durs: List<Long>, total: Long, nSides: Int, sideMaxMs: Long
-    ): MutableList<Pair<Long, Long>> {
-        val sides = mutableListOf<Pair<Long, Long>>()
-        var curStart = 0L
-        var curCount = 0
-        var start = 0L
-        for (i in durs.indices) {
-            val end = start + durs[i]
-            // 1. o teto, que é físico: fecha ANTES de pôr a faixa que
-            //    estoura. Um lado vazio nunca fecha — não se corta uma
-            //    música ao meio.
-            if (curCount > 0 && end - curStart > sideMaxMs) {
-                sides.add(curStart to start)
-                curStart = start
-                curCount = 0
-            }
-            curCount++
-            // 2. o equilíbrio, com o alvo vindo do que RESTA.
-            val faltam = maxOf(1, nSides - sides.size)
-            val alvo = curStart + (total - curStart) / faltam
-            if (faltam > 1 && end >= alvo && (durs.size - i - 1) >= (faltam - 1)) {
-                sides.add(curStart to end)
-                curStart = end
-                curCount = 0
-            }
-            start = end
+    /** A tela inteira dizendo o que fazer, e o toque que retoma. */
+    private fun mostrarGesto(acabou: String, gesto: String) {
+        val root = window.decorView.findViewById<ViewGroup>(android.R.id.content)
+        val aviso = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(0xF207080B.toInt())
         }
-        if (curCount > 0) sides.add(curStart to total)
-        return sides
+        aviso.addView(TextView(this).apply {
+            text = acabou
+            setTextColor(0xFF8a95aa.toInt())
+            textSize = 14f
+            letterSpacing = 0.18f
+            gravity = android.view.Gravity.CENTER
+        })
+        aviso.addView(TextView(this).apply {
+            text = "ACABOU"
+            setTextColor(0xFFf0a030.toInt())
+            textSize = 40f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(6), 0, dp(14))
+        })
+        aviso.addView(TextView(this).apply {
+            text = gesto
+            setTextColor(0xFFe8ecf5.toInt())
+            textSize = 18f
+            gravity = android.view.Gravity.CENTER
+            setPadding(dp(28), 0, dp(28), dp(24))
+        })
+        aviso.addView(TextView(this).apply {
+            text = "toque para continuar"
+            setTextColor(0xFF4A5570.toInt())
+            textSize = 11f
+            gravity = android.view.Gravity.CENTER
+        })
+        aviso.setOnClickListener {
+            root.removeView(aviso)
+            // Retomar é a CERIMÔNIA de novo, não um play: o braço volta,
+            // desce e só então a música começa. Foi você que virou o disco.
+            val now = System.nanoTime() / 1e9f
+            playing = true
+            deck.go(Phase.CUE, now)
+        }
+        root.addView(aviso, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
     override fun onDestroy() {

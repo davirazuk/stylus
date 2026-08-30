@@ -248,6 +248,38 @@ _NAO_E_CAPA = ("back", "verso", "contra", "disc", "cd1", "cd2", "inlay",
                "booklet", "tray", "matrix", "label", "small", "thumb")
 
 
+def taxa_do_grafo(padrao=48000):
+    """A taxa em que o grafo do PipeWire está rodando AGORA.
+
+    A RESPOSTA CANÔNICA, porque havia duas — o `detect_graph_rate` do
+    scope.py (que a lia certo) e o monitor da tela cheia (que abria a captura
+    em 48000 escrito à mão). A segunda custava a tese da máquina: uma captura
+    pedindo 48k em cima de um disco de 44,1k é um segundo fluxo em outra
+    taxa, e aí o grafo REAMOSTRA a música — a tela que desenha o som
+    desfazendo a promessa do sistema, com a tela SINAL ao lado mostrando o
+    resultado sem saber a causa.
+
+    Lê o RELÓGIO DO GRAFO e não o formato de um dispositivo: os dois podem
+    divergir legitimamente (medido: o DAC por USB negociado em 96k com o
+    grafo em 48k no mesmo instante), e é o do grafo que decide se houve
+    conversão.
+    """
+    try:
+        out = subprocess.run(["pw-metadata", "-n", "settings"],
+                             capture_output=True, text=True, timeout=2).stdout
+        m = re.search(r"key:'clock\.rate'\s+value:'(\d+)'", out)
+        if m:
+            return int(m.group(1))
+        # O formato da saída do pw-metadata já mudou entre versões; a busca
+        # frouxa é a reserva, não a regra.
+        m = re.search(r"clock\.rate.*?(\d{4,6})", out)
+        if m:
+            return int(m.group(1))
+    except Exception:                     # noqa: BLE001
+        pass
+    return padrao
+
+
 def find_cover(folder, entries=None):
     """A capa desta pasta, ou None. Sem olhar maiúscula.
 

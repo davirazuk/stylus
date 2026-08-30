@@ -33,8 +33,14 @@ try:
 except Exception:                       # noqa: BLE001 — sem PortAudio/numpy
     np = pyaudio = None
 
+# A taxa do grafo é LIDA, não escrita aqui. Ver `taxa_do_grafo`; este número
+# é só o que sobra quando não dá para perguntar.
 RATE = 48000
 BLOCK = 512
+# Quanto tempo de SILÊNCIO DIGITAL até soltar o dispositivo. Ver
+# `_talvez_soltar`: é isto que devolve ao PipeWire a janela em que ele pode
+# reabrir a placa na taxa do disco seguinte.
+SOLTA_APOS = 1.0
 WAVE_N = 1024          # samples de onda guardados (~21 ms)
 SPEC_FFT_N = 1024      # tamanho da FFT do espectro
 N_BANDS = 24           # faixas logarítmicas desenhadas
@@ -56,7 +62,29 @@ def _zeros(n):
     return np.zeros(n, dtype=np.float32) if np is not None else [0.0] * n
 
 
-def find_monitor_source():
+def taxa_do_grafo():
+    """A taxa em que o grafo do PipeWire está rodando AGORA.
+
+    POR QUE ISTO IMPORTA
+    --------------------
+    Este monitor abria a captura em 48000 escrito à mão. Numa coleção que é
+    quase toda 44,1k — todo CD ripado, todo FLAC de loja — isso é um segundo
+    fluxo pedindo OUTRA taxa em cima do disco que está tocando: o grafo não
+    pode servir os dois, fica no 48k e REAMOSTRA a música. Ou seja: a tela
+    que desenha o som desfazia a única promessa da máquina, e a tela SINAL,
+    ao lado, mostrava o resultado sem saber a causa.
+
+    A leitura é a do `vinyl.taxa_do_grafo` — a mesma que o deck usa. Duas
+    leituras da mesma coisa foi exatamente como esta aqui nasceu errada.
+    """
+    try:
+        import vinyl
+        return vinyl.taxa_do_grafo(RATE)
+    except Exception:                   # noqa: BLE001 — sem o deck no caminho
+        return RATE
+
+
+def find_monitor_source(so_rodando=False):
     """O monitor que está com som agora, ou o primeiro que houver.
 
     O mesmo critério do deck (scope.py): um sink com o monitor RUNNING é o
@@ -80,6 +108,12 @@ def find_monitor_source():
     for linha in out.splitlines():
         if ".monitor" in linha and "RUNNING" in linha:
             return linha.split()[1]
+    if so_rodando:
+        # NENHUM monitor tocando: devolver o primeiro da lista aqui seria
+        # abrir a placa para capturar silêncio — e é justamente estar aberta
+        # que impede o PipeWire de reabri-la na taxa do disco seguinte. Quem
+        # quer o palpite pede por ele.
+        return None
     for linha in out.splitlines():
         col = linha.split()
         if len(col) >= 2 and ".monitor" in col[1]:
@@ -109,34 +143,103 @@ class AudioMonitor:
         self._lock = threading.Lock()
         if np is None or pyaudio is None:
             return
-        src = find_monitor_source()
-        if not src:
-            return
+        # Um fluxo POR TAXA, guardado. Fechar um fluxo do PortAudio pela
+        # ponte do PulseAudio aborta com core dump (ver `close`), então em
+        # vez de fechar e reabrir a cada troca de taxa, cada taxa tem o seu e
+        # os outros ficam parados. São oito taxas possíveis no total.
+        self._streams = {}
+        self._masks_por_taxa = {}
+        self._masks = []
+        self._stream = None
+        self._taxa = 0
+        self._quieto_desde = 0.0
+        self._olhei_taxa = 0.0
         try:
-            os.environ["PULSE_SOURCE"] = src
             self._p = pyaudio.PyAudio()
-            dev = self._find_pulse_device()
-            self._stream = self._p.open(
-                format=pyaudio.paInt16, channels=2, rate=RATE, input=True,
-                input_device_index=dev, frames_per_buffer=BLOCK)
-        except Exception:               # noqa: BLE001 — dispositivo ocupado
+        except Exception:               # noqa: BLE001 — sem PortAudio
             return
-        # Janela de FFT e as máscaras das faixas, pré-calculadas uma vez.
         self._hann = np.hanning(SPEC_FFT_N).astype(np.float32)
-        freqs = np.fft.rfftfreq(SPEC_FFT_N, 1.0 / RATE)
-        edges = np.logspace(math.log10(SPEC_MIN_HZ),
-                            math.log10(SPEC_MAX_HZ), N_BANDS + 1)
-        self._masks = [(freqs >= edges[i]) & (freqs < edges[i + 1])
-                       for i in range(N_BANDS)]
-        for i, m in enumerate(self._masks):
-            if not m.any():
-                idx = int(np.argmin(np.abs(freqs - edges[i])))
-                m[idx] = True
         self._spec_buf = np.zeros(SPEC_FFT_N, dtype=np.float32)
         self._stop = False
         self._th = threading.Thread(target=self._run, daemon=True)
         self._th.start()
         self.ok = True
+
+    def _mascaras(self, taxa):
+        """As faixas logarítmicas da FFT para esta taxa.
+
+        Elas dependem da taxa: as mesmas máscaras num fluxo de 44,1k
+        apontariam para frequências erradas, e o espectro desenhado seria de
+        outra música que não a que está tocando.
+        """
+        if taxa in self._masks_por_taxa:
+            return self._masks_por_taxa[taxa]
+        freqs = np.fft.rfftfreq(SPEC_FFT_N, 1.0 / taxa)
+        edges = np.logspace(math.log10(SPEC_MIN_HZ),
+                            math.log10(SPEC_MAX_HZ), N_BANDS + 1)
+        masks = [(freqs >= edges[i]) & (freqs < edges[i + 1])
+                 for i in range(N_BANDS)]
+        for i, m in enumerate(masks):
+            if not m.any():
+                m[int(np.argmin(np.abs(freqs - edges[i])))] = True
+        self._masks_por_taxa[taxa] = masks
+        return masks
+
+    def _talvez_abrir(self):
+        """Abre a captura NA TAXA DO GRAFO, se houver o que ouvir.
+
+        `so_rodando`: sem música tocando não se abre nada. A placa aberta é
+        justamente o que impede o PipeWire de reabri-la na taxa do disco
+        seguinte — capturar silêncio custaria a tese do sistema.
+        """
+        src = find_monitor_source(so_rodando=True)
+        if not src:
+            return
+        taxa = taxa_do_grafo()
+        try:
+            os.environ["PULSE_SOURCE"] = src
+            fluxo = self._streams.get(taxa)
+            if fluxo is None:
+                fluxo = self._p.open(
+                    format=pyaudio.paInt16, channels=2, rate=taxa, input=True,
+                    input_device_index=self._find_pulse_device(),
+                    frames_per_buffer=BLOCK, start=False)
+                self._streams[taxa] = fluxo
+            fluxo.start_stream()
+        except Exception:               # noqa: BLE001 — ocupado, taxa recusada
+            return
+        self._masks = self._mascaras(taxa)
+        self._stream, self._taxa = fluxo, taxa
+        self._quieto_desde = 0.0
+
+    def _soltar(self):
+        """PÁRA a captura — e com ela some o que segurava a placa.
+
+        Enquanto esta captura está aberta, o dispositivo ALSA está OCUPADO:
+        o `session.suspend-timeout-seconds = 1` do wireplumber nunca vence, a
+        placa não é solta, e o disco seguinte — que pode ser 44,1k — encontra
+        uma placa aberta em 48k e é reamostrado. Soltar no silêncio devolve
+        essa janela.
+
+        `stop_stream`, nunca `close`: ver o comentário do `close`.
+        """
+        try:
+            if self._stream is not None:
+                self._stream.stop_stream()
+        except Exception:               # noqa: BLE001
+            pass
+        self._stream = None
+
+    def _talvez_soltar(self, a):
+        """Silêncio digital por mais de um segundo: solta o dispositivo."""
+        agora = time.time()
+        if float(np.max(np.abs(a))) > 1e-4:
+            self._quieto_desde = 0.0
+            return
+        if not self._quieto_desde:
+            self._quieto_desde = agora
+        elif agora - self._quieto_desde > SOLTA_APOS:
+            self._soltar()
 
     def close(self):
         """Parada suave — e só isto, de propósito.
@@ -166,15 +269,38 @@ class AudioMonitor:
         return None  # cai no dispositivo padrão, melhor que nenhum
 
     def _run(self):
-        try:
-            while not self._stop:
+        """O laço: abre quando há o que ouvir, solta quando não há.
+
+        Antes era um `while` dentro de um `try` só: o PRIMEIRO erro de
+        leitura — o sink sumindo ao trocar de disco, por exemplo — matava a
+        thread para sempre, e o brilho, o espectro e o sulco vivo ficavam
+        parados pelo resto da sessão sem nada explicando. Agora o erro solta
+        o dispositivo e o laço tenta de novo.
+        """
+        while not self._stop:
+            if self._stream is None:
+                self._talvez_abrir()
+                if self._stream is None:
+                    time.sleep(0.7)     # nada tocando: nem ocupa a placa
+                    continue
+            try:
                 dados = self._stream.read(BLOCK, exception_on_overflow=False)
                 a = np.frombuffer(dados, dtype=np.int16).astype(np.float32)
                 a = a.reshape(-1, 2).mean(axis=1) / 32768.0
-                self._process(a)
-                self._last_block = time.time()
-        except Exception:               # noqa: BLE001 — fio morto não derruba
-            pass
+            except Exception:           # noqa: BLE001 — fio morto não derruba
+                self._soltar()
+                time.sleep(0.4)
+                continue
+            self._process(a)
+            self._last_block = time.time()
+            self._talvez_soltar(a)
+            # A taxa do grafo pode ter mudado com o disco seguinte. Perguntar
+            # custa um processo, então só de dois em dois segundos e só
+            # quando há som — o `_talvez_soltar` já cobre o resto.
+            if self._last_block - self._olhei_taxa > 2.0:
+                self._olhei_taxa = self._last_block
+                if taxa_do_grafo() != self._taxa:
+                    self._soltar()
 
     def _process(self, a):
         # Pulso: a energia crua do bloco, sem suavização — é o que sobe na
@@ -202,6 +328,8 @@ class AudioMonitor:
         with self._lock:
             self._spec_buf = np.roll(self._spec_buf, -len(a))
             self._spec_buf[-len(a):] = a
+        if not self._masks:
+            return                      # ainda não abriu: não há faixa a medir
         env = np.abs(np.fft.rfft(self._spec_buf * self._hann))
         bands = np.array([float(env[m].mean()) for m in self._masks])
         bands = np.clip(np.log1p(bands * 40.0) / 4.0, 0.0, 1.0)

@@ -21,6 +21,8 @@ import numpy as np
 import pygame
 from OpenGL.GL import *
 
+import vinyl
+
 try:
     import pyaudio
 except Exception:
@@ -220,16 +222,14 @@ def detect_graph_rate(default=RATE):
     fails for any reason — a wrong-but-present rate guess is fine (just
     re-introduces the resampling this exists to avoid), never worth
     failing capture entirely over."""
+    # A leitura mora no vinyl.taxa_do_grafo: a interface de tela cheia
+    # precisa da MESMA resposta e não pode importar este arquivo (ele traz
+    # OpenGL junto). Duas leituras da mesma coisa foi como a tela cheia
+    # acabou abrindo a captura em 48000 escrito à mão.
     try:
-        out = subprocess.run(
-            ["pw-metadata", "-n", "settings"], capture_output=True, text=True, timeout=2
-        ).stdout
-        m = re.search(r"key:'clock\.rate'\s+value:'(\d+)'", out)
-        if m:
-            return int(m.group(1))
-    except Exception:
-        pass
-    return default
+        return vinyl.taxa_do_grafo(default)
+    except Exception:                     # noqa: BLE001
+        return default
 
 
 # One-pole low-pass cutoff for the plotted trace. Raw full-bandwidth audio
