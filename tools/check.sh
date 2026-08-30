@@ -707,7 +707,12 @@ done < <(sed -n '/stylus-configure.sh/,/^CHROOT$/p' airootfs/usr/local/bin/stylu
 if (( ${#faltando[@]} == 0 )); then ok "toda unidade que a instalação liga vem de um pacote instalado"
 else bad "a instalação liga o que pode não existir:"; printf '      %s\n' "${faltando[@]}"; fi
 
-sec "o `stylus --help` diz tudo que o `stylus` aceita"
+# As crases são ESCAPADAS. Sem isso o bash executa o que está entre elas
+# antes de passar a string ao `sec`: esta linha rodava `stylus --help` e
+# `stylus` de verdade a cada conferência, cuspia dois "command not found" no
+# meio da saída, e o título aparecia como "o  diz tudo que o  aceita" — dois
+# buracos onde estavam os nomes.
+sec "o \`stylus --help\` diz tudo que o \`stylus\` aceita"
 # O despachante tinha 63 nomes no `case` e 34 no texto de ajuda. Vinte e nove
 # comandos que existiam e que ninguém tinha como descobrir: `stylus big`,
 # `stylus loja`, `stylus glifos`, `stylus números`… Cada um deles é uma linha
