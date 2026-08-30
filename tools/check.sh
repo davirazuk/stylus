@@ -1516,6 +1516,75 @@ esac
 # pelo índice: lado ÍMPAR é o verso do que já está no prato — vire; lado PAR
 # é o começo de outro disco — troque. Isto é a tese do sistema inteiro, e
 # estava errado justamente no disco que mais precisa dela.
+sec "quando o DISCO acaba, o sistema diz e oferece o próximo"
+# **Sintoma:** o fim de um LADO tinha aviso desde sempre; o fim do DISCO
+# passava em silêncio. É o acontecimento mais importante que este sistema
+# tem para dar — a hora em que você levanta, e em que a pergunta "e agora
+# qual?" aparece — e ele acontecia igualzinho a uma playlist acabando.
+#
+# E o aviso só vale se responder à pergunta: a PILHA primeiro (é um
+# compromisso que a pessoa assumiu; oferecer outra coisa por cima seria
+# desfazê-lo) e, sem pilha, o sorteio da estante, que já puxa para os
+# esquecidos.
+fim=$(python3 - <<'FIMEOF'
+import importlib.machinery as _im
+import importlib.util as _iu
+import json
+import os
+import sys
+import tempfile
+
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
+spec = _iu.spec_from_loader("sw2", _im.SourceFileLoader(
+    "sw2", "airootfs/usr/local/bin/stylus-side-watch"))
+mod = _iu.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+erros = []
+d = tempfile.mkdtemp()
+mod.PILHA = os.path.join(d, "stack.json")
+with open(mod.PILHA, "w", encoding="utf-8") as fh:
+    json.dump([{"folder": "/x/y", "artist": "Slowdive", "name": "Souvlaki"}], fh)
+frase = mod.o_proximo()
+if "Souvlaki" not in frase or "pilha" not in frase:
+    erros.append("com a pilha cheia, o aviso não oferece o de cima: %r" % frase)
+
+os.unlink(mod.PILHA)
+sorteado = []
+mod.vinyl.draw_record = lambda: sorteado.append(1) or "/x/Radiohead/Kid A"
+frase = mod.o_proximo()
+if "Kid A" not in frase:
+    erros.append("sem pilha, não sorteia nada: %r" % frase)
+
+mod.vinyl.draw_record = lambda: None
+if mod.o_proximo() != "":
+    erros.append("sem nada para oferecer, devia calar")
+
+# E a lembrança do "estava acabando", que é o que separa "o disco acabou" de
+# "pararam no meio". Sem ela não há como saber.
+fonte = open("airootfs/usr/local/bin/stylus-side-watch", encoding="utf-8").read()
+if "self.acabando" not in fonte:
+    erros.append("o vigia não lembra que o disco estava acabando")
+if "o disco acabou" not in fonte:
+    erros.append("nada avisa que o disco acabou")
+if "restam < 30" not in fonte:
+    erros.append("não há janela de fim (o aviso dispararia em qualquer parada)")
+
+for e in erros:
+    print(e)
+FIMEOF
+)
+case "$fim" in
+    "")    ok "o fim do disco avisa, e oferece a pilha antes do sorteio" ;;
+    PULA*) printf '  %s—%s sem o vigia aqui: %s\n' "$y" "$z" "${fim#PULA }" ;;
+    *)     bad "o fim do disco passa em silêncio:"
+           printf '%s\n' "$fim" | sed 's/^/      /' ;;
+esac
+
 sec "o aviso do fim do lado pede o gesto certo"
 gesto=$(python3 - <<'GESTOEOF'
 import importlib.machinery as _im

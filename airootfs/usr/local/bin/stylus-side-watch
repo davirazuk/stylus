@@ -204,6 +204,10 @@ class Olho:
         self._ti = [None, 0]
         self._gravei = 0.0
         self._tentei = 0.0
+        # O disco que estava chegando ao fim do ÚLTIMO lado. É o que permite
+        # perceber que ele ACABOU — o tocador some, e sem esta lembrança não
+        # há como distinguir "acabou" de "pararam no meio".
+        self.acabando = None
 
     def _anotar(self, al):
         """Disco novo no prato: uma linha na memória da coleção.
@@ -420,6 +424,39 @@ def recado(al, de, para):
     return titulo, "%s — %s" % (nome, gesto)
 
 
+PILHA = os.path.expanduser("~/.local/share/stylus/stack.json")
+
+
+def o_proximo():
+    """O que dizer quando o disco acaba: o próximo da pilha, ou um sorteado.
+
+    A PILHA primeiro porque ela é um compromisso que a pessoa assumiu com ela
+    mesma; oferecer outra coisa por cima seria desfazê-lo. Sem pilha, o
+    sorteio da estante — que já puxa para os esquecidos.
+
+    Devolve "" quando não há o que dizer: um aviso que só repete "acabou" é
+    ruído, e a pergunta que aparece no fim de um disco é "e agora qual?".
+    """
+    try:
+        with open(PILHA, encoding="utf-8") as fh:
+            pilha = json.load(fh)
+        if pilha:
+            it = pilha[0]
+            nome = it.get("name") or ""
+            art = it.get("artist") or ""
+            return "na pilha: %s%s" % (art + " — " if art else "", nome)
+    except Exception:                         # noqa: BLE001
+        pass
+    try:
+        alvo = vinyl.draw_record()
+        if alvo:
+            art, nome = vinyl.folder_names(alvo)
+            return "que tal %s%s" % (art + " — " if art else "", nome)
+    except Exception:                         # noqa: BLE001
+        pass
+    return ""
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
@@ -474,13 +511,38 @@ def main():
     renovador = Renovador()
     while True:
         try:
-            al, i, lado, _restam = olho.onde()
+            al, i, lado, restam = olho.onde()
         except Exception:                     # noqa: BLE001 — nunca morrer
             time.sleep(INTERVALO)
             continue
         # Antes de qualquer aviso: uma lista do Qobuz cuja assinatura está
         # perto de vencer é reassinada agora, com a música ainda tocando.
         renovador.talvez(al)
+
+        # ── O DISCO ACABOU ───────────────────────────────────────────────
+        # É o acontecimento mais importante que este sistema tem para dar, e
+        # não existia: o lado virava com aviso, e o fim do disco — a hora em
+        # que você levanta e a pergunta "e agora qual?" aparece — passava em
+        # silêncio, igualzinho a uma playlist acabando.
+        #
+        # Como se sabe: o tocador estava no ÚLTIMO lado, faltando menos de
+        # meio minuto, e agora não há mais tocador (ou entrou outro disco).
+        # Sem a lembrança do "estava acabando" não dá para separar isso de
+        # alguém ter parado no meio.
+        if al is not None and lado is not None:
+            ultimo = i >= len(al.sides) - 1
+            if ultimo and restam < 30.0:
+                olho.acabando = (al.folder, al.artist, al.name)
+            elif olho.acabando and olho.acabando[0] != al.folder:
+                olho.acabando = None
+        elif olho.acabando:
+            _f, _art, _nome = olho.acabando
+            olho.acabando = None
+            prox = o_proximo()
+            avisar("o disco acabou",
+                   "%s%s%s" % (_art + " — " if _art else "", _nome,
+                               "\n" + prox if prox else ""),
+                   espera=ESPERA_LADO)
 
         if al is not None and lado is not None:
             if olho.lado is not None and i != olho.lado:
