@@ -490,6 +490,36 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   caminho do sinal recebia "nada tocando — ponha um disco e rode de novo".
   Quem pergunta o que está tocando pergunta ao socket primeiro; foi o mesmo
   defeito do módulo do disco na barra.
+- **Tecla comida por quem vem antes dela.** O `App._key` trata o ESC (abrir o
+  trilho) ANTES de passar a tecla para a tela, e a tela cheia do disco tinha
+  um `if ev.key == K_ESCAPE and self.tela_cheia` que nunca rodava. Pior que
+  não funcionar: o ESC ligava o trilho, que na tela cheia não é DESENHADO —
+  o programa ficava num menu invisível comendo todas as teclas seguintes, e
+  da poltrona isso é "o programa travou". Quando duas camadas tratam a mesma
+  tecla, a de cima decide; e um estado que muda o desenho tem que estar
+  visível em todo caminho que o liga.
+- **Esticar não é cobrir.** O borrão de fundo da AGORA era escalado direto
+  para o tamanho da tela: capa QUADRADA numa tela 16:9 saía com quase o dobro
+  da largura. Escala pelo lado que precisa de mais e corta o resto — e a
+  conta virou função (`_cobre`) para o teste poder varrer doze formas de capa
+  e de tela sem desenhar nada.
+- **Duas frentes para a mesma loja, e só uma aprendeu.** Os favoritos do
+  Qobuz paginavam na estante do rofi e não na loja de tela cheia, que pedia
+  60 numa chamada só; a busca pedia 100 lá e 25 aqui. Quem tem 87 favoritos
+  via 60 numa tela e 87 na outra, sobre a mesma conta. Toda vez que existirem
+  duas telas para a mesma coisa, o conserto tem que passar pelas duas — ou o
+  código que responde tem que ser um só.
+- **O que o NFKD não separa.** Normalizar tirando acento resolve "Rós" →
+  "ros" e NÃO resolve o æ de "Ágætis byrjun": ele não é uma composição, é uma
+  letra, e a limpeza o trocava por um espaço — "ag tis byrjun" contra
+  "agaetis byrjun". Vale para ø, œ, ð, þ, ß e ł. Quem compara nome de disco
+  ou de artista precisa da tabela à mão.
+- **Um botão que se chama "examinar" tem que mostrar o que tem dentro.** O
+  `[enter]` da loja abria um cartão com capa, ano e qualidade — tudo que já
+  estava no quadradinho da grade. O que se examina num disco é a ORDEM dele,
+  e o Qobuz manda as faixas de graça no `get_album_meta`. Os lados saem do
+  mesmo `_build_sides` da estante: uma segunda implementação diria "2 lados"
+  na loja e "4" depois de baixar, sobre o mesmo disco.
 
 ---
 
@@ -669,6 +699,36 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   achou de cara uma divisão por zero no rastro do sulco (`passos` valia 0 e
   o laço dividia por ele). Custa nada e cobre os três momentos em que a
   agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
+
+### Décima primeira leva (o que o usuário viu, e a loja por dentro)
+- **A AGORA:** o disco estava a 0,56 da capa — o centro dele para FORA dela,
+  o que lê como duas coisas lado a lado. Com 0,44 o selo encosta na beirada e
+  os dois viram um objeto só. E o nome do disco deixou de ser cortado em
+  corpo 56 ("Lift Your Ski…"): escolhe o maior corpo que caiba e cai para
+  duas linhas, com o ano e o LADO saindo do FIM do nome.
+- **A tela cheia travava no B do controle** (§4), o fundo desfocado esticava
+  a capa (§4), e ela ganhou a LETRA no tempo: a linha que está sendo cantada
+  em lavanda e a seguinte apagada embaixo. Havia ~3000 .lrc na coleção lidos
+  só pelo módulo de trinta e dois caracteres da barra.
+- **A loja:** o `[enter]` passou a mostrar a ordem do disco em colunas — uma
+  por LADO, com a duração de cada uma — pelo `stylus qobuz faixas`, que é
+  novo; os favoritos passaram a vir TODOS (§4); e cada disco que você já tem
+  leva uma tarja "na estante", que era a primeira pergunta de quem abre uma
+  loja.
+- **A tela de arranque existia e nunca foi vista**: nada escolhia o tema do
+  plymouth. Junto, ela estava em verde e com a agulha azul — e o `check.sh`
+  aprendeu a ler cor escrita em fração.
+- **O `stylus-update` não levava o GRUB, o plymouth nem o login novos**: duas
+  listas escritas à mão (branding-sync e sync.sh) tinham derivado.
+- **O `Alt+s` da estante do rofi só fechava a estante**, o `Mod+Shift+O` (que
+  sorteia um disco) não punha disco nenhum, e o `stylus check` não olhava
+  para a única coisa que a pessoa vê o dia inteiro: a capa.
+- Conferências novas: a tecla do rofi sem destino, o sorteio rodando de
+  verdade, o tema nunca escolhido, a paleta em fração, a estante que a
+  atualização não leva, o `chown -R` na casa inteira, o aviso de virar o
+  disco durando menos que o do dunst, a maiúscula que promete Shift, o rodapé
+  que anuncia tecla que a seção ignora, a loja mostrando todos os favoritos,
+  o fundo que não estica e o "já está na estante".
 
 ### Décima leva (a outra metade da coleção, e as listas que discordavam)
 - **A metade que mora no celular:** faixa com nome repetido nunca era
