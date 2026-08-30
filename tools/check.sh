@@ -1521,6 +1521,78 @@ esac
 # pelo índice: lado ÍMPAR é o verso do que já está no prato — vire; lado PAR
 # é o começo de outro disco — troque. Isto é a tese do sistema inteiro, e
 # estava errado justamente no disco que mais precisa dela.
+sec "o --lado B começa no lado B"
+# **Sintoma:** dava para VIRAR o disco depois de posto e não para começar
+# pelo lado que se quer ouvir — e quem começa pelo B tem um motivo.
+#
+# A conferência roda o PEDAÇO DE PYTHON que está dentro do stylus-deck, o
+# mesmo que o comando executa, contra um disco de mentira: um trecho que
+# "parece certo" no shell é o tipo de coisa que nunca é exercitada.
+lado=$(python3 - <<'LADOCHKEOF' 2>&1
+import os
+import re
+import pathlib
+import subprocess
+import sys
+import tempfile
+import wave
+import struct
+
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
+try:
+    import vinyl                                           # noqa: F401
+except Exception as e:                                     # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+fonte = pathlib.Path("airootfs/usr/local/bin/stylus-deck").read_text()
+m = re.search(r"<<'LADOEOF'.*?\n(.*?)\nLADOEOF", fonte, re.S)
+if not m:
+    print("não achei o trecho do --lado no stylus-deck")
+    raise SystemExit(0)
+trecho = m.group(1)
+if "--lado" not in fonte:
+    print("o stylus-deck não aceita --lado")
+
+d = tempfile.mkdtemp()
+alb = os.path.join(d, "Artista", "Disco")
+os.makedirs(alb)
+for i in range(1, 13):                       # 12 faixas de 3min45 = 45 min
+    with wave.open(os.path.join(alb, "%02d f.wav" % i), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+        w.writeframes(struct.pack("<h", 0) * 8000 * 225)
+
+
+def roda(querido):
+    r = subprocess.run([sys.executable, "-", alb, querido],
+                       input=trecho, capture_output=True, text=True,
+                       env=dict(os.environ,
+                                PYTHONPATH="airootfs/usr/share/stylus/lib"))
+    return r.stdout.strip()
+
+
+a, b, z = roda("A"), roda("B"), roda("Z")
+al = vinyl.Album(alb, envelope=False)
+esperado_b = (al.sides[1]["tracks"] or [0])[0] if len(al.sides) > 1 else None
+erros = []
+if a != "0":
+    erros.append("o lado A não começa na faixa 1 (deu %r)" % a)
+if str(esperado_b) != b:
+    erros.append("o lado B devia começar na faixa %s e deu %r"
+                 % (esperado_b, b))
+if not z.startswith("?"):
+    erros.append("um lado que não existe devia dizer quantos há (deu %r)" % z)
+for e in erros:
+    print(e)
+LADOCHKEOF
+)
+case "$lado" in
+    "")    ok "o [--lado B] cai na primeira faixa do lado B, pelo _build_sides" ;;
+    PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${lado#PULA }" ;;
+    *)     bad "o --lado não leva ao lado:"
+           printf '%s\n' "$lado" | sed 's/^/      /' ;;
+esac
+
 sec "quando o DISCO acaba, o sistema diz e oferece o próximo"
 # **Sintoma:** o fim de um LADO tinha aviso desde sempre; o fim do DISCO
 # passava em silêncio. É o acontecimento mais importante que este sistema
