@@ -251,45 +251,19 @@ class BitPerfectPlayer(private val ctx: Context) {
     /** Callback to update the foreground service notification — set by the service */
     var onMetadataChanged: ((token: android.media.session.MediaSession.Token, title: String, artist: String, album: String, playing: Boolean) -> Unit)? = null
 
-    fun onUsbDacAttached(device: UsbDevice) {
-        var conn: android.hardware.usb.UsbDeviceConnection? = null
-        var claimedIntf: android.hardware.usb.UsbInterface? = null
-        try {
-            val usb = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
-            if (!usb.hasPermission(device)) {
-                // Request permission from user instead of silently returning
-                val pi = android.app.PendingIntent.getBroadcast(
-                    ctx, 0,
-                    android.content.Intent("usb.permission"),
-                    android.app.PendingIntent.FLAG_MUTABLE
-                )
-                usb.requestPermission(device, pi)
-                return
-            }
-            conn = usb.openDevice(device) ?: return
-            for (i in 0 until device.interfaceCount) {
-                val intf = device.getInterface(i)
-                if (intf.interfaceClass == 1) {
-                    conn.claimInterface(intf, true)
-                    claimedIntf = intf
-                    break
-                }
-            }
-            Log.i("BitPerfect", "USB DAC attached: ${device.deviceName}")
-        } catch (e: Exception) {
-            Log.w("BitPerfect", "USB attach failed: $e")
-        } finally {
-            claimedIntf?.let { conn?.releaseInterface(it) }
-            conn?.close()
-        }
-    }
-
-    fun isWiredHeadsetConnected(): Boolean {
-        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        @Suppress("DEPRECATION")
-        return am.isWiredHeadsetOn || am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .any { it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_USB_DEVICE }
-    }
+    // ── duas funções saíram daqui ──────────────────────────────────────
+    //
+    // `onUsbDacAttached(device)`: abria o DAC pelo UsbManager e RECLAMAVA a
+    // interface de áudio com `claimInterface(intf, true)` — o `true` é
+    // "force", que arranca o driver do sistema de cima do aparelho. Ela
+    // soltava tudo no `finally` e o único resultado era uma linha de log:
+    // um nada perigoso, porque arrancar o driver no meio de uma faixa é
+    // exatamente o tipo de coisa que corta o som. E ninguém a chamava — o
+    // que o receptor de USB chama é o `detectUsbDac()`, que é a metade útil
+    // (acha o DAC e anota as taxas que ele aceita) e continua aqui.
+    //
+    // `isWiredHeadsetConnected()`: nada perguntava, e nada perguntava a
+    // mesma coisa por outro caminho. Saiu como estado morto sai.
 
     fun release() {
         try { usbReceiver?.let { ctx.unregisterReceiver(it) } } catch (_: Exception) {}

@@ -4387,6 +4387,97 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "no celular, função escrita é função chamada"
+# A irmã da conferência de função órfã do lado do Python, e ela faz mais
+# falta aqui: NADA neste repositório compila Kotlin, então uma função que
+# ninguém chama não produz nem aviso de compilador. Ela fica lendo como um
+# recurso que existe — e da próxima vez alguém liga o fio no lugar errado.
+#
+# Foi assim que se descobriu: o `Texto.humano` foi escrito para o celular e o
+# computador dizerem a duração igual, e o `Library.durationString` montava
+# "45:30" à mão ao lado dele enquanto o computador dizia "45min"; o
+# `Deck.stylusDown()` existia e a VinylActivity escrevia
+# `deck.phase == Phase.PLAY` em quatro lugares; o `Library.lyricAt` existia e
+# a tela da letra refazia a busca com um laço linear a cada tique.
+#
+# O que fica de fora: os retornos de chamada do Android (o sistema é que
+# chama) e o que é `override`.
+saida=$(python3 - <<'ORFAKTEOF' 2>&1
+import re
+import pathlib
+
+pasta = pathlib.Path("android/app/src/main/kotlin/io/stylus/player")
+if not pasta.is_dir():
+    print("PULA sem o app do celular aqui")
+    raise SystemExit(0)
+
+fontes = {p.name: p.read_text() for p in sorted(pasta.glob("*.kt"))}
+
+
+def sem_comentario(s):
+    fora = []
+    for l in s.splitlines():
+        c = l.lstrip()
+        if c.startswith(("//", "*", "/*")):
+            continue
+        fora.append(re.sub(r"//.*", "", l))
+    return "\n".join(fora)
+
+
+tudo = "\n".join(sem_comentario(s) for s in fontes.values())
+
+# O sistema operacional chama estas; não é o nosso código.
+DO_ANDROID = {
+    "onCreate", "onResume", "onPause", "onDestroy", "onStart", "onStop",
+    "onDrawFrame", "onSurfaceCreated", "onSurfaceChanged", "onBackPressed",
+    "onKeyDown", "onKeyUp", "onStartCommand", "onBind", "onTouchEvent",
+    "onDraw", "onSizeChanged", "onAttachedToWindow", "onDetachedFromWindow",
+    "onWindowFocusChanged", "onRequestPermissionsResult", "onActivityResult",
+    "toString", "main", "onNewIntent", "onConfigurationChanged",
+    "onSaveInstanceState", "onRestoreInstanceState", "onLowMemory",
+    "onTrimMemory", "onServiceConnected", "onServiceDisconnected",
+    "onAudioFocusChange", "onCompletion", "onError", "onPrepared",
+}
+
+orfas = []
+for nome, src in fontes.items():
+    limpo = sem_comentario(src)
+    for m in re.finditer(
+            r"^\s*(?:@\w+\s+)*(?:private |internal |public |protected )?"
+            r"(override )?fun (\w+)\(", limpo, re.M):
+        if m.group(1):                     # override: quem chama é a mãe
+            continue
+        f = m.group(2)
+        # Só a lista, e nada de "começa com on": o `onUsbDacAttached` deste
+        # app é NOSSO — o Android não conhece esse nome — e uma regra por
+        # prefixo o esconderia justamente por parecer um retorno de chamada.
+        if f in DO_ANDROID:
+            continue
+        # `{` também: em Kotlin uma função cujo último parâmetro é uma
+        # lambda é chamada SEM parênteses — `CastManager.discover { … }`.
+        # Sem isso a conferência acusava de órfã uma função chamada duas
+        # linhas adiante, e uma conferência que grita sobre o que está
+        # certo é uma que se aprende a ignorar.
+        usos = len(re.findall(r"\b%s\s*[({:]" % re.escape(f), tudo)) - 1
+        if usos <= 0:
+            orfas.append("%s: %s()" % (nome, f))
+
+if orfas:
+    for o in orfas:
+        print("ERRO %s" % o)
+else:
+    n = sum(len(re.findall(r"fun \w+\(", sem_comentario(s)))
+            for s in fontes.values())
+    print("OK as %d funções do app do celular são todas chamadas" % n)
+ORFAKTEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "função escrita e nunca chamada no app do celular:"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 sec "o celular põe o disco na ORDEM do disco"
 # **Sintoma:** o `Library.kt` ordenava as faixas de uma pasta TIRANDO o
 # número da frente e comparando o que sobrava — ou seja, por título em ordem

@@ -36,7 +36,17 @@ class Deck {
     fun elapsed(now: Float) = now - t0
     fun go(p: Phase, now: Float) { phase = p; t0 = now }
 
-    fun spinning() = phase != Phase.STOP
+    /** A agulha está no sulco? A pergunta é da FASE, e a resposta é uma só.
+     *
+     *  Ela existia e ninguém a chamava: a VinylActivity escrevia
+     *  `deck.phase == Phase.PLAY` em quatro lugares. É a mesma lição que o
+     *  ritual do computador já tinha aprendido — duas respostas para a
+     *  mesma pergunta é onde elas derivam.
+     *
+     *  (Havia também um `spinning()`, e esse não era segunda cópia de nada:
+     *  não era chamado em lugar nenhum e nada perguntava a mesma coisa por
+     *  outro caminho. Saiu.)
+     */
     fun stylusDown() = phase == Phase.PLAY
 
     /** 0.0 = tonearm fully up (off record), 1.0 = fully down (on record) */

@@ -25,13 +25,18 @@ import kotlin.math.min
 class VinylActivity : AppCompatActivity() {
 
     companion object {
-        fun viewIntent(ctx: Context) =
-            Intent(ctx, VinylActivity::class.java).apply { putExtra("mode", "view") }
+        // (Havia um `viewIntent` aqui, para abrir a tela no disco que já
+        // toca sem reiniciar. Ninguém o chamava, e ele não funcionaria: o
+        // modo "view" não cria tocador nenhum, e o tocador vive na
+        // instância anterior desta Activity — a tela abriria girando um
+        // disco mudo. O que a barra do "tocando agora" precisa é retomar na
+        // FAIXA certa, e é o que o `ceremonyIntent` faz agora.)
 
-        fun ceremonyIntent(ctx: Context, albumId: Long) =
+        fun ceremonyIntent(ctx: Context, albumId: Long, trackIndex: Int = 0) =
             Intent(ctx, VinylActivity::class.java).apply {
                 putExtra("mode", "ceremony")
                 putExtra("albumId", albumId)
+                putExtra("trackIndex", trackIndex)
             }
 
         // Static state for Now Playing bar in MainActivity
@@ -39,9 +44,18 @@ class VinylActivity : AppCompatActivity() {
         var nowPlayingArtist = ""; private set
         var nowPlayingAlbumId = -1L; private set
         var nowPlayingActive = false; private set
+        // A FAIXA em que a agulha está. **Sintoma:** tocar na barra do
+        // "tocando agora" abria o disco pela faixa 1 — o disco recomeçava.
+        // É o mesmo defeito que o lançador do computador já tinha perdido
+        // ("abrir não reinicia"), e o `trackIndex` que conserta já era lido
+        // do intent desde sempre: ninguém mandava.
+        var nowPlayingTrackIndex = 0; private set
 
-        fun updateNowPlaying(title: String, artist: String, albumId: Long) {
-            nowPlayingTitle = title; nowPlayingArtist = artist; nowPlayingAlbumId = albumId; nowPlayingActive = true
+        fun updateNowPlaying(title: String, artist: String, albumId: Long,
+                             trackIndex: Int = 0) {
+            nowPlayingTitle = title; nowPlayingArtist = artist
+            nowPlayingAlbumId = albumId; nowPlayingActive = true
+            nowPlayingTrackIndex = trackIndex
         }
         fun clearNowPlaying() { nowPlayingActive = false }
     }
@@ -69,6 +83,14 @@ class VinylActivity : AppCompatActivity() {
     private var ladoAtual = -1
     private var lastCoverW = 0; private var lastCoverH = 0
     private var lastLyricIdx = -1
+    // A letra JÁ LIDA desta faixa. **Sintoma:** o `lyricsFor` era chamado a
+    // cada tique do relógio da tela — uma consulta ao ContentResolver mais a
+    // leitura e o parse do .lrc inteiro, várias vezes por segundo, na thread
+    // da interface. Numa letra de duzentas linhas isso é I/O e lixo de
+    // memória constantes com a tela parada; o computador guarda a dele desde
+    // sempre (ver `_lyr_cache`). A chave é a FAIXA: trocou, relê.
+    private var lyricCacheKey: Long = -1L
+    private var lyricCache: List<Pair<Long, String>>? = null
     private var lastTrackIdx = -1
     private var volumeOverlay: TextView? = null
     private var volumeHandler: android.os.Handler? = null
@@ -253,7 +275,7 @@ class VinylActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 playing = false
                 player?.pause()
-                if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                if (deck.stylusDown()) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
                 VinylActivity.clearNowPlaying()
                 // Save sleep timer as absolute end time for persistence
                 if (sleepTimerEnd > 0) {
@@ -579,7 +601,7 @@ class VinylActivity : AppCompatActivity() {
             override fun run() {
                 if (sleepTimerEnd > 0 && System.currentTimeMillis() >= sleepTimerEnd) {
                     sleepTimerEnd = 0; playing = false; player?.pause()
-                    if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                    if (deck.stylusDown()) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
                     android.widget.Toast.makeText(this@VinylActivity, "o disco para aqui", android.widget.Toast.LENGTH_SHORT).show()
                 }
                 val p = player
@@ -600,12 +622,17 @@ class VinylActivity : AppCompatActivity() {
                     val tracks = cachedTracks ?: emptyList()
                     if (idx in tracks.indices) {
                         val t = tracks[idx]
-                        val lys = Library.lyricsFor(t.uri, this@VinylActivity)
+                        if (lyricCacheKey != t.id) {
+                            lyricCacheKey = t.id
+                            lyricCache = Library.lyricsFor(t.uri, this@VinylActivity)
+                        }
+                        val lys = lyricCache
                         if (lys != null && lys.isNotEmpty()) {
-                            var curIdx = 0
-                            for (i in lys.indices) {
-                                if (lys[i].first <= p.currentPosition) curIdx = i
-                            }
+                            // Busca binária, no Library, e uma só: o laço
+                            // linear que estava aqui era a segunda cópia da
+                            // conta que o `lyricIndexAt` já fazia.
+                            val curIdx = Library.lyricIndexAt(lys, p.currentPosition)
+                                .coerceAtLeast(0)
                             // Only rebuild view when line changes
                             if (curIdx != lastLyricIdx) {
                                 lastLyricIdx = curIdx
@@ -703,7 +730,7 @@ class VinylActivity : AppCompatActivity() {
                             if (idx in tracks.indices) {
                                 val t = tracks[idx]
                                 setTrackInfo(t.title, t.artist, t.album, t.duration)
-                                updateNowPlaying(t.title, t.artist, albumIdField)
+                                updateNowPlaying(t.title, t.artist, albumIdField, idx)
                             }
                         }
                     }
@@ -751,7 +778,7 @@ class VinylActivity : AppCompatActivity() {
                     // Swipe down = exit to library
                     if (dy > 0 && e1.y < resources.displayMetrics.heightPixels * 0.3f) {
                         playing = false; player?.pause()
-                        if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                        if (deck.stylusDown()) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
                         VinylActivity.clearNowPlaying()
                         finish()
                         return true
@@ -803,7 +830,7 @@ class VinylActivity : AppCompatActivity() {
                     "io.stylus.player.TOGGLE_PLAY" -> togglePlayPause()
                     "io.stylus.player.MEDIA_STOP" -> {
                         playing = false; player?.pause()
-                        if (deck.phase == Phase.PLAY) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
+                        if (deck.stylusDown()) deck.go(Phase.LIFT, System.nanoTime() / 1e9f)
                         VinylActivity.clearNowPlaying()
                         finish()
                     }
@@ -1025,10 +1052,23 @@ class VinylActivity : AppCompatActivity() {
             textSize = 14f
             setPadding(dp(24), dp(16), dp(24), dp(16))
         }
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+        val construtor = androidx.appcompat.app.AlertDialog.Builder(this)
             .setView(loading)
             .setNegativeButton("Cancelar", null)
-            .create()
+        // **Sintoma:** dava para COMEÇAR a transmitir e não para parar. O
+        // `CastManager.stopCast` existia, com o servidor HTTP e a thread
+        // para desmontar, e não era chamado em lugar nenhum: quem mandava o
+        // disco para a caixa da sala ficava com o servidor de pé até fechar
+        // o app. É a família do `set_text` que ninguém chamava — a peça
+        // existe, o fio não.
+        if (CastManager.isStreaming) {
+            construtor.setNeutralButton("Parar de transmitir") { _, _ ->
+                CastManager.stopCast()
+                android.widget.Toast.makeText(this, "transmissão encerrada",
+                    android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        val dialog = construtor.create()
         dialog.show()
         CastManager.discover { devices ->
             runOnUiThread {

@@ -302,7 +302,11 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 val np = VinylActivity
                 if (np.nowPlayingActive && np.nowPlayingAlbumId > 0) {
-                    startActivity(VinylActivity.ceremonyIntent(this@MainActivity, np.nowPlayingAlbumId))
+                    // Com a FAIXA: sem ela, tocar na barra do "tocando
+                    // agora" punha o disco de novo desde o começo.
+                    startActivity(VinylActivity.ceremonyIntent(
+                        this@MainActivity, np.nowPlayingAlbumId,
+                        np.nowPlayingTrackIndex))
                 }
             }
         }

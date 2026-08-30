@@ -36,9 +36,13 @@ object Library {
             // quinze lugares no lançador, e aqui estava em dois.
             val faixas = Texto.plural(trackCount, "faixa")
             if (totalDuration <= 0) return faixas
-            val min = totalDuration / 60000
-            val sec = (totalDuration / 1000) % 60
-            return "$faixas \u2022 ${min}:${String.format("%02d", sec)}"
+            // Pelo `Texto.humano`, que existe exatamente para isto e não era
+            // chamado por ninguém: aqui a duração era montada à mão como
+            // "45:30" e no computador o mesmo disco diz "45min". O arquivo
+            // Texto.kt diz, na própria docstring, que o vocabulário tem que
+            // ser o mesmo dos dois lados — e a primeira coisa que divergiu
+            // foi ele.
+            return "$faixas \u2022 ${Texto.humano(totalDuration)}"
         }
     }
 
@@ -275,35 +279,34 @@ object Library {
         } catch (_: Exception) { null }
     }
 
-    fun lyricAt(lyrics: List<Pair<Long,String>>, posMs: Long): String? {
+    /** O ÍNDICE da linha que está sendo cantada agora, ou -1 antes da
+     *  primeira.
+     *
+     *  Devolvia o TEXTO e chamava-se `lyricAt` — e ninguém a chamava: a
+     *  VinylActivity refazia a conta com um laço linear sobre a letra
+     *  inteira a cada tique do relógio, porque o painel precisa do índice
+     *  (para saber quais linhas mostrar em volta) e não do texto. Função
+     *  escrita, com o nome certo, e uma segunda cópia da mesma decisão ao
+     *  lado — que é onde as duas derivam.
+     *
+     *  A busca binária devolve a primeira linha que ainda NÃO chegou; quem
+     *  canta é a anterior. (No computador esse -1 faltava e a tela
+     *  destacava o verso seguinte o tempo todo.)
+     */
+    fun lyricIndexAt(lyrics: List<Pair<Long,String>>, posMs: Long): Int {
         var lo = 0; var hi = lyrics.size
         while (lo < hi) {
-            val mid = (lo+hi)/2
-            if (lyrics[mid].first <= posMs) lo = mid+1 else hi = mid
+            val mid = (lo + hi) / 2
+            if (lyrics[mid].first <= posMs) lo = mid + 1 else hi = mid
         }
-        return if (lo==0) null else lyrics[lo-1].second.takeIf { it.isNotBlank() }
+        return lo - 1
     }
 
-    /** WebDAV simples — lista pastas via PROPFIND, como rclone */
-    data class WebDavConfig(val url: String, val user: String?, val pass: String?)
-    fun webDavAlbums(cfg: WebDavConfig, onResult: (List<String>) -> Unit) {
-        Thread {
-            try {
-                val client = okhttp3.OkHttpClient.Builder().build()
-                val req = okhttp3.Request.Builder().url(cfg.url).method("PROPFIND", null)
-                    .header("Depth", "1")
-                    .apply {
-                        if (!cfg.user.isNullOrEmpty()) {
-                            val cred = okhttp3.Credentials.basic(cfg.user, cfg.pass ?: "")
-                            header("Authorization", cred)
-                        }
-                    }.build()
-                val resp = client.newCall(req).execute()
-                val body = resp.body?.string() ?: ""
-                val hrefs = Regex("<D:href>(.*?)</D:href>").findAll(body)
-                    .map { it.groupValues[1] }.toList()
-                onResult(hrefs)
-            } catch (_: Exception) { onResult(emptyList()) }
-        }.start()
-    }
+    // (Havia aqui um `webDavAlbums` — um cliente WebDAV com PROPFIND, para
+    // o celular ver a coleção do computador pela rede. Escrito inteiro e
+    // chamado em lugar nenhum: nenhuma tela pedia, nenhuma configuração
+    // apontava para um servidor. O caminho que EXISTE é o contrário — o
+    // `stylus webdav` do computador monta o celular na estante de lá — e um
+    // cliente que ninguém abre lê como um recurso que existe. Está no
+    // histórico do git, que é onde código que ninguém executa mora.)
 }
