@@ -379,7 +379,7 @@ class NowScreen(Screen):
         # para o outro.
         self._spec_pico = None
         # O DISCO ocupando a tela toda, sem trilho e sem coluna de texto.
-        # Ver `_cheia`: é o deck, dentro do lançador.
+        # Ver `_cheia`: é onde o disco ocupa a tela inteira.
         self.tela_cheia = False
         # O disco que a tela oferece quando nada está tocando. Ver
         # `_sugestao`: guardado porque a resposta não pode piscar, e porque
@@ -962,7 +962,7 @@ class NowScreen(Screen):
     #
     # Os números são os do `vinyl.py` de propósito, e não uns parecidos
     # escritos aqui. É a MESMA cerimônia do mesmo sistema; duas cópias à mão
-    # do mesmo ritual derivam, e aí pôr um disco no deck e pôr um disco no
+    # do mesmo ritual derivam, e aí pôr um disco pelo terminal e pôr um no
     # lançador passam a ser dois gestos com durações diferentes — que é a
     # deriva da paleta outra vez, em segundos em vez de hexadecimais.
     CER_SPIN = getattr(vinyl, "SPINUP_T", 1.1)
@@ -998,7 +998,7 @@ class NowScreen(Screen):
         return (None, 1.0)
 
     def _cheia(self, s, r, snap, al, track, side, t_abs, frac):
-        """O DISCO ocupando a tela — o deck, dentro do lançador.
+        """O DISCO ocupando a tela inteira.
 
         POR QUE ISTO EXISTE
         -------------------
@@ -1010,7 +1010,7 @@ class NowScreen(Screen):
         Aqui o disco vem para o CENTRO e cresce até o que a altura der; o
         trilho e a coluna de texto saem (o laço principal olha o
         `tela_cheia`), e o que sobra de escrito é o que se lê de longe: o
-        disco, o lado, e quanto falta. É a mesma leitura do deck sem o custo
+        disco, o lado, e quanto falta. É a leitura que o deck fazia, sem o custo
         dele — e é a resposta honesta a "por que não tudo no lançador".
 
         E a CERIMÔNIA está aqui (ver `_cerimonia`): disco novo, o prato sai
@@ -1019,7 +1019,7 @@ class NowScreen(Screen):
         nasceu — o CLAUDE.md §5.5 chama o ritual de sagrado, e sem ele isto
         aqui era uma foto bonita de um disco que já está tocando.
 
-        O que o deck ainda tem e isto não: o composto CRT (barril,
+        O que o deck tinha e isto não tem: o composto CRT (barril,
         varredura, grão), o acumulador aditivo com bloom, o osciloscópio do
         sinal e as marcas de uso lidas do envelope do áudio. É desenho de
         GPU; nada disso é o ritual.
@@ -1094,13 +1094,13 @@ class NowScreen(Screen):
         # Sozinho, o ponto da agulha era um pingo âmbar solto no meio de um
         # disco de meio metro: não dizia onde estava porque não havia com o
         # que comparar. O que diz é o sulco inteiro em que ele anda, aceso
-        # fraco: aí o raio vira o tempo à vista, que é a tese do deck.
+        # fraco: aí o raio vira o tempo à vista, que é a tese do sistema.
         # A agulha é a mesma cruz curta e quente do vinyl.py — luz, não peça.
         #
         # Na CERIMÔNIA ela não está no sulco ainda: no `spinup` não existe
         # (o braço está no descanso), no `cue` fica suspensa FORA da borda
         # sem sulco aceso, e no `drop` desce dali até o sulco de verdade,
-        # acendendo. É a mesma coreografia do deck, sem OpenGL nenhum.
+        # acendendo. É a coreografia do ritual, sem OpenGL nenhum.
         rr_cue = rm * 1.09
         if fase == "spinup":
             pass                       # o braço ainda está no descanso
@@ -1206,7 +1206,7 @@ class NowScreen(Screen):
         # Existiam ~3000 .lrc nesta coleção lidos por NADA além do módulo da
         # barra, de trinta e dois caracteres. A tela que mostra o disco
         # inteiro é o lugar óbvio para eles, e é a resposta para "o que mais
-        # o deck poderia ter": a letra no tempo é ritual também.
+        # isto poderia ter": a letra no tempo é ritual também.
         if letra:
             linhas, agora_i = letra
             atual = (linhas[agora_i][1] or "").strip() if linhas else ""
@@ -1418,7 +1418,7 @@ class NowScreen(Screen):
 
         # ── a faísca da queda ─────────────────────────────────────────────
         # Onde a agulha encosta: o começo do primeiro sulco, no alto à
-        # direita. O ângulo é o mesmo pivô de 42° que o deck usa (vinyl.py),
+        # direita. O ângulo é o mesmo pivô de 42° do vinyl.py,
         # para as duas telas não contarem histórias diferentes sobre o mesmo
         # disco — só que aqui ele vira um ponto de luz em vez de uma haste.
         qa = math.radians(42.0) - math.pi / 2
@@ -5571,7 +5571,7 @@ class App:
 
         O `playerctl` cobre pausa e faixa, e não cobre isto: embaralhar e
         repetir são propriedades da LISTA, e a lista mora no mpv. O socket é
-        o mesmo do deck (vinyl.SOCKET_PATH) — o `stylus-deck` e o `stylus
+        o `vinyl.SOCKET_PATH` — o `stylus-deck` e o `stylus
         qobuz tocar` os dois sobem o mpv com `--input-ipc-server` nele, de
         propósito, para que o resto do sistema possa falar com o tocador.
 

@@ -182,7 +182,7 @@ def main(apply=False, buscar=False):
         audio = [f for f in filenames if f.lower().endswith(AUDIO)]
         if not audio:
             continue
-        # Pelo `find_cover`, que é quem a estante e o deck usam: esta lista
+        # Pelo `find_cover`, que é quem a estante e a tela cheia usam: esta lista
         # era diferente das outras três (tinha `folder.png` e não tinha
         # `cover.jpeg`) e comparava só minúsculas. O estrago: numa pasta com
         # `Cover.jpg` do Windows, esta ferramenta escrevia um `cover.jpg`

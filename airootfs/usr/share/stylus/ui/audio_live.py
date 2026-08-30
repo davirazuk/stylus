@@ -3,11 +3,11 @@
 
 POR QUE ISTO EXISTE
 -------------------
-A AGORA e o deck respiram com a música — e para respirar com a música é
+A AGORA respira com a música — e para respirar com a música é
 preciso saber o SOM, não o botão de volume. A primeira versão do brilho leu
 o `wpctl get-volume`: aquilo é o GANHO do sink, não a música. Subir 1% no
 volume iluminava a capa mais do que uma bateria entrando, e cada leitura
-pagava um processo novo de cinco em cinco quadros. O que o scope do deck já
+pagava um processo novo de cinco em cinco quadros. O que o deck já
 fazia desde sempre (ler o monitor do PipeWire pelo PortAudio) era o dado
 certo; faltava uma versão pequena sem GL para a interface de tela cheia.
 
@@ -74,7 +74,7 @@ def taxa_do_grafo():
     que desenha o som desfazia a única promessa da máquina, e a tela SINAL,
     ao lado, mostrava o resultado sem saber a causa.
 
-    A leitura é a do `vinyl.taxa_do_grafo` — a mesma que o deck usa. Duas
+    A leitura é a do `vinyl.taxa_do_grafo`, que é de onde ela sempre veio. Duas
     leituras da mesma coisa foi exatamente como esta aqui nasceu errada.
     """
     try:
@@ -87,7 +87,7 @@ def taxa_do_grafo():
 def find_monitor_source(so_rodando=False):
     """O monitor que está com som agora, ou o primeiro que houver.
 
-    O mesmo critério do deck (scope.py): um sink com o monitor RUNNING é o
+    O critério que o deck usava: um sink com o monitor RUNNING é o
     que alguém está ouvindo. O teste é por SUBSTRING (e não por coluna fixa):
     o `pactl list sources short` não tem colunas fixas — INDEX NAME DRIVER
     SAMPLE_SPEC STATE com a SAMPLE_SPEC em TRÊS palavras ("s32le 2ch 48000Hz").
@@ -258,7 +258,7 @@ class AudioMonitor:
     def _find_pulse_device(self):
         """O dispositivo 'pulse' do PortAudio, se existir.
 
-        Mesmo critério do deck (scope.py): sem o PULSE_SOURCE que apontamos
+        O critério de sempre: sem o PULSE_SOURCE que apontamos
         ali em cima, abrir o dispositivo padrão pega um hardware que pode não
         dar dois canais — o 'pulse' sabem routing e respeitam o source.
         """

@@ -394,7 +394,7 @@ def main():
     # **Sintoma:** uma faixa que nem o mutagen nem o ffprobe sabem ler entrava
     # com duração ZERO — e zero não é "não sei", é "não dura nada". Três
     # dessas num disco de doze tiram um quarto do total: o disco perde um LADO
-    # inteiro, o "vira em X" mente, e a agulha do deck aponta para o sulco
+    # inteiro, o "vira em X" mente, e a agulha aponta para o sulco
     # errado. Sem erro nenhum em lugar nenhum.
     class _SemMedida(vinyl.Album):
         def __init__(self, duracoes):

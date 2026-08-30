@@ -12,7 +12,7 @@ que não seja teclado, que é justamente o que quem está no sofá não tem.
 Então isto abre a interface de verdade com o driver de vídeo "dummy" do SDL,
 percorre TODAS as seções, aperta em cada uma todas as teclas que a interface
 usa, e desenha de novo depois. Sem janela, sem GL, sem placa de som. É o
-mesmo tipo de rede do teste do deck: roda em segundos e pega o traceback que
+mesmo tipo de rede do teste da biblioteca: roda em segundos e pega o traceback que
 só apareceria com a pessoa sentada na frente.
 
     python3 ui/tools/test_ui.py            usa uma coleção de mentira
@@ -729,7 +729,7 @@ def main():
 
         # ── as fases, na ordem ────────────────────────────────────────────
         # Os instantes vêm das CONSTANTES, não de números escolhidos aqui:
-        # as durações são as do vinyl.py (o deck e o lançador encenam a
+        # as durações são as do vinyl.py (a tela cheia e o stylus-deck encenam a
         # mesma cerimônia), e um teste com o relógio escrito à mão reprova
         # quando alguém afina o ritual em vez de quando ele quebra.
         _sp, _cu, _dr = agora.CER_SPIN, agora.CER_CUE, agora.CER_DROP
@@ -1383,7 +1383,7 @@ def main():
             discos = 1
 
             # A frase do fim do lado mora no `Album.gesto_do_lado` — as três
-            # telas que a dizem (a notificação, o deck e este aviso de tela
+            # telas que a dizem (a notificação, a tela cheia e este aviso de tela
             # cheia) leem de lá. Um fake sem ela faria o aviso cair na
             # reserva, e o teste passaria por cima do caminho de verdade.
             gesto_do_lado = A.vinyl.Album.gesto_do_lado
@@ -1465,7 +1465,7 @@ def main():
         # "vire o disco" e "agora é o". Num LP de dois lados acerta por
         # acidente; num DUPLO, o fim do lado B pede para TROCAR de disco e
         # ele mandava virar. A frase vem do `Album.gesto_do_lado`, que é a
-        # mesma que a notificação e o deck dizem.
+        # mesma que a notificação e o vigia do lado dizem.
         disco.discos = 2
         disco.sides = [{"label": "SIDE " + c, "start": i * 600,
                         "end": (i + 1) * 600} for i, c in enumerate("ABCD")]

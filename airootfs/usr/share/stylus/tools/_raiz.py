@@ -91,11 +91,11 @@ _CAPA_EXT = (".jpg", ".jpeg", ".png")
 
 
 def find_cover(pasta, entries=None):
-    """A capa desta pasta — a MESMA escolha que a estante e o deck fazem.
+    """A capa desta pasta — a MESMA escolha que a estante e a tela fazem.
 
     Havia QUATRO listas de nome de capa no sistema, e elas discordavam: duas
     conheciam `folder.png`, as outras duas `cover.jpeg`. E as duas que
-    desenham — o deck e a estante — comparavam o nome EXATO: numa coleção
+    desenham — a tela cheia e a estante — comparavam o nome EXATO: numa coleção
     passada por um Windows, que guarda `Folder.jpg` e `Cover.jpg` com
     maiúscula, o deck ficava sem capa nenhuma.
     """

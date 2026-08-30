@@ -2,7 +2,7 @@
 """stylus lyrics — a letra ao lado do arquivo, em .lrc.
 
 Por que .lrc e não tag: um .lrc é sincronizado, e sincronizado é o que faz a
-letra aparecer na linha certa enquanto o disco toca — no deck, na barra e na
+letra aparecer na linha certa enquanto o disco toca — na tela cheia, na barra e na
 tela cheia. Letra em tag é um bloco de texto que ninguém lê.
 
     stylus lyrics                 o disco que está tocando

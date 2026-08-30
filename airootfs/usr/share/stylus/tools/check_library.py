@@ -130,14 +130,16 @@ def main():
             print(f"    {c_yel}!{c_off} {sz/1024:6.1f} KB  {r}")
 
     print(f"\n  {c_b}Discos sem capa{c_off}")
-    print(f"  {c_dim}é o que você vê na estante, na tela cheia e no deck{c_off}")
+    print(f"  {c_dim}é o que você vê na estante e na tela cheia{c_off}")
     if sem_capa:
         for rel in sorted(sem_capa)[:40]:
             print(f"    {c_yel}!{c_off} {rel}")
         if len(sem_capa) > 40:
             print(f"    {c_dim}… e mais {len(sem_capa) - 40}{c_off}")
         print(f"    {c_dim}`stylus covers --apply` tira a capa de dentro dos "
-              f"arquivos, quando há uma lá.{c_off}")
+              f"arquivos, quando há uma lá;{c_off}")
+        print(f"    {c_dim}`stylus covers --buscar --apply` procura na rede "
+              f"as que não estão em lugar nenhum.{c_off}")
     else:
         print(f"    {c_grn}✓{c_off} nenhum")
 

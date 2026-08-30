@@ -70,7 +70,7 @@ def folder_cover(dirpath, _cache={}):
     for base in (dirpath, os.path.dirname(dirpath.rstrip(os.sep))):
         if not base or not os.path.isdir(base):
             continue
-        # A escolha é a do `find_cover`, a mesma da estante e do deck: esta
+        # A escolha é a do `find_cover`, a mesma da estante e da tela: esta
         # lista era uma quarta cópia, e comparava o nome exato — pasta vinda
         # do Windows (`Folder.jpg`) ficava sem capa para embutir.
         p = find_cover(base)
