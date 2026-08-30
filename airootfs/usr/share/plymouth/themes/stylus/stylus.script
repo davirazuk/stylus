@@ -1,10 +1,19 @@
 # STYLUS boot splash — plymouth "script" plugin.
+#
+# O logo.png é DESENHADO pelo tools/make-plymouth-logo.py: o disco em luz
+# âmbar sobre o quase-preto, que é a lei do desenho (§5.5 do CLAUDE.md).
+# Mexeu na paleta? Rode o gerador de novo.
 # Deliberately minimal: a centred wordmark that breathes, and a message line.
 # If anything here fails plymouth falls back to text mode and the boot carries
 # on regardless.
 
-Window.SetBackgroundTopColor(0.039, 0.180, 0.137);
-Window.SetBackgroundBottomColor(0.020, 0.102, 0.078);
+# INK em cima, INK_DEEP embaixo — a paleta, em fração de 0 a 1, que é como o
+# plymouth pede a cor. Aqui estava um VERDE (0.039, 0.180, 0.137), da paleta
+# velha: escrito em float, ele escapava da conferência de deriva, que compara
+# hexadecimal. Foi o mesmo esconderijo do esquema do Konsole, que estava em
+# R,G,B decimal dentro de um heredoc.
+Window.SetBackgroundTopColor(0.027, 0.031, 0.043);      # #07080b INK
+Window.SetBackgroundBottomColor(0.016, 0.024, 0.039);   # #04060a INK_DEEP
 
 logo.image  = Image("logo.png");
 logo.sprite = Sprite(logo.image);
@@ -25,7 +34,9 @@ message.sprite = Sprite();
 message.sprite.SetPosition(logo.x, logo.y + logo.image.GetHeight() + 40, 2);
 
 fun message_callback(text) {
-    message.image = Image.Text(text, 0.91, 0.96, 0.91);
+    # #e8ecf5 TEXT. Era (0.91, 0.96, 0.91) — um branco esverdeado, restinho
+    # da paleta velha.
+    message.image = Image.Text(text, 0.910, 0.925, 0.961);
     message.sprite.SetImage(message.image);
     message.sprite.SetX(Window.GetX() + Window.GetWidth() / 2
                         - message.image.GetWidth() / 2);
