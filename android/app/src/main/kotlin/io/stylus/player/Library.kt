@@ -7,7 +7,8 @@ import android.provider.MediaStore
 
 /**
  * Consulta MediaStore para álbuns e faixas — o jeito Android de varrer a coleção.
- * Mantém mesma ordem que o desktop (trackSortKey) para o índice do braço bater.
+ * Mantém a MESMA ORDEM que o desktop (ver `trackNumber`) para o índice do
+ * braço bater.
  */
 object Library {
 
@@ -50,8 +51,26 @@ object Library {
     private val AUDIO_EXT = setOf(".flac", ".mp3", ".ogg", ".opus", ".m4a",
                                   ".wav", ".aac", ".wma", ".shn", ".ape")
 
-    private fun trackSortKey(name: String): String =
-        name.replace(Regex("^\\s*\\d+\\s*[-._)]\\s*"), "").lowercase()
+    // A ORDEM DO DISCO. Transliteração do `_track_sort_key` do vinyl.py:
+    //
+    //     m = re.match(r"\s*(\d+)", basename)
+    //     return (int(m.group(1)) if m else 10_000, basename.lower())
+    //
+    // **Sintoma:** isto fazia o CONTRÁRIO. Ele TIRAVA o número da frente e
+    // ordenava pelo que sobrava, ou seja, pelo título em ordem alfabética —
+    // enquanto o cabeçalho deste arquivo afirma, com todas as letras,
+    // "mantém mesma ordem que o desktop para o índice do braço bater".
+    //
+    // O que se via: OK Computer começando por "Airbag", depois "Climbing Up
+    // the Walls", depois "Electioneering"… a ordem do disco desmontada. E
+    // como os LADOS são repartidos por tempo acumulado na ordem da lista, o
+    // "vire o disco" caía no meio de outra faixa, a agulha apontava para
+    // outro sulco e o scrobble anotava outra coisa. Nada disso dá erro.
+    //
+    // Número primeiro, nome depois — e sem número vai para o fim (10000),
+    // que é o mesmo desempate do computador.
+    private fun trackNumber(name: String): Int =
+        Regex("^\\s*(\\d+)").find(name)?.groupValues?.get(1)?.toIntOrNull() ?: 10_000
 
     /** Álbuns com pelo menos 1 faixa */
     fun albums(ctx: Context): List<Album> {
@@ -138,7 +157,9 @@ object Library {
         return folder.walkTopDown()
             .maxDepth(4)
             .filter { it.isFile && AUDIO_EXT.any { ext -> it.name.lowercase().endsWith(ext) } }
-            .sortedWith(compareBy({ it.parent?.lowercase() ?: "" }, { trackSortKey(it.name) }))
+            .sortedWith(compareBy({ it.parent?.lowercase() ?: "" },
+                                  { trackNumber(it.name) },
+                                  { it.name.lowercase() }))
             .distinctBy { it.canonicalPath }
             .toList()
     }
@@ -164,7 +185,50 @@ object Library {
         return out.distinctBy { it.canonicalPath }.sortedBy { it.name.lowercase() }
     }
 
-    /** Letras — .lrc ao lado da faixa, como vinyl.Album.lyrics_for */
+    /** O .lrc desta faixa, procurado como as coleções de verdade guardam.
+     *
+     *  Transliteração do `vinyl.find_lrc`. Só se procurava `faixa.lrc` ao
+     *  lado do arquivo, com a caixa exata — e um acervo que passou por um
+     *  Windows guarda `Faixa.LRC`, e vários programas de sincronia guardam
+     *  tudo numa subpasta `Lyrics/`. Metade da coleção "não tinha letra", e
+     *  o arquivo estava lá.
+     */
+    fun findLrc(path: String): java.io.File? {
+        val f = java.io.File(path)
+        val direto = java.io.File(f.parent, f.nameWithoutExtension + ".lrc")
+        if (direto.isFile) return direto
+        val querido = f.nameWithoutExtension.lowercase()
+        for (sub in listOf("", "Lyrics", "lyrics", "Letras", "letras", ".lyrics")) {
+            val d = if (sub.isEmpty()) java.io.File(f.parent ?: ".")
+                    else java.io.File(f.parent, sub)
+            val achado = d.listFiles()?.firstOrNull {
+                it.isFile && it.name.lowercase().endsWith(".lrc") &&
+                    it.nameWithoutExtension.lowercase() == querido
+            }
+            if (achado != null) return achado
+        }
+        return null
+    }
+
+    // O carimbo do começo da linha, e o [offset:±ms]. Os MESMOS dois do
+    // `vinyl.parse_lrc` — ver lá o porquê de cada um.
+    private val LRC_CARIMBO = Regex("""\[(\d+):(\d{1,2}(?:[.:]\d{1,3})?)\]""")
+    private val LRC_OFFSET = Regex("""^\[offset:\s*([+-]?\d+)\s*\]""",
+                                   RegexOption.IGNORE_CASE)
+
+    /** Letras sincronizadas, do jeito que o computador lê. Ver vinyl.parse_lrc.
+     *
+     *  Três coisas faltavam aqui, e as três se veem na tela:
+     *
+     *  · carimbo REPETIDO (`[00:42][02:15]refrão`, que é como todo refrão é
+     *    escrito) casava só o primeiro, e os outros colchetes iam para o
+     *    TEXTO — apareciam na tela, e a linha só era cantada uma vez.
+     *  · `[offset:±ms]` era ignorado. Meio segundo é o valor mais comum e é
+     *    exatamente o que separa a linha certa da errada numa música rápida.
+     *    Positivo quer dizer "mostre mais cedo": SUBTRAI do carimbo.
+     *  · `[01:23]` sem fração não casava com nada e a linha sumia. O regex
+     *    exigia os centésimos.
+     */
     fun lyricsFor(trackUri: android.net.Uri, ctx: android.content.Context): List<Pair<Long,String>>? {
         return try {
             val cr = ctx.contentResolver
@@ -172,18 +236,38 @@ object Library {
             cr.query(trackUri, proj, null, null, null)?.use { cur ->
                 if (!cur.moveToFirst()) return null
                 val path = cur.getString(0) ?: return null
-                val lrc = java.io.File(path).let { f ->
-                    java.io.File(f.parent, f.nameWithoutExtension + ".lrc")
-                }
-                if (!lrc.isFile) return null
+                val lrc = findLrc(path) ?: return null
                 val out = mutableListOf<Pair<Long,String>>()
-                lrc.forEachLine { line ->
-                    val m = Regex("""\[(\d+):(\d+)[.:](\d+)\](.*)""").find(line) ?: return@forEachLine
-                    val min = m.groupValues[1].toLong()
-                    val sec = m.groupValues[2].toLong()
-                    val cs = m.groupValues[3].padEnd(3,'0').take(3).toLong()
-                    val ms = min*60*1000 + sec*1000 + cs
-                    out.add(ms to m.groupValues[4].trim())
+                var offset = 0L
+                lrc.forEachLine { bruta ->
+                    val line = bruta.trim()
+                    if (line.isEmpty()) return@forEachLine
+                    val mo = LRC_OFFSET.find(line)
+                    if (mo != null) {
+                        offset = mo.groupValues[1].toLongOrNull() ?: 0L
+                        return@forEachLine
+                    }
+                    val carimbos = mutableListOf<Long>()
+                    var fim = 0
+                    for (m in LRC_CARIMBO.findAll(line)) {
+                        if (m.range.first != fim) break   // o texto começou
+                        val min = m.groupValues[1].toLong()
+                        val ss = m.groupValues[2]
+                        val ms = if (ss.contains('.') || ss.contains(':')) {
+                            val partes = ss.split('.', ':')
+                            val seg = partes[0].toLong()
+                            // Centésimos, não milésimos: ".45" são 450 ms.
+                            val frac = partes[1].padEnd(3, '0').take(3).toLong()
+                            seg * 1000 + frac
+                        } else {
+                            ss.toLong() * 1000
+                        }
+                        carimbos.add(min * 60_000 + ms)
+                        fim = m.range.last + 1
+                    }
+                    if (carimbos.isEmpty()) return@forEachLine
+                    val corpo = line.substring(fim).trim()
+                    for (c in carimbos) out.add(maxOf(0L, c - offset) to corpo)
                 }
                 out.sortBy { it.first }
                 if (out.isEmpty()) null else out

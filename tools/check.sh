@@ -4387,6 +4387,207 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "o celular põe o disco na ORDEM do disco"
+# **Sintoma:** o `Library.kt` ordenava as faixas de uma pasta TIRANDO o
+# número da frente e comparando o que sobrava — ou seja, por título em ordem
+# alfabética. O cabeçalho do arquivo afirma, na segunda linha, "mantém mesma
+# ordem que o desktop para o índice do braço bater", e fazia o contrário.
+#
+# OK Computer começava por "Airbag", depois "Climbing Up the Walls", depois
+# "Electioneering". E como os LADOS são repartidos por tempo acumulado NA
+# ORDEM DA LISTA, o "vire o disco" caía no meio de outra faixa, a agulha
+# apontava para outro sulco e o scrobble anotava outra coisa. Nada disso dá
+# erro em lugar nenhum.
+#
+# Nada aqui compila Kotlin, então a prova é a de sempre nesta família:
+# traduzir a regra do Kotlin de volta para Python e comparar com a do
+# vinyl.py sobre a mesma pasta.
+saida=$(python3 - <<'ORDEMKTEOF' 2>&1
+import re
+import sys
+import pathlib
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
+try:
+    import vinyl
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+kt = pathlib.Path(
+    "android/app/src/main/kotlin/io/stylus/player/Library.kt").read_text()
+codigo = "\n".join(l for l in kt.splitlines() if not l.lstrip().startswith("//"))
+
+erros = []
+# A regra do Kotlin, lida do arquivo: o número da frente, e o fallback.
+m = re.search(r"fun trackNumber\(name: String\): Int =\s*\n?\s*"
+              r"Regex\(\"(.+?)\"\).*?\?: ([\d_]+)", codigo, re.S)
+if not m:
+    erros.append("não achei o trackNumber no Library.kt — quem ordena agora?")
+else:
+    padrao = m.group(1).replace("\\\\", "\\")
+    fallback = int(m.group(2).replace("_", ""))
+    if fallback != 10000:
+        erros.append("sem número o celular manda para %d; o computador manda "
+                     "para 10000" % fallback)
+
+    def kt_key(nome):
+        mm = re.search(padrao, nome)
+        n = int(mm.group(1)) if mm and mm.group(1).isdigit() else fallback
+        return (n, nome.lower())
+
+    nomes = ["01 - Airbag.flac", "02 - Paranoid Android.flac",
+             "03 - Subterranean Homesick Alien.flac", "10 - Lucky.flac",
+             "11 - The Tourist.flac", "bonus.flac", "04 Exit Music.flac"]
+    pc = sorted(nomes, key=vinyl._track_sort_key)
+    cel = sorted(nomes, key=kt_key)
+    if pc != cel:
+        erros.append("a ordem difere:\n        PC : %s\n        cel: %s"
+                     % (" | ".join(pc), " | ".join(cel)))
+
+# E o comparador tem que USAR isso — a função podia existir e ninguém chamar,
+# que foi como o defeito viveu: `trackSortKey` estava definida, o cabeçalho
+# citava, e ela tirava o número.
+if "trackNumber(it.name)" not in codigo:
+    erros.append("o sortedWith das faixas não usa o trackNumber")
+if "trackSortKey" in codigo:
+    erros.append("o trackSortKey velho (que tirava o número) continua lá")
+
+if erros:
+    for e in erros:
+        print("ERRO %s" % e)
+else:
+    print("OK a ordem do disco é a mesma nos dois lados, em 7 nomes")
+ORDEMKTEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o celular põe o disco fora de ordem:"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "a letra do celular é lida como a do computador"
+# As mesmas três faltas que o lançador tinha, do outro lado: carimbo
+# repetido (todo refrão), `[offset:±ms]`, e `[01:23]` sem fração — que no
+# celular não casava com nada e a linha SUMIA.
+#
+# Junto: o .lrc só era procurado ao lado do arquivo com a caixa exata. Um
+# acervo vindo do Windows guarda `Faixa.LRC`; vários programas de sincronia
+# guardam tudo numa subpasta `Lyrics/`.
+saida=$(python3 - <<'LRCKTEOF' 2>&1
+import re
+import sys
+import pathlib
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
+try:
+    import vinyl
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+kt = pathlib.Path(
+    "android/app/src/main/kotlin/io/stylus/player/Library.kt").read_text()
+codigo = "\n".join(l for l in kt.splitlines() if not l.lstrip().startswith("//"))
+erros = []
+
+# Os dois regexes, lidos do Kotlin e usados aqui como o Kotlin os usa.
+mc = re.search(r'LRC_CARIMBO = Regex\("""(.+?)"""\)', codigo)
+mo = re.search(r'LRC_OFFSET = Regex\("""(.+?)"""', codigo)
+if not mc or not mo:
+    erros.append("não achei os regexes de LRC no Library.kt")
+else:
+    carimbo, offset = mc.group(1), mo.group(1)
+    for amostra in ("[01:23]", "[01:23.45]", "[01:23:45]", "[00:42.1]"):
+        if not re.match(carimbo, amostra):
+            erros.append("o carimbo %s não casa: essa linha SOME da tela"
+                         % amostra)
+    if not re.match(offset, "[offset:+500]", re.I):
+        erros.append("o [offset:+500] não casa")
+
+# E as três regras, procuradas em CÓDIGO (o comentário que as explica cita
+# todas elas, e uma conferência que casa com a própria explicação do
+# conserto é uma que se aprende a ignorar).
+if "for (m in LRC_CARIMBO.findAll(line))" not in codigo:
+    erros.append("não há laço sobre TODOS os carimbos: o refrão aparece uma "
+                 "vez só, com os outros colchetes impressos no texto")
+if "c - offset" not in codigo:
+    erros.append("o offset é lido e não é aplicado")
+if "fun findLrc(" not in codigo:
+    erros.append("não há findLrc: o .lrc só é achado com a caixa exata")
+else:
+    for sub in ("Lyrics", "lyrics"):
+        if '"%s"' % sub not in codigo:
+            erros.append("o findLrc não procura em %s/" % sub)
+            break
+
+# A prova do resultado: o mesmo .lrc lido pelas duas regras dá a mesma coisa.
+# A regra do Kotlin é refeita aqui a partir dos regexes DELE.
+if not erros:
+    import tempfile
+    import os
+    corpo = ("[ti:x]\n[offset:+500]\n[00:10.00]um\n[00:12.5]dois\n"
+             "[00:42.10][02:15.30]refrao\n[01:00]tres\n")
+    d = tempfile.mkdtemp()
+    arq = os.path.join(d, "f.lrc")
+    with open(arq, "w", encoding="utf-8") as fh:
+        fh.write(corpo)
+    pc = vinyl.parse_lrc(arq)
+
+    def kotlin(texto):
+        out, off = [], 0
+        for bruta in texto.splitlines():
+            linha = bruta.strip()
+            if not linha:
+                continue
+            m = re.match(offset, linha, re.I)
+            if m:
+                off = int(m.group(1))
+                continue
+            carimbos, fim = [], 0
+            for m in re.finditer(carimbo, linha):
+                if m.start() != fim:
+                    break
+                mi = int(m.group(1))
+                ss = m.group(2)
+                if "." in ss or ":" in ss:
+                    seg, frac = re.split(r"[.:]", ss, 1)
+                    ms = int(seg) * 1000 + int(frac.ljust(3, "0")[:3])
+                else:
+                    ms = int(ss) * 1000
+                carimbos.append(mi * 60000 + ms)
+                fim = m.end()
+            if not carimbos:
+                continue
+            body = linha[fim:].strip()
+            for c in carimbos:
+                out.append((max(0, c - off) / 1000.0, body))
+        out.sort(key=lambda x: x[0])
+        return out
+
+    cel = kotlin(corpo)
+    if len(pc) != len(cel):
+        erros.append("o PC leu %d momentos e o celular %d" % (len(pc), len(cel)))
+    else:
+        for (a, ta), (b, tb) in zip(pc, cel):
+            if abs(a - b) > 0.01 or ta != tb:
+                erros.append("divergem: PC %.2f %r / celular %.2f %r"
+                             % (a, ta, b, tb))
+                break
+
+if erros:
+    for e in erros:
+        print("ERRO %s" % e)
+else:
+    print("OK os dois leem o mesmo .lrc igual, em 5 momentos")
+LRCKTEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a letra do celular não é lida como a do computador:"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 sec "o celular pede o mesmo GESTO que o computador"
 # O aviso de virar o disco passou a existir no celular — era a metade da tese
 # que faltava lá: o corte em lados já existia (o raio da agulha andava lado a
