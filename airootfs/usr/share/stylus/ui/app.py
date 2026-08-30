@@ -381,6 +381,11 @@ class NowScreen(Screen):
         # O DISCO ocupando a tela toda, sem trilho e sem coluna de texto.
         # Ver `_cheia`: é o deck, dentro do lançador.
         self.tela_cheia = False
+        # O disco que a tela oferece quando nada está tocando. Ver
+        # `_sugestao`: guardado porque a resposta não pode piscar, e porque
+        # calcular por quadro seria varrer a estante 60 vezes por segundo.
+        self._sug_cache = None
+        self._sug_t = 0.0
 
     def key(self, ev):
         # ── a tela cheia do disco ─────────────────────────────────────────
@@ -393,10 +398,18 @@ class NowScreen(Screen):
             self.tela_cheia = False
             return True
         if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            # Abre O LIB no disco que JÁ está tocando, sem reiniciar nada: o
-            # scope acha a posição sozinho pelo socket do mpv ou pelo MPRIS.
-            # Reabrir o arquivo aqui recomeçaria a faixa, que é o oposto do
-            # que "ver o disco" deveria custar.
+            # Com nada tocando, o ENTER põe o disco que a tela está
+            # oferecendo — senão a sugestão seria uma frase decorativa, e
+            # "põe este" estaria escrito embaixo de uma tecla que faz outra
+            # coisa. Com música, ENTER é ver o disco (sem reiniciar nada: o
+            # desenho acha a posição pelo socket do mpv).
+            sug = self._sugestao()
+            snap = self.app.playing.session.snapshot()
+            tem = bool(snap.get("path")) or snap.get("source") != "none"
+            if not tem and sug and sug[0].get("folder"):
+                self.app.put_on(sug[0]["folder"])
+                self._sug_cache = None
+                return True
             self.app.ver_o_disco()
             return True
         if ev.key == pygame.K_SPACE:
@@ -1292,8 +1305,14 @@ class NowScreen(Screen):
                       única coisa que precisava do braço para ser dita.
         """
         t = time.time()
-        # O disco ocupa o que a tela der, com espaço para o texto embaixo.
-        R = int(max(120, min(r.w * 0.20, (r.h - 220) * 0.42)))
+        # O disco ocupa o que a tela der, com espaço para o texto embaixo — e
+        # o texto embaixo MUDOU de tamanho quando esta tela passou a oferecer
+        # um disco. Os 220 px fixos que estavam aqui eram a tela de quem
+        # escreveu: em 1024x600 o cartão da sugestão saía pela borda de
+        # baixo. Quem manda no raio é o que vai ser desenhado.
+        sug = self._sugestao()
+        preciso = 56 + 40 + (150 if sug else 80)
+        R = int(max(90, min(r.w * 0.20, (r.h - preciso) * 0.42)))
         cx, cy = r.centerx, r.centery - 30
 
         # ── o halo, respirando ────────────────────────────────────────────
@@ -1361,16 +1380,94 @@ class NowScreen(Screen):
         pygame.draw.circle(s, T.AMBER, (int(qx), int(qy)),
                            max(2, int(R * 0.016)))
 
-        # ── o texto ──────────────────────────────────────────────────────
-        # As teclas viram teclas: é a mesma linguagem do resto da interface,
-        # e "pressione r" escrito por extenso era o único lugar que ainda
-        # explicava um atalho com uma frase.
+        # ── o texto, e O QUE PÔR ──────────────────────────────────────────
+        # **Sintoma:** esta tela dizia "vá para a ESTANTE e escolha um
+        # disco". É a tela que se vê ao chegar perto da máquina, e ela
+        # mandava a pessoa para outro lugar — sem responder a única pergunta
+        # que ela tem, que é QUAL. O sistema sabe: sabe o que faz meses que
+        # não toca, sabe o que você empilhou para hoje.
         ty = cy + R + 56
         T.text(s, "nada tocando", (cx, ty), 32, T.TEXT_DIM, anchor="center")
-        T.text(s, "vá para a ESTANTE e escolha um disco",
-               (cx, ty + 42), 20, T.TEXT_FAINT, anchor="center")
-        T.frase_com_teclas(s, "ou [r] sorteia um por você",
-                           (cx, ty + 76), 17, T.TEXT_FAINT, anchor="center")
+        if not sug:
+            T.text(s, "vá para a ESTANTE e escolha um disco",
+                   (cx, ty + 42), 20, T.TEXT_FAINT, anchor="center")
+            T.frase_com_teclas(s, "ou [r] sorteia um por você",
+                               (cx, ty + 76), 17, T.TEXT_FAINT, anchor="center")
+            return
+        it, motivo = sug
+        T.text(s, motivo, (cx, ty + 40), 17, T.TEXT_FAINT, anchor="center")
+        # O cartão cede à borda de baixo: numa tela baixa a capa encolhe, e
+        # se ainda assim não couber, a dica sai inteira em vez de vazar.
+        sobra = r.bottom - (ty + 74)
+        # A capa pequena à esquerda do nome: o cartão inteiro se centra, e o
+        # nome longo cede — a folga fixa entre capa e texto é o defeito que
+        # esta casa já pagou em quatro telas.
+        cap = self.app.thumbs.get(it.get("cover")) if it.get("cover") else None
+        lado = int(min(64, max(28, R // 3, 0), max(28, min(64, sobra - 46))))
+        larg_nome = min(int(r.w * 0.62), T.largura(it["name"], 24) + 8)
+        total = (lado + 14 if cap else 0) + larg_nome
+        x0 = cx - total // 2
+        cy2 = ty + 92
+        if cap:
+            mini = pygame.transform.smoothscale(cap, (lado, lado))
+            s.blit(mini, (x0, cy2 - lado // 2))
+            x0 += lado + 14
+        T.text(s, it["name"], (x0, cy2 - 14), 24, T.AMBER, maxw=larg_nome)
+        if it.get("artist") and cy2 + 30 < r.bottom:
+            T.text(s, it["artist"], (x0, cy2 + 12), 16, T.TEXT_FAINT,
+                   maxw=larg_nome)
+        y_dica = cy2 + lado // 2 + 22
+        if y_dica + 18 < r.bottom:
+            T.frase_com_teclas(s, "[enter] põe este   ·   [r] sorteia outro",
+                               (cx, y_dica), 17, T.TEXT_FAINT, anchor="center")
+
+    # De quanto em quanto tempo a sugestão pode mudar. Recalcular por quadro
+    # seria varrer a estante 60 vezes por segundo para desenhar a mesma
+    # linha; e mudar a cada quadro seria pior ainda — a resposta pisca.
+    SUGESTAO_SEGS = 30.0
+
+    def _sugestao(self):
+        """(item da estante, por que este) — o disco a oferecer, ou None.
+
+        A ordem das respostas é a ordem das razões:
+
+          1. a PILHA, se houver. É um compromisso que a pessoa assumiu com
+             ela mesma; oferecer outra coisa por cima seria desfazê-lo.
+          2. o disco que faz mais tempo que não toca ENTRE OS QUE JÁ TOCARAM.
+             "Os que voltam" é a única pergunta que uma coleção com memória
+             responde e uma pasta de arquivos não.
+          3. um que nunca foi posto, se a memória ainda está vazia.
+
+        Sai do índice da estante, que já está na memória — nada de varrer o
+        disco nesta tela, que é a que fica ligada a noite inteira.
+        """
+        agora = time.time()
+        if (self._sug_cache is not None
+                and agora - self._sug_t < self.SUGESTAO_SEGS):
+            return self._sug_cache
+        self._sug_t = agora
+        self._sug_cache = None
+        pilha = getattr(self.app, "stack", None) or []
+        if pilha:
+            topo = pilha[0]
+            self._sug_cache = ({"name": topo.get("name") or "?",
+                                "artist": topo.get("artist") or "",
+                                "cover": topo.get("cover"),
+                                "folder": topo.get("folder")},
+                               "o próximo da pilha")
+            return self._sug_cache
+        itens = [i for i in self.app.shelf.items if not i.get("playlist")]
+        if not itens:
+            return None
+        tocados = [i for i in itens if i.get("last")]
+        if tocados:
+            it = min(tocados, key=lambda i: i["last"])
+            quando = ha_quanto(it["last"])
+            self._sug_cache = (it, "faz tempo: %s" % quando)
+        else:
+            it = random.choice(itens)
+            self._sug_cache = (it, "que tal este?")
+        return self._sug_cache
 
 
 # ═══════════════════════════════════════════════════════════════════════════

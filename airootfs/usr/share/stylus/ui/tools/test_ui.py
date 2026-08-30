@@ -1965,6 +1965,68 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("tela cheia e teclas", traceback.format_exc())
 
+    secao("com nada tocando, a tela diz O QUE pôr")
+    # **Sintoma:** a tela que se vê ao chegar perto da máquina dizia "vá para
+    # a ESTANTE e escolha um disco" — mandava para outro lugar sem responder
+    # a única pergunta que quem chega tem, que é QUAL. E o sistema sabe: sabe
+    # o que faz meses que não toca (é a única coisa que uma coleção com
+    # memória responde e uma pasta de arquivos não) e sabe o que você
+    # empilhou para hoje.
+    try:
+        agora = next(t for t in app.screens if t.name == "AGORA")
+        agora._sug_cache, agora._sug_t = None, 0.0
+        guardada = list(app.stack)
+        app.stack = []
+        # sem memória nenhuma: oferece algum
+        sem_memoria = agora._sugestao()
+        # com memória: o mais esquecido, e a frase tem que dizer isso
+        import time as _t2
+        for i, it in enumerate(app.shelf.items):
+            it["last"] = _t2.time() - (100 - i) * 86400
+        agora._sug_cache, agora._sug_t = None, 0.0
+        esquecido = agora._sugestao()
+        # com PILHA: o compromisso ganha
+        app.stack = [{"folder": "/x/y", "name": "O da pilha", "artist": "Z"}]
+        agora._sug_cache, agora._sug_t = None, 0.0
+        da_pilha = agora._sugestao()
+        app.stack = guardada
+        agora._sug_cache, agora._sug_t = None, 0.0
+
+        primeiro = app.shelf.items[0] if app.shelf.items else None
+        if not sem_memoria:
+            bad("com a estante cheia, não ofereceu nada")
+        elif not esquecido or esquecido[0] is not primeiro:
+            bad("não ofereceu o disco mais esquecido",
+                str(esquecido[0]["name"] if esquecido else None))
+        elif "faz tempo" not in esquecido[1]:
+            bad("ofereceu sem dizer por quê", esquecido[1])
+        elif not da_pilha or da_pilha[0]["name"] != "O da pilha":
+            bad("a PILHA não ganhou da estante: o compromisso foi desfeito",
+                str(da_pilha))
+        else:
+            # e o ENTER tem que PÔR o que a tela ofereceu, senão "põe este"
+            # está escrito embaixo de uma tecla que faz outra coisa.
+            posto = []
+            real = app.put_on
+            app.put_on = lambda f: (posto.append(f), True)[1]
+            try:
+                app.playing.session.path = ""
+                app.playing.session.source = "none"
+                agora._sug_cache, agora._sug_t = None, 0.0
+                alvo = agora._sugestao()[0]["folder"]
+                agora.key(pygame.event.Event(pygame.KEYDOWN,
+                                             key=pygame.K_RETURN,
+                                             unicode="", mod=0))
+            finally:
+                app.put_on = real
+            if posto != [alvo]:
+                bad("o [enter] não põe o disco oferecido", str(posto))
+            else:
+                ok("oferece o mais esquecido, a pilha ganha dele, e o "
+                   "[enter] põe")
+    except Exception:                                       # noqa: BLE001
+        bad("a sugestão da AGORA", traceback.format_exc())
+
     secao("os sulcos do disco são as faixas DESTE disco")
     # **Sintoma:** o desenho tinha cinco anéis fixos, e o comentário deles
     # dizia "é o que faz um disco parecer um disco a três metros: dá para
