@@ -5327,35 +5327,25 @@ class App:
         então "ver o disco" virou o que sempre devia ter sido: uma tecla que
         muda ESTA tela.
 
-        Sem nada tocando, sorteia um disco e põe: no sofá, o enter tem que
-        sempre fazer alguma coisa — mostrar uma tela vazia não é nada.
+        Com nada tocando NÃO põe disco nenhum. Quem chega aqui sem música é
+        o `Mod+O` (o `stylus-deck --view`), e essa tecla se chama "o disco na
+        tela toda" — começar a tocar sozinha seria uma tecla fazendo outra
+        coisa que o nome dela não diz. O que a AGORA vazia faz é OFERECER um
+        disco (ver `_sugestao`), e aí o enter é seu.
         """
-        snap = self.playing.session.snapshot()
-        tem_musica = bool(snap.get("path")) or snap.get("source") != "none"
         agora = next((i for i, s in enumerate(self.screens)
                       if isinstance(s, NowScreen)), None)
-        if tem_musica:
-            if agora is not None:
-                self.rail = False
-                self._goto(agora)
-                self.screens[agora].tela_cheia = True
+        if agora is None:
             return
-        # nada tocando: põe um disco novo, com a cerimônia inteira (o prato
-        # sai do zero, a agulha desce) — e já na tela cheia, que é onde ela
-        # se vê.
-        alvo = None
-        try:
-            alvo = vinyl.draw_record()
-        except Exception:
-            alvo = None
-        if not alvo:
-            self.toast("não achei disco nenhum na estante")
-            return
-        self.toast("sorteei %s" % os.path.basename(alvo))
-        if self.put_on(alvo) and agora is not None:
-            self.rail = False
-            self._goto(agora)
-            self.screens[agora].tela_cheia = True
+        self.rail = False
+        self._goto(agora)
+        snap = self.playing.session.snapshot()
+        tem_musica = bool(snap.get("path")) or snap.get("source") != "none"
+        # A tela cheia SÓ com música: sem ela o `_cheia` sai pelo `_nothing`
+        # e o que se veria é a tela de "nada tocando" sem trilho nenhum —
+        # um menu invisível, que é o defeito que o ESC na tela cheia já
+        # custou uma vez.
+        self.screens[agora].tela_cheia = bool(tem_musica)
 
     def lyric_state(self, al, track):
         """(linhas do .lrc, índice da linha de agora) — ou None.

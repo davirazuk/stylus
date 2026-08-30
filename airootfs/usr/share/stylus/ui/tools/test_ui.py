@@ -2142,6 +2142,52 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("as playlists", traceback.format_exc())
 
+    secao("ver o disco não começa a tocar sozinho")
+    # **Sintoma que isto impede:** o Mod+O se chama "o disco na tela toda", e
+    # ele chega aqui pelo `stylus-deck --view`, cujo cabeçalho promete "sem
+    # pôr disco novo". Com nada tocando, `ver_o_disco` sorteava e PUNHA um
+    # disco — uma tecla fazendo outra coisa que o nome dela não diz, e a mais
+    # cara delas: começa a sair som numa casa em silêncio.
+    #
+    # E a tela cheia SEM música seria a tela de "nada tocando" sem trilho:
+    # um menu invisível, que é o defeito que o ESC já custou uma vez.
+    try:
+        agora = next(t for t in app.screens if t.name == "AGORA")
+        i_agora = app.screens.index(agora)
+        postos = []
+        real = app.put_on
+        app.put_on = lambda f: (postos.append(f), True)[1]
+        try:
+            app._goto(1)
+            agora.tela_cheia = False
+            app.playing.session.path = ""
+            app.playing.session.source = "none"
+            app.ver_o_disco()
+            foi_para_agora = app.cur == i_agora
+            cheia_sem_musica = agora.tela_cheia
+            app.playing.session.path = "/x/y/01.flac"
+            app.playing.session.source = "mpv"
+            app._goto(1)
+            app.ver_o_disco()
+            cheia_com_musica = agora.tela_cheia
+        finally:
+            app.put_on = real
+            app.playing.session.path = ""
+            app.playing.session.source = "none"
+            agora.tela_cheia = False
+        if postos:
+            bad("ver o disco começou a tocar sozinho", str(postos))
+        elif not foi_para_agora:
+            bad("ver o disco não foi para a AGORA")
+        elif cheia_sem_musica:
+            bad("tela cheia com nada tocando: um menu invisível")
+        elif not cheia_com_musica:
+            bad("com música, não abriu a tela cheia")
+        else:
+            ok("vai para a AGORA, abre cheia só com música, e não põe nada")
+    except Exception:                                       # noqa: BLE001
+        bad("ver o disco", traceback.format_exc())
+
     secao("a trava do gato engole tudo, e só a combinação destrava")
     # POR QUE ISTO EXISTE
     # -------------------
