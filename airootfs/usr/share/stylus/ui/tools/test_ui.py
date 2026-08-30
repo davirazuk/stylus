@@ -1680,11 +1680,30 @@ def main():
         _alongo = _AlbLongo()
         _surf_real = app.surf
         _guarda_w, _guarda_al = app.playing.where, app.playing.album
+        # E o TERCEIRO estado: a AGORA em TELA CHEIA.
+        #
+        # **Sintoma:** é a tela principal deste sistema — o disco ocupando o
+        # monitor, que é a razão de o deck ter podido sair — e ela nunca
+        # tinha sido medida por ninguém. O trilho não existe ali (o corpo vai
+        # de 0 à borda), o disco é dimensionado por outra conta, e o artista,
+        # o nome, o LADO, a faixa e a letra são desenhados EMBAIXO dele em
+        # vez de ao lado: nenhuma das medidas da AGORA normal vale para ela.
+        _cheia = [False]
+
+        def _tela_cheia(liga):
+            for _t in app.screens:
+                if _t.name == "AGORA":
+                    _t.tela_cheia = liga
+
         estados_tela = [
-            ("prato vazio", lambda: ({}, None, None, None, None, 0.0), None),
+            ("prato vazio", lambda: ({}, None, None, None, None, 0.0), None,
+             False),
             ("disco no prato",
              lambda: ({"status": "Playing"}, _alongo, _alongo.tracks[7],
-                      _alongo.sides[2], 1500.0, 0.42), _alongo),
+                      _alongo.sides[2], 1500.0, 0.42), _alongo, False),
+            ("disco na tela cheia",
+             lambda: ({"status": "Playing"}, _alongo, _alongo.tracks[7],
+                      _alongo.sides[2], 1500.0, 0.42), _alongo, True),
         ]
         batidas, vazados = [], []
         # Em QUATRO tamanhos de tela. O layout do diário era uma altura fixa
@@ -1700,8 +1719,12 @@ def main():
         # que o X entrega: nela os dois pisos da AGORA — 260 px para o disco
         # e 180 para a coluna de texto — somavam mais do que a largura da
         # tela, e o bloco inteiro saía pela direita.
-        for _nome_est, _onde, _album in estados_tela:
+        for _nome_est, _onde, _album, _inteira in estados_tela:
           app.playing.where, app.playing.album = _onde, _album
+          _tela_cheia(_inteira)
+          # Sem trilho a tela cheia usa o corpo INTEIRO; medi-la com o corpo
+          # da AGORA normal seria medir uma tela que não existe.
+          _x0 = 0 if _inteira else 230
           for larg, alt in ((800, 600), (1024, 600), (1024, 768), (1280, 720),
                             (1366, 768), (1920, 1080), (3840, 2160)):
             # A SUPERFÍCIE tem que ter o tamanho da tela que se diz estar
@@ -1718,8 +1741,13 @@ def main():
             # não aparecia em acusação nenhuma.
             app.surf = pygame.Surface((larg, alt))
             app.W, app.H = larg, alt
-            quadro = pygame.Rect(230, 0, larg - 230, alt)
+            quadro = pygame.Rect(_x0, 0, larg - _x0, alt)
             for i, tela in enumerate(app.screens):
+                # Na tela cheia só a AGORA é desenhada: as outras seções não
+                # têm estado de tela cheia, e medi-las sem trilho acusaria
+                # uma tela que ninguém vê.
+                if _inteira and tela.name != "AGORA":
+                    continue
                 app._goto(i)
                 caixas.clear()
                 app.screens[i].draw(app.surf, quadro)
@@ -1750,14 +1778,15 @@ def main():
                         vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}"
                                        " (ao lado)")
         _T.text = original
+        _tela_cheia(False)
         app.surf = _surf_real
         app.W, app.H = _surf_real.get_width(), _surf_real.get_height()
         app.playing.where, app.playing.album = _guarda_w, _guarda_al
         if batidas:
             bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))
         else:
-            ok(f"{len(app.screens)} seções × 7 resoluções × 2 estados, "
-               "nada por cima de nada")
+            ok(f"{len(app.screens)} seções × 7 resoluções × 3 estados "
+               "(o terceiro é a tela cheia), nada por cima de nada")
         if vazados:
             bad(f"{len(vazados)} textos fora da tela", "\n".join(vazados[:5]))
         else:
