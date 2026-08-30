@@ -1521,6 +1521,70 @@ esac
 # pelo índice: lado ÍMPAR é o verso do que já está no prato — vire; lado PAR
 # é o começo de outro disco — troque. Isto é a tese do sistema inteiro, e
 # estava errado justamente no disco que mais precisa dela.
+sec "o stylus playlists tira as faixas que sumiram"
+# A listagem RECLAMAVA e não resolvia: dizia "3 faixas sem arquivo" e não
+# havia comando nenhum para tirá-las. Apontar um problema sem dar o caminho
+# de sair dele é meia ferramenta.
+limp=$(python3 - <<'LIMPEOF' 2>&1
+import importlib.machinery as _im
+import importlib.util as _iu
+import os
+import sys
+import tempfile
+
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
+sys.path.insert(0, "airootfs/usr/share/stylus/tools")
+spec = _iu.spec_from_loader("pls", _im.SourceFileLoader(
+    "pls", "airootfs/usr/share/stylus/tools/playlists.py"))
+mod = _iu.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+except BaseException as e:                               # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+d = tempfile.mkdtemp()
+alb = os.path.join(d, "Artista", "Disco")
+os.makedirs(alb)
+for n in ("01 a.flac", "02 b.flac"):
+    open(os.path.join(alb, n), "wb").write(b"\0" * 16)
+pl = os.path.join(d, "Noite.m3u")
+with open(pl, "w", encoding="utf-8") as fh:
+    fh.write("Artista/Disco/01 a.flac\nsumiu/x.flac\n"
+             "Artista/Disco/02 b.flac\nhttps://x.invalid/y.mp3\n")
+# O `limpar` fala com quem o chamou; aqui quem fala é a conferência, e
+# qualquer linha dele viraria "erro" na saída.
+import contextlib
+import io as _io
+with contextlib.redirect_stdout(_io.StringIO()):
+    mod.limpar([pl])
+sobrou = [l.strip() for l in open(pl, encoding="utf-8")
+          if l.strip() and not l.startswith("#")]
+erros = []
+if "sumiu/x.flac" in sobrou:
+    erros.append("a faixa morta continua na lista")
+if len(sobrou) != 3:
+    erros.append("sobraram %d linhas, esperado 3: %s" % (len(sobrou), sobrou))
+if "https://x.invalid/y.mp3" not in sobrou:
+    erros.append("o endereço http foi apagado — daqui não dá para saber se "
+                 "ele ainda responde")
+if not os.path.isfile(pl + ".bak"):
+    erros.append("não guardou a lista antiga: uma playlist é feita à mão")
+# E o caminho continua RELATIVO: um .m3u com caminho absoluto morre no dia
+# em que a coleção muda de pasta.
+if any(l.startswith("/") for l in sobrou):
+    erros.append("reescreveu com caminho absoluto: %s" % sobrou)
+for e in erros:
+    print(e)
+LIMPEOF
+)
+case "$limp" in
+    "")    ok "o --limpar tira o que sumiu, guarda a antiga e não mexe no http" ;;
+    PULA*) printf '  %s—%s sem o playlists.py aqui: %s\n' "$y" "$z" "${limp#PULA }" ;;
+    *)     bad "o --limpar das playlists:"
+           printf '%s\n' "$limp" | sed 's/^/      /' ;;
+esac
+
 sec "as duas estantes mostram as mesmas playlists"
 # **Sintoma:** a grade do rofi mostrava as playlists do QOBUZ (o ▤) e não as
 # SUAS, que estão na mesma pasta da coleção — enquanto a tela cheia passou a

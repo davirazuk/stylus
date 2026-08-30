@@ -156,6 +156,7 @@ O sistema escrevia `.m3u` desde sempre (`stylus suggest` escreve por gênero,
 ```
 stylus playlists                       o que existe, e quantas faixas
 stylus playlists "Novidades 2026-08"   põe aquela
+stylus playlists --limpar              tira as faixas cujo arquivo sumiu
 stylus deck "Shoegaze & Dreampop"      idem — o nome acha lista antes de disco
 ```
 
