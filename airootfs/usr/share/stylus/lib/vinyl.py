@@ -495,10 +495,10 @@ class _MpvIPC:
                 if peek == b"":
                     self.close()
                     return False
-                self.sock.setblocking(True)
+                self.sock.settimeout(0.35)
             except BlockingIOError:
                 # Nenhum dado pendente — socket vivo, normal
-                self.sock.setblocking(True)
+                self.sock.settimeout(0.35)
             except (OSError, OverflowError):
                 self.close()
                 return False
@@ -566,6 +566,56 @@ class _MpvIPC:
 
     def get(self, prop):
         return self.command("get_property", prop)
+
+    def get_multi(self, *props):
+        """Envia N comandos de uma vez e devolve dict {prop: valor}.
+
+        mpv fila comandos e responde em ordem. Em vez de6 round-trips
+        (send→recv×6), manda os 6 e depois lê as 6 respostas — um round-trip
+        só. Com mpv vivo e responsivo a diferença é de6ms para 1ms; com mpv
+        lento (arquivo pesado, seek), a de6 × 0.35s para 1 × 0.35s.
+        """
+        if not self.connect():
+            return {}
+        rids = {}
+        for prop in props:
+            self._rid += 1
+            rids[self._rid] = prop
+            try:
+                self.sock.sendall(
+                    (json.dumps({"command": ["get_property", prop],
+                                 "request_id": self._rid}) + "\n").encode()
+                )
+            except Exception:
+                self.close()
+                return {}
+        result = {}
+        deadline = time.time() + 0.35
+        while rids and time.time() < deadline:
+            try:
+                chunk = self.sock.recv(65536)
+            except Exception:
+                break
+            if not chunk:
+                break
+            self._buf += chunk
+            lines = self._buf.split(b"\n")
+            self._buf = lines.pop()
+            if len(self._buf) > 65536:
+                self._buf = b""
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    msg = json.loads(line)
+                except Exception:
+                    continue
+                rid = msg.get("request_id")
+                if rid in rids:
+                    if msg.get("error") == "success":
+                        result[rids[rid]] = msg.get("data")
+                    del rids[rid]
+        return {k: v for k, v in result.items()}
 
     def set_pause(self, paused):
         return self.command("set_property", "pause", bool(paused))
@@ -750,14 +800,20 @@ class Session:
     def _poll_mpv(self):
         if not self.mpv.connect():
             return False
-        pos = self.mpv.get("time-pos")
+        # Um round-trip em vez de seis: manda tudo de uma vez, lê tudo de
+        # uma vez. Com mpv vivo a diferença é despercebível; com mpv lento
+        # (arquivo de rede, seek pesado) a de 6 × 0.35s vira 1 × 0.35s, e
+        # é isso que impede a thread de congelar a interface por 2+ segundos.
+        data = self.mpv.get_multi("time-pos", "duration", "path",
+                                  "playlist-pos", "pause", "playlist-count")
+        pos = data.get("time-pos")
         if pos is None:
             return False
-        dur = self.mpv.get("duration") or 0.0
-        path = self.mpv.get("path")
-        idx = self.mpv.get("playlist-pos")
-        paused = bool(self.mpv.get("pause"))
-        count = self.mpv.get("playlist-count") or 0
+        dur = data.get("duration", 0.0)
+        path = data.get("path")
+        idx = data.get("playlist-pos")
+        paused = bool(data.get("pause"))
+        count = data.get("playlist-count", 0)
         playlist = []
         # The running order only has to be read once; it does not change
         # mid-record, and asking for N filenames every half second would
