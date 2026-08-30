@@ -33,6 +33,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 
 import pygame
 
@@ -2480,6 +2481,8 @@ class QobuzScreen(Screen):
         # mesmo disco duas vezes é o que se faz numa loja, e pedir de novo ao
         # Qobuz por isso seria dois segundos de espera por olhada.
         self._faixas = {}
+        # O que você já tem, por (artista, disco). Ver `_na_estante`.
+        self._tenho, self._tenho_n = set(), -1
 
     def enter(self):
         self._olhar()
@@ -2897,6 +2900,46 @@ class QobuzScreen(Screen):
 
     # ── desenho ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _chave(artista, nome):
+        """(artista, disco) sem acento, sem caixa e sem o que vem entre
+        parênteses — "Kid A" e "Kid A (Remastered)" são o mesmo disco para
+        quem está decidindo se já tem."""
+        def limpa(t):
+            t = str(t or "").lower()
+            # As letras que o NFKD NÃO separa, porque não são composições:
+            # o æ de "Ágætis byrjun" vira "ae" em qualquer teclado, e sem
+            # esta linha ele virava um ESPAÇO — "ag tis byrjun" contra
+            # "agaetis byrjun", e o disco parecia não estar na estante.
+            for de, para in (("æ", "ae"), ("œ", "oe"), ("ø", "o"),
+                             ("ð", "d"), ("þ", "th"), ("ß", "ss"),
+                             ("ł", "l"), ("đ", "d"), ("&", " e ")):
+                t = t.replace(de, para)
+            t = unicodedata.normalize("NFKD", t)
+            t = "".join(c for c in t if not unicodedata.combining(c))
+            t = re.sub(r"[\(\[].*?[\)\]]", " ", t)
+            return re.sub(r"[^a-z0-9]+", " ", t).strip()
+        return limpa(artista), limpa(nome)
+
+    def _na_estante(self, item):
+        """Este disco da loja já está na sua estante?
+
+        Numa loja que abre nos SEUS favoritos, metade do que aparece já foi
+        baixado — e não havia nada na tela dizendo qual. A pergunta "eu já
+        tenho esse?" é a primeira que se faz numa loja, e a resposta estava
+        do outro lado de duas telas.
+
+        O índice é montado uma vez por varredura da estante (a estante muda
+        quando alguém acrescenta um disco, não a cada quadro).
+        """
+        itens = self.app.shelf.items
+        if self._tenho_n != len(itens):
+            self._tenho = {self._chave(i.get("artist"), i.get("name"))
+                           for i in itens}
+            self._tenho_n = len(itens)
+        return self._chave(item.get("display_subtitle"),
+                           item.get("display_title")) in self._tenho
+
     def _card(self, s, rect, item, sel):
         """Um disco na loja, desenhado como um disco na estante.
 
@@ -2925,6 +2968,18 @@ class QobuzScreen(Screen):
         quality = item.get("quality", "")
         if item.get("hires"):
             pygame.draw.circle(s, T.AMBER, (rect.right - 9, rect.y + 9), 3)
+
+        # JÁ É SEU: uma tarja na capa. Numa loja que abre nos seus favoritos,
+        # metade do que aparece já foi baixado, e não havia nada na tela
+        # dizendo qual — a primeira pergunta que se faz numa loja é "eu já
+        # tenho esse?", e a resposta estava do outro lado de duas telas.
+        tem = self._na_estante(item)
+        if tem and rect.w >= 96:
+            txt = "na estante"
+            lw = T.largura(txt, 12) + 16
+            tarja = pygame.Rect(rect.x + 6, rect.bottom - 24, lw, 18)
+            T.panel(s, tarja, T.INK, radius=9, border=T.AMBER_DIM)
+            T.text(s, txt, tarja.center, 12, T.AMBER, anchor="center")
 
         # informações abaixo
         ty = rect.bottom + 8
@@ -3060,6 +3115,13 @@ class QobuzScreen(Screen):
                                (px + 32, y), 16, T.GREEN)
         if self.job and not self.job.done:
             T.text(s, "já tem um disco baixando", (px + 32, y + 26), 16, T.AMBER)
+        elif not item.get("lista") and self._na_estante(item):
+            # Já é seu: dizer isso vale mais do que oferecer o download de
+            # novo, e o [d] continua valendo para quem quer a cópia hi-res
+            # por cima de um rip antigo.
+            T.frase_com_teclas(s, "este disco já está na sua estante   ·   "
+                                  "[d] baixa de novo",
+                               (px + 32, y + 26), 16, T.GREEN)
         elif item.get("hires"):
             T.frase_com_teclas(s, "[d] guarda na estante — hi-res, sem reamostrar",
                                (px + 32, y + 26), 16, T.TEXT_DIM)

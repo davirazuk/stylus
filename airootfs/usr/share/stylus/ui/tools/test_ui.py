@@ -1853,6 +1853,44 @@ def main():
         bad("conferência de custo", traceback.format_exc())
 
     # ── o rato ────────────────────────────────────────────────────────────
+    secao("a loja diz quais discos você já tem")
+    # Numa loja que abre nos SEUS favoritos, metade do que aparece já foi
+    # baixado — e não havia nada na tela dizendo qual. "Eu já tenho esse?" é a
+    # primeira pergunta que se faz numa loja, e a resposta estava do outro
+    # lado de duas telas.
+    try:
+        loja = next(t for t in app.screens if t.name == "QOBUZ")
+        app.shelf.items = [
+            {"artist": "Radiohead", "name": "Kid A", "folder": "/x/1",
+             "cover": None, "tracks": 10, "last": 0, "plays": 0},
+            {"artist": "Sigur Rós", "name": "Ágætis byrjun",
+             "folder": "/x/2", "cover": None, "tracks": 10, "last": 0,
+             "plays": 0}]
+        loja._tenho_n = -1
+        casos = [
+            # (artista da loja, disco da loja, tenho?)
+            ("Radiohead", "Kid A", True),
+            # a edição comemorativa é o mesmo disco para quem está decidindo
+            ("Radiohead", "Kid A (Remastered)", True),
+            ("SIGUR ROS", "Agaetis byrjun", True),      # sem acento, caixa alta
+            ("Radiohead", "Amnesiac", False),
+            ("Boards of Canada", "Kid A", False),        # mesmo nome, outro
+        ]
+        erros = []
+        for art, alb, esperado in casos:
+            deu = loja._na_estante({"display_subtitle": art,
+                                    "display_title": alb})
+            if deu != esperado:
+                erros.append("%s — %s: %s" % (art, alb, deu))
+        if erros:
+            bad("%d discos com a resposta errada" % len(erros),
+                ", ".join(erros))
+        else:
+            ok("%d casos, com acento, caixa e edição entre parênteses"
+               % len(casos))
+    except Exception:                                       # noqa: BLE001
+        bad("já está na estante", traceback.format_exc())
+
     secao("o fundo desfocado não estica a capa")
     # **Sintoma:** a capa é quadrada e a tela é 16:9, e o borrão de fundo era
     # escalado direto para o tamanho da tela — quase o DOBRO da largura. Numa
