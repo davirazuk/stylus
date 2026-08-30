@@ -842,9 +842,14 @@ class NowScreen(Screen):
             T.text(s, txt_icones, (r.right - 20, r.bottom - 50), 20,
                    T.AMBER, anchor="bottomright")
 
+        # O `[s]` e o `[Shift+R]` estavam só nos ÍCONES do canto — e ícone
+        # sem tecla não se descobre: quem quisesse repetir o disco não tinha
+        # como saber que existe. É a mesma família do Mod+Shift+O do i3, que
+        # sorteia um disco e não estava escrito em lugar nenhum.
         self.app.hint(s, r, "[f] o disco na tela toda   [enter] abre o deck   "
                             "[space] pausa   "
                             "[n]/[p] faixa   [←]/[→] busca   [v]/[b] lado   "
+                            "[s] embaralha   [Shift+R] repete   "
                             "[+]/[-] volume   "
                             + ("[d] deck sozinho: ligado" if self.app.auto_deck
                                else "[d] deck sozinho: desligado"))
@@ -3123,10 +3128,11 @@ class QobuzScreen(Screen):
                                   "[d] baixa de novo",
                                (px + 32, y + 26), 16, T.GREEN)
         elif item.get("hires"):
-            T.frase_com_teclas(s, "[d] guarda na estante — hi-res, sem reamostrar",
+            T.frase_com_teclas(s, "[d] guarda uma cópia na estante — "
+                                  "hi-res, sem reamostrar",
                                (px + 32, y + 26), 16, T.TEXT_DIM)
         else:
-            T.frase_com_teclas(s, "[d] guarda na estante",
+            T.frase_com_teclas(s, "[d] guarda uma cópia na estante",
                                (px + 32, y + 26), 16, T.TEXT_DIM)
 
         # ações
@@ -3230,7 +3236,12 @@ class QobuzScreen(Screen):
         # parecia defeito e era o modo NORMAL de usar.
         m = self._montagem
         pronto = bool(m and m["lib"] and m["cred"])
-        T.text(s, "a loja", (r.x + pad, r.y + 18), 30, T.TEXT, bold=True)
+        # "a assinatura", não "a loja": o Qobuz não vende disco em toda
+        # região, e onde ele vende não é isso que este sistema usa. O que
+        # está aqui é o catálogo inteiro da SUA assinatura, para TOCAR —
+        # guardar uma cópia é a ação secundária, não o produto.
+        T.text(s, "a assinatura", (r.x + pad, r.y + 18), 30, T.TEXT,
+               bold=True)
         T.text(s, "pronto" if pronto else "ainda não ligada",
                (r.right - pad, r.y + 24), 15,
                T.GREEN if pronto else T.TEXT_FAINT, anchor="topright")
@@ -3266,23 +3277,23 @@ class QobuzScreen(Screen):
         if not self.results and not self.query:
             if m and not pronto:
                 T.passos(
-                    s, r, "a loja ainda não está ligada",
+                    s, r, "a assinatura ainda não está ligada",
                     "duas coisas, uma vez só — e depois qualquer disco do "
                     "catálogo toca aqui na hora, sem baixar",
                     [(m["lib"], "o qobuz-dl, que procura, toca e baixa",
                       None if m["lib"] else "stylus qobuz instalar"),
                      (m["cred"], "a sua conta do Qobuz",
                       None if m["cred"] else "[c] entra aqui mesmo")],
-                    rodape="precisa de assinatura Qobuz. tocar não ocupa "
-                           "disco nenhum; o que você guardar vira arquivo "
-                           "seu, na sua pasta, e aparece na estante junto "
-                           "com o resto.")
+                    rodape="com a assinatura, o catálogo inteiro toca aqui "
+                           "sem ocupar disco nenhum. E o que você guardar "
+                           "vira arquivo seu, na sua pasta, na estante "
+                           "junto com o resto.")
                 return
-            T.vazio(s, r, T.fantasma_busca, "a loja", [
-                "[/] procura um disco",
-                "[p] toca agora  ·  [d] guarda na estante",
-                "[L] as suas playlists  ·  [s] põe uma sorteada",
-                "[f] os seus favoritos",
+            T.vazio(s, r, T.fantasma_busca, "a assinatura", [
+                "[/] procura um disco do catálogo",
+                "[p] toca agora  ·  [d] guarda uma cópia",
+                "[Shift+L] as suas playlists  ·  [s] põe uma sorteada",
+                "[f] os discos que você marcou",
             ])
             return
 
@@ -3338,7 +3349,8 @@ class QobuzScreen(Screen):
             self.app.hint(
                 s, r, "[/] procura  [enter] examina  [p] toca  "
                       + ("[s] sorteada  " if item.get("lista") else "")
-                      + "[d] baixa  [L] playlists  [f] favoritos  [c] conta",
+                      + "[d] guarda  [Shift+L] playlists  [f] favoritos  "
+                        "[c] conta",
                 contexto=f"{item.get('display_subtitle', '')} — "
                          f"{item.get('display_title', '')}")
 
