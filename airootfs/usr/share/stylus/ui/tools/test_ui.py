@@ -1621,8 +1621,16 @@ def main():
                 # medir o retângulo cru acusa "desenhado fora da tela" um
                 # texto que na tela não aparece — e uma conferência que grita
                 # sobre o que está certo é uma que se aprende a ignorar.
+                # …mas SÓ o recorte que o desenho pediu (as grades chamam
+                # `set_clip` na sua janela). O retângulo da superfície
+                # inteira não conta: com ele, a conferência de "fora da
+                # tela" logo abaixo vira tautologia — todo retângulo, depois
+                # de recortado pela tela, está dentro da tela. Medido: um
+                # texto de duzentos X desenhado a partir da metade direita
+                # não aparecia em acusação nenhuma.
                 rec = surf.get_clip()
-                vis = r.clip(rec) if rec else r.copy()
+                interno = rec and tuple(rec) != tuple(surf.get_rect())
+                vis = r.clip(rec) if interno else r.copy()
                 if vis.w > 0 and vis.h > 0:
                     caixas.append((vis, str(txt)))
             return r
@@ -1653,18 +1661,29 @@ def main():
             year, cover = 1969, None
             plays, last_played, total = 3, 0, 2600
             discos = 2
-            tracks = [{"title": "Uma faixa de nome comprido também",
-                       "dur": 200}]
+            # DOZE faixas, e cada lado com as suas.
+            #
+            # Era UMA faixa e `"tracks": [0]` em todos os lados, e isso não
+            # é um disco: é a mesma lição da estante de mentira com dois
+            # discos de nome curto. A ORDEM DO LADO — a lista que a AGORA
+            # desenha onde não há letra — só é desenhada a partir de duas
+            # faixas, então a tela media exatamente a metade que não tem
+            # lista nenhuma.
+            tracks = [{"title": "Uma faixa de nome comprido também %d" % (i + 1),
+                       "dur": 200, "duration": 200.0, "start": i * 200.0}
+                      for i in range(12)]
             sides = [{"label": "SIDE %s" % c, "start": i * 650,
-                      "end": (i + 1) * 650, "tracks": [0]}
+                      "end": (i + 1) * 650,
+                      "tracks": list(range(i * 3, i * 3 + 3))}
                      for i, c in enumerate("ABCD")]
 
         _alongo = _AlbLongo()
+        _surf_real = app.surf
         _guarda_w, _guarda_al = app.playing.where, app.playing.album
         estados_tela = [
             ("prato vazio", lambda: ({}, None, None, None, None, 0.0), None),
             ("disco no prato",
-             lambda: ({"status": "Playing"}, _alongo, _alongo.tracks[0],
+             lambda: ({"status": "Playing"}, _alongo, _alongo.tracks[7],
                       _alongo.sides[2], 1500.0, 0.42), _alongo),
         ]
         batidas, vazados = [], []
@@ -1685,6 +1704,20 @@ def main():
           app.playing.where, app.playing.album = _onde, _album
           for larg, alt in ((800, 600), (1024, 600), (1024, 768), (1280, 720),
                             (1366, 768), (1920, 1080), (3840, 2160)):
+            # A SUPERFÍCIE tem que ter o tamanho da tela que se diz estar
+            # medindo.
+            #
+            # **Sintoma:** o espião recorta cada texto pelo `get_clip` da
+            # superfície — de propósito, porque as grades desenham a fileira
+            # meio para fora e deixam o pygame cortar. Só que a superfície
+            # era a que o App abriu (1600x950 aqui), e não mudava de tamanho:
+            # nas duas resoluções grandes, TODO texto além de x=1600 era
+            # recortado a zero e simplesmente não entrava na medição. As duas
+            # últimas linhas desta lista mediam um pedaço de 1600x950 e
+            # diziam "1920" e "3840". Medido com um texto de duzentos X: ele
+            # não aparecia em acusação nenhuma.
+            app.surf = pygame.Surface((larg, alt))
+            app.W, app.H = larg, alt
             quadro = pygame.Rect(230, 0, larg - 230, alt)
             for i, tela in enumerate(app.screens):
                 app._goto(i)
@@ -1717,6 +1750,8 @@ def main():
                         vazados.append(f"{larg}x{alt} {tela.name}: {ss[:26]!r}"
                                        " (ao lado)")
         _T.text = original
+        app.surf = _surf_real
+        app.W, app.H = _surf_real.get_width(), _surf_real.get_height()
         app.playing.where, app.playing.album = _guarda_w, _guarda_al
         if batidas:
             bad(f"{len(batidas)} textos se cruzam", "\n".join(batidas[:5]))

@@ -133,12 +133,33 @@ def main():
             al = vinyl.Album(alvo["folder"])
             side = al.sides[min(1, len(al.sides) - 1)]
             meio = side["start"] + (side["end"] - side["start"]) * 0.42
-            faixa = al.tracks[min(len(al.tracks) - 1, 2)] if al.tracks else None
+            # A faixa tem que ser a que TOCA neste instante, e não a terceira
+            # do disco: com as duas em desacordo o lado desenha a ordem sem
+            # nenhuma faixa acesa, que é uma tela que não existe de verdade.
+            faixa = next((t for t in al.tracks
+                          if t["start"] <= meio < t["start"] + t["duration"]),
+                         al.tracks[0] if al.tracks else None)
             app.playing.album = al
             app.playing.where = lambda: (
                 {"status": "Playing", "path": (faixa or {}).get("path", "")},
                 al, faixa, side, meio,
                 meio / al.total if getattr(al, "total", 0) else 0.3)
+
+    # As miniaturas são decodificadas numa thread; desenhar antes disso dá
+    # uma tela de capas vazias, que não é a tela que ninguém vê. Um quadro
+    # "quente" primeiro (é o desenho que PEDE cada capa) e depois a espera.
+    app.surf = pygame.Surface((larg, alt))
+    app.W, app.H = larg, alt
+    for i, tela in enumerate(app.screens):
+        app._goto(i)
+        try:
+            tela.draw(app.surf, pygame.Rect(230, 0, larg - 230, alt))
+        except Exception:                                   # noqa: BLE001
+            pass
+    for _ in range(60):
+        if not (app.thumbs.pending or app.thumbs_hi.pending):
+            break
+        time.sleep(0.05)
 
     os.makedirs(args.saida, exist_ok=True)
     app.surf = pygame.Surface((larg, alt))

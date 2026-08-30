@@ -864,6 +864,8 @@ class NowScreen(Screen):
                     yl += 26
                 else:
                     yl += 12
+        else:
+            self._ordem_do_lado(s, x, y + 8, w, livre, al, side, track)
 
         # Embaralhar / repetir / soneca — montados lá em cima, junto do
         # rodapé, para o rodapé poder medi-los.
@@ -886,6 +888,70 @@ class NowScreen(Screen):
                             "[+]/[-] volume   "
                             + ("[d] disco sozinho: ligado" if self.app.auto_disco
                                else "[d] disco sozinho: desligado"))
+
+    def _ordem_do_lado(self, s, x, y, w, livre, al, side, track):
+        """A ORDEM deste lado, no espaço que a letra deixa vazio.
+
+        POR QUE ISTO EXISTE
+        -------------------
+        A capa de um disco tem a ordem impressa atrás, e é para lá que se
+        olha enquanto ele toca — "qual é essa?", "quanto falta?", "o que vem
+        agora?". A AGORA respondia só a primeira, com o nome da faixa que
+        está no ar, e deixava duzentos e oitenta pixels vazios embaixo dele
+        numa tela de 1080. A loja do Qobuz já tinha aprendido isto: o
+        `[enter]` dela mostrava capa, ano e qualidade — tudo que já estava no
+        quadradinho — até passar a mostrar a ordem, porque o que se examina
+        num disco é a ordem dele.
+
+        Do LADO e não do disco inteiro: o lado é a unidade deste sistema, e
+        uma lista de vinte e quatro faixas com o corte no meio dela não diz
+        onde o gesto acontece.
+
+        Onde a LETRA cabe, a letra ganha: uma é a contracapa e a outra é o
+        encarte, e as duas ao mesmo tempo seriam duas listas disputando a
+        mesma coluna. Por isso isto mora no `else` do bloco da letra.
+        """
+        if not side or livre < 60 or not getattr(al, "tracks", None):
+            return
+        idx = side.get("tracks") or []
+        if len(idx) < 2:
+            # Um lado de uma faixa só não tem ordem para mostrar, e a faixa
+            # já está escrita logo acima em corpo 30.
+            return
+        passo = 27
+        cabem = max(2, int((livre - 26) // passo))
+        atual = al.tracks.index(track) if track in al.tracks else -1
+        # A janela acompanha a agulha, como a da letra: numa caixa em que o
+        # lado não cabe inteiro, o que interessa é o que está tocando e o que
+        # vem depois — não as três primeiras faixas para sempre.
+        pos = idx.index(atual) if atual in idx else 0
+        ini = 0 if len(idx) <= cabem else max(0, min(pos - 1, len(idx) - cabem))
+        T.text(s, "A ORDEM DESTE LADO", (x, y), 15, T.TEXT_FAINT)
+        yy = y + 26
+        for k in range(ini, min(len(idx), ini + cabem)):
+            i = idx[k]
+            if not 0 <= i < len(al.tracks):
+                continue
+            tr = al.tracks[i]
+            tocando = i == atual
+            cor = T.AMBER if tocando else (
+                T.TEXT_FAINT if atual >= 0 and i < atual else T.TEXT_DIM)
+            dur = humano(tr.get("duration") or 0)
+            # A duração à direita, MEDIDA: uma folga fixa aqui é a mesma
+            # armadilha do "vira em" da linha de cima, e o nome comprido
+            # entraria por cima dela.
+            larg_dur = T.largura(dur, 17) + 16
+            T.text(s, "%02d  %s" % (i + 1, tr.get("title") or ""), (x, yy),
+                   19, cor, bold=tocando, maxw=max(40, w - larg_dur))
+            T.text(s, dur, (x + w, yy + 1), 17,
+                   T.AMBER_DIM if tocando else T.TEXT_FAINT, anchor="topright")
+            yy += passo
+        # "e mais N" em vez de simplesmente parar: uma lista cortada sem
+        # aviso lê como um lado de quatro faixas.
+        sobram = len(idx) - (ini + cabem)
+        if sobram > 0 and yy + 18 <= y + livre:
+            T.text(s, "e mais %s" % plural(sobram, "faixa"), (x, yy), 15,
+                   T.TEXT_FAINT)
 
     def _intervalos(self, al, lado):
         """As frações do raio em que começa cada faixa DESTE lado.
