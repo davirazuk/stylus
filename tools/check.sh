@@ -433,7 +433,17 @@ casas=$(grep -rIn --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
         --exclude-dir=node_modules --exclude='.aider*' \
         --exclude=local.properties \
         --exclude=_raiz.py --exclude=CLAUDE.md --exclude=README.md \
-        -oE '/home/[a-z_][a-z0-9_-]*/' . 2>/dev/null |
+        -E '/home/[a-z_][a-z0-9_-]*/' . 2>/dev/null |
+        # Só linha de CÓDIGO. Um comentário que EXPLICA por que a casa de
+        # uma pessoa não pode voltar não é a casa de uma pessoa — e esta
+        # conferência reprovava exatamente isso, inclusive o comentário que
+        # a documenta. É a mesma armadilha que a conferência da capa levou
+        # (ela casava com o próprio comentário que a explicava), e a
+        # resposta é a mesma: linha que COMEÇA com marcador de comentário
+        # não conta. Dentro de uma linha de código, conta — o defeito mora
+        # numa string, e string está em linha de código.
+        grep -vE '^[^:]*:[0-9]+:[[:space:]]*(#|//|\*|--)' |
+        sed -E 's|^([^:]*:[0-9]+):.*(/home/[a-z_][a-z0-9_-]*/).*|\1:\2|' |
         grep -v ':/home/stylus/$' || true)
 if [[ -z $casas ]]; then ok "nenhum caminho preso à casa de uma pessoa"
 else bad "caminho absoluto para a casa de alguém (use ~ ou tools/_raiz.py):"

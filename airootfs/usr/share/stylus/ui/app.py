@@ -4218,8 +4218,8 @@ class GamesScreen(Screen):
         # aquele caminho. Ou seja, os dois lados do mesmo quadro
         # discordavam: a tela dizia "não encontrado" numa máquina onde o
         # jogo está no PATH, e num caminho que só existe num computador do
-        # mundo. É a família da coleção de uma pessoa escrita à mão dentro
-        # das ferramentas, disfarçada de `~` — e a conferência de casa
+        # mundo. É a família do /home/davirazuk/Músicas que estava dentro de
+        # nove ferramentas, disfarçada de `~` — e a conferência de casa
         # escrita à mão não pegava esta, porque não há caminho absoluto
         # nenhum escrito aqui.
         #
