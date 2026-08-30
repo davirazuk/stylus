@@ -21,11 +21,14 @@ import subprocess
 import time
 import sys
 
-sys.path.insert(0, os.path.expanduser("/usr/share/stylus/lib"))
 try:
     import vinyl
-except Exception as e:
-    sys.exit(f"preciso do vinyl.py: {e}")
+except ImportError:
+    sys.path.insert(0, os.path.expanduser("/usr/share/stylus/lib"))
+    try:
+        import vinyl
+    except Exception as e:
+        sys.exit(f"preciso do vinyl.py: {e}")
 
 # vinyl.LIBRARY_ROOT nunca existiu — o vinyl expõe library_root(), uma
 # FUNÇÃO, porque a estante pode mudar com o programa aberto. Escrito assim,
@@ -135,12 +138,14 @@ def main():
         # justamente "sorteia um disco e põe para tocar", roda esse comando
         # sem terminal: apertar a tecla não fazia absolutamente nada, sem uma
         # palavra em lugar nenhum.
-        deck = "stylus-deck"
-        for cand in ("/usr/local/bin/stylus-deck",
-                     "/usr/share/stylus/stylus-deck"):
-            if os.path.isfile(cand):
-                deck = cand
-                break
+        import shutil as _shutil
+        deck = _shutil.which("stylus-deck") or "stylus-deck"
+        if deck == "stylus-deck":
+            for cand in ("/usr/local/bin/stylus-deck",
+                         "/usr/share/stylus/stylus-deck"):
+                if os.path.isfile(cand):
+                    deck = cand
+                    break
         cmd = [deck] + ([] if args.ritual else ["--no-scope"]) + [folder]
         print(f"  {c_dim}tocando o lado inteiro, na ordem…{c_off}\n")
         try:

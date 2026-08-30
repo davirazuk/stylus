@@ -32,11 +32,14 @@ import sys
 import threading
 import time
 
-sys.path.insert(0, "/usr/share/stylus/lib")
 try:
     import vinyl
-except Exception as e:                                    # noqa: BLE001
-    sys.exit(f"stylus-side-watch: preciso do vinyl.py do deck: {e}")
+except ImportError:
+    sys.path.insert(0, "/usr/share/stylus/lib")
+    try:
+        import vinyl
+    except Exception as e:                                    # noqa: BLE001
+        sys.exit(f"stylus-side-watch: preciso do vinyl.py do deck: {e}")
 
 INTERVALO = 2.0
 # Onde a agulha parou. Uma linha só, reescrita de tempos em tempos: o

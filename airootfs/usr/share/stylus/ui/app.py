@@ -387,6 +387,9 @@ class NowScreen(Screen):
         self._sug_cache = None
         self._sug_t = 0.0
 
+    def enter(self):
+        self.tela_cheia = False
+
     def key(self, ev):
         # ── a tela cheia do disco ─────────────────────────────────────────
         # `f` liga e desliga; ESC também desliga, porque ESC é "volta" no
@@ -2198,8 +2201,14 @@ class SignalScreen(Screen):
             # do "pode trocar de taxa" — e só em quem tem placa de nome
             # comprido, que é sempre a máquina de outra pessoa.
             folga = T.largura(str(val), fs_val, bold=True) + 40
+            # SEM piso de 120 px. **Sintoma:** numa tela de 800x600 a folga
+            # que sobra para o NOME ("bw - 48 - folga" = 58 px) ficava abaixo
+            # do piso, e o `max(120, …)` engraçava o chute: o nome desenhava
+            # 110 px num espaço de 58 e entrava por cima do valor que a folga
+            # existia para proteger. O piso protege o nome de um chute que
+            # não mede nada e expõe o valor a outro.
             T.text(s, str(nome), (box.x + 24, box.y + y_val), fs_nome, T.TEXT,
-                   maxw=max(120, bw - 48 - folga))
+                   maxw=bw - 48 - folga)
             T.text(s, str(val), (box.right - 24, box.y + y_val), fs_val,
                    cor if n < 2 else (T.GREEN if i.get("multi") else T.AMBER),
                    bold=True, anchor="topright")
@@ -4422,8 +4431,15 @@ class GamesScreen(Screen):
             ki = kind_icons.get(kind, "")
             kc = kind_colors.get(kind, T.TEXT_DIM)
             if ki:
-                T.text(s, ki, (bx.right - 14, bx.y + 10), 16, kc,
-                       anchor="topright")
+                # O selo do tipo (teclado/rato/controle) no canto de cima à
+                # direita entrava no rótulo: o rótulo é CENTRALIZADO, e num
+                # quadro baixo o nome comprido alcançava o selo. Só se
+                # desenha quando sobra espaço medido à direita do rótulo —
+                # em nome comprido quem sai é o selo, não o nome (a lei de
+                # sempre: nome inteiro vale mais que decoração).
+                if bx.centerx + T.largura(rot, fs) / 2 + 8 <= bx.right - 28:
+                    T.text(s, ki, (bx.right - 14, bx.y + 10), 16, kc,
+                           anchor="topright")
             if not tem:
                 # "não encontrado" é o que a máquina sabe; não é o que a
                 # pessoa precisa. Onde há receita, o quadro vira um convite.
@@ -5877,8 +5893,26 @@ class App:
     def job_panel(self, s, rect, job):
         T.panel(s, rect, T.INK_SOFT, radius=12, border=T.LINE)
         if job is None:
-            T.text(s, "a saída aparece aqui", (rect.centerx, rect.centery), 18,
-                   T.TEXT_FAINT, anchor="center")
+            # Numa tela de 800x600 o painel fica estreito demais para a
+            # frase inteira numa linha, e o texto centralizado vazava pelo
+            # lado direito para fora do painel e do monitor. Quebrada em
+            # palavras, a frase cabe em qualquer largura de painel.
+            f = T.font(18)
+            linhas, atual = [], ""
+            for palavra in "a saída aparece aqui".split():
+                tenta = (atual + " " + palavra).strip()
+                if atual and f.size(tenta)[0] > rect.w - 24:
+                    linhas.append(atual)
+                    atual = palavra
+                else:
+                    atual = tenta
+            if atual:
+                linhas.append(atual)
+            passo = int(18 * 1.35)
+            y = rect.y + (rect.h - len(linhas) * passo) // 2
+            for i, ln in enumerate(linhas):
+                T.text(s, ln, (rect.centerx, y + i * passo), 18, T.TEXT_FAINT,
+                       anchor="midtop")
             return
         estado = ("rodando…" if not job.done
                   else ("pronto" if job.rc == 0 else f"saiu com {job.rc}"))

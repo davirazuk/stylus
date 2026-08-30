@@ -293,7 +293,7 @@ def ler_m3u(caminho):
       · caminho RELATIVO é o normal, e é relativo à pasta do .m3u — não à
         pasta de onde alguém rodou o comando.
       · barra invertida: playlist escrita no Windows. Um acervo que veio de
-        lá tem `Artista\Album\01.flac` e nada abre.
+        lá tem `Artista\\Album\\01.flac` e nada abre.
       · `#EXTINF:213,Artista - Título` traz duração e nome de graça; sem ele
         o nome sai do arquivo. Ler o EXTINF é o que evita um ffprobe por
         faixa numa lista de trezentas.
@@ -314,7 +314,7 @@ def ler_m3u(caminho):
             continue
         if ln.startswith("#"):
             if ln.upper().startswith("#EXTINF:"):
-                resto = ln.split(":", 1)[1]
+                resto = ln.split(":", maxsplit=1)[1]
                 seg, _sep, nome = resto.partition(",")
                 try:
                     d = float(seg.split(",")[0])
@@ -891,7 +891,7 @@ def parse_lrc(path):
                 break
             mm, ss = m.groups()
             if "." in ss or ":" in ss:
-                seg, frac = re.split(r"[.:]", ss, 1)
+                seg, frac = re.split(r"[.:]", ss, maxsplit=1)
                 s = int(seg) + float("0." + frac)
             else:
                 s = float(ss)

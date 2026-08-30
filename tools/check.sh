@@ -13,6 +13,11 @@
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+# O vinyl de verdade mora em airootfs/usr/share/stylus/lib, mas o Python
+# importa o de /usr/share (o que a máquina já tem). As conferências testam
+# o código que ESTÁ no repositório — o que o stylus-update vai copiar — e
+# não o que já está instalado.
+export PYTHONPATH=airootfs/usr/share/stylus/lib${PYTHONPATH:+:$PYTHONPATH}
 
 g=$'\033[1;32m'; r=$'\033[1;31m'; y=$'\033[1;33m'; d=$'\033[2m'; z=$'\033[0m'
 PASS=0; FAIL=0
@@ -82,6 +87,8 @@ for base, _d, files in os.walk("airootfs"):
     if "deck/venv" in base:
         continue
     for f in files:
+        if f.endswith(".bak"):
+            continue
         p = os.path.join(base, f)
         # Não é só .py: o stylus-audio e o stylus-phone são python sem
         # extensão nenhuma, e o stylus-phone usa vinyl. Filtrar por nome
@@ -5100,7 +5107,7 @@ if not erros:
                 mi = int(m.group(1))
                 ss = m.group(2)
                 if "." in ss or ":" in ss:
-                    seg, frac = re.split(r"[.:]", ss, 1)
+                    seg, frac = re.split(r"[.:]", ss, maxsplit=1)
                     ms = int(seg) * 1000 + int(frac.ljust(3, "0")[:3])
                 else:
                     ms = int(ss) * 1000

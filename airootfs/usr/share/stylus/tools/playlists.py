@@ -20,10 +20,13 @@ import os
 import sys
 
 _aqui = os.path.dirname(os.path.abspath(__file__))
-for _p in ("/usr/share/stylus/lib", os.path.join(os.path.dirname(_aqui), "lib")):
-    if os.path.isdir(_p) and _p not in sys.path:
-        sys.path.insert(0, _p)
-import vinyl  # noqa: E402
+try:
+    import vinyl  # noqa: E402
+except ImportError:
+    for _p in ("/usr/share/stylus/lib", os.path.join(os.path.dirname(_aqui), "lib")):
+        if os.path.isdir(_p) and _p not in sys.path:
+            sys.path.insert(0, _p)
+    import vinyl  # noqa: E402
 
 D = "\033[2m"; B = "\033[1m"; A = "\033[38;5;117m"; O = "\033[0m"
 

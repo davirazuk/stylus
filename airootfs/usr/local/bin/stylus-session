@@ -150,9 +150,11 @@ vigias() {
 # com a animação dela, e um balãozinho do dunst por cima seria o mesmo aviso
 # duas vezes — pior, o menos bonito dos dois tapando o outro.
 musica()  { anota "abrindo: modo música (i3 + tela cheia)"
+            unset XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION KDEWM
             exec i3 -c /usr/share/stylus/i3-music.config; }
 i3_area() { anota "abrindo: área de trabalho do i3"
             vigias
+            unset XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION KDEWM
             exec i3; }
 
 # Onde parar quando o Plasma está fora de questão. O i3 é uma área de
