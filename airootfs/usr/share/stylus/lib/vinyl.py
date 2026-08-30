@@ -1612,16 +1612,25 @@ class Album:
         self.plays, _primeira, self.last_played = play_history(folder)
         self._lock = threading.Lock()
         self._scan()
+        # A ESTRUTURA — as durações, o total e os LADOS — sai pronta do
+        # construtor, SEMPRE, e não só quando `envelope=False`.
+        #
+        # **Sintoma:** com o padrão (`envelope=True`) isto acontecia lá
+        # dentro da thread do envelope, e quem escrevesse `vinyl.Album(f)` e
+        # lesse `.sides` na linha seguinte recebia uma LISTA VAZIA, `total`
+        # zero e `discos` zero — sem erro nenhum, e por um tempo que depende
+        # da máquina. O disco simplesmente não tinha lados por meio segundo,
+        # que é a mesma doença da duração zero: o valor existe, é plausível,
+        # e está errado. Doze dos treze lugares que constroem um Album no
+        # repositório passam `envelope=False` justamente para escapar disso;
+        # um padrão de que todo mundo foge é o padrão errado.
+        #
+        # Custa uma leitura de cabeçalho por faixa (o mutagen), não a
+        # decodificação do disco — essa continua na thread.
+        self._measure_durations()
+        self._build_sides()
         if envelope:
             threading.Thread(target=self._load_envelope, daemon=True).start()
-        else:
-            # A ESTRUTURA não é parte do envelope, embora o carregamento do
-            # envelope a construísse de passagem. Sem isto, envelope=False
-            # devolvia um álbum com faixas e total=0 e nenhum lado — inútil
-            # justamente para quem só quer a estrutura. Custa um ffprobe por
-            # faixa, não a decodificação do disco inteiro.
-            self._measure_durations()
-            self._build_sides()
 
     # -- structure ---------------------------------------------------------
     def _scan(self):
@@ -1644,10 +1653,53 @@ class Album:
             n = os.path.basename(p)
             title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", os.path.splitext(n)[0]).strip()
             self.tracks.append({"path": p, "title": title, "duration": 0.0, "start": 0.0})
-        
+        self._tirar_numero_do_titulo()
         self.cover = find_cover(self.folder) or self.cover
         if self.tracks:
             self._read_tags(self.tracks[0]["path"])
+
+    def _tirar_numero_do_titulo(self):
+        """"01 Song Name.flac" — o número de faixa sem separador nenhum.
+
+        **Sintoma:** a AGORA escreve o número da faixa e o título lado a
+        lado, e num acervo nomeado assim isso saía como "03  03 faixa" — o
+        número duas vezes, em toda faixa de todo disco. O regex de cima só
+        conhece "NN - Título", "NN. Título" e "NN_Título"; "NN Título", que
+        é a outra metade do mundo, passava inteiro.
+
+        Decide pelo DISCO e não por faixa, e é essa a única parte difícil:
+        "99 Problems", "8 Mile" e "1979" são NOMES de música, e tirar o
+        número deles seria trocar um defeito feio por um defeito que apaga
+        informação. Então só quando as três coisas valem ao mesmo tempo:
+
+          · toda faixa do disco traz um número na frente;
+          · eles são todos diferentes;
+          · e formam a numeração de um disco — sobem, começam no 0 ou no 1
+            (às vezes no 2, num disco cuja primeira faixa falta) e não
+            passam muito do número de faixas.
+
+        Um disco de doze faixas chamadas "99…", "8…", "24…" falha na
+        terceira condição e fica como está, que é a resposta certa.
+        """
+        if len(self.tracks) < 2:
+            return
+        padrao = re.compile(r"^(\d{1,3})\s+(\S.*)$")
+        achados = []
+        for tr in self.tracks:
+            m = padrao.match(tr["title"])
+            if not m:
+                return
+            achados.append((tr, int(m.group(1)), m.group(2).strip()))
+        nums = [n for _t, n, _r in achados]
+        if len(set(nums)) != len(nums):
+            return
+        if sorted(nums) != nums:
+            return
+        if min(nums) > 2 or max(nums) > len(nums) + 3:
+            return
+        for tr, _n, resto in achados:
+            if resto:
+                tr["title"] = resto
 
     def _ler_playlist(self):
         """Um .m3u no lugar de uma pasta. True quando era um.
@@ -2011,8 +2063,8 @@ class Album:
 
     def _load_envelope(self):
         try:
-            self._measure_durations()
-            self._build_sides()
+            # As durações e os lados já saíram do construtor (ver o __init__):
+            # aqui só a varredura de intensidade, que é a parte cara.
             if not self.tracks:
                 return
             os.makedirs(CACHE_DIR, exist_ok=True)

@@ -188,6 +188,21 @@ class Thumbs:
         threading.Thread(target=self._make, args=(cover,), daemon=True).start()
         return None
 
+    def carregando(self, cover):
+        """Esta capa ainda está sendo decodificada?
+
+        **Sintoma:** a AGORA escrevia "sem capa" no meio da capa enquanto o
+        JPEG ainda estava sendo aberto na thread — ou seja, em toda troca de
+        disco, por alguns quadros, e para sempre numa capa grande numa
+        máquina lenta. É uma AFIRMAÇÃO tirada da ausência de dado, a mesma
+        família do "taxa travada" do SINAL: não saber ainda não é saber que
+        não tem.
+
+        O `get` põe `None` no `mem` quando desiste de verdade, então "não
+        está no mem" é exatamente "ainda não decidi".
+        """
+        return bool(cover) and cover not in self.mem
+
     def _baixar(self, url):
         """Uma capa que mora na internet, trazida para o cache.
 

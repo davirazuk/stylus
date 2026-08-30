@@ -738,7 +738,11 @@ class NowScreen(Screen):
         # onde o disco sai. Com ela à esquerda, o disco estava saindo por
         # dentro da própria costura.
         T.sleeve(s, cr, cov, lombada="dir")
-        if not cov:
+        # "sem capa" só quando é VERDADE. Enquanto o JPEG está sendo aberto
+        # na thread das miniaturas a resposta certa é a capa vazia, calada:
+        # dizer "sem capa" ali é afirmar a partir da ausência de dado, e o
+        # efeito era a frase piscando no meio da capa em toda troca de disco.
+        if not cov and not self.app.thumbs.carregando(al.cover):
             T.text(s, "sem capa", cr.center, 24, T.TEXT_FAINT, anchor="center")
 
         x = cr.right + gap

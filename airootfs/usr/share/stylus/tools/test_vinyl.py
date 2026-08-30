@@ -516,6 +516,67 @@ def main():
     finally:
         _shutil.rmtree(_tmpc, ignore_errors=True)
 
+    case("o número da faixa não aparece duas vezes")
+    # **Sintoma:** a AGORA escreve o número e o título lado a lado, e num
+    # acervo nomeado "01 Song Name.flac" — a outra metade do mundo — isso
+    # saía como "03  03 faixa". O regex só conhecia "NN - ", "NN. " e "NN_".
+    #
+    # E a parte que importa é a que NÃO se mexe: "99 Problems" e "1979" são
+    # nomes de música. A grade abaixo tem os dois lados.
+    import wave as _wv
+
+    def _disco_com(nomes):
+        d = _tempfile.mkdtemp(prefix="stylus-titulo-")
+        for n in nomes:
+            with _wv.open(os.path.join(d, n + ".wav"), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(8000)
+                w.writeframes(b"\0" * (8000 * 2 * 200))
+        try:
+            return [t["title"] for t in vinyl.Album(d, envelope=False).tracks]
+        finally:
+            _shutil.rmtree(d, ignore_errors=True)
+
+    check("'01 Song One' vira 'Song One'",
+          _disco_com(["01 Song One", "02 Song Two", "03 Song Three"])
+          == ["Song One", "Song Two", "Song Three"])
+    check("'01 - A' continua funcionando",
+          _disco_com(["01 - A", "02 - B"]) == ["A", "B"])
+    check("mas '99 Problems' fica inteiro",
+          sorted(_disco_com(["99 Problems", "8 Mile", "24 Hours"]))
+          == ["24 Hours", "8 Mile", "99 Problems"])
+    check("e '1979' também",
+          sorted(_disco_com(["1979", "1985"])) == ["1979", "1985"])
+
+    case("um Album recém-construído JÁ tem lados")
+    # **Sintoma:** com o padrão (`envelope=True`) as durações, o total e os
+    # lados eram calculados dentro da thread do envelope. Quem escrevesse
+    # `vinyl.Album(f)` e lesse `.sides` na linha seguinte recebia uma lista
+    # VAZIA, `total` zero e `discos` zero — sem erro, e por um tempo que
+    # depende da máquina. Doze dos treze lugares do repositório passavam
+    # `envelope=False` só para escapar disso.
+    #
+    # Sem `sleep` nenhum de propósito: uma espera transformaria a corrida em
+    # "passa quase sempre", que é o pior resultado possível para um teste.
+    _tmpe = _tempfile.mkdtemp(prefix="stylus-estrutura-")
+    try:
+        import wave as _wave
+        for i in range(1, 9):
+            with _wave.open(os.path.join(_tmpe, "%02d faixa.wav" % i), "wb") as w:
+                w.setnchannels(2)
+                w.setsampwidth(2)
+                w.setframerate(8000)
+                w.writeframes(b"\0" * (8000 * 4 * (200 + i * 20)))
+        al = vinyl.Album(_tmpe)          # o PADRÃO, sem envelope=False
+        check("o total sai pronto do construtor", al.total > 0)
+        check("os lados também", len(al.sides) > 0)
+        check("e o número de discos", al.discos >= 1)
+        check("os lados têm rótulo", all(s.get("label") for s in al.sides))
+        check("e o side_for responde", al.side_for(al.total * 0.5)[1] is not None)
+    finally:
+        _shutil.rmtree(_tmpe, ignore_errors=True)
+
     # (E aqui rodava o caso "o deck DIZ o que está acontecendo", sobre as
     # legendas do `ritual.py`. Quem diz agora é a tela cheia do lançador, e
     # quem confere é o `ui/tools/test_ui.py`.)

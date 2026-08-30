@@ -2239,6 +2239,72 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("ver o disco", traceback.format_exc())
 
+    secao('"sem capa" só quando é verdade')
+    # **Sintoma:** a frase piscava no meio da capa em toda troca de disco.
+    # O `Thumbs.get` devolve None em DOIS casos muito diferentes — "ainda
+    # estou decodificando" e "não tem capa" — e o desenho tratava os dois
+    # como o segundo. É a mesma família do "taxa travada" do SINAL: uma
+    # afirmação tirada da ausência de dado.
+    try:
+        _agora = next(t for t in app.screens if t.name == "AGORA")
+        vistos = []
+        import theme as _Tm
+        _orig = _Tm.text
+
+        def _espiao(surf, txt, pos, size, *a, **k):
+            vistos.append(str(txt))
+            return _orig(surf, txt, pos, size, *a, **k)
+
+        class _AlbCapa:
+            folder = "/x/A/B"
+            artist, name, year = "A", "B", 1969
+            cover = "/x/A/B/cover.jpg"
+            plays, last_played, total, discos = 1, 0, 1200, 1
+            tracks = [{"title": "uma", "dur": 200}]
+            sides = [{"label": "LADO A", "start": 0, "end": 1200,
+                      "tracks": [0]}]
+
+        _al = _AlbCapa()
+        _guarda = (app.playing.where, app.playing.album,
+                   dict(app.thumbs.mem), dict(app.thumbs_hi.mem))
+        try:
+            app.playing.album = _al
+            app.playing.where = lambda: ({"status": "Playing"}, _al,
+                                         _al.tracks[0], _al.sides[0],
+                                         500.0, 0.4)
+            _Tm.text = _espiao
+            # a) a capa existe e ainda está sendo aberta: nada de "sem capa"
+            app.thumbs.mem.pop(_al.cover, None)
+            app.thumbs_hi.mem.pop(_al.cover, None)
+            app.thumbs.pending.add(_al.cover)      # não deixa começar thread
+            app.thumbs_hi.pending.add(_al.cover)
+            vistos.clear()
+            _agora.draw(app.surf, corpo)
+            enquanto_carrega = any("sem capa" in v for v in vistos)
+            # b) o Thumbs desistiu (capa ilegível): aí sim é verdade
+            app.thumbs.pending.discard(_al.cover)
+            app.thumbs_hi.pending.discard(_al.cover)
+            app.thumbs.mem[_al.cover] = None
+            app.thumbs_hi.mem[_al.cover] = None
+            vistos.clear()
+            _agora.draw(app.surf, corpo)
+            quando_falha = any("sem capa" in v for v in vistos)
+        finally:
+            _Tm.text = _orig
+            app.thumbs.pending.discard(_al.cover)
+            app.thumbs_hi.pending.discard(_al.cover)
+            (app.playing.where, app.playing.album) = _guarda[0], _guarda[1]
+            app.thumbs.mem.clear(); app.thumbs.mem.update(_guarda[2])
+            app.thumbs_hi.mem.clear(); app.thumbs_hi.mem.update(_guarda[3])
+        if enquanto_carrega:
+            bad('disse "sem capa" com a capa ainda sendo aberta')
+        elif not quando_falha:
+            bad('a capa não abriu e a tela não diz nada')
+        else:
+            ok("cala enquanto carrega, e fala quando não há capa mesmo")
+    except Exception:                                       # noqa: BLE001
+        bad("sem capa", traceback.format_exc())
+
     secao("PRIMEIRA VEZ: dita quando a agulha encosta, e só num disco novo")
     # POR QUE ISTO EXISTE
     # -------------------
