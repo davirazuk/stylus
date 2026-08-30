@@ -64,6 +64,18 @@ airootfs/usr/share/stylus/ui/tools/test_ui.py   # todas as seções
 O `check.sh` chama os dois (o do vinyl com um álbum de mentira montado na
 hora, oito WAVs de silêncio). À mão, o do vinyl aceita `--album PASTA`.
 
+E o que teste nenhum sabe dizer é se a tela ficou BONITA. Para isso:
+```
+airootfs/usr/share/stylus/ui/tools/telas.py                  # todas, em PNG
+airootfs/usr/share/stylus/ui/tools/telas.py --cheia --tela AGORA
+airootfs/usr/share/stylus/ui/tools/telas.py --tam 1024x600 --lib ~/Músicas
+```
+Ele monta a mesma coleção de mentira do `test_ui` (quatro discos, dois de
+nome comprido, uma playlist) e desenha com um disco NO PRATO, que é a metade
+da AGORA que o `_nothing` esconde. Três defeitos apareceram na PRIMEIRA
+imagem que alguém olhou. Antes de mexer em desenho, gere as imagens; depois
+de mexer, gere de novo e compare.
+
 E há uma construção de verdade, na nuvem, para quando `check.sh` não basta:
 `.github/workflows/build-iso.yml`. Ela roda o `check.sh` dentro de um Arch
 com pacman e já pegou três nomes de pacote que o Arch mudou por baixo
@@ -105,6 +117,7 @@ airootfs/
     claude/                as instruções do Claude Code NA máquina, e os
                              comandos /aplicar e /diagnostico
     ui/tools/test_ui.py    a tela cheia exercitada sem X (o check.sh roda)
+    ui/tools/telas.py      cada seção num PNG, sem X — para OLHAR o desenho
     sync.sh                copia o airootfs por cima do sistema vivo
 android/app/…/player/      o app do celular, em Kotlin. NADA aqui compila
                               Kotlin: o que prova a lógica dele é o check.sh
@@ -632,6 +645,56 @@ fora — foi assim que o instalador chegou a instalar outra distribuição
   sempre; o do disco passava em silêncio, igual a uma playlist acabando —
   que é o contrário do que este sistema faz. E o aviso só vale se responder
   "e agora qual?": a pilha primeiro, o sorteio depois.
+- **Um padrão de que todo mundo foge é o padrão errado.** O `vinyl.Album(f)`
+  calculava durações, total e LADOS dentro da thread do envelope: quem lesse
+  `.sides` na linha seguinte recebia lista vazia, `total` zero e `discos`
+  zero — sem erro, e por um tempo que depende da máquina. Doze dos treze
+  lugares do repositório passavam `envelope=False` só para escapar disso. A
+  estrutura sai pronta do construtor agora; a thread ficou com a parte cara.
+- **`None` que quer dizer duas coisas é uma mentira esperando a hora.** O
+  `Thumbs.get` devolve None para "ainda estou abrindo o JPEG" e para "não
+  tem capa", e o desenho tratava os dois como o segundo: a AGORA escrevia
+  "sem capa" no meio da capa em toda troca de disco. É a família do "taxa
+  travada" do SINAL — afirmação tirada da ausência de dado.
+- **"03  03 faixa".** Num acervo nomeado `01 Song Name.flac` — a outra metade
+  do mundo — o número aparecia duas vezes em toda faixa: o regex que tira o
+  número só conhecia `NN - `, `NN. ` e `NN_`. E a decisão é do DISCO INTEIRO,
+  não da faixa: "99 Problems" e "1979" são nomes de música. Só quando todas
+  as faixas trazem número, todos diferentes, e eles formam a numeração de um
+  disco (sobem, começam no 1, não passam do número de faixas).
+- **Medir a tela com uma superfície de OUTRO tamanho não mede.** A varredura
+  de colisão recortava cada texto pelo `get_clip` da superfície — que era a
+  que o App abriu (1600x950) e nunca mudava. As duas resoluções grandes da
+  lista mediam um pedaço de 1600x950 e diziam "1920" e "3840". Mas cuidado
+  com o conserto: recortar pela tela CLAIMADA torna a conferência de "fora
+  da tela" tautológica, porque todo retângulo recortado pela tela está
+  dentro dela. O recorte só vale quando o DESENHO pediu um (`set_clip`).
+- **`~` não expande sem shell.** O item BLUETOOTH do trilho chamava
+  `spawn(["~/.config/rofi/bluetooth-menu.sh"])`: o `Popen` com lista vai
+  direto ao `execve`, o `~` virou uma pasta de nome "~" no diretório atual, o
+  `FileNotFoundError` caiu no `except` e a função devolveu False — que
+  ninguém olhava, depois de a tela já ter dito "abrindo bluetooth…".
+- **As duas metades do mesmo quadro.** O jogo "Keyboard Warriors" ABRIA
+  `~/Documentos/coiso/…` (a pasta de uma pessoa) e era PROCURADO por
+  `which("keyboardwarrior")`. A tela dizia "não encontrado" numa máquina onde
+  o jogo está no PATH, e apontava para um caminho que existe num computador
+  do mundo. A conferência de casa escrita à mão não pegava: não há `/home/`
+  nenhum escrito ali.
+- **Conferência que reprova o comentário que a explica.** A de casa escrita à
+  mão varria o repositório sem separar código de comentário — então escrever
+  POR QUE aquele caminho não pode voltar a reprovava. Já tinha acontecido com
+  a da capa. Linha que COMEÇA com marcador de comentário não conta; dentro de
+  uma linha de código conta, porque string está em linha de código.
+- **`mutagen.File(p)` de um arquivo SEM ETIQUETA é FALSO.** O objeto é um
+  dicionário de tags, e `bool()` conta as chaves: um WAV ou um rip sem tag
+  nenhuma passa por `if f:` como se o arquivo não existisse. Quem quer saber
+  se ABRIU pergunta `is not None`; quem quer saber se tem tag é que usa a
+  verdade do objeto. O `_probe_duration` acerta; é fácil escrever o contrário.
+- **Tela desenhada e nunca medida.** A AGORA em TELA CHEIA — o disco ocupando
+  o monitor, a razão de o deck ter podido sair — não estava na varredura de
+  colisão. Não é a AGORA com outro tamanho: não há trilho, o disco é
+  dimensionado por outra conta e o texto vai EMBAIXO dele em vez de ao lado.
+  Nenhuma medida da outra valia para ela.
 
 ---
 
@@ -678,6 +741,39 @@ reação ao som, mais luz com propósito — nunca mais realismo.
 
 - **Bit-perfect audio:** PipeWire was resampling everything to 48kHz because the audio device was being held open. Reduced `session.suspend-timeout-seconds` to 1 second in `airootfs/etc/wireplumber/wireplumber.conf.d/51-stylus-alsa.conf` to encourage bit-perfect playback.
 - **`stylus-deck` sync:** Repository version of `stylus-deck` was outdated and missing fixes, causing playback issues. Synced it with the working local installation.
+
+### Décima quinta leva (agora dá para OLHAR a tela)
+- **`ui/tools/telas.py`**: cada seção do lançador num PNG, sem X e sem placa
+  de vídeo (`--tela`, `--tam`, `--cheia`, `--vazio`, `--lib`). O `test_ui.py`
+  MEDE; ele não sabe dizer se a tela ficou bonita, e "melhorar o visual" é a
+  porta por onde entra toda regressão de desenho (§5.5). O deck tinha o
+  `vinyl_preview.py` para isso; o lançador não tinha nada. Os três defeitos
+  abaixo apareceram na primeira imagem.
+- **O disco sem lados, o número duas vezes e o "sem capa" mentiroso.** Ver as
+  três lições na §4.
+- **A AGORA mostra a ORDEM DO LADO** onde não há letra: a faixa tocando em
+  âmbar, as que passaram apagadas, a duração medida à direita. A capa de um
+  disco tem a ordem impressa atrás, e é para lá que se olha enquanto ele
+  toca; ali havia duzentos e oitenta pixels vazios. Do LADO e não do disco —
+  o lado é a unidade deste sistema.
+- **"PRIMEIRA VEZ" voltou a ser dita**, no instante em que a agulha encosta e
+  em qualquer tela. Era o `play_banner` do deck, a única frase dele que a
+  tela cheia não herdou; a AGORA a tinha em cinza, corpo 20, entre outras
+  quatro informações — uma ficha, não um acontecimento.
+- **O item BLUETOOTH do trilho nunca abriu nada**, e o jogo "Keyboard
+  Warriors" apontava para a pasta de uma pessoa enquanto era procurado no
+  PATH. Ver as duas lições na §4.
+- **A varredura de colisão passou a medir de verdade**: a superfície ganhou o
+  tamanho da tela que se diz medir, o recorte só vale quando o desenho pediu
+  um, o disco de mentira ganhou doze faixas repartidas entre os lados (com
+  UMA faixa, a lista nova nem era desenhada), e a TELA CHEIA entrou como
+  terceiro estado. Cada um desses foi medido com um defeito posto de
+  propósito: antes, os quatro passavam verde.
+- **O SINAL centrado na vertical** quando sobra altura — topo fixo com passo
+  com teto deixava meia tela vazia embaixo em 1080.
+- Conferências novas: o jogo que a tela mostra é o que o ENTER abre, o `~` do
+  `spawn`, a PRIMEIRA VEZ (incluindo a linha que garante que o laço a chama),
+  o "sem capa", o Album recém-construído e o número de faixa no título.
 
 ### Nesta leva (visual e defeitos, tudo commitado)
 - **A luz da AGORA era um quadrado preto.** Ver a lição do `set_alpha(None)`
