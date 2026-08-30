@@ -3975,6 +3975,104 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "o celular e o computador concordam sobre o que é música"
+# A SÉTIMA cópia da lista de extensões de áudio morava no Library.kt do
+# celular, e discordava: faltavam .wma, .shn e .ape. Uma coleção com rip
+# antigo (Windows Media, Shorten, Monkey's Audio) ficava invisível no
+# aparelho — sem erro nenhum, que é o pior jeito de não funcionar. A mesma
+# doença das seis listas do computador, atravessando para o outro lado.
+saida=$(python3 - <<'EXTKTEOF' 2>&1
+import re
+import sys
+sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+try:
+    import vinyl
+    kt = open("android/app/src/main/kotlin/io/stylus/player/Library.kt",
+              encoding="utf-8").read()
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+m = re.search(r"AUDIO_EXT\s*=\s*setOf\((.*?)\)", kt, re.S)
+if not m:
+    print("ERRO não achei o AUDIO_EXT do Library.kt")
+    raise SystemExit(0)
+do_kt = set(re.findall(r'"(\.[a-z0-9]+)"', m.group(1)))
+do_py = set(vinyl.AUDIO_EXT)
+falta = sorted(do_py - do_kt)
+sobra = sorted(do_kt - do_py)
+if falta or sobra:
+    print("ERRO o celular %s%s%s"
+          % ("não conhece %s" % ", ".join(falta) if falta else "",
+             " e " if falta and sobra else "",
+             "conhece %s a mais" % ", ".join(sobra) if sobra else ""))
+else:
+    print("OK as %d extensões são as mesmas nos dois lados" % len(do_py))
+EXTKTEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "as duas metades da coleção discordam sobre o que é música"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "o texto do celular é o mesmo português do computador"
+# **Sintoma:** "Nenhuma musica encontrada", "12 albuns", "Saidas", e um
+# "Bit-perfect audio for Android" em inglês na tela SOBRE. Texto que o
+# usuário vê é em português, e é o MESMO português dos dois lados — a coleção
+# é a mesma, o vocabulário também tem que ser. E a regra do plural mora no
+# `Texto.plural`, irmão do `model.plural` do lançador: "1 albuns" é o mesmo
+# defeito que custou quinze lugares lá.
+saida=$(python3 - <<'TEXTOKTEOF' 2>&1
+import os
+import re
+raiz = "android/app/src/main/kotlin/io/stylus/player"
+if not os.path.isdir(raiz):
+    print("PULA sem o app do celular aqui")
+    raise SystemExit(0)
+# Palavras portuguesas que perderam o acento, e o plural escrito à mão.
+sem_acento = re.compile(
+    r'"[^"]*\b(musica|musicas|albuns|saidas|sera|ultimo|proxima|'
+    r'nao|voce|tres|numero|automatico|cancao|memoria)\b[^"]*"')
+# O que está DENTRO de uma interpolação é código, não texto: `${album.name}`
+# tem a palavra "album" e não é o usuário que a lê. Sem tirar isso, a
+# conferência acusa toda linha que monta um título — que é o oposto de
+# ajudar.
+interp = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_]\w*")
+mao = re.compile(r'\$\{?[A-Za-z_][\w.()]*\}?\s+'
+                 r'(faixas|discos|albuns|álbuns|vezes|lados|resultados)\b')
+achados = []
+for nome in sorted(os.listdir(raiz)):
+    if not nome.endswith(".kt"):
+        continue
+    cam = os.path.join(raiz, nome)
+    with open(cam, encoding="utf-8") as fh:
+        for n, ln in enumerate(fh, 1):
+            # Comentário de bloco também: a explicação DESTE defeito cita
+            # "1 albuns" com todas as letras, e a conferência que acusa a
+            # própria explicação do conserto é uma que se aprende a ignorar.
+            if ln.lstrip().startswith(("*", "/*")):
+                continue
+            nu = interp.sub(" ", ln.split("//")[0])
+            if sem_acento.search(nu):
+                achados.append("%s:%d sem acento" % (nome, n))
+            elif mao.search(nu):
+                achados.append("%s:%d plural à mão (use Texto.plural)"
+                               % (nome, n))
+if achados:
+    print("ERRO " + " | ".join(achados[:6]))
+else:
+    print("OK acento e plural, nos %d arquivos do app"
+          % len([n for n in os.listdir(raiz) if n.endswith(".kt")]))
+TEXTOKTEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "o texto do celular não é o do computador"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))

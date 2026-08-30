@@ -31,14 +31,24 @@ object Library {
     ) {
         fun coverUri(): Uri = artUri ?: Uri.parse("content://media/external/audio/albumart/$id")
         fun durationString(): String {
-            if (totalDuration <= 0) return "$trackCount faixas"
+            // Pelo Texto.plural: "1 faixas" é o mesmo defeito que custou
+            // quinze lugares no lançador, e aqui estava em dois.
+            val faixas = Texto.plural(trackCount, "faixa")
+            if (totalDuration <= 0) return faixas
             val min = totalDuration / 60000
             val sec = (totalDuration / 1000) % 60
-            return "$trackCount faixas \u2022 ${min}:${String.format("%02d", sec)}"
+            return "$faixas \u2022 ${min}:${String.format("%02d", sec)}"
         }
     }
 
-    private val AUDIO_EXT = setOf(".flac", ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac")
+    // A MESMA lista do `vinyl.AUDIO_EXT` do computador. Esta era a SÉTIMA
+    // cópia dela no sistema e discordava das outras: faltavam .wma, .shn e
+    // .ape, então uma coleção com rip antigo (Windows Media, Shorten,
+    // Monkey's Audio) ficava invisível no celular — e invisível sem erro
+    // nenhum, que é o pior jeito de não funcionar. O tools/check.sh confere
+    // as duas listas uma contra a outra.
+    private val AUDIO_EXT = setOf(".flac", ".mp3", ".ogg", ".opus", ".m4a",
+                                  ".wav", ".aac", ".wma", ".shn", ".ape")
 
     private fun trackSortKey(name: String): String =
         name.replace(Regex("^\\s*\\d+\\s*[-._)]\\s*"), "").lowercase()

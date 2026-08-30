@@ -91,7 +91,7 @@ class MainActivity : AppCompatActivity() {
 
         // Empty
         emptyView = TextView(this).apply {
-            text = "\u266B\n\nNenhuma musica encontrada\n\nConecte um USB com musicas\nou configure o WebDAV"
+            text = "\u266B\n\nA estante está vazia\n\nConecte um USB com música\nou configure o WebDAV"
             setTextColor(0xFF4A5570.toInt())
             textSize = 15f
             visibility = View.GONE
@@ -385,9 +385,10 @@ class MainActivity : AppCompatActivity() {
         val totalH = totalMs / 3600000
         val totalM = (totalMs % 3600000) / 60000
         val statsText = when {
-            filteredAlbums.isEmpty() -> "Nenhum álbum"
-            query.isNotEmpty() -> "${filteredAlbums.size} resultado${if (filteredAlbums.size != 1) "s" else ""}"
-            else -> "${filteredAlbums.size} albuns \u2022 ${totalTracks} faixas \u2022 ${totalH}h${totalM}m"
+            filteredAlbums.isEmpty() -> "nenhum disco"
+            query.isNotEmpty() -> Texto.plural(filteredAlbums.size, "resultado")
+            else -> "${Texto.plural(filteredAlbums.size, "disco")} \u2022 " +
+                    "${Texto.plural(totalTracks, "faixa")} \u2022 ${totalH}h${totalM}m"
         }
         val tv = statsBar.tag as? TextView
         tv?.text = statsText
@@ -446,7 +447,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (filteredAlbums.isEmpty()) {
-            emptyView.text = if (query.isNotEmpty()) "Nada para \"$query\"" else "Nenhuma musica encontrada"
+            emptyView.text = if (query.isNotEmpty()) "Nada com \"$query\"" else "A estante está vazia"
             emptyView.visibility = View.VISIBLE
             recycler.visibility = View.GONE
         } else {
@@ -585,11 +586,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAboutDialog() {
         val tv = TextView(this).apply {
-            text = "STYLUS Player\nBit-perfect audio for Android\n\n" +
+            // Em português, como o resto do sistema: "a coleção é a mesma
+            // nos dois lados, o vocabulário também tem que ser".
+            text = "STYLUS\nO disco no bolso — sem reamostrar\n\n" +
                    "Formatos: FLAC, ALAC, WAV, AIFF, MP3, AAC, OGG\n" +
-                   "Saidas: USB DAC bit-perfect, DLNA/UPnP\n" +
+                   "Sa\u00eddas: DAC por USB (bit-perfect), DLNA/UPnP\n" +
                    "last.fm: scrobble autom\u00e1tico\n\n" +
-                   "${allAlbums.size} albuns na estante"
+                   "${Texto.plural(allAlbums.size, "disco")} na estante"
             setTextColor(0xFF8a95aa.toInt())
             textSize = 12f
             setPadding(dp(24), dp(16), dp(24), dp(8))
