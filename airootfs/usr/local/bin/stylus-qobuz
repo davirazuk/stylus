@@ -13,6 +13,7 @@
 #      stylus qobuz entrar       entra na sua conta, sem navegador nenhum
 #      stylus qobuz buscar TERMO procura discos e mostra id, ano e qualidade
 #      stylus qobuz favoritos    os discos que você marcou lá, em JSON
+#      stylus qobuz faixas ID    a ordem do disco, sem baixar nada
 #      stylus qobuz listas       as suas playlists do Qobuz
 #      stylus qobuz conferir     por que não funciona — uma resposta por etapa
 #      stylus qobuz baixar ID    baixa direto para a estante, sem navegador
@@ -301,7 +302,16 @@ case "${1:-}" in
         precisa_ser_voce
         exec "$PY" "$SHARE/qobuz_shelf.py" listas ;;
     favoritos|favorites)
-        exec "$PY" "$SHARE/qobuz_busca.py" favoritos "${2:-60}"
+        # Sem o "60" escrito aqui: o teto agora é o mesmo da estante do rofi
+        # (STYLUS_QOBUZ_FAVORITOS), e passá-lo como argumento fazia esta
+        # entrada mandar mostrar sessenta numa conta com oitenta e sete.
+        exec "$PY" "$SHARE/qobuz_busca.py" favoritos "${2:-}"
+        ;;
+    faixas|tracks)
+        # A ordem do disco, sem baixar nada — é o que a loja mostra quando
+        # você aperta [enter] em cima de um disco.
+        [[ -n ${2:-} ]] || die "uso: stylus qobuz faixas ID"
+        exec "$PY" "$SHARE/qobuz_busca.py" faixas "$2"
         ;;
     baixar|download|get)
         alvo="${2:-}"

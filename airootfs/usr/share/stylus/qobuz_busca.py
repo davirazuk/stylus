@@ -8,6 +8,7 @@ num terminal.
 
     qobuz_busca.py buscar TERMOS
     qobuz_busca.py favoritos [QUANTOS]
+    qobuz_busca.py faixas ID          a ordem do disco, sem baixar nada
 
 POR QUE OS FAVORITOS ESTÃO AQUI
 -------------------------------
@@ -72,6 +73,11 @@ def cliente():
     return cl
 
 
+# O mesmo teto da estante do rofi, e a mesma variável de ambiente: são duas
+# telas da MESMA loja e não podem discordar sobre quantos favoritos existem.
+TETO = int(os.environ.get("STYLUS_QOBUZ_FAVORITOS", "1000"))
+
+
 def disco(item):
     """Um item da API vira o disco que a tela desenha."""
     artista = "?"
@@ -121,23 +127,59 @@ def main():
         if not termo:
             responde(error="busca vazia")
         try:
-            dados = cl.search_albums(termo, limit=25)
+            # 100, como a estante do rofi. Eram 25 aqui e 100 lá: as duas
+            # telas mostram a MESMA loja, e a de tela cheia — a que se usa do
+            # sofá — era a que via menos. "beatles" tem centenas de edições, e
+            # com 25 a que você procura quase nunca está entre elas.
+            dados = cl.search_albums(termo, limit=100)
         except Exception as e:                           # noqa: BLE001
             responde(error="a busca falhou: %s" % e)
     elif modo in ("favoritos", "favorites"):
         try:
-            quantos = int(sys.argv[2]) if len(sys.argv) > 2 else 60
+            quantos = int(sys.argv[2]) if len(sys.argv) > 2 else TETO
         except ValueError:
-            quantos = 60
+            quantos = TETO
         try:
-            # Assinado à mão porque o get_favorite_albums do qobuz-dl chama o
-            # api_call sem o `sec` e estoura com KeyError ao assinar.
-            dados = cl.api_call("favorite/getUserFavorites", type="albums",
-                                offset=0, limit=quantos, sec=cl.sec)
+            # PAGINADO, pelo mesmo código da estante do rofi. Aqui era uma
+            # chamada só com limite 60: quem tem 87 favoritos via 60, sem
+            # nada dizendo que havia mais — e a estante do rofi, ao lado,
+            # mostrava os 87. A mesma loja com duas respostas diferentes.
+            from qobuz_shelf import favoritos_todos
+            itens, _total = favoritos_todos(cl, quantos)
+            dados = {"albums": {"items": itens}}
         except Exception as e:                           # noqa: BLE001
             responde(error="não deu para ler os seus favoritos: %s" % e)
+    elif modo == "faixas":
+        # A ORDEM DO DISCO, sem baixar nem assinar nada.
+        #
+        # O `[enter]` da loja se chama "examina" e mostrava capa, ano e
+        # qualidade — tudo que já estava no quadradinho da grade. O que se
+        # examina num disco é o que tem DENTRO dele: as faixas, quanto dura,
+        # e (neste sistema) em quantos LADOS ele cabe. O Qobuz manda isso de
+        # graça no `get_album_meta`; era só ninguém estar pedindo.
+        ident = (sys.argv[2] if len(sys.argv) > 2 else "").strip()
+        if not ident:
+            responde(error="faixas de qual disco?")
+        try:
+            meta = cl.get_album_meta(ident)
+        except Exception as e:                           # noqa: BLE001
+            responde(error="não achei esse disco no Qobuz: %s" % e)
+        faixas = ((meta.get("tracks") or {}).get("items")) or []
+        saida = []
+        for i, t in enumerate(faixas, 1):
+            saida.append({
+                "n": t.get("track_number") or i,
+                "title": t.get("title") or "?",
+                "duration": int(t.get("duration") or 0),
+                # Faixa de outro artista dentro de uma coletânea: dizer quem
+                # é. Numa coletânea sem isto a lista fica com doze títulos e
+                # nenhum nome, que é justamente o disco em que o nome importa.
+                "artist": ((t.get("performer") or {}).get("name") or ""),
+            })
+        responde(results=saida, album=disco(meta))
     else:
-        responde(error="uso: qobuz_busca.py buscar TERMOS | favoritos [N]")
+        responde(error="uso: qobuz_busca.py buscar TERMOS | favoritos [N] "
+                       "| faixas ID")
 
     itens = dados.get("albums", {})
     if isinstance(itens, dict):

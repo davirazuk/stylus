@@ -1845,6 +1845,48 @@ def main():
         bad("conferência de custo", traceback.format_exc())
 
     # ── o rato ────────────────────────────────────────────────────────────
+    secao("na tela cheia do disco, as teclas continuam respondendo")
+    # **Sintoma:** com o disco na tela toda, apertar B no controle (que chega
+    # como ESC) parecia não fazer nada — e a partir dali NADA respondia: o [f]
+    # não voltava, as setas não buscavam, o ENTER pulava de seção. O ESC caía
+    # no "abre o trilho" do App._key, e o trilho não é desenhado na tela cheia:
+    # o programa ficava num MENU INVISÍVEL comendo todas as teclas.
+    #
+    # O `if ev.key == K_ESCAPE and self.tela_cheia` da NowScreen existia e era
+    # código morto — o App._key vem antes dela e nunca deixava chegar.
+    try:
+        agora = next(t for t in app.screens if t.name == "AGORA")
+        app._goto(app.screens.index(agora))
+        app.rail = False
+        agora.tela_cheia = True
+
+        def _t(k, mod=0):
+            return app._key(pygame.event.Event(pygame.KEYDOWN, key=k,
+                                               unicode="", mod=mod))
+
+        _t(pygame.K_ESCAPE)
+        saiu_no_esc = (not agora.tela_cheia) and not app.rail
+        agora.tela_cheia = True
+        _t(pygame.K_f)
+        saiu_no_f = not agora.tela_cheia
+        # E o trilho aberto não pode ficar invisível: com ele no ar, a tela
+        # cheia cede a moldura.
+        agora.tela_cheia, app.rail = True, True
+        inteira = (getattr(app.screens[app.cur], "tela_cheia", False)
+                   and not app.rail)
+        app.rail = False
+        agora.tela_cheia = False
+        if not saiu_no_esc:
+            bad("o ESC na tela cheia não volta (ou abre o trilho invisível)")
+        elif not saiu_no_f:
+            bad("o [f] não sai da tela cheia")
+        elif inteira:
+            bad("com o trilho aberto a tela cheia continua sem moldura")
+        else:
+            ok("[esc] e [f] voltam, e o trilho nunca fica invisível")
+    except Exception:                                       # noqa: BLE001
+        bad("tela cheia e teclas", traceback.format_exc())
+
     secao("a linha de dicas não promete tecla que a seção ignora")
     # A irmã da conferência do Mod+F1 no check.sh, do lado de cá: lá a lista
     # de atalhos do i3 prometia teclas ligadas a OUTRA coisa; aqui o rodapé

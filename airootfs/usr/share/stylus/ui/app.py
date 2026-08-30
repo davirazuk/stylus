@@ -79,6 +79,35 @@ def spawn(cmd):
 _FAV_FILE = os.path.join(vinyl.STATE_DIR, "favorites.json")
 _fav_cache = None
 
+def _lados_de(faixas):
+    """(lados, duração total, discos) de uma lista de faixas do Qobuz.
+
+    Pelo `vinyl.Album._build_sides` e não por uma conta nova aqui: é a MESMA
+    regra que decide os lados de um disco da estante — teto de 26 min, corte
+    em fronteira de faixa, lados equilibrados, número de DISCOS arredondado
+    porque um disco tem dois lados sempre. Uma segunda implementação diria
+    "2 lados" na loja e "4" depois de baixar, sobre o mesmo disco.
+
+    O `__new__` sem `__init__` é de propósito: o construtor do Album vai ao
+    disco procurar arquivo, e aqui não há arquivo nenhum — o disco está do
+    outro lado da assinatura.
+    """
+    al = vinyl.Album.__new__(vinyl.Album)
+    al.tracks, al.continuo, t = [], False, 0.0
+    for f in faixas:
+        dur = float(f.get("duration") or 0)
+        al.tracks.append({"title": f.get("title") or "?", "duration": dur,
+                          "start": t, "path": ""})
+        t += dur
+    al.total = t
+    al.sides, al.discos = [], 1
+    try:
+        al._build_sides()
+    except Exception:                     # noqa: BLE001 — a loja não cai por isso
+        al.sides, al.discos = [], 1
+    return al.sides, t, getattr(al, "discos", 1)
+
+
 def _load_favorites():
     global _fav_cache
     if _fav_cache is not None:
@@ -1029,7 +1058,7 @@ class NowScreen(Screen):
             n_t = (al.tracks.index(track) + 1) if track in al.tracks else 0
             T.text(s, "%02d  %s" % (n_t, track.get("title") or ""),
                    (r.centerx, y), 22, T.TEXT_DIM, anchor="midtop", maxw=larg)
-        self.app.hint(s, r, "[f] volta ao lançador   [space] pausa   "
+        self.app.hint(s, r, "[f] ou [esc] volta ao lançador   [space] pausa   "
                             "[n]/[p] faixa   [v] vira o lado")
 
     def _spectrum(self, s, centro, spec, level, rm):
@@ -2399,6 +2428,10 @@ class QobuzScreen(Screen):
         self._montagem = None
         self.entrada = None           # o formulário de login, quando aberto
         self.favoritos = False        # a grade mostra os seus favoritos?
+        # A ordem de cada disco já examinado, por id. Guardada porque olhar o
+        # mesmo disco duas vezes é o que se faz numa loja, e pedir de novo ao
+        # Qobuz por isso seria dois segundos de espera por olhada.
+        self._faixas = {}
 
     def enter(self):
         self._olhar()
@@ -2586,6 +2619,40 @@ class QobuzScreen(Screen):
 
         threading.Thread(target=_do, daemon=True).start()
 
+    def _pedir_faixas(self, item):
+        """A ordem do disco, do Qobuz, sem baixar nem assinar nada.
+
+        O `[enter]` se chama "examina" e mostrava capa, ano e qualidade —
+        tudo que já estava no quadradinho da grade. O que se examina num
+        disco é o que tem DENTRO: as faixas, quanto dura, e em quantos LADOS
+        ele cabe, que é a pergunta que este sistema inteiro existe para
+        responder. O Qobuz manda isso de graça; era só ninguém pedir.
+        """
+        ident = str(item.get("id") or "").strip()
+        if not ident or item.get("lista") or ident in self._faixas:
+            return
+        self._faixas[ident] = {"estado": "lendo"}
+
+        def _do():
+            try:
+                r = rodar(["stylus-qobuz", "faixas", ident],
+                          capture_output=True, text=True, timeout=40)
+                dados = json.loads((r.stdout or "").strip() or "{}")
+                fx = dados.get("results") or []
+                if not fx:
+                    self._faixas[ident] = {
+                        "estado": "erro",
+                        "msg": dados.get("error") or "esse disco veio sem faixas"}
+                    return
+                lados, total, discos = _lados_de(fx)
+                self._faixas[ident] = {"estado": "ok", "faixas": fx,
+                                       "lados": lados, "total": total,
+                                       "discos": discos}
+            except Exception as e:                       # noqa: BLE001
+                self._faixas[ident] = {"estado": "erro", "msg": str(e)}
+
+        threading.Thread(target=_do, daemon=True).start()
+
     def _download(self, item):
         """Baixa direto para a estante. Sem navegador, sem interface no ar.
 
@@ -2743,6 +2810,7 @@ class QobuzScreen(Screen):
         elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if n:
                 self.examing = self.results[self.sel]
+                self._pedir_faixas(self.examing)
         elif ev.key == pygame.K_p:
             if n:
                 self._tocar(self.results[self.sel])
@@ -2845,8 +2913,21 @@ class QobuzScreen(Screen):
         dim.set_alpha(220)
         s.blit(dim, r.topleft)
 
-        # painel central
-        pw, ph = 620, 330
+        # O painel cresceu porque passou a ter o que mostrar: a ORDEM DO
+        # DISCO. Ele acompanha a tela em vez de ser 620x330 fixo — numa tela
+        # de 800 o de antes já ocupava quase tudo, e numa de 1920 sobrava
+        # metade da tela ao lado de um cartão com quatro linhas.
+        pw = max(520, min(940, r.w - 80))
+        info = self._faixas.get(str(item.get("id") or ""))
+        pronto = bool(info and info.get("estado") == "ok")
+        # A ALTURA SAI DO CONTEÚDO. Com altura fixa, um single de quatro
+        # faixas deixava metade do cartão vazia e um disco de vinte cortava a
+        # lista — as duas coisas com o mesmo número escrito no código.
+        alt_lista = 0
+        if pronto and info["lados"]:
+            n_col, por_col = self._colunas_de(info, pw - 64)
+            alt_lista = 24 + por_col * 21 + 8
+        ph = max(300, min(620, r.h - 60, 246 + alt_lista + 136))
         px = r.x + (r.w - pw) // 2
         py = r.y + (r.h - ph) // 2
         T.panel(s, pygame.Rect(px, py, pw, ph), T.INK_LIFT, radius=16,
@@ -2879,17 +2960,44 @@ class QobuzScreen(Screen):
         # cabiam nos 456 px do painel e a última palavra saía como
         # "qualidade…" — o rótulo sobrevivia e o valor, que é a informação,
         # sumia.
-        if year or tracks:
+        n_faixas = len(info["faixas"]) if pronto else tracks
+        if year or n_faixas:
             partes = ([str(year)] if year else []) + \
-                     ([plural(tracks, "faixa")] if tracks else [])
+                     ([plural(n_faixas, "faixa")] if n_faixas else [])
             T.text(s, "  ·  ".join(partes), (tx, cap.y + 78), 16, T.TEXT_DIM,
                    maxw=tw)
         if quality:
             T.text(s, quality, (tx, cap.y + 102), 16,
                    T.AMBER if item.get("hires") else T.TEXT_DIM, maxw=tw)
+        # O QUE ESTE DISCO É, em duração e em lados — a pergunta que este
+        # sistema existe para responder, e que a loja não respondia: "45 min
+        # · 2 lados" diz se cabe antes do jantar melhor do que "10 faixas".
+        if pronto and info["lados"]:
+            n_l = len(info["lados"])
+            frase = "%s  ·  %s" % (humano(info["total"]), plural(n_l, "lado"))
+            if info.get("discos", 1) > 1:
+                frase += "  ·  %s" % plural(info["discos"], "disco")
+            T.text(s, frase, (tx, cap.y + 126), 17, T.AMBER, maxw=tw)
+
+        # ── a ordem do disco ───────────────────────────────────────────────
+        ly = cap.bottom + 22
+        # As ações moram no rodapé do painel; a lista vai até onde elas
+        # começam, e nem um pixel além.
+        y_acoes = py + ph - 96
+        if item.get("lista"):
+            pass                       # uma playlist não tem ordem para ver
+        elif info is None or info.get("estado") == "lendo":
+            T.text(s, "lendo a ordem do disco…", (px + 32, ly), 16,
+                   T.TEXT_FAINT)
+        elif info.get("estado") == "erro":
+            T.text(s, info.get("msg", "não deu para ler as faixas"),
+                   (px + 32, ly), 15, T.RED, maxw=pw - 64)
+        elif pronto:
+            self._draw_lados(s, pygame.Rect(px + 32, ly, pw - 64,
+                                            max(40, y_acoes - ly - 8)), info)
 
         # as duas coisas que dá para fazer com um disco que não é seu
-        y = py + 214
+        y = y_acoes
         if item.get("lista"):
             # Uma playlist não é um disco, e as duas linhas que valem para
             # ela são outras: pôr na ordem dela, ou sorteada. Sem esta, o
@@ -2912,9 +3020,76 @@ class QobuzScreen(Screen):
                                (px + 32, y + 26), 16, T.TEXT_DIM)
 
         # ações
-        y = py + ph - 50
+        y = py + ph - 40
         T.frase_com_teclas(s, "[i] copia a URL   ·   [esc] volta",
                            (px + 32, y), 15, T.TEXT_FAINT)
+
+    def _colunas_de(self, info, larg):
+        """(quantas colunas, quantas LINHAS a mais alta tem).
+
+        Uma conta só, usada pela altura do cartão e pelo desenho: se as duas
+        divergirem, o cartão fica alto demais ou corta a lista — e é sempre a
+        segunda que se vê.
+        """
+        lados = info["lados"] or []
+        n = max(1, len(lados))
+        col_w = (larg - 22 * (n - 1)) // n
+        if col_w < 210 and n > 1:
+            n = 1
+        if n == 1:
+            linhas = sum(1 + len(ld.get("tracks", [])) for ld in lados)
+        else:
+            linhas = max((1 + len(ld.get("tracks", [])) for ld in lados),
+                         default=1)
+        return n, linhas
+
+    def _draw_lados(self, s, caixa, info):
+        """As faixas, em colunas — uma por LADO.
+
+        Uma coluna por lado e não uma lista corrida: o que se quer saber
+        olhando um disco que ainda não é seu é onde ele te faz levantar. Num
+        LP são duas colunas, num duplo são quatro, e a quebra entre elas É a
+        informação.
+        """
+        lados, faixas = info["lados"], info["faixas"]
+        gap = 22
+        # A MESMA conta que decidiu a altura do cartão (ver `_colunas_de`):
+        # estreito demais para caber "01 Título 4:32" e a divisão por lado
+        # vira ruído — melhor uma coluna só, com os lados anunciados no meio
+        # da lista.
+        n, _linhas = self._colunas_de(info, caixa.w)
+        col_w = (caixa.w - gap * (n - 1)) // n
+        passo = 21
+        for c in range(n):
+            cx = caixa.x + c * (col_w + gap)
+            y = caixa.y
+            grupos = ([lados[c]] if n > 1 else lados)
+            for ld in grupos:
+                if y + passo > caixa.bottom:
+                    break
+                rot = (ld.get("label") or "LADO").replace("SIDE", "LADO")
+                dur = humano(max(0.0, ld["end"] - ld["start"]))
+                T.text(s, rot, (cx, y), 15, T.AMBER, bold=True)
+                T.text(s, dur, (cx + col_w, y), 14, T.TEXT_FAINT,
+                       anchor="topright")
+                y += 24
+                for i in ld.get("tracks", []):
+                    if i >= len(faixas):
+                        continue
+                    if y + passo > caixa.bottom:
+                        T.text(s, "…", (cx, y), 15, T.TEXT_FAINT)
+                        y += passo
+                        break
+                    f = faixas[i]
+                    t_dur = relogio(f.get("duration") or 0)
+                    larg_dur = T.largura(t_dur, 14) + 12
+                    T.text(s, "%2d" % (i + 1), (cx, y + 1), 13, T.TEXT_FAINT)
+                    T.text(s, f.get("title") or "?", (cx + 26, y), 15,
+                           T.TEXT_DIM, maxw=col_w - 26 - larg_dur)
+                    T.text(s, t_dur, (cx + col_w, y + 1), 14, T.TEXT_FAINT,
+                           anchor="topright")
+                    y += passo
+                y += 8
 
     def draw(self, s, r):
         """O corpo primeiro, o formulário por cima — sempre.
@@ -5318,6 +5493,25 @@ class App:
                 self.screens[self.cur].entrada = None
                 return None
             return self.screens[self.cur].key(ev)
+        # A TELA CHEIA sai primeiro, e o ESC é o que a tira.
+        #
+        # **Sintoma:** com o disco na tela toda, apertar B no controle (que
+        # chega aqui como ESC) parecia não fazer nada — e a partir dali NADA
+        # mais respondia: o `f` não voltava, as setas não buscavam, o ENTER
+        # pulava de seção. O que acontecia é que o ESC caía no bloco abaixo e
+        # LIGAVA o trilho, que na tela cheia não é desenhado (`inteira` tira
+        # a moldura): o programa ficava num menu invisível, comendo todas as
+        # teclas seguintes. O `if ev.key == K_ESCAPE and self.tela_cheia` da
+        # NowScreen nunca chegava a rodar, porque este método vem antes dela.
+        tela_atual = self.screens[self.cur]
+        if getattr(tela_atual, "tela_cheia", False):
+            if ev.key == pygame.K_ESCAPE:
+                tela_atual.tela_cheia = False
+                return None
+            # E qualquer coisa que ABRA o trilho tira a tela cheia junto, em
+            # vez de abrir um menu por baixo de um disco que ocupa tudo.
+            if ev.key in (pygame.K_TAB, pygame.K_q):
+                tela_atual.tela_cheia = False
         if ev.key == pygame.K_ESCAPE:
             # VOLTAR, não SAIR. No modo música esta tela é a sessão inteira, e
             # o botão B (que chega aqui como ESC) tem que se comportar como o
@@ -5502,7 +5696,12 @@ class App:
             # Uma seção pode pedir a tela INTEIRA — é o que a AGORA faz no
             # [f]. O trilho é a moldura do sistema; quando o assunto é o
             # disco e mais nada, moldura é ruído.
-            inteira = getattr(self.screens[self.cur], "tela_cheia", False)
+            # `and not self.rail`: com o trilho aberto a moldura tem que
+            # aparecer. Sem isto, um caminho qualquer que ligasse o trilho com
+            # a tela cheia no ar deixava o programa num menu INVISÍVEL — e um
+            # menu invisível come todas as teclas seguintes.
+            inteira = (getattr(self.screens[self.cur], "tela_cheia", False)
+                       and not self.rail)
             body = (pygame.Rect(0, 0, self.W, self.H) if inteira else
                     pygame.Rect(rail_w, 0, self.W - rail_w, self.H))
             # Os alvos são de UM quadro: a grade muda de tamanho com a
