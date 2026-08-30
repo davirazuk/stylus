@@ -1218,10 +1218,13 @@ def disco(raio, intervalos=None):
 
     d = pygame.transform.smoothscale(d, (raio * 2, raio * 2))
     # O cache é por (raio, intervalos) agora: trocar de disco troca a chave,
-    # e sem um teto ele cresceria uma superfície por álbum da coleção. Seis
-    # é o bastante para a AGORA (dois tamanhos) e a tela cheia não
-    # regenerarem a cada quadro.
-    if len(_disco_cache) > 6:
+    # e sem um teto ele cresceria uma superfície por álbum da coleção.
+    #
+    # Doze e não seis: a grade da estante desenha o disco no lugar da capa
+    # que falta, em dois tamanhos (o escolhido cresce), e a AGORA usa mais
+    # dois — com seis, trocar de seção jogava o cache inteiro fora e o
+    # próximo quadro redesenhava tudo. Cada superfície é pequena.
+    if len(_disco_cache) > 12:
         _disco_cache.clear()
     # NÃO ponha `d.set_alpha(None)` aqui — havia um, copiado do halo com a
     # mesma promessa de 3,6x. Ele apaga o SRCALPHA da superfície (ver a

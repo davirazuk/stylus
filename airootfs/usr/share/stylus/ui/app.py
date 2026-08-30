@@ -1894,10 +1894,24 @@ class ShelfScreen(Screen):
         # preto: custava blits e não mudava pixel nenhum.
         T.sleeve(s, rect, cov, selected)
         if not cov:
-            # Iniciais do artista como placeholder — mais útil que "sem capa"
-            initials = "".join(w[0] for w in it["artist"].split()[:2]).upper()
-            T.text(s, initials or it["name"][:2].upper(), rect.center, 36,
-                   T.TEXT_FAINT, anchor="center")
+            # Sem capa, o DISCO. Um envelope vazio com duas letras dentro é o
+            # que um gerenciador de arquivos desenha; aqui o que existe
+            # quando a arte falta continua sendo um disco — e o desenho dele
+            # já está pronto, com os sulcos e a bolacha. As iniciais ficam
+            # sobre a bolacha, que é onde elas ficam num disco de verdade.
+            #
+            # Uma playlist não: ela não é um objeto, e desenhá-la como disco
+            # seria a mesma confusão que a tarja "LISTA" existe para evitar.
+            iniciais = "".join(w[0] for w in it["artist"].split()[:2]).upper()
+            iniciais = iniciais or it["name"][:2].upper()
+            if it.get("playlist"):
+                T.text(s, iniciais, rect.center, 36, T.TEXT_FAINT,
+                       anchor="center")
+            else:
+                rr = max(24, int(min(rect.w, rect.h) * 0.40))
+                s.blit(T.disco(rr), (rect.centerx - rr, rect.centery - rr))
+                T.text(s, iniciais, rect.center, max(13, int(rr * 0.26)),
+                       T.lerp(T.INK, T.AMBER_DIM, 0.75), anchor="center")
         # Marcas de desgaste — menores e mais sutis
         if it["plays"]:
             n = min(5, it["plays"])
