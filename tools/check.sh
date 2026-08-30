@@ -3113,13 +3113,20 @@ except BaseException as e:                               # noqa: BLE001
 
 class Cli:
     sec = "x"
+    # O servidor de verdade APARA o limite em 50, peça-se o que se pedir.
+    #
+    # O falso daqui devolvia os 100 pedidos — mais educado que o Qobuz — e
+    # por isso provava o caso fácil: a paginação passava verde enquanto a
+    # loja de verdade parava em cinquenta discos. É a lição escrita no
+    # `_paginado`, e ela só vale se estiver escrita AQUI também.
+    APARA = 50
 
     def __init__(self, total, declara=True):
         self.total, self.declara, self.chamadas = total, declara, []
 
     def api_call(self, _ep, **kw):
-        off, lim = kw["offset"], kw["limit"]
-        self.chamadas.append((off, lim))
+        off, lim = kw["offset"], min(kw["limit"], self.APARA)
+        self.chamadas.append((off, kw["limit"]))
         itens = [{"id": i} for i in range(off, min(off + lim, self.total))]
         bloco = {"items": itens}
         if self.declara:
@@ -3173,11 +3180,50 @@ try:
     if len(velho) != qs.POR_PAGINA:
         erros.append("sem offset, as playlists deviam voltar à 1ª página")
 
+    # ── e a BUSCA, que tinha o mesmo defeito e ficou para trás ──────────
+    # As duas telas da loja chamavam `search_albums(termo, limit=100)`, uma
+    # chamada só — e o `album/search` apara em 50 igual ao dos favoritos.
+    # Procurar "beatles" devolvia cinquenta edições e parava.
+    class CliBusca:
+        APARA = 50
+
+        def __init__(self, total, jeito="metodo"):
+            self.total, self.jeito = total, jeito
+
+        def _pagina(self, off, lim):
+            lim = min(lim, self.APARA)
+            return {"albums": {"items": [{"id": i} for i in
+                                         range(off, min(off + lim, self.total))],
+                               "total": self.total}}
+
+        def search_albums(self, _q, limit=50, offset=None):
+            if self.jeito != "metodo":
+                if offset is not None:
+                    raise TypeError("offset não existe nesta versão")
+                return self._pagina(0, limit)
+            return self._pagina(offset or 0, limit)
+
+        def api_call(self, _ep, **kw):
+            if self.jeito != "api":
+                raise RuntimeError("esta versão não tem api_call assim")
+            return self._pagina(kw["offset"], kw["limit"])
+
+    if len(qs.busca_todos(CliBusca(213), 300)[0]) != 213:
+        erros.append("a busca parou antes dos 213 resultados")
+    if len(qs.busca_todos(CliBusca(213, "api"), 300)[0]) != 213:
+        erros.append("a busca não caiu no api_call quando o método recusa")
+    # Versão antiga do qobuz-dl: volta à primeira página em vez de estourar.
+    velha = qs.busca_todos(CliBusca(213, "velho"), 300)[0]
+    if len(velha) != CliBusca.APARA:
+        erros.append("sem offset, a busca devia voltar à 1ª página")
+    if len(qs.busca_todos(CliBusca(9), 300)[0]) != 9:
+        erros.append("uma busca curta veio errada")
+
     if erros:
         print("ERRO %s" % "; ".join(erros))
     else:
-        print("OK 340 favoritos em 4 páginas e 240 listas em 3, "
-              "com o teto cortando com recado")
+        print("OK 340 favoritos, 240 listas e 213 achados na busca — "
+              "com o servidor aparando o limite em 50, como ele faz")
 except BaseException:                                    # noqa: BLE001
     print("ERRO %s" % traceback.format_exc().replace("\n", " | "))
 FAVEOF

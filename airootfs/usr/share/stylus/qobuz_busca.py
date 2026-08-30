@@ -127,11 +127,15 @@ def main():
         if not termo:
             responde(error="busca vazia")
         try:
-            # 100, como a estante do rofi. Eram 25 aqui e 100 lá: as duas
-            # telas mostram a MESMA loja, e a de tela cheia — a que se usa do
-            # sofá — era a que via menos. "beatles" tem centenas de edições, e
-            # com 25 a que você procura quase nunca está entre elas.
-            dados = cl.search_albums(termo, limit=100)
+            # PAGINADA, pelo mesmo código dos favoritos e da estante do
+            # rofi. Eram 25 aqui e 100 lá, e depois 100 nas duas — mas o
+            # `album/search` do Qobuz APARA o limite em 50 do lado dele,
+            # então as duas telas mostravam cinquenta discos e paravam.
+            # "beatles" tem centenas de edições; com cinquenta, a que você
+            # procura quase nunca está entre elas.
+            from qobuz_shelf import busca_todos
+            itens, _total = busca_todos(cl, termo)
+            dados = {"albums": {"items": itens}}
         except Exception as e:                           # noqa: BLE001
             responde(error="a busca falhou: %s" % e)
     elif modo in ("favoritos", "favorites"):

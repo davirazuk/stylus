@@ -154,6 +154,12 @@ POR_PAGINA = 100
 # E quantas playlists. Mesmo raciocínio: teto da coleção, não da chamada.
 TETO_LISTAS = int(os.environ.get("STYLUS_QOBUZ_LISTAS", "500"))
 
+# E quantos resultados de BUSCA. Menor que os favoritos de propósito: uma
+# busca por "beatles" tem milhares de edições, e ninguém rola mil quadros —
+# mas 50, que é onde o servidor apara, é pouco demais para achar a edição
+# certa de um disco muito reeditado.
+TETO_BUSCA = int(os.environ.get("STYLUS_QOBUZ_BUSCA", "300"))
+
 
 def _paginado(pedir, chave, teto):
     """(itens, total) — TODAS as páginas, e não a primeira.
@@ -216,11 +222,18 @@ def _paginado(pedir, chave, teto):
         itens += novos
         if total is not None and len(itens) >= total:
             break
-        # Página curta: fim da lista só quando não há total declarado. Com
-        # total, uma página curta é o servidor aparando o limite — ver o
-        # sintoma 2 acima.
-        if total is None and len(pagina) < pedido:
-            break
+        # E NÃO existe mais "página curta quer dizer fim".
+        #
+        # **Sintoma 3:** com o servidor aparando em 50 E sem declarar o
+        # total — que acontece —, a primeira página já vinha curta e o laço
+        # parava nos 50 outra vez. A regra sobrevivia porque o falso da
+        # conferência devolvia os 100 pedidos; com ele aparando como o Qobuz
+        # apara, o defeito apareceu na primeira volta.
+        #
+        # Quem manda parar é a lista, não o tamanho da página: página vazia,
+        # página que não traz nada de novo, total atingido ou teto. Custa uma
+        # chamada a mais no fim de cada listagem, e é o preço de não inventar
+        # uma regra sobre o que o servidor "quis dizer" ao mandar 50.
     return itens, total
 
 
@@ -233,6 +246,43 @@ def favoritos_todos(cl, teto=TETO_FAVORITOS):
                                      type="albums", offset=off, limit=lim,
                                      sec=cl.sec),
         "albums", teto)
+
+
+def busca_todos(cl, termo, teto=TETO_BUSCA):
+    """Uma busca inteira, e não a primeira página dela. Ver `_paginado`.
+
+    **Sintoma:** a loja mostrava CINQUENTA discos numa busca e parava — as
+    duas telas, a de tela cheia e a estante do rofi, porque as duas
+    chamavam `cl.search_albums(termo, limit=100)`, uma chamada só. O
+    `album/search` do Qobuz apara o limite em 50 do lado dele, exatamente
+    como o `favorite/getUserFavorites` fazia: a resposta vinha curta por
+    decisão do servidor, o `total` na mesma resposta dizia quantos existem,
+    e ninguém olhava.
+
+    É o MESMO defeito dos favoritos, na linha de baixo do mesmo arquivo, e
+    ficou para trás quando aquele foi consertado — que é a lição de sempre:
+    quando duas chamadas fazem a mesma pergunta ao mesmo servidor, o
+    conserto tem que passar pelas duas, ou a resposta tem que ser uma só.
+    Agora é uma só: as três passam pelo `_paginado`.
+
+    O `offset` vai com rede de segurança em duas camadas porque a assinatura
+    do `search_albums` mudou entre versões do qobuz-dl: primeiro o método,
+    depois o `api_call` cru, e só então desiste — voltando à primeira página,
+    que é o comportamento de antes e não um erro na cara de quem só queria
+    procurar um disco.
+    """
+    def pedir(off, lim):
+        try:
+            return cl.search_albums(termo, limit=lim, offset=off)
+        except TypeError:
+            pass
+        try:
+            return cl.api_call("album/search", query=termo,
+                               offset=off, limit=lim)
+        except Exception:                                # noqa: BLE001
+            return None if off else cl.search_albums(termo, limit=lim)
+
+    return _paginado(pedir, "albums", teto)
 
 
 def listas_todas(cl, teto=TETO_LISTAS):
@@ -305,7 +355,8 @@ def main():
         try:
             # 30 era pouco para uma busca larga ("beatles" tem centenas de
             # edições) e a tela não tinha como pedir mais.
-            dados = cl.search_albums(termo, limit=100)
+            itens, _total = busca_todos(cl, termo)
+            dados = {"albums": {"items": itens}}
         except Exception as e:                           # noqa: BLE001
             morre("a busca falhou: %s" % e)
     else:
