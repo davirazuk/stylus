@@ -820,7 +820,13 @@ RAIZES = ["airootfs/etc",
           # sistema é que ela SE PARECE a mesma. O app tinha dezesseis cores
           # quase-iguais às do computador e usava o âmbar do Material
           # (#ffc107) em cinco lugares onde vai o âmbar do STYLUS.
-          "android/app/src/main"]
+          "android/app/src/main",
+          # E a PRIMEIRA tela de todas, a de arranque. Ela ficou de fora até
+          # aqui e estava inteira em VERDE — o fundo (0.039, 0.180, 0.137) e
+          # um branco esverdeado no texto de estado. Escrito em fração de 0 a
+          # 1, que é como o plymouth pede a cor, e por isso invisível para uma
+          # conferência que só lê hexadecimal.
+          "airootfs/usr/share/plymouth"]
 
 achados = {}
 
@@ -849,6 +855,31 @@ for raiz in RAIZES:
                  else (m.group(2) or m.group(3))).lower()
             if h not in pal.values():
                 confere(f"#{h}", rgb(h), arq)
+        # E o plymouth, como "0.039, 0.180, 0.137" — fração de 0 a 1. Dois
+        # formatos e dois lugares é onde a deriva se esconde: foi assim que o
+        # esquema do Konsole (R,G,B decimal num heredoc) e o fundo verde da
+        # tela de arranque passaram por anos.
+        #
+        # Só ali: as frações do renderizador do celular e do deck são o
+        # MATERIAL do disco (corpo, sulco, intervalo), que a §5.5 governa em
+        # números próprios — perto do preto de propósito, e não uma cor de
+        # interface que devesse casar com a paleta.
+        # Sem as linhas de comentário: o comentário que EXPLICA a cor velha
+        # cita a cor velha, e uma conferência que acusa a própria explicação
+        # do conserto é uma que se aprende a ignorar. Já aconteceu duas vezes
+        # nesta família (a busca da capa e a do `side['label']`).
+        codigo = "\n".join(ln for ln in txt.splitlines()
+                           if not ln.lstrip().startswith("#"))
+        for m in (re.finditer(r"\(\s*(\d\.\d{1,4})\s*,\s*(\d\.\d{1,4})"
+                              r"\s*,\s*(\d\.\d{1,4})\s*\)", codigo)
+                  if "plymouth" in str(arq) else ()):
+            f = tuple(float(x) for x in m.groups())
+            if any(x > 1.0 for x in f):
+                continue
+            r = tuple(int(round(x * 255)) for x in f)
+            if "%02x%02x%02x" % r in pal.values():
+                continue
+            confere("%.3f, %.3f, %.3f" % f, r, arq)
         # O KDE escreve cor como "R,G,B" decimal, nao como hex.
         for m in re.finditer(r"^\s*[A-Za-z][A-Za-z0-9]*\s*=\s*(\d{1,3}),(\d{1,3}),(\d{1,3})\s*$",
                              txt, re.M):
@@ -3754,6 +3785,48 @@ case "$saida" in
     OK*)   ok "${saida#OK }" ;;
     PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
     *)     bad "a atualização não leva o que a instalação leva"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
+sec "a tela de arranque está na paleta"
+# A conferência de deriva pega cor QUASE igual a uma da paleta; uma cor de
+# outra paleta inteira ela deixa passar de propósito ("ou é igual, ou é
+# claramente outra cor"). Só que a tela de arranque tem três cores no total, e
+# as três eram de outra paleta: fundo VERDE e texto branco-esverdeado. Aqui a
+# régua é a estrita — o que este arquivo pinta tem que SER uma cor da paleta.
+saida=$(python3 - <<'ARRANQUEEOF' 2>&1
+import re
+try:
+    pal = {}
+    for ln in open("airootfs/usr/share/stylus/palette", encoding="utf-8"):
+        m = re.match(r"^([A-Z_]+)=#([0-9a-fA-F]{6})\s*$", ln)
+        if m:
+            pal[m.group(2).lower()] = m.group(1)
+    txt = open("airootfs/usr/share/plymouth/themes/stylus/stylus.script",
+               encoding="utf-8").read()
+except OSError as e:
+    print("PULA %s" % e)
+    raise SystemExit(0)
+fora = []
+for ln in txt.splitlines():
+    if ln.lstrip().startswith("#"):
+        continue
+    for m in re.finditer(r"\(\s*(\d\.\d{1,4})\s*,\s*(\d\.\d{1,4})"
+                         r"\s*,\s*(\d\.\d{1,4})\s*\)", ln):
+        f = tuple(float(x) for x in m.groups())
+        h = "%02x%02x%02x" % tuple(int(round(x * 255)) for x in f)
+        if h not in pal:
+            fora.append("%s (#%s)" % (m.group(0), h))
+if fora:
+    print("ERRO cor fora da paleta na tela de arranque: %s" % ", ".join(fora))
+else:
+    print("OK as cores da tela de arranque são as da paleta")
+ARRANQUEEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a primeira tela da máquina não está na paleta"
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
