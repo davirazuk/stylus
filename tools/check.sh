@@ -3895,6 +3895,86 @@ case "$saida" in
          printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "a loja de tela cheia mostra TODOS os favoritos"
+# **Sintoma (relatado):** "a loja não mostra todos os discos salvos". Havia
+# DUAS frentes para a mesma loja — a estante do rofi e a tela cheia — e só a
+# primeira tinha aprendido a paginar: aqui a chamada era uma só, com
+# `limit=60`. Quem tem 87 favoritos via 60, sem nada dizendo que havia mais,
+# enquanto a estante do rofi ao lado mostrava os 87. E a BUSCA pedia 25
+# resultados contra os 100 de lá.
+#
+# A conferência roda o caminho da tela cheia contra um Qobuz de mentira com
+# 237 favoritos e conta o que chegou do outro lado.
+saida=$(python3 - <<'FAVCHEIAEOF' 2>&1
+import sys
+sys.path.insert(0, "airootfs/usr/share/stylus")
+N = 237
+
+
+class Cli:
+    sec = "x"
+
+    def __init__(self):
+        self.chamadas = []
+
+    def api_call(self, _rota, type=None, offset=0, limit=50, sec=None):
+        self.chamadas.append((offset, limit))
+        itens = [{"id": i, "title": "Disco %d" % i,
+                  "artist": {"name": "Artista %d" % i}, "tracks_count": 10,
+                  "maximum_bit_depth": 24, "maximum_sampling_rate": 96,
+                  "release_date_original": "2001-01-01",
+                  "image": {"large": "http://x/%d.jpg" % i}}
+                 for i in range(offset, min(N, offset + limit))]
+        return {"albums": {"items": itens, "total": N}}
+
+    def search_albums(self, _termo, limit=25):
+        self.chamadas.append(("busca", limit))
+        return {"albums": {"items": []}}
+
+
+try:
+    import qobuz_busca as qb
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+cl = Cli()
+qb.cliente = lambda: cl
+saida = []
+qb.responde = lambda **k: (saida.append(k), (_ for _ in ()).throw(SystemExit))
+try:
+    sys.argv = ["qobuz_busca.py", "favoritos"]
+    qb.main()
+except SystemExit:
+    pass
+res = (saida[-1] if saida else {}).get("results") or []
+cl2 = Cli()
+qb.cliente = lambda: cl2
+saida[:] = []
+try:
+    sys.argv = ["qobuz_busca.py", "buscar", "beatles"]
+    qb.main()
+except SystemExit:
+    pass
+pedido = [c for c in cl2.chamadas if c and c[0] == "busca"]
+if len(res) != N:
+    print("ERRO a loja mostrou %d dos %d favoritos" % (len(res), N))
+elif len(cl.chamadas) < 2:
+    print("ERRO pediu uma página só (%s)" % cl.chamadas)
+elif not pedido or pedido[0][1] < 100:
+    print("ERRO a busca pede %s resultados (a do rofi pede 100)"
+          % (pedido[0][1] if pedido else "?"))
+else:
+    print("OK %d favoritos em %d páginas, e a busca pede %d"
+          % (len(res), len(cl.chamadas), pedido[0][1]))
+FAVCHEIAEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o qobuz_busca aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a loja de tela cheia não mostra tudo que você salvou"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 printf '\n  %s%d passaram%s' "$g" "$PASS" "$z"
 (( FAIL )) && printf ', %s%d falharam%s\n\n' "$r" "$FAIL" "$z" || printf '\n\n'
 exit $(( FAIL > 0 ))
