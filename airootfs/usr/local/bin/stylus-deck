@@ -9,6 +9,7 @@
 #      stylus deck --quiet   DISCO            toca num sink nulo: silêncio na sala
 #      stylus deck --no-scope DISCO           só toca, sem tela  (= stylus play)
 #      stylus deck --recomeçar DISCO          do começo, ignorando onde parou
+#      stylus deck --lado B  DISCO            começa pelo lado B
 #
 #  ── O que este comando é, agora que o deck não existe mais ───────────────
 #  O DECK era um segundo programa: OpenGL, um venv só dele com PyOpenGL,
@@ -59,7 +60,7 @@ mostrar_o_disco() {
     (( rc == 76 )) && return 0
     return $rc
 }
-QUIET=0; TELA=1; VIEW=0; TARGET=""; RETOMAR=1
+QUIET=0; TELA=1; VIEW=0; TARGET=""; RETOMAR=1; LADO=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -69,7 +70,13 @@ while [[ $# -gt 0 ]]; do
         --no-scope|--sem-tela) TELA=0; shift ;;
         --view|--observar|--monitor) VIEW=1; shift ;;
         --recomeçar|--recomecar|--do-inicio|--restart) RETOMAR=0; shift ;;
-        -h|--help)  sed -n '5,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        # "põe o lado B" é um gesto de toca-discos e não existia: dava para
+        # VIRAR o disco depois de posto (o `stylus virar`), e não para
+        # começar pelo lado que se quer ouvir. Quem começa pelo B tem um
+        # motivo — é o lado de que gosta mais.
+        --lado|--side)  LADO="${2:-}"; RETOMAR=0; shift 2 ;;
+        --lado=*|--side=*) LADO="${1#*=}"; RETOMAR=0; shift ;;
+        -h|--help)  sed -n '5,12p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *)          TARGET=$1; shift ;;
     esac
 done
@@ -220,6 +227,34 @@ fi
 #  o disco inteiro faz ele procurar a posição salva da FAIXA 1 — que quase
 #  nunca é onde você parou. Quem sabe qual faixa é o índice da lista, e isso é
 #  nosso.
+# ── começar por um LADO ────────────────────────────────────────────────────
+# A primeira faixa daquele lado, pelo mesmo `_build_sides` que o resto do
+# sistema usa — nada de "metade da lista", que numa faixa longa cai no meio
+# de outra. Lado que não existe neste disco não é erro de digitação em
+# silêncio: diz quantos ele tem e põe do começo.
+if [[ -n $LADO ]] && (( ${#_tracks[@]} )); then
+    _i=$("$PY" - "$TARGET" "$LADO" <<'LADOEOF' 2>/dev/null
+import sys, vinyl
+al = vinyl.Album(sys.argv[1], envelope=False)
+querido = sys.argv[2].strip().upper()
+for i, lado in enumerate(al.sides):
+    rot = (lado.get("label") or "").upper()
+    if rot.endswith(" " + querido) or rot == querido:
+        faixas = lado.get("tracks") or []
+        print(faixas[0] if faixas else 0)
+        break
+else:
+    print("?%d" % len(al.sides))
+LADOEOF
+)
+    if [[ $_i == \?* ]]; then
+        echo "stylus: não achei o lado $LADO; este disco tem ${_i#?}." >&2
+    elif [[ $_i =~ ^[0-9]+$ ]]; then
+        mpv_args+=(--playlist-start="$_i")
+        echo "stylus: começando pelo LADO ${LADO^^}"
+    fi
+fi
+
 if (( RETOMAR )) && (( ${#_tracks[@]} )); then
     _volta=$("$PY" - "$TARGET" <<'PYEOF' 2>/dev/null
 import os, sys, vinyl

@@ -100,6 +100,7 @@ serviço anota a posição enquanto toca, e `stylus deck` volta para lá:
 ```
 stylus deck loveless              de onde você parou
 stylus deck --recomeçar loveless  do começo
+stylus deck --lado B loveless     pelo lado B, que é o de que você gosta
 ```
 
 Não dá para deixar isso a cargo do `--resume-playback` do mpv: ele guarda a
