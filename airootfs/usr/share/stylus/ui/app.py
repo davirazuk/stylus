@@ -4953,6 +4953,20 @@ class _DesktopItem:
 _DESKTOP_ITEM = _DesktopItem()
 
 
+class _BluetoothItem:
+    """Item do trilho que abre o menu de bluetooth (rofi).
+
+    Não é uma seção — é um atalho rápido, como a área de trabalho. Fica
+    entre as seções e a saída porque bluetooth é algo que a pessoa quer
+    ligar e desligar, não uma tela para navegar.
+    """
+    name = "BLUETOOTH"
+    icon = "󰂯"
+
+
+_BLUETOOTH_ITEM = _BluetoothItem()
+
+
 class App:
     def __init__(self):
         pygame.init()
@@ -5957,7 +5971,8 @@ class App:
         pygame.draw.line(s, T.AMBER_DIM, (28, 70), (w - 28, 70))
 
         y = 100
-        for i, sc in enumerate(self.screens + [_DESKTOP_ITEM]):
+        rail_items = self.screens + [_BLUETOOTH_ITEM, _DESKTOP_ITEM]
+        for i, sc in enumerate(rail_items):
             atual = i == self.cur
             foco = self.rail and i == self.rail_sel
             box = pygame.Rect(12, y - 6, w - 24, 46)
@@ -6270,14 +6285,17 @@ class App:
                 self._goto(i)
             return None
         if self.rail:
-            n = len(self.screens) + 1          # +1: a área de trabalho
+            n = len(self.screens) + 2          # +2: bluetooth e área de trabalho
             if ev.key in (pygame.K_DOWN, pygame.K_j):
                 self.rail_sel = (self.rail_sel + 1) % n
             elif ev.key in (pygame.K_UP, pygame.K_k):
                 self.rail_sel = (self.rail_sel - 1) % n
             elif ev.key in (pygame.K_RIGHT, pygame.K_l, pygame.K_RETURN,
                             pygame.K_KP_ENTER):
-                if self.rail_sel >= len(self.screens):
+                if self.rail_sel == len(self.screens):
+                    self.toast("abrindo bluetooth…")
+                    spawn(["~/.config/rofi/bluetooth-menu.sh"])
+                elif self.rail_sel > len(self.screens):
                     self.toast("indo para a área de trabalho…")
                     pygame.display.flip()
                     spawn(["stylus-mode", "desktop"])
@@ -6349,7 +6367,10 @@ class App:
         # acertar sem querer com uma grade larga do lado.
         for caixa, i in self._alvos_do_trilho:
             if caixa.collidepoint(ev.pos):
-                if i >= len(self.screens):
+                if i == len(self.screens):
+                    self.toast("abrindo bluetooth…")
+                    spawn(["~/.config/rofi/bluetooth-menu.sh"])
+                elif i > len(self.screens):
                     self.toast("indo para a área de trabalho…")
                     pygame.display.flip()
                     spawn(["stylus-mode", "desktop"])
