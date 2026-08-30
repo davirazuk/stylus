@@ -2043,6 +2043,90 @@ else
     printf '%s\n' "$fora_da_lei" | sed 's/^/      /'
 fi
 
+# ── e a mesma lei no CELULAR ──────────────────────────────────────────────
+# **Sintoma:** a §5.5 diz, com todas as letras, "o mesmo vale para o Android
+# (VinylRenderer.kt): sem plinto, sem sala — o fundo é o halo do próprio
+# disco". E o renderizador do celular estava com a paleta ANTIGA do deck
+# inteira: intervalo entre faixas quase-BRANCO (0.740, 0.720, 0.680), brilho
+# do corpo em cinza neutro (uma lâmpada branca fora de quadro), aro de aço,
+# braço de metal azulado em três camadas com cabeçote, cápsula, anéis de
+# pivô e berço, mais poeira de ambiente em dois lugares (oitenta motas no
+# Kotlin e cinco no shader do fundo) e um "prato" desenhado embaixo do disco.
+#
+# É a mesma doença das seis listas de extensão e das cinco de capa: duas
+# cópias da mesma decisão em dois lugares derivam, e a que ninguém está
+# olhando deriva para o lado errado — aqui, para a foto de toca-discos que a
+# lei existe para impedir. A conferência de cima olhava só o vinyl.py.
+sec "no celular, o disco segue a mesma lei do desenho"
+fora_no_celular=$(python3 - <<'KTLUZEOF'
+import re, pathlib
+
+arq = pathlib.Path("android/app/src/main/kotlin/io/stylus/player/VinylRenderer.kt")
+if not arq.exists():
+    raise SystemExit(0)
+txt = arq.read_text()
+# Sem as linhas de comentário: o comentário que explica a cor VELHA cita a
+# cor velha, e uma conferência que acusa a própria explicação do conserto é
+# uma que se aprende a ignorar (já aconteceu duas vezes nesta família).
+codigo = "\n".join(ln for ln in txt.splitlines()
+                   if not ln.lstrip().startswith("//"))
+
+cor = {}
+for nome, r, g, b in re.findall(
+        r"val ([A-Z_]+)\s*=\s*floatArrayOf\(([\d.]+)f,\s*([\d.]+)f,\s*([\d.]+)f\)",
+        codigo):
+    cor[nome] = (float(r), float(g), float(b))
+
+# Os mesmos papéis do vinyl.py, com os nomes que o Kotlin usa.
+luz = ("VR", "SH", "GP", "GG", "AMB", "ER", "LB", "ARM_LIGHT", "ARM_TIP",
+       "EDGE_G")
+frio = ("VC", "GU", "SP", "WEAR")
+
+for nome in luz:
+    if nome not in cor:
+        print("%s: sumiu da paleta do celular" % nome)
+        continue
+    r, g, b = cor[nome]
+    if r <= b * 1.5:
+        print("%s = (%.3f, %.3f, %.3f): é luz e não é âmbar "
+              "(vermelho tem que passar de 1,5x o azul)" % (nome, r, g, b))
+for nome in frio:
+    if nome not in cor:
+        print("%s: sumiu da paleta do celular" % nome)
+        continue
+    r, g, b = cor[nome]
+    if b < r:
+        print("%s = (%.3f, %.3f, %.3f): é corpo e está QUENTE "
+              "(o azul não pode ficar abaixo do vermelho)" % (nome, r, g, b))
+
+# E o que a §5.5 proíbe pelo NOME. Estas peças voltam do jeito que foram: um
+# `headshell`, um `counterweight`, uma "surface under disc". Procurar pelo
+# nome em código (não em comentário) é o que impede a próxima volta — a
+# explicação acima cita todas elas.
+proibido = {
+    "headshell": "cabeçote",
+    "hsDir": "cabeçote",
+    "cartridge": "cápsula de metal",
+    "counterweight": "contrapeso",
+    "armRest": "berço do braço",
+    "ambientDust": "poeira de ambiente",
+    "dustX": "poeira de ambiente",
+    "plinth": "plinto",
+    "nebula": "névoa de ambiente",
+}
+baixo = codigo.lower()
+for chave, oque in proibido.items():
+    if chave.lower() in baixo:
+        print("%s: o renderizador do celular voltou a desenhar %s" % (chave, oque))
+KTLUZEOF
+)
+if [[ -z $fora_no_celular ]]; then
+    ok "as 14 cores do disco do celular seguem a §5.5, e nada de móvel voltou"
+else
+    bad "o desenho do celular saiu da lei (CLAUDE.md §5.5):"
+    printf '%s\n' "$fora_no_celular" | sed 's/^/      /'
+fi
+
 # ── os dois terminais são o mesmo terminal ────────────────────────────────
 # **Sintoma:** o STYLUS tem dois terminais — o alacritty no i3 e o Konsole no
 # KDE — e eles tinham paletas DIFERENTES. O do i3 usava as cores do arquivo

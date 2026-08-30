@@ -19,21 +19,41 @@ import kotlin.math.*
 class VinylRenderer : GLSurfaceView.Renderer {
 
     // ─── Paleta ──────────────────────────────────────────────────────────
-    private val VC  = floatArrayOf(0.010f, 0.010f, 0.013f)
-    private val VR  = floatArrayOf(0.045f, 0.048f, 0.056f)
-    private val SH  = floatArrayOf(0.120f, 0.122f, 0.115f)
-    private val GU  = floatArrayOf(0.048f, 0.051f, 0.062f)
-    private val GP  = floatArrayOf(0.145f, 0.130f, 0.115f)
-    private val GG  = floatArrayOf(0.740f, 0.720f, 0.680f)
+    // As MESMAS cores do `vinyl.py` do computador — a §5.5 escrita em
+    // números, nos dois lados.
+    //
+    // **Sintoma:** aqui elas tinham derivado, e derivado para o lado que a
+    // lei proíbe pelo nome. O intervalo entre faixas era QUASE-BRANCO
+    // (0.740, 0.720, 0.680), o brilho do corpo era uma lâmpada branca fora
+    // de quadro (0.120, 0.122, 0.115 — cinza neutro), o aro era aço e o
+    // braço era metal azulado. É a mesma "vinyl is plastic, not phosphor"
+    // que o deck do computador carregou por meses DEPOIS de o braço de lá
+    // já ter virado luz: duas listas da mesma coisa em dois lugares sempre
+    // derivam, e esta derivou justamente para a foto de toca-discos.
+    //
+    // Aqui o disco é fósforo: corpo preto FRIO, e o âmbar é a única cor
+    // viva. Quem for "melhorar o visual" um dia leia a §5.5 antes — ela
+    // avisa que isto já custou semanas de volta.
+    private val VC  = floatArrayOf(0.013f, 0.015f, 0.021f)  // corpo: preto FRIO
+    private val VR  = floatArrayOf(0.052f, 0.041f, 0.027f)  // aro: âmbar baixo
+    private val SH  = floatArrayOf(0.092f, 0.064f, 0.029f)  // o brilho É a luz âmbar
+    private val GU  = floatArrayOf(0.072f, 0.080f, 0.098f)  // sulco à frente: grafite frio
+    private val GP  = floatArrayOf(0.185f, 0.135f, 0.072f)  // sulco atrás: aceso
+    private val GG  = floatArrayOf(0.720f, 0.470f, 0.125f)  // o intervalo, contável de longe
     private val AMB = floatArrayOf(0.960f, 0.560f, 0.130f)
-    private val ER  = floatArrayOf(0.135f, 0.138f, 0.148f)
-    private val LB  = floatArrayOf(0.56f, 0.12f, 0.08f)
-    private val SP  = floatArrayOf(0.22f, 0.22f, 0.23f)
-    private val ARM = floatArrayOf(0.36f, 0.38f, 0.44f)
-    private val ARM_HI = floatArrayOf(0.66f, 0.68f, 0.76f)
-    private val ARM_D = floatArrayOf(0.11f, 0.12f, 0.16f)
-    private val DUST_C = floatArrayOf(0.16f, 0.15f, 0.13f)
-    private val EDGE_G = floatArrayOf(0.20f, 0.18f, 0.16f)
+    private val ER  = floatArrayOf(0.190f, 0.132f, 0.058f)  // aro da borda: âmbar, não aço
+    // A bolacha do meio era VERMELHA (0.56, 0.12, 0.08) — a etiqueta de um
+    // disco de verdade, e uma segunda cor viva competindo com o âmbar num
+    // quadro que só tem uma. Agora é o mesmo âmbar, apagado: o centro do
+    // objeto, não um adesivo colado nele.
+    private val LB  = floatArrayOf(0.115f, 0.070f, 0.030f)
+    private val SP  = floatArrayOf(0.055f, 0.058f, 0.070f)  // o furo: corpo, não pino cromado
+    // O braço não é metal: é o facho. Ver `armLine` — as duas cores são o
+    // feixe, fraco no corpo do traço e quente onde ele encosta na música.
+    private val ARM_LIGHT = floatArrayOf(0.560f, 0.315f, 0.095f)
+    private val ARM_TIP   = floatArrayOf(0.980f, 0.700f, 0.300f)
+    private val WEAR = floatArrayOf(0.120f, 0.126f, 0.140f)  // marcas de uso: cinza FRIO
+    private val EDGE_G = floatArrayOf(0.200f, 0.140f, 0.062f)  // luz da borda
 
     // ─── Raios ───────────────────────────────────────────────────────────
     private val RO = 1.0f; private val RL = 0.962f; private val RPO = 0.945f
@@ -74,15 +94,6 @@ class VinylRenderer : GLSurfaceView.Renderer {
     private val wearB = FloatArray(WEAR_N)
     private var wearInit = false
     private var lastWearSeed = 0
-
-    // Ambient dust
-    private val DUST_N = 80
-    private val dustX = FloatArray(DUST_N)
-    private val dustY = FloatArray(DUST_N)
-    private val dustR = FloatArray(DUST_N)
-    private val dustS = FloatArray(DUST_N)
-    private val dustB = FloatArray(DUST_N)
-    private var dustInit = false
 
     // Vertex buffer: [x,y,r,g,b,a,edge] stride=28
     private val SZ = 4000000
@@ -152,28 +163,20 @@ class VinylRenderer : GLSurfaceView.Renderer {
             // Deep void
             vec3 col=mix(vec3(0.010,0.011,0.018), vec3(0.004,0.004,0.006),
                          smoothstep(0.0,1.2,dd));
-            // Dark surface under disc — subtle matte round shape
-            float surface=smoothstep(0.92,0.60,dd)*0.12;
-            col+=vec3(0.015,0.013,0.018)*surface;
-            // Surface edge ring — very faint outline
-            float edgeRing=smoothstep(0.03,0.0,abs(dd-0.78))*0.06;
-            col+=vec3(0.04,0.035,0.05)*edgeRing;
+            // O fundo é o HALO DO PRÓPRIO DISCO e mais nada (§5.5).
+            // Havia aqui uma "matte round surface under disc" com um anel de
+            // contorno: um PRATO desenhado embaixo do disco, que é a
+            // prateleira/plinto que a lei proíbe pelo nome — e o que ela
+            // fazia era dar chão a um objeto que flutua no escuro.
             // Warm halo — breathes with audio
             float breathe=0.85+0.15*sin(uT*0.4);
             float audioBloom=uAudio*0.18;
             col+=vec3(0.30,0.18,0.08)*exp(-dd*dd*3.2)*0.20*breathe*(1.0+audioBloom);
             col+=vec3(0.15,0.09,0.04)*exp(-dd*dd*1.0)*0.08*breathe*(1.0+audioBloom*0.6);
-            // Ambient dust particles — slow drift
-            for(int i=0;i<5;i++){
-                float fi=float(i);
-                vec2 offs=vec2(
-                    sin(uT*0.07+fi*2.1)*0.4+dc.x*0.3,
-                    cos(uT*0.05+fi*3.7)*0.3+dc.y*0.3
-                );
-                float dust=exp(-length(p-offs)*80.0)*0.12;
-                float twinkle=0.5+0.5*sin(uT*1.3+fi*5.3);
-                col+=vec3(0.08,0.07,0.06)*dust*twinkle;
-            }
+            // (Aqui havia cinco motas de POEIRA DE AMBIENTE piscando no
+            // fundo. A §5.5 proíbe poeira de ambiente pelo nome: ela é o
+            // que uma FOTO de toca-discos tem. Saíram também as oitenta do
+            // lado do Kotlin, pelo mesmo motivo.)
             // Vignette
             col*=1.0-dot(p,p)*0.32;
             // Film grain
@@ -233,10 +236,16 @@ class VinylRenderer : GLSurfaceView.Renderer {
         Matrix.translateM(model, 0, discCx, discCy, 0f)
         Matrix.scaleM(model, 0, dScaleX * breathe, dScaleY * breathe, 1f)
 
-        // Disc shadow — dark soft glow underneath for depth
-        vi = 0
-        discShadow()
-        flush(true)
+        // Três passadas saíram daqui, todas pela §5.5 — o que sobra no
+        // quadro é o disco e a luz DELE:
+        //   discShadow      uma sombra de contato preta, que a lei proíbe
+        //                   pelo nome — e que num fundo (0.003) não tinha
+        //                   para onde escurecer: desenhava nada, medido.
+        //   nebulaPatches   manchas roxas e azuis de "névoa" no vazio. Azul
+        //                   é a língua do scope; aqui o âmbar é a única cor
+        //                   viva, e uma sala com atmosfera é o que uma foto
+        //                   tem.
+        //   ambientDust     oitenta motas de poeira de ambiente.
 
         // Disc ambient glow — warm light bleeding from the disc edge
         vi = 0
@@ -246,16 +255,6 @@ class VinylRenderer : GLSurfaceView.Renderer {
         // Void rays — light emanating from disc edge into the void
         vi = 0
         voidRays()
-        flush(true)
-
-        // Nebula patches — faint colored haze in the void
-        vi = 0
-        nebulaPatches()
-        flush(true)
-
-        // Ambient dust — floating particles in the void
-        vi = 0
-        ambientDust()
         flush(true)
 
         // Void rings — faint concentric circles
@@ -294,19 +293,6 @@ class VinylRenderer : GLSurfaceView.Renderer {
     // ═══════════════════════════════════════════════════════════════════════
     // DISCO
     // ═══════════════════════════════════════════════════════════════════════
-    private fun discShadow() {
-        val n = 40
-        val r = RO + 0.025f
-        for (j in 0 until n) {
-            val a0 = j.toFloat() / n * 2f * PI.toFloat()
-            val a1 = (j + 1).toFloat() / n * 2f * PI.toFloat()
-            val c = sc(floatArrayOf(0f, 0f, 0f), 0.12f)
-            v(0f, 0f, c, 0f)
-            v(cos(a0) * r, sin(a0) * r, c, -1f)
-            v(cos(a1) * r, sin(a1) * r, c, -1f)
-        }
-    }
-
     /** Soft warm glow ring around disc edge — light bleeding into the void */
     private fun discGlow() {
         val n = 48
@@ -517,7 +503,7 @@ class VinylRenderer : GLSurfaceView.Renderer {
             val r = wearR[i]
             val a = wearA[i] - rot
             val bright = wearB[i] * (0.6f + 0.4f * sin(time * 0.35f + i.toFloat()))
-            val c = sc(DUST_C, bright)
+            val c = sc(WEAR, bright)
             val px = cos(a) * r; val py = sin(a) * r
             val a2 = a + 0.005f
             val px2 = cos(a2) * r; val py2 = sin(a2) * r
@@ -526,40 +512,15 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // VOID — poeira + anéis + rays + nebula
+    // O VAZIO — só a luz que sai do disco: anéis e raios
     // ═══════════════════════════════════════════════════════════════════════
-    private fun ambientDust() {
-        if (!dustInit) {
-            val rng = java.util.Random(77)
-            for (i in 0 until DUST_N) {
-                val angle = rng.nextFloat() * 2f * PI.toFloat()
-                val r = 1.08f + rng.nextFloat() * 0.70f
-                dustX[i] = cos(angle) * r
-                dustY[i] = sin(angle) * r
-                dustR[i] = r
-                dustS[i] = 0.006f + rng.nextFloat() * 0.020f
-                dustB[i] = 0.06f + rng.nextFloat() * 0.16f
-            }
-            dustInit = true
-        }
-        val crackleWinds = crackle * 0.15f  // dust moves faster with crackle
-        for (i in 0 until DUST_N) {
-            val angle = atan2(dustY[i], dustX[i]) + dustS[i] * (0.25f + crackleWinds)
-            val r = dustR[i] + sin(time * 0.18f + i.toFloat() * 0.6f) * 0.045f
-            val px = cos(angle) * r; val py = sin(angle) * r
-            val bright = dustB[i] * (0.4f + 0.6f * sin(time * 0.5f + i.toFloat() * 1.2f))
-            val c = sc(DUST_C, bright)
-            circleFill(px, py, 0.003f, 5, c)
-        }
-    }
-
     private fun voidRings() {
         val ringRadii = floatArrayOf(1.12f, 1.30f, 1.52f)
         val ringAlpha = floatArrayOf(0.035f, 0.022f, 0.012f)
         for (k in ringRadii.indices) {
             val r = ringRadii[k]
             val alpha = ringAlpha[k] * (0.65f + 0.35f * sin(time * 0.25f + k.toFloat() * 1.1f))
-            val c = sc(floatArrayOf(0.11f, 0.10f, 0.09f), alpha)
+            val c = sc(AMB, alpha)
             val n = 90
             for (j in 0 until n) {
                 val a0 = j.toFloat() / n * 2f * PI.toFloat()
@@ -597,39 +558,6 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     // Nebula — faint colored patches in the void
-    private fun nebulaPatches() {
-        if (!dustInit) return
-        val patches = arrayOf(
-            floatArrayOf(0.12f, 0.06f, 0.18f),
-            floatArrayOf(0.06f, 0.09f, 0.16f),
-            floatArrayOf(0.10f, 0.08f, 0.04f),
-        )
-        val positions = arrayOf(
-            floatArrayOf(1.25f, 0.4f),
-            floatArrayOf(-0.9f, -0.8f),
-            floatArrayOf(0.3f, 1.1f),
-        )
-        for (k in patches.indices) {
-            val base = patches[k]
-            val px = positions[k][0]; val py = positions[k][1]
-            val pulse = 0.6f + 0.4f * sin(time * 0.15f + k.toFloat() * 2.1f)
-            val c = sc(base, 0.025f * pulse)
-            val n = 28
-            val r = 0.18f + 0.04f * sin(time * 0.1f + k.toFloat())
-            for (j in 0 until n) {
-                val a0 = j.toFloat() / n * 2f * PI.toFloat()
-                val a1 = (j + 1).toFloat() / n * 2f * PI.toFloat()
-                val ri = r * 0.3f; val ro = r
-                v(cos(a0) * ri + px, sin(a0) * ri + py, sc(c, 0.4f), 1f)
-                v(cos(a0) * ro + px, sin(a0) * ro + py, sc(c, 0.0f), -1f)
-                v(cos(a1) * ri + px, sin(a1) * ri + py, sc(c, 0.4f), 1f)
-                v(cos(a1) * ro + px, sin(a1) * ro + py, sc(c, 0.0f), -1f)
-                v(cos(a0) * ro + px, sin(a0) * ro + py, sc(c, 0.0f), -1f)
-                v(cos(a1) * ri + px, sin(a1) * ri + py, sc(c, 0.4f), 1f)
-            }
-        }
-    }
-
     // Edge shimmer — bright pulse along the disc rim synced to crackle
     private fun edgeShimmer() {
         if (crackle < 0.02f) return
@@ -744,7 +672,30 @@ class VinylRenderer : GLSurfaceView.Renderer {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // BRAÇO — real J-curve tonearm: straight tube → gentle inward curve → headshell
+    // BRAÇO — o FACHO. Não é metal.
+    //
+    // **Sintoma:** havia aqui um toca-discos desenhado. Tubo em J em três
+    // camadas de aço azulado, cabeçote inclinado nos 23° de praxe, corpo da
+    // cápsula em retângulo escuro, os anéis do pivô e, ao lado, um berço
+    // para pousar o braço. Uma peça de móvel em cinza-metal no meio de um
+    // quadro cujo assunto é âmbar no escuro — e o CLAUDE.md §5.5 proíbe
+    // exatamente isso pelo nome ("braço de metal com contrapeso desenhado")
+    // e diz o que vai no lugar: "feixe âmbar na agulha pulsando".
+    //
+    // O deck do computador passou por esta mesma volta meses atrás; ver
+    // `vinyl.tonearm`, do qual isto aqui é a transliteração. **O RITUAL não
+    // muda** — o pivô fica onde estava, o braço varre do repouso até o
+    // sulco, o raio continua sendo o tempo. O que muda é o MATERIAL:
+    //
+    //   o corpo    fraco, e começa a 38% do caminho — perto do pivô não há
+    //              nada, e é isso que impede o traço de ler como haste
+    //              apoiada num parafuso
+    //   a ponta    quase toda a luz mora ali (o expoente 2.2), porque é ali
+    //              que ele encosta na música
+    //   a agulha   uma cruz curta e quente, não um cabeçote
+    //
+    // E é por isso que o berço deixou de fazer falta: um braço de metal
+    // parado no ar pede alguma coisa embaixo; um facho que se apaga, não.
     // ═══════════════════════════════════════════════════════════════════════
     private fun armLine() {
         val playR = RPO + (RPI - RPO) * playProgress
@@ -784,116 +735,69 @@ class VinylRenderer : GLSurfaceView.Renderer {
             tipX += sin(time * 35.0f) * vib
             tipY += cos(time * 27.0f) * vib * 0.6f
         }
-        val bright = 1f + lift * 0.35f
 
-        // J-curve: straight 70% → gentle curve inward last 30%
-        val armLen = toCenterLen - r
-        // Straight section endpoint (70% of arm length)
-        val straightEndX = pivotX + dirX * armLen * 0.70f
-        val straightEndY = pivotY + dirY * armLen * 0.70f
-        // Control point for the curve — bends inward (toward center)
-        val curveX = pivotX + dirX * armLen * 0.85f - perpX * 0.025f
-        val curveY = pivotY + dirY * armLen * 0.85f - perpY * 0.025f
-        // Headshell offset angle (~23 degrees like real tonearms)
-        val offAng = Math.toRadians(23.0).toFloat()
-        val hsDirX = dirX * cos(offAng) - dirY * sin(offAng)
-        val hsDirY = dirX * sin(offAng) + dirY * cos(offAng)
-        val hsLen = 0.025f
-        val hsStartX = tipX - hsDirX * hsLen; val hsStartY = tipY - hsDirY * hsLen
+        // Levantado o facho não some de vez: some o suficiente para dizer
+        // que saiu do sulco, e fica o bastante para ainda se ver ONDE ele
+        // parou. É a luz que se retira; nada "sobe", porque não há terceira
+        // dimensão aqui para subir.
+        val acende = 1f - 0.72f * lift
 
-        // Warm glow along arm when playing
-        if (lift < 0.5f) {
-            val glowA = 0.020f * (1f - lift) * (0.7f + 0.3f * crackle)
-            // Straight section glow
-            seg(pivotX, pivotY, straightEndX, straightEndY, sc(AMB, glowA), 0.016f)
-            // Curved section glow (3 segments for the bezier)
-            val segs = 8
-            for (i in 0 until segs) {
-                val t0 = i.toFloat() / segs; val t1 = (i + 1).toFloat() / segs
-                val ax = straightEndX * (1 - t0) * (1 - t0) + curveX * 2 * t0 * (1 - t0) + hsStartX * t0 * t0
-                val ay = straightEndY * (1 - t0) * (1 - t0) + curveY * 2 * t0 * (1 - t0) + hsStartY * t0 * t0
-                val bx = straightEndX * (1 - t1) * (1 - t1) + curveX * 2 * t1 * (1 - t1) + hsStartX * t1 * t1
-                val by = straightEndY * (1 - t1) * (1 - t1) + curveY * 2 * t1 * (1 - t1) + hsStartY * t1 * t1
-                seg(ax, ay, bx, by, sc(AMB, glowA), 0.016f)
-            }
+        // ── O corpo do facho ──
+        val ux = tipX - pivotX; val uy = tipY - pivotY
+        val n = 24; val t0 = 0.38f
+        for (k in 0 until n) {
+            val a = t0 + (1f - t0) * (k.toFloat() / n)
+            val b = t0 + (1f - t0) * ((k + 1).toFloat() / n)
+            // A luz vive na PONTA: sem este expoente o traço lê como haste.
+            val f = ((k + 1).toFloat() / n).toDouble().pow(2.2).toFloat()
+            // Pulsa com o áudio — o facho é o que encosta na música.
+            val vivo = f * acende * (0.88f + 0.12f * audioLevel + 0.08f * crackle)
+            val larg = 0.0016f + 0.0022f * f
+            seg(pivotX + ux * a, pivotY + uy * a,
+                pivotX + ux * b, pivotY + uy * b, sc(ARM_LIGHT, vivo), larg)
+        }
+        // Um halo largo e fraco por cima, só na metade da ponta: é o que faz
+        // o traço parecer LUZ e não risco de caneta.
+        for (k in n / 2 until n) {
+            val a = t0 + (1f - t0) * (k.toFloat() / n)
+            val b = t0 + (1f - t0) * ((k + 1).toFloat() / n)
+            val f = ((k + 1).toFloat() / n).toDouble().pow(2.6).toFloat()
+            seg(pivotX + ux * a, pivotY + uy * a,
+                pivotX + ux * b, pivotY + uy * b,
+                sc(ARM_LIGHT, f * acende * 0.16f), 0.0075f)
         }
 
-        // Arm tube — straight section (3 layers)
-        seg(pivotX, pivotY, straightEndX, straightEndY, sc(ARM_D, bright * 0.50f), 0.011f)
-        seg(pivotX, pivotY, straightEndX, straightEndY, sc(ARM, bright), 0.005f)
-        seg(pivotX, pivotY, straightEndX, straightEndY, sc(ARM_HI, bright), 0.0018f)
-
-        // Arm tube — curved section (quadratic bezier: straightEnd → curve → hsStart)
-        val curveSegs = 12
-        for (i in 0 until curveSegs) {
-            val t0 = i.toFloat() / curveSegs; val t1 = (i + 1).toFloat() / curveSegs
-            val ax = straightEndX * (1 - t0) * (1 - t0) + curveX * 2 * t0 * (1 - t0) + hsStartX * t0 * t0
-            val ay = straightEndY * (1 - t0) * (1 - t0) + curveY * 2 * t0 * (1 - t0) + hsStartY * t0 * t0
-            val bx = straightEndX * (1 - t1) * (1 - t1) + curveX * 2 * t1 * (1 - t1) + hsStartX * t1 * t1
-            val by = straightEndY * (1 - t1) * (1 - t1) + curveY * 2 * t1 * (1 - t1) + hsStartY * t1 * t1
-            // Taper: gets thinner toward headshell
-            val taper = 1f - t1 * 0.35f
-            seg(ax, ay, bx, by, sc(ARM_D, bright * 0.50f), 0.010f * taper)
-            seg(ax, ay, bx, by, sc(ARM, bright), 0.0045f * taper)
-            seg(ax, ay, bx, by, sc(ARM_HI, bright), 0.0015f * taper)
+        // ── A agulha: uma cruz curta e quente no ponto de contato ──
+        // Curta e NÃO degenerada: um segmento de comprimento zero vira
+        // quatro vértices no mesmo lugar, ou seja, nada desenhado (foi assim
+        // que as faíscas do ritual do computador existiram no código por
+        // meses sem nunca aparecer na tela).
+        val ln = sqrt(ux * ux + uy * uy).coerceAtLeast(1e-6f)
+        val tx = ux / ln; val ty = uy / ln
+        val nx = -ty; val ny = tx
+        val quente = sc(ARM_TIP, 0.35f + 0.65f * (1f - lift))
+        val d = 0.030f
+        seg(tipX - tx * d, tipY - ty * d, tipX + tx * d * 0.6f, tipY + ty * d * 0.6f,
+            quente, 0.0022f)
+        seg(tipX - nx * d * 0.8f, tipY - ny * d * 0.8f,
+            tipX + nx * d * 0.8f, tipY + ny * d * 0.8f, quente, 0.0022f)
+        // O ponto quente em si, com o seu halo
+        circleFill(tipX, tipY, 0.016f, 12, sc(ARM_TIP, 0.10f * (1f - lift)))
+        circleFill(tipX, tipY, 0.0055f, 10, sc(AMB, 0.80f * (1f - lift * 0.8f)))
+        if (lift < 0.35f) {
+            circleFill(tipX, tipY, 0.0026f, 6, floatArrayOf(1f, 0.90f, 0.58f))
         }
 
-        // Headshell — wider wedge at the end of the tube
-        val hsW0 = 0.003f; val hsW1 = 0.009f
-        val apx = -hsDirY; val apy = hsDirX
-        v(hsStartX + apx * hsW0, hsStartY + apy * hsW0, sc(ARM, 0.82f * bright), -1f)
-        v(hsStartX - apx * hsW0, hsStartY - apy * hsW0, sc(ARM, 0.82f * bright), -1f)
-        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.90f * bright), 1f)
-        v(hsStartX - apx * hsW0, hsStartY - apy * hsW0, sc(ARM, 0.82f * bright), -1f)
-        v(tipX - apx * hsW1, tipY - apy * hsW1, sc(ARM, 0.90f * bright), 1f)
-        v(tipX + apx * hsW1, tipY + apy * hsW1, sc(ARM, 0.90f * bright), 1f)
-
-        // Cartridge body — dark rectangle
-        val cW = 0.008f; val cH = 0.016f
-        val c0x = tipX + apx * cW - hsDirX * cH; val c0y = tipY + apy * cW - hsDirY * cH
-        val c1x = tipX - apx * cW - hsDirX * cH; val c1y = tipY - apy * cW - hsDirY * cH
-        val c2x = tipX + apx * cW; val c2y = tipY + apy * cW
-        val c3x = tipX - apx * cW; val c3y = tipY - apy * cW
-        v(c0x, c0y, sc(ARM_D, 0.70f * bright), -1f)
-        v(c1x, c1y, sc(ARM_D, 0.70f * bright), -1f)
-        v(c2x, c2y, sc(ARM_D, 0.75f * bright), 1f)
-        v(c1x, c1y, sc(ARM_D, 0.70f * bright), -1f)
-        v(c3x, c3y, sc(ARM_D, 0.75f * bright), 1f)
-        v(c2x, c2y, sc(ARM_D, 0.75f * bright), 1f)
-        // Cartridge highlight edge
-        v(c0x, c0y, sc(ARM_HI, 0.35f * bright), -1f)
-        v(c2x, c2y, sc(ARM_HI, 0.35f * bright), 1f)
-
-        // Stylus tip — bright amber point
-        circleFill(tipX, tipY, 0.005f, 8, sc(AMB, 0.85f * bright))
-        circleFill(tipX, tipY, 0.0025f, 6, floatArrayOf(1f, 0.88f, 0.55f))
-
-        // Pivot — clean ring
-        circleRing(pivotX, pivotY, 0.026f, 14, sc(ARM_D, 0.30f * bright))
-        circleRing(pivotX, pivotY, 0.020f, 10, sc(ARM, 0.45f * bright))
-        circleFill(pivotX, pivotY, 0.010f, 8, sc(ARM_D, 0.22f * bright))
-
-        // Arm rest when lifted
-        if (lift > 0.5f) {
-            val rx = 0.86f; val ry = 0.66f
-            circleRing(rx, ry, 0.016f, 10, sc(ARM, 0.5f))
-            circleFill(rx, ry, 0.006f, 6, sc(ARM_D, 0.2f))
-        }
-
-        // ── LASER BEAM — shoots from stylus into groove ──
+        // ── O feixe que entra no sulco ──
         if (lift < 0.5f) {
             val beamFade = (1f - lift * 2f).coerceIn(0f, 1f)
             val beamPulse = beamFade * (0.7f + 0.3f * crackle)
             val beamLen = 0.04f + 0.02f * crackle
             val bx0 = tipX - dirX * beamLen
             val by0 = tipY - dirY * beamLen
-            // Outer glow
             seg(tipX, tipY, bx0, by0, sc(AMB, beamPulse * 0.20f), 0.010f)
-            // Core
             seg(tipX, tipY, bx0, by0, sc(AMB, beamPulse * 0.70f), 0.0025f)
-            // Hot inner
             seg(tipX, tipY, bx0, by0, floatArrayOf(1f, 0.92f, 0.65f), 0.0010f)
-            // Impact glow
             circleFill(bx0, by0, 0.008f, 10, sc(AMB, beamPulse * 0.15f))
             circleFill(bx0, by0, 0.004f, 8, sc(AMB, beamPulse * 0.40f))
             circleFill(bx0, by0, 0.002f, 6, floatArrayOf(1f, 0.92f, 0.65f))
@@ -932,19 +836,6 @@ class VinylRenderer : GLSurfaceView.Renderer {
             v(cx, cy, c, 0f)
             v(cx + cos(a0) * r, cy + sin(a0) * r, c, 1f)
             v(cx + cos(a1) * r, cy + sin(a1) * r, c, 1f)
-        }
-    }
-    private fun circleRing(cx: Float, cy: Float, r: Float, n: Int, c: FloatArray) {
-        val hw = 0.0020f
-        for (j in 0 until n) {
-            val a0 = j.toFloat() / n * 2f * PI.toFloat()
-            val a1 = (j + 1).toFloat() / n * 2f * PI.toFloat()
-            val p00 = floatArrayOf(cx + cos(a0) * (r - hw), cy + sin(a0) * (r - hw))
-            val p01 = floatArrayOf(cx + cos(a1) * (r - hw), cy + sin(a1) * (r - hw))
-            val p10 = floatArrayOf(cx + cos(a0) * (r + hw), cy + sin(a0) * (r + hw))
-            val p11 = floatArrayOf(cx + cos(a1) * (r + hw), cy + sin(a1) * (r + hw))
-            v(p00[0], p00[1], c, -1f); v(p01[0], p01[1], c, -1f); v(p10[0], p10[1], c, 1f)
-            v(p01[0], p01[1], c, -1f); v(p11[0], p11[1], c, 1f); v(p10[0], p10[1], c, 1f)
         }
     }
     private fun flush(useModel: Boolean) {

@@ -700,6 +700,25 @@ reação ao som, mais luz com propósito — nunca mais realismo.
   o laço dividia por ele). Custa nada e cobre os três momentos em que a
   agulha NÃO está onde ela normalmente estaria, que é onde este código erra.
 
+### Décima segunda leva (o disco do celular era um toca-discos desenhado)
+- **A §5.5 valia no computador e não no celular**, e ela diz o contrário com
+  todas as letras. O `VinylRenderer.kt` estava com a paleta ANTIGA do deck
+  inteira — intervalo quase-BRANCO, brilho em cinza neutro (a lâmpada fora de
+  quadro), aro de aço — mais um braço de metal em três camadas com cabeçote
+  inclinado nos 23°, cápsula, anéis de pivô e berço; poeira de ambiente em
+  DOIS lugares (oitenta motas no Kotlin, cinco no shader do fundo); manchas
+  roxas e azuis de "névoa"; um PRATO desenhado embaixo do disco; e uma sombra
+  de contato preta que num fundo (0.003) não desenhava nada. Agora o braço é
+  o facho (a transliteração do `vinyl.tonearm`: corpo a partir de 38%, luz na
+  ponta com expoente 2,2, a agulha em cruz curta e quente) e o fundo é o halo
+  do próprio disco. **O ritual não mudou** — o pivô, a varredura e o raio
+  como tempo são os mesmos.
+- É a mesma doença das seis listas de extensão e das cinco de capa: duas
+  cópias da decisão em dois lugares derivam, e a que ninguém olha deriva para
+  o lado errado — aqui, para a primeira foto de toca-discos. A conferência
+  nova lê a paleta do Kotlin em NÚMEROS e recusa `headshell`, `cartridge`,
+  `counterweight`, `plinth`, `nebula` e poeira pelo nome, em código.
+
 ### Décima primeira leva (o que o usuário viu, e a loja por dentro)
 - **A AGORA:** o disco estava a 0,56 da capa — o centro dele para FORA dela,
   o que lê como duas coisas lado a lado. Com 0,44 o selo encosta na beirada e
