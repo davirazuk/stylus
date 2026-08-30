@@ -2142,6 +2142,57 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("as playlists", traceback.format_exc())
 
+    secao("o recado do terminal espera a música chegar")
+    # **A corrida:** o `stylus deck DISCO` sobe o mpv e no MESMO instante
+    # deixa o recado para a tela cheia. O `Session` pesquisa o tocador de meio
+    # em meio segundo numa thread própria, então o quadro que lê o recado
+    # quase sempre ainda não viu música nenhuma — e a tela cheia, que só entra
+    # com música, não entrava. Da poltrona isso é "às vezes funciona".
+    try:
+        import vinyl as _V
+        agora = next(t for t in app.screens if t.name == "AGORA")
+        i_agora = app.screens.index(agora)
+        os.makedirs(os.path.dirname(_V.UI_CMD), exist_ok=True)
+        with open(_V.UI_CMD, "w", encoding="utf-8") as fh:
+            fh.write("disco\n")
+        app._goto(1)
+        agora.tela_cheia = False
+        app.playing.session.path = ""
+        app.playing.session.source = "none"
+        app._recado()                       # chega sem música: só vai à AGORA
+        foi = app.cur == i_agora
+        cedo = agora.tela_cheia
+        esperando = bool(app._esperando_disco)
+        app.playing.session.path = "/x/y/01.flac"
+        app.playing.session.source = "mpv"
+        app._recado_tardio()                # a música chegou
+        entrou = agora.tela_cheia
+        # e a paciência acaba: sem música, não fica esperando para sempre
+        app.playing.session.path = ""
+        app.playing.session.source = "none"
+        app._esperando_disco = time.time() - 1
+        app._recado_tardio()
+        desistiu = not app._esperando_disco
+        agora.tela_cheia = False
+        if not foi:
+            bad("o recado não levou à AGORA")
+        elif cedo:
+            bad("entrou na tela cheia sem música: menu invisível")
+        elif not esperando:
+            bad("não ficou esperando a música chegar")
+        elif not entrou:
+            bad("a música chegou e a tela cheia não entrou")
+        elif not desistiu:
+            bad("ficaria esperando para sempre")
+        else:
+            ok("espera a música, entra quando ela chega, e desiste no fim")
+        try:
+            os.unlink(_V.UI_CMD)
+        except OSError:
+            pass
+    except Exception:                                       # noqa: BLE001
+        bad("o recado do terminal", traceback.format_exc())
+
     secao("ver o disco não começa a tocar sozinho")
     # **Sintoma que isto impede:** o Mod+O se chama "o disco na tela toda", e
     # ele chega aqui pelo `stylus-deck --view`, cujo cabeçalho promete "sem

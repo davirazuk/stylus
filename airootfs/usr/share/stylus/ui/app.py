@@ -5010,6 +5010,9 @@ class App:
         self._sleep_fade = 0.0            # quando o esmaecimento começou
         self._ti_soneca = [None, 0]       # cache do track_index_for
         self._sleep_passo = 0.0           # último degrau do esmaecimento
+        # Até quando esperar a música chegar depois de um recado. Ver
+        # `_recado_tardio`.
+        self._esperando_disco = 0.0
         self._vol_antes = None            # volume a devolver depois
         # ── a TRAVA DO GATO ──────────────────────────────────────────────
         # Um gato em cima do teclado troca de disco, embaralha a lista e
@@ -6413,6 +6416,7 @@ class App:
             self._alvos_do_trilho = []
             self._rato_pisca()
             self._recado()
+            self._recado_tardio()
             self._disco_novo()
             self._idle_disco()
             try:
@@ -6624,6 +6628,33 @@ class App:
             pass
         if pedido == "disco":
             self.ver_o_disco()
+            # **A corrida:** o `stylus deck DISCO` sobe o mpv e no MESMO
+            # instante deixa o recado. O `Session` pesquisa o tocador de meio
+            # em meio segundo numa thread própria, então o quadro que lê o
+            # recado quase sempre ainda não viu música nenhuma — e a tela
+            # cheia, que só entra com música, não entrava. Da poltrona isso é
+            # "às vezes funciona", que é o pior tipo de defeito.
+            #
+            # Quatro segundos de paciência: se a música aparecer nesse tempo,
+            # a tela cheia entra sozinha.
+            self._esperando_disco = time.time() + 4.0
+
+    def _recado_tardio(self):
+        """A metade do recado que a música ainda não tinha chegado para fazer.
+
+        Ver `_recado`: pedir "mostre o disco" e o disco só existir meio
+        segundo depois é o caso NORMAL, não a exceção.
+        """
+        if not self._esperando_disco:
+            return
+        if time.time() > self._esperando_disco:
+            self._esperando_disco = 0.0
+            return
+        snap = self.playing.session.snapshot()
+        if not (bool(snap.get("path")) or snap.get("source") != "none"):
+            return
+        self._esperando_disco = 0.0
+        self.ver_o_disco()
 
     def _idle_disco(self):
         """Parado na AGORA, a tela vira o DISCO sozinha. Uma vez por álbum.
