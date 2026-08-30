@@ -96,6 +96,13 @@ def find_monitor_source(so_rodando=False):
     ser um HDMI na parede, SUSPENDED, e a AGORA capturava silêncio enquanto
     o som tocava na caixa ao lado (achado fora do display: com a tela real
     só o speaker existe, e o fallback mascarava o defeito).
+
+    SINTOMA: quem conecta um fone bluetooth pelo menu ganha um sink NOVO,
+    mas o padrão continua na caixa interna. Duas fontes RUNNING lado a lado
+    e o "primeiro da lista" era o da caixa, mudo — a tela deixava de
+    respirar com a música que estava no fone. A palavra certa não é
+    RUNNING (a caixa também está), é PADRÃO: o default sink é onde o
+    sistema mandou o som, e por isso o monitor dele vem primeiro.
     """
     forced = os.environ.get("STYLUS_AUDIO_SOURCE")
     if forced:
@@ -105,9 +112,23 @@ def find_monitor_source(so_rodando=False):
                              capture_output=True, text=True, timeout=2).stdout
     except Exception:                   # noqa: BLE001
         return None
-    for linha in out.splitlines():
-        if ".monitor" in linha and "RUNNING" in linha:
-            return linha.split()[1]
+    default = None
+    try:
+        default = subprocess.run(["pactl", "get-default-sink"],
+                                 capture_output=True, text=True,
+                                 timeout=2).stdout.strip()
+    except Exception:                   # noqa: BLE001
+        pass
+    linhas = [l for l in out.splitlines()
+              if ".monitor" in l and "RUNNING" in l]
+    if default:
+        for linha in linhas:
+            # O monitor do default sink nasce como
+            # <sink>.monitor — o prefixo é o nome do sink.
+            if linha.split()[1] == f"{default}.monitor":
+                return linha.split()[1]
+    for linha in linhas:
+        return linha.split()[1]
     if so_rodando:
         # NENHUM monitor tocando: devolver o primeiro da lista aqui seria
         # abrir a placa para capturar silêncio — e é justamente estar aberta

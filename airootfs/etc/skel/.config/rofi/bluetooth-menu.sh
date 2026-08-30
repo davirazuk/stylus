@@ -101,6 +101,19 @@ case $action in
         notify "Conectando a ${name}…"
         if bluetoothctl connect "$mac" >/dev/null 2>&1; then
             notify "Conectado a ${name}."
+            # TORNAR O DISPOSITIVO O DESTINO DO SOM. Conectar o fone cria um
+            # sink novo, mas NÃO o torna padrão — o volume parava de funcionar
+            # (pamixer governava a caixa interna, muda) e o monitor de áudio
+            # continuava lendo o monitor da caixa, mudo. Sintoma: a tela
+            # parava de respirar com a música e o volume não fazia nada.
+            # O nome do sink é bluez_output.<MAC com _>.1 — o mesmo MAC
+            # da linha, com ":" virado em "_".
+            m4=$(echo "$mac" | tr ':' '_')
+            sink=$(pactl list short sinks 2>/dev/null \
+                       | awk -v m="bluez_output.${m4}." '$2 ~ "^" m {print $2; exit}')
+            if [[ -n $sink ]]; then
+                pactl set-default-sink "$sink" 2>/dev/null
+            fi
         else
             notify "Não foi possível conectar a ${name}."
         fi ;;
