@@ -2178,16 +2178,38 @@ class SignalScreen(Screen):
                                  timeout=10).stdout
             dump = _j.loads(raw) if raw.strip() else []
             for o in dump:
-                if o.get("type", "").endswith("Core"):
+                if o.get("type", "").endswith("Node"):
+                    p = (o.get("info") or {}).get("props") or {}
+                    info = o.get("info") or {}
+                    # O relógio REAL está no sink que está rodando, não no
+                    # `default.clock.rate` do Core (que é o piso, e que com
+                    # multirate ativo nunca sobe da config). Antes o SINAL
+                    # acusava "reamostrado 96 → 48" num caminho que já tinha
+                    # sido negociado a 96 kHz pelo driver.
+                    rate = 0
+                    if (p.get("media.class") == "Audio/Sink"
+                            and info.get("state") == "running"):
+                        for par in (info.get("params") or {}) \
+                                .get("Format", []) or []:
+                            if isinstance(par, dict) and par.get("rate"):
+                                rate = int(par["rate"])
+                                break
+                    if rate:
+                        out["graph"] = rate
+                        out["dev"] = p.get("node.description") \
+                            or p.get("node.name")
+                        out["multi"] = bool(p.get("api.alsa.multirate"))
+                    elif (str(p.get("node.name", "")).startswith("alsa_output")):
+                        # Sink suspenso: sem nada tocando o driver anuncia o
+                        # que quiser — o relógio de verdade volta ao piso do
+                        # Core, e é a ele que o `graph` se resolve.
+                        out.setdefault("dev", p.get("node.description")
+                                       or p.get("node.name"))
+                        out.setdefault("multi", bool(p.get("api.alsa.multirate")))
+                elif o.get("type", "").endswith("Core"):
                     p = (o.get("info") or {}).get("props") or {}
                     out["graph"] = int(p.get("default.clock.force-rate")
                                        or p.get("default.clock.rate") or 0)
-                if o.get("type", "").endswith("Node"):
-                    p = (o.get("info") or {}).get("props") or {}
-                    if (p.get("media.class") == "Audio/Sink"
-                            and str(p.get("node.name", "")).startswith("alsa_output")):
-                        out["dev"] = p.get("node.description") or p.get("node.name")
-                        out["multi"] = bool(p.get("api.alsa.multirate"))
         except Exception:                 # noqa: BLE001
             pass
         snap, al, track, _s, _t, _f = self.app.playing.where()
@@ -5079,6 +5101,16 @@ _BLUETOOTH_ITEM = _BluetoothItem()
 class App:
     def __init__(self):
         pygame.init()
+        # O pygame abre o mixer SDL sozinho, e isso segura um nó de SAÍDA no
+        # PipeWire a 44,1 kHz o tempo todo — mesmo sem o app tocar um som
+        # sequer. Sintoma (medido na máquina): o grafo fica preso em 48 kHz
+        # e o FLAC de 96 kHz é reamostrado; o `stylus audio` acusa
+        # "python3.14 (44,1 kHz)" segurando o grafo. Este app não usa som:
+        # fecha o mixer e devolve o nó.
+        try:
+            pygame.mixer.quit()
+        except Exception:               # noqa: BLE001
+            pass
         pygame.display.set_caption("STYLUS")
         info = pygame.display.Info()
         self.W, self.H = info.current_w, info.current_h

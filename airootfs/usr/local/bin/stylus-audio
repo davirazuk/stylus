@@ -83,19 +83,32 @@ def pw_dump():
 
 
 def graph_rate(dump):
-    """A taxa em que o grafo está rodando, do nó Core.
+    """A taxa em que o grafo está rodando, do nó Core — o clock REAL.
 
-    Vem do objeto Core e não de um sink: o sink pode anunciar o que quiser, o
-    relógio do grafo é um só e é ele que decide se houve conversão.
+    A taxa real não fica no `default.clock.rate` do Core: esse é o piso
+    configurado, e com multirate ativo o driver abre em cima dele (um sink
+    `alsa_output.*` com `api.alsa.multirate` roda a 96 kHz enquanto o Core
+    continua anunciando 48000 — então o SINAL e o `stylus audio` acusavam
+    REAMOSTRADO 96 → 48 de um caminho que não reamostrava nada).
     """
+    for o in dump:
+        if not o.get("type", "").endswith("Node"):
+            continue
+        info = o.get("info") or {}
+        p = info.get("props") or {}
+        if (p.get("media.class") == "Audio/Sink"
+                and info.get("state") == "running"):
+            for par in (info.get("params") or {}).get("Format", []) or []:
+                if isinstance(par, dict) and par.get("rate"):
+                    return int(par["rate"]), p.get("audio.allowed-rates")
+    # Nada tocando: o sink está suspenso e o relógio volta ao piso do Core.
     for o in dump:
         if o.get("type", "").endswith("Core"):
             p = (o.get("info") or {}).get("props") or {}
             r = p.get("default.clock.rate")
-            forced = p.get("default.clock.force-rate")
             allowed = p.get("default.clock.allowed-rates")
             if r:
-                return int(forced or r), allowed
+                return int(r), allowed
     # Cai para o pw-metadata, que existe mesmo quando o dump não traz o Core.
     m = re.search(r"clock\.rate.*?(\d{4,6})", run(["pw-metadata", "-n", "settings"]))
     return (int(m.group(1)) if m else 0), None
