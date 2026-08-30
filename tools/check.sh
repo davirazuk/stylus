@@ -1531,6 +1531,7 @@ import importlib.machinery as _im
 import importlib.util as _iu
 import json
 import os
+import pathlib
 import sys
 import tempfile
 
@@ -1574,12 +1575,23 @@ if "o disco acabou" not in fonte:
 if "restam < 30" not in fonte:
     erros.append("não há janela de fim (o aviso dispararia em qualquer parada)")
 
+# E o CELULAR, pela mesma razão: lá o disco acabava e a tela FECHAVA, que é
+# um vídeo terminando no YouTube e não um disco acabando.
+kt = pathlib.Path("android/app/src/main/kotlin/io/stylus/player/VinylActivity.kt")
+if kt.exists():
+    ktxt = "\n".join(l for l in kt.read_text().splitlines()
+                     if not l.lstrip().startswith("//"))
+    if "onPlaybackEnd = { finish() }" in ktxt:
+        erros.append("no celular o disco acaba e a tela só fecha")
+    if "fun oDiscoAcabou(" not in ktxt:
+        erros.append("o celular não tem tela para o fim do disco")
+
 for e in erros:
     print(e)
 FIMEOF
 )
 case "$fim" in
-    "")    ok "o fim do disco avisa, e oferece a pilha antes do sorteio" ;;
+    "")    ok "o fim do disco avisa nos dois lados, e oferece a pilha" ;;
     PULA*) printf '  %s—%s sem o vigia aqui: %s\n' "$y" "$z" "${fim#PULA }" ;;
     *)     bad "o fim do disco passa em silêncio:"
            printf '%s\n' "$fim" | sed 's/^/      /' ;;

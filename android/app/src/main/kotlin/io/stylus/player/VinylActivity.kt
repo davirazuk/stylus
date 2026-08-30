@@ -747,7 +747,12 @@ class VinylActivity : AppCompatActivity() {
                     val startIdx = intent.getIntExtra("trackIndex", 0).coerceIn(0, tracks.size - 1)
                     player = BitPerfectPlayer(this).apply {
                         prepareAlbum(tracks.map { it.uri }, startIndex = startIdx)
-                        onPlaybackEnd = { finish() }
+                        // **Sintoma:** o disco acabava e a tela simplesmente
+                        // FECHAVA. É o acontecimento mais importante que
+                        // este sistema tem para dar — a hora em que você
+                        // levanta — e ele acontecia como um vídeo terminando
+                        // no YouTube. O computador tinha o mesmo buraco.
+                        onPlaybackEnd = { oDiscoAcabou() }
                         onTrackChange = { idx ->
                             if (idx in tracks.indices) {
                                 val t = tracks[idx]
@@ -1273,8 +1278,33 @@ class VinylActivity : AppCompatActivity() {
                      Lados.gesto(iLado, sides.size))
     }
 
-    /** A tela inteira dizendo o que fazer, e o toque que retoma. */
-    private fun mostrarGesto(acabou: String, gesto: String) {
+    /**
+     * O DISCO acabou — não um lado, o disco.
+     *
+     * O fim do lado tinha tela desde sempre ("vire o disco"); o fim do disco
+     * fechava a Activity em silêncio. A pergunta que aparece aqui é sempre a
+     * mesma — "e agora qual?" — e o aviso só vale se responder: o de cima da
+     * PILHA quando há pilha (é um compromisso que a pessoa assumiu), e nada
+     * inventado quando não há.
+     */
+    private fun oDiscoAcabou() {
+        val now = System.nanoTime() / 1e9f
+        playing = false
+        if (deck.stylusDown() || deck.phase == Phase.DROP) deck.go(Phase.LIFT, now)
+        val nome = cachedTracks?.firstOrNull()?.album ?: ""
+        mostrarGesto("O DISCO", if (nome.isEmpty()) "levante a agulha"
+                                else "$nome — levante a agulha",
+                     fecha = true)
+    }
+
+    /** A tela inteira dizendo o que fazer, e o toque que retoma.
+     *
+     *  `fecha` = o toque SAI em vez de retomar: no fim do disco não há o que
+     *  retomar, e um toque que volta a tocar do começo seria o contrário do
+     *  que acabou de acontecer.
+     */
+    private fun mostrarGesto(acabou: String, gesto: String,
+                             fecha: Boolean = false) {
         val root = window.decorView.findViewById<ViewGroup>(android.R.id.content)
         val aviso = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1304,13 +1334,17 @@ class VinylActivity : AppCompatActivity() {
             setPadding(dp(28), 0, dp(28), dp(24))
         })
         aviso.addView(TextView(this).apply {
-            text = "toque para continuar"
+            text = if (fecha) "toque para voltar à estante" else "toque para continuar"
             setTextColor(0xFF4A5570.toInt())
             textSize = 11f
             gravity = android.view.Gravity.CENTER
         })
         aviso.setOnClickListener {
             root.removeView(aviso)
+            if (fecha) {
+                finish()
+                return@setOnClickListener
+            }
             // Retomar é a CERIMÔNIA de novo, não um play: o braço volta,
             // desce e só então a música começa. Foi você que virou o disco.
             val now = System.nanoTime() / 1e9f
