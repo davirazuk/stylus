@@ -425,6 +425,40 @@ class NowScreen(Screen):
             return True
         return False
 
+    def _nome_do_disco(self, s, nome, pos, w):
+        """O nome do disco, no maior corpo que couber. Devolve a altura.
+
+        **Sintoma:** "Lift Your Skinny Fists Like Antennas to Heaven" saía
+        como "Lift Your Ski…" em corpo 56 — o nome do disco, que é a coisa
+        que esta tela existe para dizer, virava três palavras e reticências
+        enquanto sobrava coluna embaixo. Nome comprido é comum: todo álbum
+        duplo, toda edição de aniversário, toda gravação ao vivo com data no
+        título.
+
+        Duas linhas no máximo. Três empurrariam o LADO e o "vira em" para
+        fora do bloco, e o nome deixaria de ser um título para virar um
+        parágrafo.
+
+        A escada pára em 30: abaixo disso o nome deixa de ser o texto mais
+        importante da tela, e aí cortar é mais honesto do que espremer.
+        """
+        x, y = pos
+        for tam in (56, 48, 41, 35, 30):
+            larg = T.largura(nome, tam, True)
+            if larg <= w:
+                T.text(s, nome, (x, y), tam, T.TEXT, bold=True)
+                return int(tam * 1.15)
+            # Cabe em duas? Só quando NENHUMA palavra sozinha estoura a
+            # coluna — o `paragrafo` quebra no espaço e não corta, então uma
+            # palavra maior que a coluna sairia desenhada para fora dela.
+            if (larg <= w * 1.9
+                    and all(T.largura(p, tam, True) <= w
+                            for p in nome.split())):
+                return T.paragrafo(s, nome, (x, y), tam, T.TEXT, maxw=w,
+                                   bold=True, entrelinha=1.12, limite=2)
+        T.text(s, nome, (x, y), 30, T.TEXT, bold=True, maxw=w)
+        return 34
+
     def draw(self, s, r):
         snap, al, track, side, t_abs, frac = self.app.playing.where()
         if al is None:
@@ -463,9 +497,9 @@ class NowScreen(Screen):
         avail = max(320, r.w - margem * 2)
         # 0.36 e não 0.44: a saliência do disco pede a diferença.
         size = min(int(r.h * 0.62), int(avail * 0.36), 720)
-        # O bloco inteiro é `sai + size + gap + txt_w`, e o `sai` é 0,545 do
+        # O bloco inteiro é `sai + size + gap + txt_w`, e o `sai` é 0,425 do
         # tamanho do disco (ver as duas linhas abaixo) — ou seja, o bloco
-        # mede 1,545×size + gap + a coluna de texto.
+        # mede 1,425×size + gap + a coluna de texto.
         #
         # **Sintoma:** os dois pisos — 260 para o disco e 180 para a coluna —
         # somam mais do que a largura de uma tela de 800, e o bloco era
@@ -474,12 +508,20 @@ class NowScreen(Screen):
         # cabe não é piso, é overflow com nome bonito.
         #
         # Quem cede é o DISCO, porque ele é desenho e a coluna é informação.
-        size = max(110, min(size, int((avail - gap - txt_min) / 1.545)))
+        size = max(110, min(size, int((avail - gap - txt_min) / 1.425)))
         # O disco é um pouco MENOR que a capa (12" contra 12⅜"), e sai o
         # bastante para a bolacha aparecer — é ela que diz que ele é um
         # disco, e não uma sombra.
+        #
+        # 0,44 e não 0,56. Com 0,56 o CENTRO do disco ficava para fora da
+        # capa: o selo inteiro do lado de fora e mais da metade da bolacha
+        # à mostra, o que na tela lê como duas coisas — um disco E um
+        # quadrado, lado a lado — em vez de um disco sendo puxado de dentro
+        # da capa. Com 0,44 o selo encosta na beirada da capa e sobra um
+        # terço do disco para fora: é a imagem que se tem na cabeça, e é o
+        # ponto em que a capa e o disco leem como UM objeto.
         rm = int(size * 0.485)
-        desl = int(size * 0.56)
+        desl = int(size * 0.44)
         sai = max(0, desl + rm - size // 2)
         txt_w = min(txt_teto, max(120, avail - sai - size - gap))
         total = sai + size + gap + txt_w
@@ -640,12 +682,17 @@ class NowScreen(Screen):
         # Artista mais sutil, álbum com mais peso — quem olha de longe
         # quer saber QUAL disco é, não quem fez.
         T.text(s, al.artist.upper(), (x, y_text), 22, T.TEXT_FAINT, maxw=w)
-        T.text(s, al.name, (x, y_text + 34), 56, T.TEXT, bold=True, maxw=w)
+        alt_nome = self._nome_do_disco(s, al.name, (x, y_text + 34), w)
+        y_ab = y_text + 34 + alt_nome + 8
         if al.year:
-            T.text(s, str(al.year), (x, y_text + 102), 22, T.TEXT_DIM)
+            T.text(s, str(al.year), (x, y_ab), 22, T.TEXT_DIM)
+            y_ab += 32
 
         # ── onde no LADO. ────
-        y = y_text + 145
+        # A partir do fim do NOME, e não de um `y_text + 145` fixo: com o
+        # nome em duas linhas, o "DISCO 2 · LADO C" era desenhado por cima da
+        # segunda.
+        y = max(y_text + 145, y_ab + 8)
         if side:
             resta = max(0.0, side["end"] - t_abs)
             ultimo = side is al.sides[-1]
