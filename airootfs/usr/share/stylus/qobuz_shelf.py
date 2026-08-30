@@ -158,22 +158,38 @@ TETO_LISTAS = int(os.environ.get("STYLUS_QOBUZ_LISTAS", "500"))
 def _paginado(pedir, chave, teto):
     """(itens, total) — TODAS as páginas, e não a primeira.
 
-    **Sintoma:** a loja mostrava 100 discos e parava. Sem recado, sem
+    **Sintoma 1:** a loja mostrava 100 discos e parava. Sem recado, sem
     "mostrando 100 de 340" — os outros simplesmente não existiam ali, e a
     pessoa que favoritou 200 discos no celular via metade da própria
     estante. A chamada tinha `offset=0` escrito à mão e nunca uma segunda
     página.
 
-    Para de verdade em quatro situações, porque um laço que fala com a rede
-    não pode depender de uma só: chegou ao total que o Qobuz declarou, veio
-    uma página curta, veio uma página vazia, ou bateu no teto.
+    **Sintoma 2, e é o que trouxe você aqui:** com a paginação escrita, ela
+    parava em CINQUENTA. O laço pedia 100 por página e tratava "veio menos do
+    que pedi" como fim da lista — mas o `favorite/getUserFavorites` do Qobuz
+    APARA o limite em 50 do lado dele. Ou seja: a primeira página já voltava
+    curta, por decisão do servidor e não por falta de discos, e o laço
+    desistia na hora. O `total` que o próprio Qobuz mandava na mesma resposta
+    dizia 213, e ninguém olhava.
+    
+    A lição é geral: quando a resposta declara QUANTOS existem, é ela quem
+    manda parar — não o tamanho da página, que é escolha do servidor. Página
+    curta só quer dizer "acabou" quando não há total nenhum para comparar.
+
+    Para de verdade em cinco situações, porque um laço que fala com a rede
+    não pode depender de uma só: chegou ao total declarado, veio uma página
+    vazia, veio uma página curta E não há total, bateu no teto, ou o offset
+    foi ignorado e a mesma página voltou de novo (o que sem esta guarda seria
+    um laço infinito somando os mesmos discos para sempre).
 
     `pedir(offset, limite)` devolve o JSON cru; `chave` é onde a lista mora
     dentro dele ("albums", "playlists").
     """
-    itens, total = [], None
+    itens, total, vistos = [], None, set()
     while len(itens) < teto:
-        dados = pedir(len(itens), min(POR_PAGINA, teto - len(itens)))
+        antes = len(itens)
+        pedido = min(POR_PAGINA, teto - antes)
+        dados = pedir(antes, pedido)
         bloco = (dados or {}).get(chave) or {}
         pagina = bloco.get("items") or []
         if total is None:
@@ -183,10 +199,27 @@ def _paginado(pedir, chave, teto):
                 total = None
         if not pagina:
             break
-        itens += pagina
+        # O offset ignorado: sem isto, um servidor que devolve sempre a
+        # primeira página faz este laço rodar até o teto repetindo os mesmos
+        # discos — que na tela é pior do que mostrar de menos.
+        # `if x.get("id") or ...` seria o defeito clássico: o id 0 é FALSO
+        # em python, e aí o primeiro disco da lista escapa da guarda toda vez.
+        def _chave(it):
+            v = it.get("id")
+            return str(v) if v is not None else "?%d" % id(it)
+
+        novos = [i for i in pagina if _chave(i) not in vistos]
+        for i in pagina:
+            vistos.add(_chave(i))
+        if not novos:
+            break
+        itens += novos
         if total is not None and len(itens) >= total:
             break
-        if len(pagina) < POR_PAGINA:
+        # Página curta: fim da lista só quando não há total declarado. Com
+        # total, uma página curta é o servidor aparando o limite — ver o
+        # sintoma 2 acima.
+        if total is None and len(pagina) < pedido:
             break
     return itens, total
 

@@ -117,17 +117,10 @@ for p in "${SYSTEM_PATHS[@]}"; do
 done
 # Mesma razão do build.sh: o __pycache__ que nasce quando alguém roda um teste
 # no clone não é do sistema, e vinha junto no cp -a acima.
-# O venv fica de fora: o __pycache__ dele é do próprio ambiente, foi feito na
-# versão certa do interpretador, e apagá-lo só faria o deck compilar tudo de
-# novo na primeira vez que alguém baixa a agulha.
 find "$DST/usr/share/stylus" "$DST/usr/local/bin" \
-     -path "$DST/usr/share/stylus/deck/venv" -prune -o \
      -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
-# O venv do deck vive dentro de /usr/share/stylus/deck e NÃO está no
-# repositório. Copiar a pasta por cima apagaria ele; por isso o cp acima é de
-# diretório inteiro mas o venv é recriado logo abaixo se sumiu.
-ok "binários, deck, interface e configuração de áudio"
+ok "binários, biblioteca, interface e configuração de áudio"
 
 chmod -R a+rX "$DST/usr/share/stylus" 2>/dev/null || true
 find "$DST/usr/local/bin" -maxdepth 1 -type f -name 'stylus*' -exec chmod 0755 {} + 2>/dev/null || true
@@ -226,16 +219,15 @@ if [[ -d $AUTOSTART_SKEL ]]; then
     (( tocadas )) && ok "autostart atualizado em $tocadas casa(s)"
 fi
 
-# ── 3. o venv do deck, se sumiu ou está velho ──────────────────────────────
-VENV="$DST/usr/share/stylus/deck/venv"
-if [[ ! -x $VENV/bin/python3 ]]; then
-    info "Refazendo o ambiente Python do deck…"
-    if python3 -m venv --system-site-packages "$VENV" >/dev/null 2>&1 \
-       && "$VENV/bin/pip" install -q --upgrade pip PyOpenGL PyOpenGL-accelerate >/dev/null 2>&1; then
-        ok "deck pronto"
-    else
-        warn "não deu para refazer o venv; o deck vai usar o python do sistema"
-    fi
+# ── 3. o venv do deck, que não existe mais ─────────────────────────────────
+#  Havia aqui um venv de sistema em /usr/share/stylus/lib/venv, refeito toda
+#  vez que sumia. Ele existia por UM pacote — o PyOpenGL, que não está nos
+#  repositórios do Arch — e o único que o usava era o deck. Sem o deck, ele é
+#  só uma pasta de centenas de megabytes que ninguém abre; então quando ela
+#  ainda estiver lá de uma instalação antiga, tiramos.
+VELHO_VENV="$DST/usr/share/stylus/lib/venv"
+if [[ -d $VELHO_VENV ]]; then
+    rm -rf "$VELHO_VENV" && ok "o venv do deck (que não existe mais) foi removido"
 fi
 
 # ── 4. recarregar o que precisa ────────────────────────────────────────────

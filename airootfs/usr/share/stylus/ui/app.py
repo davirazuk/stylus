@@ -37,7 +37,7 @@ import unicodedata
 
 import pygame
 
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import vinyl                                            # noqa: E402
@@ -393,11 +393,11 @@ class NowScreen(Screen):
             self.tela_cheia = False
             return True
         if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            # Abre O DECK no disco que JÁ está tocando, sem reiniciar nada: o
+            # Abre O LIB no disco que JÁ está tocando, sem reiniciar nada: o
             # scope acha a posição sozinho pelo socket do mpv ou pelo MPRIS.
             # Reabrir o arquivo aqui recomeçaria a faixa, que é o oposto do
             # que "ver o disco" deveria custar.
-            self.app.open_deck()
+            self.app.ver_o_disco()
             return True
         if ev.key == pygame.K_SPACE:
             spawn(["playerctl", "play-pause"])
@@ -457,14 +457,14 @@ class NowScreen(Screen):
             spawn(["pamixer", "-d", "5"])
             self.app.toast(f"volume {self.app.volume_pct()}%")
             return True
-        # D de deck: o protetor de tela que é o próprio deck, ligado ou não.
+        # D: o protetor de tela que é o próprio disco, ligado ou não.
         # Quem sentou para CONVERSAR não quer a tela virando sozinha; quem
         # saiu do sofá quer. É uma escolha da noite, e fica guardada.
         if ev.key == pygame.K_d:
-            self.app.auto_deck = not self.app.auto_deck
+            self.app.auto_disco = not self.app.auto_disco
             self.app._save_player_prefs()
-            self.app.toast("deck sozinho: LIGADO" if self.app.auto_deck
-                           else "deck sozinho: DESLIGADO (fica na AGORA)")
+            self.app.toast("disco sozinho: LIGADO" if self.app.auto_disco
+                           else "disco sozinho: DESLIGADO (fica na AGORA)")
             return True
         return False
 
@@ -846,15 +846,15 @@ class NowScreen(Screen):
         # sem tecla não se descobre: quem quisesse repetir o disco não tinha
         # como saber que existe. É a mesma família do Mod+Shift+O do i3, que
         # sorteia um disco e não estava escrito em lugar nenhum.
-        self.app.hint(s, r, "[f] o disco na tela toda   [enter] abre o deck   "
+        self.app.hint(s, r, "[f] o disco na tela toda   [enter] o disco   "
                             "[space] pausa   "
                             "[n]/[p] faixa   [←]/[→] busca   [v]/[b] lado   "
                             "[s] embaralha   [Shift+R] repete   "
                             "[+]/[-] volume   "
-                            + ("[d] deck sozinho: ligado" if self.app.auto_deck
-                               else "[d] deck sozinho: desligado"))
+                            + ("[d] disco sozinho: ligado" if self.app.auto_disco
+                               else "[d] disco sozinho: desligado"))
 
-    # A cerimônia, em segundos, VINDA DO DECK. O prato leva um tempo para
+    # A cerimônia, em segundos, VINDA DO vinyl.py. O prato leva um tempo para
     # chegar aos 33 (SPIN), a agulha fica suspensa sobre a borda (CUE) e
     # então desce (DROP) — pouco mais de dois segundos ao todo: é uma
     # cerimônia, não uma espera.
@@ -4773,13 +4773,13 @@ class App:
         # por quadro seria smoothscale duplo a 60fps para desenhar a mesma
         # imagem. Guarda as últimas — voltar ao disco de ontem não regenera.
         self._backdrops = {}
-        # Protetor de tela que é o PROPRIO deck: parado na AGORA sem tocar em
-        # nada, a tela chama o disco sozinha, uma vez por álbum (ver run()).
+        # Protetor de tela que é o PRÓPRIO disco: parado na AGORA sem tocar
+        # em nada, a tela cheia entra sozinha, uma vez por álbum (ver run()).
         # Ligado/desligado pelo 'D' na AGORA — e a escolha fica guardada:
         # quem desligou uma vez não quer que a máquina "esqueça" e volte.
-        self.IDLE_DECK_SECS = 240
+        self.IDLE_DISCO_SECS = 240
         self._ultima_entrada = time.time()
-        self._deck_auto = None
+        self._disco_auto = None
         # A pasta do disco anterior, para saber quando um disco NOVO entrou:
         # o embaralhar e o repetir moram no processo do mpv, e cada disco
         # posto sobe um mpv novo. Ver _disco_novo().
@@ -4787,7 +4787,11 @@ class App:
         # Quando a agulha começou a descer neste disco. Zero = nenhuma
         # cerimônia em curso. Ver NowScreen._cerimonia.
         self.cerimonia_t0 = 0.0
-        self.auto_deck = bool(_load_prefs().get("auto_deck", True))
+        # Lê a chave velha também: quem DESLIGOU isto uma vez não quer que
+        # a máquina "esqueça" só porque a coisa mudou de nome.
+        _pref = _load_prefs()
+        self.auto_disco = bool(_pref.get("auto_disco",
+                                         _pref.get("auto_deck", True)))
         self._born = time.time()
         self.pads = []
         self._pad_t = 0.0
@@ -4957,10 +4961,17 @@ class App:
         self.toast("%s para hoje à noite" % plural(len(escolhidos), "disco"))
 
     # ── ações ──────────────────────────────────────────────────────────────
-    def _deck_bin(self):
-        # caminho absoluto é mais confiável que depender do PATH da sessão
-        # gráfica (que às vezes não tem /usr/local/bin). Tenta o instalado,
-        # depois o da fonte, depois o PATH.
+    def _tocador_bin(self):
+        """O `stylus-deck`, que é quem PÕE disco neste sistema.
+
+        O nome ficou: ele acha o álbum pelo nome, sobe o mpv com as travas de
+        áudio (ver o cabeçalho dele) e retoma a agulha onde ela parou. O que
+        deixou de existir é a TELA dele — quem desenha o disco é esta.
+
+        Caminho absoluto é mais confiável que depender do PATH da sessão
+        gráfica (que às vezes não tem /usr/local/bin). Tenta o instalado,
+        depois o da fonte, depois o PATH.
+        """
         for cand in ("/usr/local/bin/stylus-deck",
                      "/usr/share/stylus/stylus-deck",
                      "stylus-deck"):
@@ -4973,34 +4984,49 @@ class App:
             self.toast(f"disco não existe: {os.path.basename(folder)}")
             return False
         self.toast(f"pondo {os.path.basename(folder)}…")
-        if not spawn([self._deck_bin(), "--no-scope", folder]):
+        if not spawn([self._tocador_bin(), "--no-scope", folder]):
             self.toast("não consegui pôr o disco (erro ao iniciar)")
             return False
         return True
 
-    def open_deck(self):
-        """Abre o deck sem reiniciar o disco.
+    def ver_o_disco(self):
+        """O disco na tela toda — aqui dentro, sem abrir programa nenhum.
 
-        Antes reiniciava o mpv inteiro (matava o tocador e criava outro)
-        só para mostrar o visual — o disco recomeçava e fechar o deck
-        parava a música. Agora é só view: o ritual observa o que já está
-        tocando via socket/MPRIS, não toca no mpv. Fechar não para, abrir
-        não reinicia. Se nada estiver tocando, sorteia um disco novo com
-        cerimônia completa (agulha sobe, gira, desce e só então começa).
+        Isto abria o DECK: um segundo processo, com OpenGL, um venv só dele
+        e uma janela por cima desta. O deck não existe mais — esta tela
+        passou a fazer o que ele fazia, e melhor (ver `NowScreen._cheia`),
+        então "ver o disco" virou o que sempre devia ter sido: uma tecla que
+        muda ESTA tela.
+
+        Sem nada tocando, sorteia um disco e põe: no sofá, o enter tem que
+        sempre fazer alguma coisa — mostrar uma tela vazia não é nada.
         """
         snap = self.playing.session.snapshot()
-        has_music = bool(snap.get("path")) or snap.get("source") != "none"
-        if has_music:
-            self.toast("abrindo o deck…")
-            if not spawn([self._deck_bin(), "--view"]):
-                self.toast("não consegui abrir o deck")
-        else:
-            # nada tocando: põe um disco novo com cerimônia (agulha levanta,
-            # disco gira, agulha desce e música começa) em vez de só mostrar
-            # tela vazia — no sofá, Enter tem que sempre fazer alguma coisa.
-            self.toast("nada tocando — sorteando um disco…")
-            if not spawn([self._deck_bin()]):
-                self.toast("não consegui abrir o deck")
+        tem_musica = bool(snap.get("path")) or snap.get("source") != "none"
+        agora = next((i for i, s in enumerate(self.screens)
+                      if isinstance(s, NowScreen)), None)
+        if tem_musica:
+            if agora is not None:
+                self.rail = False
+                self._goto(agora)
+                self.screens[agora].tela_cheia = True
+            return
+        # nada tocando: põe um disco novo, com a cerimônia inteira (o prato
+        # sai do zero, a agulha desce) — e já na tela cheia, que é onde ela
+        # se vê.
+        alvo = None
+        try:
+            alvo = vinyl.draw_record()
+        except Exception:
+            alvo = None
+        if not alvo:
+            self.toast("não achei disco nenhum na estante")
+            return
+        self.toast("sorteei %s" % os.path.basename(alvo))
+        if self.put_on(alvo) and agora is not None:
+            self.rail = False
+            self._goto(agora)
+            self.screens[agora].tela_cheia = True
 
     def lyric_state(self, al, track):
         """(linhas do .lrc, índice da linha de agora) — ou None.
@@ -5032,7 +5058,18 @@ class App:
                 lo = mid + 1
             else:
                 hi = mid
-        return lines, lo
+        # **Sintoma:** a letra andava UMA LINHA ADIANTADA, o tempo todo. A
+        # busca binária acima devolve a primeira linha que ainda NÃO chegou
+        # — que é o que se precisa para cortar a lista, e não é a linha que
+        # está sendo cantada. Quem canta é a anterior. Com o destaque em
+        # `lo`, a tela mostrava sempre o verso seguinte em lavanda enquanto o
+        # atual saía apagado logo acima: parecia problema de sincronia do
+        # arquivo, e era um índice.
+        #
+        # Antes do primeiro carimbo não há linha cantada; ali o 0 é a
+        # resposta menos errada (a primeira linha acende um instante cedo,
+        # em vez de a tela ficar sem nada).
+        return lines, max(0, lo - 1)
 
     def backdrop(self, al, size):
         """O borrão da capa como fundo da AGORA, ou None sem capa.
@@ -5172,7 +5209,7 @@ class App:
         self.toast("repetir: " + labels[self.repeat])
 
     def _save_player_prefs(self):
-        _save_prefs({"auto_deck": self.auto_deck, "repeat": self.repeat})
+        _save_prefs({"auto_disco": self.auto_disco, "repeat": self.repeat})
 
     _volume_cache = (0, 0)
     _volume_counter = 0
@@ -5841,8 +5878,9 @@ class App:
             self.alvos = []
             self._alvos_do_trilho = []
             self._rato_pisca()
+            self._recado()
             self._disco_novo()
-            self._idle_deck()
+            self._idle_disco()
             try:
                 self.screens[self.cur].draw(self.surf, body)
             except Exception as e:        # noqa: BLE001
@@ -5936,22 +5974,54 @@ class App:
             self._ao_tocador("set_property", "loop-playlist",
                              "inf" if self.repeat == 2 else "no")
 
-    def _idle_deck(self):
-        """Parado na AGORA, a tela vira o deck sozinha. Uma vez por álbum.
+    def _recado(self):
+        """O que um `stylus deck` num terminal pediu, se pediu alguma coisa.
+
+        Esta tela é INSTÂNCIA ÚNICA (ver o stylus-ui): com ela aberta — que é
+        o caso normal no modo música — um segundo `stylus-ui` devolve 76 e
+        sai. Então o pedido chega por arquivo: uma linha, lida e apagada no
+        quadro seguinte.
+
+        Sem isto, `stylus deck loveless` no terminal punha o disco e a tela
+        não fazia nada — o que da poltrona lê como "o comando não funcionou",
+        que é pior do que ele não existir.
+        """
+        arq = getattr(vinyl, "UI_CMD", "")
+        if not arq:
+            return
+        try:
+            if not os.path.exists(arq):
+                return
+            with open(arq, encoding="utf-8") as fh:
+                pedido = fh.read().strip()
+        except Exception:
+            return
+        # Apaga ANTES de agir: um recado que não sai daqui é lido de novo em
+        # todo quadro, e "vá para a tela cheia" sessenta vezes por segundo
+        # prende a tela lá para sempre.
+        try:
+            os.unlink(arq)
+        except Exception:
+            pass
+        if pedido == "disco":
+            self.ver_o_disco()
+
+    def _idle_disco(self):
+        """Parado na AGORA, a tela vira o DISCO sozinha. Uma vez por álbum.
 
         O modo música costuma estar num televisor do outro lado do quarto: a
         pessoa põe o disco, larga o controle, e a capa parada na AGORA é
-        menos da metade do que o deck desenha da mesma música. Qualquer
+        menos da metade do que a tela cheia desenha da mesma música. Qualquer
         entrada adia; trocar de álbum rearma — e nada disso acontece na
         janela de desenvolvimento, que não é uma sala de estar.
         """
         if os.environ.get("STYLUS_UI_WINDOWED"):
             return
-        if not self.auto_deck:
+        if not self.auto_disco:
             return
         if not isinstance(self.screens[self.cur], NowScreen):
             return
-        if time.time() - self._ultima_entrada < self.IDLE_DECK_SECS:
+        if time.time() - self._ultima_entrada < self.IDLE_DISCO_SECS:
             return
         snap = self.playing.session.snapshot()
         if not (snap.get("path") or "") or snap.get("paused", True):
@@ -5960,14 +6030,25 @@ class App:
         # duas playlists diferentes do Qobuz eram a mesma chave, e a tela
         # chamava o disco uma vez só para as duas.
         chave = self._pasta_tocando()
-        if chave and chave != self._deck_auto:
-            self._deck_auto = chave
-            self.open_deck()
+        if chave and chave != self._disco_auto:
+            self._disco_auto = chave
+            self.ver_o_disco()
 
 
 def main():
+    """--disco abre já na tela cheia do disco; o resto é ignorado.
+
+    O `stylus deck` chama isto quando o lançador NÃO está aberto (no modo
+    área de trabalho, ou por ssh): ali não há para quem mandar recado, então
+    a tela abre no lugar certo de uma vez. Com ele aberto, o stylus-ui
+    devolve 76 sem chegar aqui e quem trata é o `App._recado`.
+    """
+    quer_disco = "--disco" in sys.argv[1:]
     try:
-        App().run()
+        app = App()
+        if quer_disco:
+            app.ver_o_disco()
+        app.run()
     finally:
         audio_live.close_monitor()
         pygame.quit()

@@ -80,7 +80,7 @@ Ler a máquina é o motivo de você estar nela. Nada disto machuca:
 | a estante enxerga o quê | `stylus check`, `stylus library` |
 | esta versão é qual | `git -c safe.directory=/var/lib/stylus/repo -C /var/lib/stylus/repo log -1 --oneline` |
 
-O deck e a interface escrevem em `~/.local/share/stylus/`. Quando a tela
+A interface escreve em `~/.local/share/stylus/`. Quando a tela
 "não muda e nada explica", o motivo quase sempre está ali ou no
 `journalctl --user`.
 

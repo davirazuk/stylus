@@ -37,14 +37,14 @@ import subprocess
 import sys
 import time
 
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 try:
     import vinyl
 except Exception as e:                                    # noqa: BLE001
-    sys.exit(f"stylus-wallpaper: preciso do vinyl.py do deck: {e}")
+    sys.exit(f"stylus-wallpaper: preciso do vinyl.py: {e}")
 
-DECK = "/usr/share/stylus/deck"
-GERADOR = os.path.join(DECK, "tools", "vinyl_wallpaper.py")
+LIB = "/usr/share/stylus/lib"
+GERADOR = os.path.join(LIB, "tools", "vinyl_wallpaper.py")
 PADRAO = "/usr/share/backgrounds/stylus/stylus.png"
 
 CACHE = os.path.expanduser("~/.cache/stylus/wallpapers")
@@ -52,14 +52,15 @@ CONF = os.path.expanduser("~/.config/stylus/wallpaper")
 INTERVALO = 5.0
 
 
-def python_do_deck():
-    """O venv quando ele existe, o python do sistema quando não.
+def python_do_gerador():
+    """O python do sistema. O gerador usa numpy e pillow, que vêm em pacote.
 
-    O gerador usa numpy e pillow, que vêm em pacote; o venv existe pelo
-    PyOpenGL do deck e tem --system-site-packages, então os dois servem.
+    Havia aqui um venv de sistema que existia só pelo PyOpenGL do deck. Sem
+    o deck não há venv de sistema nenhum, e preferir um caminho que não
+    existe mais é como qualquer outro plano B calado: ele some sozinho e
+    ninguém percebe.
     """
-    venv = os.path.join(DECK, "venv", "bin", "python3")
-    return venv if os.access(venv, os.X_OK) else sys.executable
+    return sys.executable
 
 
 def resolucao():
@@ -143,7 +144,7 @@ def desenhar(pasta, estilo, res, quieto=False):
         print(f"  desenhando {os.path.basename(pasta)}… "
               f"(mede o álbum inteiro; da próxima vez é instantâneo)")
     tmp = png + ".parcial"
-    r = subprocess.run([python_do_deck(), GERADOR, "--album", pasta,
+    r = subprocess.run([python_do_gerador(), GERADOR, "--album", pasta,
                         "--style", estilo, "--res", res, "--out", tmp],
                        check=False,
                        stdout=subprocess.DEVNULL if quieto else None,

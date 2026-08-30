@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Testes sem GL nem janela para a parte não-desenhada do modo ritual.
+"""O vinyl.py exercitado sem tela: o disco, os lados, a memória, as letras.
 
 Por que existe: todos os defeitos da noite em que o ritual foi ligado eram
-DESTE tipo - contrato de função, portão que nunca abria, formato de retorno -
+DESTE tipo — contrato de função, portão que nunca abria, formato de retorno —
 e nenhum apareceu lendo o código. Apareceram olhando a tela, que é o jeito
 mais caro possível de encontrar um `resolve_album()` que devolve string.
 
-Não testa aparência. Aparência se confere olhando:
-    STYLUS_DECK_SHOT_AFTER=20 STYLUS_DECK_SHOT_QUIT=1 vinyl --silent "<álbum>"
+Chamava-se `test_ritual.py` e morava no deck. O deck saiu; o que ele testava
+de DESENHO saiu com ele (a geometria em numpy, a cerimônia como máquina de
+estados, as legendas do ritual), e o que ficou é o que sempre foi a
+biblioteca: achar o disco, reparti-lo em lados, contar as colocações, casar a
+faixa que o tocador diz com a faixa do álbum, ler o .lrc.
 
-    ./venv/bin/python tools/test_ritual.py [--album CAMINHO]
+Aparência se confere olhando — hoje, no lançador:
+
+    stylus deck "<álbum>"        e depois [f]
+
+    python3 tools/test_vinyl.py [--album CAMINHO]
 """
 import argparse
 import json
@@ -20,7 +27,12 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# O vinyl mora ao lado, em ../lib. Os dois caminhos: o da instalação e o
+# relativo a este arquivo, que é o que serve para rodar do repositório.
+_aqui = os.path.dirname(os.path.abspath(__file__))
+for _p in ("/usr/share/stylus/lib", os.path.join(os.path.dirname(_aqui), "lib")):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 import numpy as np
 import vinyl
 
@@ -102,119 +114,18 @@ def main():
     check("album_time soma o início da faixa",
           abs(alb.album_time(0, 5.0) - (alb.tracks[0]["start"] + 5.0)) < 1e-6)
 
-    case("a cerimônia anda sozinha")
-    # ATENÇÃO, isto custou uma rodada de teste vermelho: o Deck mede o tempo
-    # de fase pelo RELÓGIO DA PAREDE (time.monotonic() - t0), não somando o
-    # dt que recebe. O dt só serve para a rampa de rotação e para girar o
-    # prato. Então um laço apertado passando dt de mentira NÃO faz fase
-    # nenhuma avançar - é preciso mexer no t0 (ou esperar de verdade).
-    def spin(deck, seconds, playing=True, steps=30):
-        for _ in range(steps):
-            deck.t0 -= seconds / steps
-            deck.update(seconds / steps, playing)
-
-    deck = vinyl.Deck()
-    check("começa girando o prato", deck.phase == vinyl.SPINUP)
-    seen = set()
-    for _ in range(240):
-        spin(deck, 0.05)
-        seen.add(deck.phase)
-        if deck.phase == vinyl.PLAY:
-            break
-    check("chega em PLAY sozinha", deck.phase == vinyl.PLAY)
-    check("passa pelo cue no caminho", vinyl.CUE in seen)
-    check("e desce a agulha", vinyl.DROP in seen)
-    check("o prato chegou na rotação certa",
-          abs(deck.speed - vinyl.REV_PER_SEC) < 0.05)
-    # A virada: LIFT -> BREAK sozinho, e o Deck NÃO chama LIFT por conta
-    # própria - quem vê a fronteira do lado é quem chama. Era o defeito.
-    deck.go(vinyl.LIFT)
-    for _ in range(240):
-        spin(deck, 0.05, playing=False)
-        if deck.phase == vinyl.BREAK:
-            break
-    check("LIFT vira BREAK sozinho", deck.phase == vinyl.BREAK)
-    deck.go(vinyl.RETURN)
-    for _ in range(240):
-        spin(deck, 0.05)
-        if deck.phase == vinyl.CUE:
-            break
-    check("RETURN volta para o cue", deck.phase == vinyl.CUE)
-
-    case("o fim do disco, e o braço indo até o berço")
-    # after_lift é como o RitualScene diz ao Deck se este levantar é a
-    # virada de lado (BREAK, prato continua) ou o fim (STOP, prato para).
-    deck = vinyl.Deck()
-    deck.go(vinyl.PLAY)
-    deck.arm_target_radius(0.5)          # é aqui que o lift_radius é guardado
-    deck.after_lift = vinyl.STOP
-    deck.go(vinyl.LIFT)
-    deck.arm_target_radius(0.5)
-    for _ in range(240):
-        spin(deck, 0.05, playing=False)
-        if deck.phase == vinyl.STOP:
-            break
-    check("com after_lift=STOP, o levantar termina em STOP", deck.phase == vinyl.STOP)
-    check("guardou onde a agulha estava", abs(deck.lift_radius - 0.5) < 1e-6)
-    # O trajeto até o berço: antes o quadro em que o LIFT vencia jogava a
-    # agulha de 0.5 para fora da borda de uma vez só.
-    deck.go(vinyl.STOP)
-    r0 = deck.arm_target_radius(0.5)
-    deck.t0 -= vinyl.TRAVEL_T * 0.5
-    r1 = deck.arm_target_radius(0.5)
-    deck.t0 -= vinyl.TRAVEL_T
-    r2 = deck.arm_target_radius(0.5)
-    check("sai de onde a agulha estava", abs(r0 - 0.5) < 0.02)
-    check("passa pelo meio do caminho", 0.5 < r1 < vinyl.ARM_REST_RADIUS)
-    check("e chega ao berço", abs(r2 - vinyl.ARM_REST_RADIUS) < 1e-6)
-    for _ in range(60):
-        spin(deck, 0.05, playing=False)
-    check("no STOP o prato para", deck.speed < 0.05)
-
-    case("pausar levanta a agulha")
-    deck = vinyl.Deck()
-    deck.go(vinyl.PLAY)
-    for _ in range(40):
-        deck.update(0.05, True)
-    check("tocando, a agulha está no sulco", deck.arm_lift() < 0.02)
-    for _ in range(40):
-        deck.update(0.05, False)
-    check("pausado, o braço sobe", deck.arm_lift() > 0.95)
-    check("mas a fase continua sendo PLAY", deck.phase == vinyl.PLAY)
-    check("e o prato não para", deck.speed > vinyl.REV_PER_SEC * 0.9)
-    check("o raio não muda: a agulha paira onde estava",
-          abs(deck.arm_target_radius(0.61) - 0.61) < 1e-6)
-    for _ in range(40):
-        deck.update(0.05, True)
-    check("despausar baixa de volta", deck.arm_lift() < 0.02)
-    # Durante o DROP a fase manda descer; com a música pausada, não desce.
-    deck.go(vinyl.DROP)
-    for _ in range(40):
-        deck.t0 -= 0.02
-        deck.update(0.02, False)
-    check("a fase não vence a mão da pessoa", deck.arm_lift() > 0.9)
+    # (Aqui rodavam três casos sobre a classe `vinyl.Deck` — a cerimônia
+    # como máquina de estados, o fim do disco com o braço voltando ao berço,
+    # e o cue subindo ao pausar. O `Deck` era do deck, o deck saiu, e a
+    # cerimônia que ficou é a do lançador: três durações e o desenho da
+    # descida, exercitados pelo `ui/tools/test_ui.py`, que varre o teclado
+    # girando entre as fases dela.)
 
     case("a memória do disco")
     a, b = "/x/Radiohead/Kid A", "/x/Radiohead/Amnesiac"
-    check("a semente é estável", vinyl.record_seed(a) == vinyl.record_seed(a))
-    check("e é de cada disco", vinyl.record_seed(a) != vinyl.record_seed(b))
-    check("barra sobrando não muda a semente",
-          vinyl.record_seed(a) == vinyl.record_seed(a + "/"))
-    s0, d0 = vinyl.wear_counts(0)
-    s5, d5 = vinyl.wear_counts(5)
-    s99, d99 = vinyl.wear_counts(999)
-    check("disco novo já tem alguma poeira", s0 >= 1 and d0 >= 10)
-    check("tocar marca o disco", s5 > s0 and d5 > d0)
-    check("mas o desgaste satura", s99 <= 14 and d99 <= 120)
-    w_a = vinyl.wear_marks(-0.1, -0.1, 0.76, (0.625, 1.0), 0.0,
-                           seed=vinyl.record_seed(a), plays=3)
-    w_b = vinyl.wear_marks(-0.1, -0.1, 0.76, (0.625, 1.0), 0.0,
-                           seed=vinyl.record_seed(b), plays=3)
-    check("dois discos não têm os mesmos arranhões",
-          not np.array_equal(w_a[0], w_b[0]))
-    w_c = vinyl.wear_marks(-0.1, -0.1, 0.76, (0.625, 1.0), 0.0,
-                           seed=vinyl.record_seed(a), plays=3, crackle=1.0)
-    check("o estalo acrescenta partículas", len(w_c[0]) > len(w_a[0]))
+    # (As marcas de uso lidas do envelope — `wear_counts`/`wear_marks` — e a
+    # semente por disco que as tornava DELE eram desenho do deck, e saíram
+    # com ele. O que ficou é a contagem, que é memória e não desenho.)
 
     import tempfile
     fd, tmp = tempfile.mkstemp(suffix=".tsv")
@@ -241,12 +152,6 @@ def main():
             os.unlink(tmp)
         except OSError:
             pass
-    e1, d1 = vinyl.play_banner(1, 0.0, "disco")
-    e9, d9 = vinyl.play_banner(9, time.time() - 40 * 86400, "disco")
-    check("a primeira vez é escrita por extenso", e1 == "PRIMEIRA VEZ")
-    check("da segunda em diante vem o número", e9.startswith("9"))
-    check("e desde quando", d9.startswith("desde"))
-    check("os dois lados sempre têm texto", all([e1, d1, e9, d9]))
 
     case("achar a faixa quando o tocador não numera")
     # O defeito de verdade: o Session só numera faixa sob mpv. Sob MPRIS o
@@ -322,73 +227,10 @@ def main():
               + (f", \033[1;31m{FAIL} falharam\033[0m" if FAIL else "") + "\n")
         return 1 if FAIL else 0
 
-    case("a geometria devolve o formato que o scope.py consome")
-    iso = (0.625, 1.0)
-    env = alb.envelope_snapshot()
-    side = alb.sides[0]
-    tracks = [alb.tracks[i] for i in side.get("tracks", [])]
-    body = vinyl.disc_body(-0.1, -0.1, 0.76, iso, math.radians(-38.0))
-    check("disc_body devolve tiras", len(body) > 0)
-    check("cada vértice tem 7 floats", all(v.shape[1] == 7 for v in body))
-    check("edge fixado em 0 (área cheia, não traço)",
-          all(np.allclose(v[:, 6], 0.0) for v in body))
-    check("sem NaN no corpo do disco", all(np.isfinite(v).all() for v in body))
-    rings = list(vinyl.groove_rings(-0.1, -0.1, 0.76, iso, side, env, tracks,
-                                    math.radians(-38.0), played_ring=10))
-    check("groove_rings devolve anéis", len(rings) > 0)
-    check("e são pontos finitos", all(np.isfinite(p).all() for p, _c, _w in rings))
-    segs, cols, stylus = vinyl.tonearm(-0.1, -0.1, 0.76, iso, 0.7, lift=0.0)
-    check("tonearm devolve pares de pontos", len(segs) % 2 == 0 and len(segs) > 0)
-    check("uma cor por segmento", len(cols) == len(segs) // 2)
-    check("a agulha cai dentro do quadro", abs(stylus[0]) <= 1.5 and abs(stylus[1]) <= 1.5)
-    # O braço parado tem que ficar FORA do disco, senão a agulha desenha
-    # sulco durante a pausa da virada.
-    s2, _c2, st_rest = vinyl.tonearm(-0.1, -0.1, 0.76, iso, vinyl.ARM_REST_RADIUS, lift=1.0)
-    dx = (st_rest[0] - (-0.1)) / iso[0]
-    dy = (st_rest[1] - (-0.1)) / iso[1]
-    check("parado, a agulha fica fora do disco", math.hypot(dx, dy) > 0.76)
-    # ── o braço é LUZ, e a lei do §5.5 se confere aqui ────────────────────
-    # O que havia era um toca-discos desenhado: tubo em nove cópias,
-    # contrapeso em barril, cabeçote, gimbal e um berço em U — e o CLAUDE.md
-    # proíbe isso pelo nome. Três perguntas que pegam a volta desse desenho:
-    check("nada de berço: arm_rest não existe mais",
-          not hasattr(vinyl, "arm_rest"))
-    # 1. Nenhum segmento atrás do pivô. O contrapeso morava lá, e é ele que
-    #    faz o braço ler como peça de máquina em vez de facho.
-    pv, (spx, spy) = vinyl.stylus_xy(-0.1, -0.1, 0.76, iso, 0.7, 0.0)
-    ux, uy = spx - pv[0], spy - pv[1]
-    atras = [p for p in segs
-             if (p[0] - pv[0]) * ux + (p[1] - pv[1]) * uy < -1e-4]
-    check("nada desenhado atrás do pivô (o contrapeso saiu)", not atras)
-    # 2. A luz mora na PONTA: a metade de fora tem que ser mais clara que a
-    #    de dentro, senão voltou a ser haste de brilho uniforme.
-    meio = [(sum(c[:3]),
-             ((segs[2 * i][0] + segs[2 * i + 1][0]) / 2 - pv[0]) * ux
-             + ((segs[2 * i][1] + segs[2 * i + 1][1]) / 2 - pv[1]) * uy)
-            for i, c in enumerate(cols)]
-    dentro = [b for b, d in meio if d < 0.5 * (ux * ux + uy * uy)]
-    fora = [b for b, d in meio if d >= 0.5 * (ux * ux + uy * uy)]
-    check("a luz do braço mora na ponta",
-          bool(dentro) and bool(fora)
-          and sum(fora) / len(fora) > 3.0 * (sum(dentro) / len(dentro)))
-    # 3. Levantado, o facho apaga — é assim que este desenho diz "saiu do
-    #    sulco", já que não há terceira dimensão para levantar nada.
-    check("levantado, o braço apaga",
-          float(np.sum(s2)) >= 0.0 and float(np.sum(_c2)) < float(np.sum(cols)))
-    # 4. Nenhum segmento de comprimento zero: o build_segs monta o
-    #    quadrilátero a partir da normal do segmento, e comprimento zero vira
-    #    quatro vértices no mesmo ponto — código que desenha nada.
-    zerados = sum(1 for i in range(len(segs) // 2)
-                  if math.hypot(segs[2 * i][0] - segs[2 * i + 1][0],
-                                segs[2 * i][1] - segs[2 * i + 1][1]) < 1e-6)
-    check("nenhum segmento de comprimento zero", zerados == 0)
-    # O CUE é 1,7s inteiros de cerimônia; a 3° de arco ele era um tremor.
-    ang_rest = vinyl.arm_angle_for_radius(vinyl.ARM_REST_RADIUS)
-    ang_lead = vinyl.arm_angle_for_radius(vinyl.R_LEADIN)
-    check("o cue percorre um arco que dá para ver",
-          math.degrees(abs(ang_rest - ang_lead)) > 6.0)
+    # (Aqui rodava o caso "a geometria devolve o formato que o scope.py
+    # consome": ~65 conferências sobre os vértices que o `disc_body`, o
+    # `groove_rings` e o `tonearm` entregavam ao OpenGL. Saíram com eles.)
 
-    # ── de quem é o disco quando ele está solto na raiz ───────────────────
     case("um disco solto na raiz não é da banda 'Songs'")
     import tempfile as _tf
     _raiz = _tf.mkdtemp(prefix="stylus-raiz-")
@@ -532,7 +374,7 @@ def main():
         def __init__(self, duracoes):
             self.folder, self.artist, self.name = "/x", "A", "B"
             self.year, self.cover = "", None
-            self.plays = self.first_played = self.last_played = 0
+            self.plays = self.last_played = 0
             self.total, self.sides = 0.0, []
             self.tracks = [{"path": "/x/%d" % i, "title": "F%d" % i,
                             "duration": float(d), "start": 0.0}
@@ -648,183 +490,9 @@ def main():
     finally:
         _shutil.rmtree(_tmpc, ignore_errors=True)
 
-    case("o deck DIZ o que está acontecendo")
-    # POR QUE ISTO EXISTE
-    # -------------------
-    # As duas camadas de texto do deck eram criadas no `main()` e desenhadas
-    # em todo quadro, e ninguém nunca chamava `set_text` nelas — só a das
-    # letras era alimentada. O deck nunca disse nada: nem "LADO A acabou,
-    # vire o disco", que é a tese inteira deste sistema, nem "PRIMEIRA VEZ"
-    # no instante em que a agulha desce, nem que faixa está tocando. As peças
-    # todas já existiam (play_banner, banner(), caption_is_state(), e uma cor
-    # ALARM guardada na paleta para o fim do lado); faltava o último fio.
-    #
-    # A decisão do texto mora no `RitualScene.legendas`, fora do laço de
-    # desenho, exatamente para poder ser conferida sem GL: o OpenGL entra
-    # aqui como um módulo de mentira.
-    from unittest.mock import MagicMock as _MM
-    for _n in ("OpenGL", "OpenGL.GL"):
-        sys.modules.setdefault(_n, _MM())
-    try:
-        import importlib.machinery as _im
-        import importlib.util as _iu
-        _aqui = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        _spec = _iu.spec_from_loader("ritualmod", _im.SourceFileLoader(
-            "ritualmod", os.path.join(_aqui, "ritual.py")))
-        R = _iu.module_from_spec(_spec)
-        _spec.loader.exec_module(R)
-    except Exception as e:                               # noqa: BLE001
-        print(f"    \033[2m—\033[0m sem o ritual.py aqui: {e}")
-        R = None
-    if R is not None:
-        cena = R.RitualScene.__new__(R.RitualScene)
-        cena.deck = vinyl.Deck()
-        cena._banner = None
-        cena._banner_until = 0
-        cena._side = 1
-        cena._ti_cache = [None, 0]
-
-        # Um Album DE VERDADE (sem __init__, que iria ao disco): a frase do
-        # gesto do fim do lado mora no `Album.gesto_do_lado`, e um objeto de
-        # mentira sem esse método faz a legenda cair na reserva dela — o
-        # teste passaria verde por cima justamente do caminho que interessa.
-        _alb_falso = vinyl.Album.__new__(vinyl.Album)
-        _alb_falso.sides = [{"label": "SIDE A"}, {"label": "SIDE B"}]
-        _alb_falso.tracks = [{"title": "Come Together", "path": "/x/1.flac"}]
-        _alb_falso.discos = 1
-        cena.album = _alb_falso
-
-        # ── nada é montado com menos de dois pontos ───────────────────────
-        # **Sintoma:** peças inteiras do desenho que não aparecem, e nada
-        # avisando. O `build_strip` devolve ZERO vértices para menos de dois
-        # pontos (`if n<2`) e o `build_segs` para menos de um par — e isso
-        # não é erro, é uma lista vazia que o desenho aceita sem reclamar.
-        #
-        # Já aconteceu quatro vezes neste arquivo: as faíscas da agulha (um
-        # ponto duplicado "to make a tiny segment"), duas poeiras de
-        # ambiente, o "power LED" no plinto, e a marca de onde o LADO começa
-        # no aro — esta última DIZENDO alguma coisa e nunca desenhada.
-        #
-        # Ler não pega: `build_strip(np.array([[x, y]]), ...)` tem exatamente
-        # a cara de uma chamada boa. Então o teste monta um quadro de verdade
-        # e olha o que CHEGA nos dois montadores.
-        try:
-            import numpy as _np
-
-            cena_g = R.RitualScene.__new__(R.RitualScene)
-            cena_g.deck = vinyl.Deck()
-            cena_g.deck.phase = vinyl.PLAY
-            cena_g._banner, cena_g._banner_until = None, 0
-            cena_g._side, cena_g._ti_cache = 0, [None, 0]
-            cena_g.album = alb
-
-            class _SessaoParada:
-                def snapshot(self): return {"source": "none", "path": ""}
-                def position(self): return (alb.total * 0.3, None)
-
-            cena_g.session = _SessaoParada()
-
-            curtos = []
-            _bs, _bg = R.build_strip, R.build_segs
-
-            def _espia_strip(pts, *a, **k):
-                if len(pts) < 2:
-                    curtos.append("build_strip com %d ponto(s)" % len(pts))
-                return _bs(pts, *a, **k)
-
-            def _espia_segs(pares, *a, **k):
-                if len(pares) < 2:
-                    curtos.append("build_segs com %d ponto(s)" % len(pares))
-                return _bg(pares, *a, **k)
-
-            R.build_strip, R.build_segs = _espia_strip, _espia_segs
-            try:
-                buf = _np.zeros((512, 2), dtype=_np.float32)
-                for _lift in (0.0, 0.5, 1.0):
-                    cena_g.deck.cue_ramp = _lift
-                    cena_g.build({"source": "none", "path": ""}, buf,
-                                 1920, 1080, (1.0, 0.42))
-            finally:
-                R.build_strip, R.build_segs = _bs, _bg
-            if curtos:
-                print("      %s" % "; ".join(sorted(set(curtos))[:4]))
-            check("todo pedaço do quadro tem pontos que bastam para desenhar",
-                  not curtos)
-        except Exception as _e:                          # noqa: BLE001
-            print("      %r" % (_e,))
-            check("todo pedaço do quadro tem pontos que bastam para desenhar",
-                  False)
-
-        cena.deck.phase = vinyl.BREAK
-        esq, dire = cena.legendas({})
-        check("no fim do lado ele manda virar o disco",
-              esq == "LADO A acabou — vire o disco para o LADO B")
-        check("e o recado do fim do lado tem a cor que a paleta guardou",
-              cena.legenda_cor() == vinyl.ALARM)
-        # Num disco DUPLO o lado B não acaba pedindo para virar: acaba
-        # pedindo para TROCAR de disco. O deck dizia "vire o disco" nos
-        # quatro lados, e a frase agora é a mesma que a notificação usa.
-        _dup = vinyl.Album.__new__(vinyl.Album)
-        _dup.sides = [{"label": "SIDE " + c} for c in "ABCD"]
-        _dup.tracks = _alb_falso.tracks
-        _dup.discos = 2
-        _antes_al, _antes_side = cena.album, cena._side
-        cena.album, cena._side = _dup, 2
-        _esq_dup = cena.legendas({})[0]
-        cena.album, cena._side = _antes_al, _antes_side
-        check("num disco duplo, o fim do lado B manda TROCAR de disco",
-              _esq_dup == "LADO B acabou — ponha o DISCO 2, LADO C")
-        # E um disco de UM lado só — que é toda playlist do Qobuz, com o
-        # lado "CONTÍNUO" — não tem para onde virar. O deck dizia "CONTÍNUO
-        # acabou — agora o CONTÍNUO": o mesmo lado duas vezes, porque o `i` e
-        # o `i-1` são o mesmo quando só existe um.
-        _cont = vinyl.Album.__new__(vinyl.Album)
-        _cont.sides = [{"label": "CONTÍNUO"}]
-        _cont.tracks = _alb_falso.tracks
-        _cont.discos = 1
-        cena.album, cena._side = _cont, 0
-        _esq_cont = cena.legendas({})[0]
-        cena.album, cena._side = _antes_al, _antes_side
-        check("num lado só, não há o que virar — ele diz que acabou",
-              _esq_cont == "o disco acabou")
-        check("um recado de ESTADO fica na tela",
-              cena.caption_is_state() is True)
-
-        cena.deck.phase = vinyl.STOP
-        check("no fim do disco ele diz que acabou",
-              cena.legendas({})[0] == "o disco acabou")
-
-        cena.deck.phase = vinyl.PLAY
-        cena._banner = ("PRIMEIRA VEZ", "The Beatles — Abbey Road")
-        cena._banner_until = time.monotonic() + 5
-        check("a agulha descendo anuncia a vez",
-              cena.legendas({}) == ("PRIMEIRA VEZ", "The Beatles — Abbey Road"))
-
-        cena._banner = None
-        _snap = {"source": "mpv", "path": "/x/1.flac", "track_index": 0}
-        check("tocando, o canto diz a faixa",
-              cena.legendas(_snap) == (None, "Come Together"))
-        # O título sai do ÁLBUM e não do tocador: numa playlist do Qobuz o
-        # manifesto diz "quem — o quê" e o mpv diz só "o quê", que numa lista
-        # de artistas diferentes não diz nada.
-        # A agulha ENCOSTADA não é a mesma pergunta que "a fase é PLAY":
-        # pausar levanta a alavanca de cue e a fase continua sendo PLAY. O
-        # `stylus_down` respondia só pela fase e ninguém o usava — o ritual
-        # fazia a conta certa à mão. Duas respostas para a mesma pergunta.
-        d = vinyl.Deck()
-        d.phase = vinyl.PLAY
-        d.cue_ramp = 0.0
-        check("com a agulha no sulco, stylus_down é verdade", d.stylus_down())
-        d.cue_ramp = 1.0
-        check("pausado (cue no alto) ela NÃO está no sulco",
-              not d.stylus_down())
-        d.phase = vinyl.BREAK
-        check("na virada de lado também não", not d.stylus_down())
-
-        check("e o nome vem do disco, não do tocador",
-              cena.faixa_agora({"source": "mpv", "path": "/x/1.flac",
-                                "track_index": 0, "title": "outro nome"})
-              == "Come Together")
+    # (E aqui rodava o caso "o deck DIZ o que está acontecendo", sobre as
+    # legendas do `ritual.py`. Quem diz agora é a tela cheia do lançador, e
+    # quem confere é o `ui/tools/test_ui.py`.)
 
     print(f"\n  \033[1;32m{PASS} passaram\033[0m" + (f", \033[1;31m{FAIL} falharam\033[0m" if FAIL else "") + "\n")
     return 1 if FAIL else 0

@@ -51,7 +51,7 @@
   Próxima / Anterior pula faixa
   Mod+Shift+O        SORTEIA UM DISCO e põe para tocar
                      (puxa para o que faz mais tempo que não toca)
-  Mod+O              o disco na tela, com a agulha andando (o deck)
+  Mod+O              o disco na tela toda, com a agulha andando
   Mod+/              a letra da música que está tocando
   Mod+Shift+V        VIRAR O LADO (põe a agulha no começo do outro lado)
   Mod+Shift+M        volume, por canal (pavucontrol)

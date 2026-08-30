@@ -9,19 +9,6 @@ set -e -u
 
 locale-gen
 
-# ── o ambiente Python do deck ──────────────────────────────────────────────
-# PyOpenGL não existe nos repositórios do Arch, e o deck não abre sem ele.
-# Construir aqui, e não no primeiro boot, é o que faz a ISO funcionar SEM
-# REDE — que é a condição em que um live medium costuma ser usado de
-# verdade. --system-site-packages para reaproveitar numpy/pygame/Pillow, que
-# vêm em pacote e são grandes.
-DECK=/usr/share/stylus/deck
-if python3 -m venv --system-site-packages "$DECK/venv"; then
-    "$DECK/venv/bin/pip" install --no-cache-dir --quiet \
-        PyOpenGL PyOpenGL-accelerate || \
-        "$DECK/venv/bin/pip" install --no-cache-dir --quiet PyOpenGL || true
-fi
-
 # ── serviços ───────────────────────────────────────────────────────────────
 systemctl enable NetworkManager.service bluetooth.service sddm.service \
                  systemd-timesyncd.service power-profiles-daemon.service \

@@ -59,7 +59,7 @@ source "$SHARE/venv.sh" 2>/dev/null || true
 if declare -F venv_python_ou_sistema >/dev/null; then
     PY=$(venv_python_ou_sistema)
 else
-    PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+    PY=python3
 fi
 
 REPO="${STYLUS_QOBUZ_GUI_REPO:-git+https://github.com/peykc/qobuz-dl-gui.git}"
@@ -246,7 +246,7 @@ estado() {
     # que arquivar à mão. Mostrar só a segunda fazia parecer que o disco
     # baixado tinha se perdido.
     printf '  %sbaixar → a estante: %s%s\n' "$c_d" \
-        "$("$PY" -c 'import sys; sys.path.insert(0,"/usr/share/stylus/deck"); import vinyl; print(vinyl.library_root())' 2>/dev/null || echo '?')" "$c_0"
+        "$("$PY" -c 'import sys; sys.path.insert(0,"/usr/share/stylus/lib"); import vinyl; print(vinyl.library_root())' 2>/dev/null || echo '?')" "$c_0"
     printf '  %sinterface web → %s%s\n' "$c_d" \
         "${STYLUS_QOBUZ_DIR:-$HOME/Qobuz Downloads}" "$c_0"
     echo
@@ -282,7 +282,7 @@ case "${1:-}" in
         shift 2 || shift
         export STYLUS_QOBUZ_API="http://127.0.0.1:$porta/api"
         export STYLUS_QOBUZ_LOG="$LOG"
-        export PYTHONPATH="$TOOLS:$SHARE/deck${PYTHONPATH:+:$PYTHONPATH}"
+        export PYTHONPATH="$TOOLS:$SHARE/lib${PYTHONPATH:+:$PYTHONPATH}"
         exec "$PY" "$TOOLS/run_queue_api.py" "$arq" "$@"
         ;;
     buscar|search)
@@ -452,7 +452,7 @@ def segredos():
 # pasta que o vinyl.py lê, então o disco aparece na estante sem passo nenhum
 # de arquivamento, que era onde a fila antiga precisava da interface web no ar
 # só para mover arquivo de lugar.
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 try:
     import vinyl
     destino = vinyl.library_root()

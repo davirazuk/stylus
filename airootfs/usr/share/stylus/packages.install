@@ -124,9 +124,9 @@ mpv
 # e em lista de pacote nenhuma — então funcionava lá e em mais lugar nenhum.
 mpv-mpris
 cmus
-# The deck and the full-screen shelf are Python. This is their runtime, not
-# an extra: /usr/share/stylus/deck and /usr/share/stylus/ui do not start
-# without it.
+# The launcher - the full screen, the shelf, the record drawn on it - is
+# Python. This is its runtime, not an extra: /usr/share/stylus/lib and
+# /usr/share/stylus/ui do not start without it.
 python-numpy
 python-pygame
 python-pillow
@@ -135,9 +135,8 @@ python-requests
 python-gobject
 python-musicbrainzngs
 python-discid
-# The deck captures the playing audio through PortAudio to draw the live
-# groove; scope.py imports pyaudio at module load and crashes without it, so
-# the deck simply does not open. See the note in packages.x86_64.
+# The spectrum ring and the breathing halo are drawn from the playing audio,
+# captured through PortAudio. See the note in packages.x86_64.
 python-pyaudio
 picard
 ffmpeg

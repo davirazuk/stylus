@@ -117,8 +117,11 @@ mpv
 # e em lista de pacote nenhuma — então funcionava lá e em mais lugar nenhum.
 mpv-mpris
 cmus
-# The deck (the record on screen) is Python + OpenGL. These are its runtime,
-# not optional extras: /usr/share/stylus/deck does not start without them.
+# The launcher (the full screen, and the record drawn on it) is Python.
+# These are its runtime, not optional extras: it does not start without them.
+# There is no OpenGL here any more - the deck, which was a second program
+# with a PyOpenGL venv of its own, is gone; the launcher draws the same
+# record with pygame. See ui/app.py NowScreen._cheia.
 python-numpy
 python-pygame
 python-pillow
@@ -127,16 +130,12 @@ python-requests
 python-gobject
 python-musicbrainzngs
 python-discid
-# The deck's live groove is drawn from the audio as it plays, captured through
-# PortAudio. scope.py does `import pyaudio` at the top and opens the monitor
-# source in AudioCapture, so without this the deck does not degrade - it does
-# not open at all, with ModuleNotFoundError. It is the one non-OpenGL runtime
-# dependency the deck cannot start without, and it was missing.
+# The spectrum ring around the record, and the halo that breathes with the
+# music, are drawn from the audio as it plays, captured through PortAudio.
+# Without this the launcher still opens - ui/audio_live.py guards the import
+# and says so - but the record stops reacting to the sound, which is half of
+# what it is for.
 python-pyaudio
-# PyOpenGL is not packaged in the official repositories, under this or any
-# other name. The deck gets it from a venv that customize_airootfs.sh builds
-# inside the chroot at ISO build time, so the live medium works offline —
-# see /usr/share/stylus/deck/venv.
 
 # ── tags, cover art, and the shape of the collection ───────────────────────
 picard

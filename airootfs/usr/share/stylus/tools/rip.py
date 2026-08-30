@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import sys
 
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 import vinyl  # noqa: E402
 
 D = "\033[2m"; A = "\033[38;5;117m"; W = "\033[38;5;215m"; O = "\033[0m"

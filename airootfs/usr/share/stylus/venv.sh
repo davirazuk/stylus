@@ -27,10 +27,10 @@
 #  `--system-site-packages` faz ele APROVEITAR o que o pacman já instalou —
 #  numpy, mutagen, requests — em vez de baixar tudo de novo.
 #
-#  O venv do deck (/usr/share/stylus/deck/venv) é outra coisa e continua
-#  sendo: aquele é do SISTEMA, feito na hora de montar a ISO, e existe porque
-#  o PyOpenGL não tem pacote. Este aqui é da PESSOA, feito na primeira vez que
-#  ela pede Qobuz ou Spotify.
+#  Houve um segundo venv, do SISTEMA, feito na hora de montar a ISO: existia
+#  por um pacote só, o PyOpenGL, e o único que o usava era o deck. O deck
+#  saiu e ele foi junto. Este aqui é da PESSOA, feito na primeira vez que ela
+#  pede Qobuz ou Spotify — e é o único que sobrou.
 # ═══════════════════════════════════════════════════════════════════════════
 
 STYLUS_VENV="${STYLUS_VENV:-${XDG_DATA_HOME:-$HOME/.local/share}/stylus/venv}"

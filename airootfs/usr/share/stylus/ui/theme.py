@@ -928,12 +928,24 @@ def vignette(surf):
 # sulcos, os intervalos entre as faixas que dá para contar de longe, bolacha
 # no meio e furo do eixo. Nada de textura imitando vinil.
 #
-# As proporções são as mesmas que o deck usa em deck/vinyl.py, para os dois
-# desenhos não descreverem discos diferentes.
-LABEL_R   = 0.34      # bolacha do meio
-GROOVE_I  = 0.42      # onde os sulcos começam
-GROOVE_O  = 0.96      # e onde acabam
-SPINDLE_R = 0.035     # o furo
+# As proporções vêm do `vinyl.py`, que as tem em medida de LP de verdade (o
+# rótulo com um terço do raio, que é bem mais do que se desenha de memória).
+#
+# **Sintoma:** o comentário aqui dizia "as mesmas que o deck usa" e os quatro
+# números eram OUTROS — 0.34 contra 0.329, 0.42 contra 0.395, 0.96 contra
+# 0.945, 0.035 contra 0.024. Duas cópias à mão da mesma medida, uma delas
+# afirmando por escrito que era cópia. É a família das seis listas de
+# extensão: a divergência não dá erro, só faz os dois desenhos descreverem
+# discos diferentes. Agora há um número só.
+try:                                                        # pragma: no cover
+    from vinyl import R_LABEL as _R_LABEL, R_PROG_IN as _R_IN, \
+        R_PROG_OUT as _R_OUT, R_SPINDLE as _R_SP
+except Exception:                                           # pragma: no cover
+    _R_LABEL, _R_IN, _R_OUT, _R_SP = 0.329, 0.395, 0.945, 0.024
+LABEL_R   = _R_LABEL   # bolacha do meio
+GROOVE_I  = _R_IN      # onde os sulcos começam
+GROOVE_O  = _R_OUT     # e onde acabam
+SPINDLE_R = _R_SP      # o furo
 
 # Onde ficam os intervalos entre faixas, na fração do raio. São eles que
 # fazem um disco parecer um disco a três metros: dá para CONTAR as músicas.

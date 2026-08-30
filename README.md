@@ -21,10 +21,10 @@ O STYLUS é essa ideia levada a sério num sistema operacional inteiro:
   seguir a taxa do arquivo em vez de reamostrar tudo para 48 kHz — que é o
   que uma instalação padrão faz com toda a sua coleção, para sempre, em
   silêncio. E `stylus audio` **mede** isso e te mostra, em vez de prometer.
-- **O disco fica na tela enquanto toca.** O *deck* desenha o LP com os
-  sulcos tirados da intensidade medida do álbum, o braço no raio de agora e
-  a capa girando no meio. Raio é tempo: bater o olho diz quanto falta do
-  lado, sem número nenhum.
+- **O disco fica na tela enquanto toca.** A tela cheia desenha o LP com os
+  sulcos, os intervalos entre as faixas, o braço no raio de agora e a capa
+  girando no meio. Raio é tempo: bater o olho diz quanto falta do lado, sem
+  número nenhum.
 - **A coleção lembra.** Todo disco que você põe é anotado. Os discos que você
   mais ouve acumulam marcas na superfície e as marcas de cada um são dele.
 - **Dois modos, como num Steam Deck.** *Modo música* é uma tela cheia com a
@@ -42,7 +42,7 @@ Não tem suíte de escritório. Nunca vai ter.
 | | |
 |---|---|
 | `stylus` | o que está tocando, e onde no disco |
-| `stylus deck [DISCO]` | põe um disco e abre o deck: a cerimônia inteira |
+| `stylus deck [DISCO]` | põe um disco: a cerimônia inteira, na tela toda |
 | `stylus record` | sorteia um da estante, puxando para os esquecidos |
 | `stylus shelf` | a estante em grade de capas |
 | `stylus lado` | em que lado do disco você está, e quanto falta |
@@ -324,6 +324,6 @@ distribuição do mesmo autor, e foi rebatizado. É código testado contra
 máquinas quebradas de formas que esta não está; reescrever produziria uma
 versão pior.
 
-Tudo que dá identidade ao STYLUS — o deck, a estante, a memória da coleção, o
-caminho de áudio, a interface de tela cheia, os dois modos, o celular — é
-deste projeto.
+Tudo que dá identidade ao STYLUS — o disco na tela, a estante, a memória da
+coleção, o caminho de áudio, a interface de tela cheia, os dois modos, o
+celular — é deste projeto.

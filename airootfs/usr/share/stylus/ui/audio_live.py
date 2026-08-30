@@ -97,7 +97,7 @@ def find_monitor_source(so_rodando=False):
     o som tocava na caixa ao lado (achado fora do display: com a tela real
     só o speaker existe, e o fallback mascarava o defeito).
     """
-    forced = os.environ.get("STYLUS_DECK_SOURCE")
+    forced = os.environ.get("STYLUS_AUDIO_SOURCE")
     if forced:
         return forced
     try:

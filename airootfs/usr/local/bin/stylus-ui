@@ -2,8 +2,8 @@
 # stylus-ui — a tela cheia. É a cara do sistema; `stylus ui` chama isto.
 set -uo pipefail
 SHARE=/usr/share/stylus
-PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
-export PYTHONPATH="$SHARE/deck:$SHARE/ui${PYTHONPATH:+:$PYTHONPATH}"
+PY=python3
+export PYTHONPATH="$SHARE/lib:$SHARE/ui${PYTHONPATH:+:$PYTHONPATH}"
 
 # O i3 chama isto pelo exec_always, e nesse instante o DISPLAY já existe. Mas
 # `stylus ui` também é chamado de um terminal do tty, e ali não existe.

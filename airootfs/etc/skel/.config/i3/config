@@ -298,11 +298,17 @@ client.urgent           #f5a9b8 #f5a9b8 #04060a #f5a9b8   #f5a9b8
 client.background       #07080b
 
 # ── STYLUS ────────────────────────────────────────────────────────────────
-# A estante, o deck e a volta para o modo música. São as três coisas que
-# você quer alcançar sem tirar a mão do teclado num sistema cujo assunto é
-# a coleção.
+# A estante, o disco na tela e a volta para o modo música. São as três
+# coisas que você quer alcançar sem tirar a mão do teclado num sistema cujo
+# assunto é a coleção.
+#
+# O `--view` no Mod+O: sem ele o stylus-deck SORTEIA um disco e põe para
+# tocar, que é o que o Mod+Shift+O logo abaixo faz. Ou seja: a tecla que a
+# ajuda descreve como "o disco na tela, com a agulha andando" trocava o
+# disco que estava tocando. Duas teclas para a mesma coisa e nenhuma para a
+# que faltava.
 bindsym $mod+m         exec --no-startup-id stylus-shelf
 bindsym $mod+Control+m exec --no-startup-id stylus-mode music
-bindsym $mod+o         exec --no-startup-id stylus-deck
+bindsym $mod+o         exec --no-startup-id stylus-deck --view
 bindsym $mod+Shift+o   exec --no-startup-id stylus record --play
 bindsym $mod+slash     exec --no-startup-id rofi -e "$(stylus lyrics --print 2>/dev/null)"

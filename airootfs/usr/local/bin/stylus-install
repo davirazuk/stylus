@@ -1448,21 +1448,6 @@ fi
 
 grub-mkconfig -o /boot/grub/grub.cfg || echo "  ! grub-mkconfig encontrou problemas"
 
-# The deck's Python environment. PyOpenGL is not in the Arch repositories under
-# this or any other name, so the deck runs out of a venv - the ISO builds one
-# inside its own chroot and branding-sync.sh copies it across. It removes it
-# instead when the version of python it was built against is not the version
-# this machine just installed, because a venv that exists and cannot run is
-# worse than none: stylus-ui prefers the venv whenever it is there.
-DECK=/usr/share/stylus/deck
-if [ -d "${DECK}" ] && [ ! -x "${DECK}/venv/bin/python3" ]; then
-    if python3 -m venv --system-site-packages "${DECK}/venv" 2>/dev/null; then
-        "${DECK}/venv/bin/pip" install --no-cache-dir --quiet \
-            PyOpenGL PyOpenGL-accelerate 2>/dev/null ||
-        "${DECK}/venv/bin/pip" install --no-cache-dir --quiet PyOpenGL 2>/dev/null || true
-    fi
-fi
-
 cp -rn /etc/skel/. "/home/${STYLUS_USERNAME}/" 2>/dev/null || true
 
 # The machine starts in MUSIC mode, because that is what it is. Mod+D or

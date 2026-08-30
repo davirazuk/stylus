@@ -11,7 +11,7 @@ separando o que você viu do que você está supondo.
 `cat /proc/asound/card*/pcm*p/sub*/hw_params` (a taxa de verdade, não a
 prometida); `systemctl --user status pipewire wireplumber pipewire-pulse`
 
-**o deck, a tela cheia, os serviços**
+**a tela cheia e os serviços**
 `systemctl --user status 'stylus-*'`;
 `journalctl --user -b -n 200 --no-pager | grep -i stylus`;
 `ls -la ~/.local/share/stylus/`

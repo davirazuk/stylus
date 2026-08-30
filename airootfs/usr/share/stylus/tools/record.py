@@ -21,11 +21,11 @@ import subprocess
 import time
 import sys
 
-sys.path.insert(0, os.path.expanduser("/usr/share/stylus/deck"))
+sys.path.insert(0, os.path.expanduser("/usr/share/stylus/lib"))
 try:
     import vinyl
 except Exception as e:
-    sys.exit(f"preciso do vinyl.py do stylus/deck: {e}")
+    sys.exit(f"preciso do vinyl.py: {e}")
 
 # vinyl.LIBRARY_ROOT nunca existiu — o vinyl expõe library_root(), uma
 # FUNÇÃO, porque a estante pode mudar com o programa aberto. Escrito assim,

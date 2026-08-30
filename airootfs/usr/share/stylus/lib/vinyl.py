@@ -107,7 +107,18 @@ ENV_HZ = 8
 
 STATE_DIR = os.path.expanduser("~/.local/share/stylus")
 CACHE_DIR = os.path.expanduser("~/.cache/stylus/envelopes")
+# O socket IPC do mpv que o `stylus-deck` sobe, e o PID dele. Os dois nomes
+# moram AQUI e não em cada script porque três lugares já os escreviam à mão
+# (o stylus-deck, o stylus-qobuz e este arquivo) — e o dia em que um deles
+# mudar sozinho é o dia em que a barra mostra um disco e sai o som de outro,
+# sem erro nenhum em lugar nenhum.
 SOCKET_PATH = os.path.join(STATE_DIR, "deck.sock")
+MPV_PIDFILE = os.path.join(STATE_DIR, "deck.mpv.pid")
+# O recado para o lançador que JÁ está aberto. Ele é instância única: um
+# `stylus deck` num terminal não pode abrir uma segunda tela cheia por cima
+# da primeira, então deixa aqui o que quer que ela faça e ela lê no próximo
+# quadro. Uma linha, apagada depois de lida.
+UI_CMD = os.path.join(STATE_DIR, "ui.cmd")
 SESSION_FILE = os.path.join(STATE_DIR, "session-memory.json")
 _USER_LIBRARY_CONF = os.path.expanduser("~/.config/stylus/library")
 _SYSTEM_LIBRARY_CONF = "/etc/stylus/library"
@@ -308,53 +319,17 @@ def find_cover(folder, entries=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# A paleta — o disco é FÓSFORO, não plástico
+# A PALETA DO DISCO SAIU DAQUI
 # ═══════════════════════════════════════════════════════════════════════════
-# Esta seção se chamava "vinyl is plastic, not phosphor" e dizia, com todas
-# as letras, o contrário da lei do desenho (CLAUDE.md §5.5): "materiais
-# honestos: o plástico preto reflete um especular BRANCO, os sulcos são
-# cinzas QUENTES, os intervalos são quase-brancos". O braço já tinha virado
-# luz; o disco tinha ficado para trás, e era a metade que ocupa a tela.
+# Eram quinze cores em ponto flutuante para o OpenGL do deck — o corpo, o
+# aro, o brilho, os dois sulcos, o intervalo, a agulha, o facho do braço. Só
+# o deck as lia, e o deck não existe mais.
 #
-# O que se via: um disco cinza-oliva com anéis quase brancos, iluminado por
-# uma lâmpada branca fora de quadro — uma FOTO de toca-discos, que é o que a
-# §5.5 proíbe pelo nome. Ao lado da mesma coisa desenhada na tela AGORA (luz
-# âmbar no quase-preto), a comparação foi imediata e não a favor daqui.
-#
-# A lei, então, escrita em números: preto FRIO no corpo, e a única luz do
-# quadro é âmbar. O brilho do disco não é uma lâmpada branca refletida — é a
-# própria luz da coisa. O sulco à frente da agulha é grafite frio (ainda não
-# aconteceu); atrás dela ele fica ACESO, porque a agulha é o que acende. Os
-# intervalos entre faixas são o âmbar que se conta de longe — é a mesma
-# decisão do `_INTERVALOS` no ui/theme.py, e agora as duas telas dizem a
-# mesma coisa sobre o mesmo objeto.
-#
-# Nada de azul — o azul é a língua do scope. O acumulador é aditivo:
-# qualquer coisa acima de 0,35 floresce, e por isso o corpo fica nos
-# centésimos e só o intervalo estoura de propósito.
-VINYL_CORE      = (0.013, 0.015, 0.021)   # o corpo: preto FRIO, quase o fundo
-VINYL_RIM       = (0.052, 0.041, 0.027)   # o aro: âmbar baixo — a silhueta
-SHEEN           = (0.092, 0.064, 0.029)   # o brilho É a luz âmbar, não uma lâmpada
-GROOVE_UNPLAYED = (0.072, 0.080, 0.098)   # à frente: grafite frio, ainda não tocou
-GROOVE_PLAYED   = (0.185, 0.135, 0.072)   # atrás: aceso — a agulha é o que acende
-GROOVE_GAP      = (0.720, 0.470, 0.125)   # o intervalo: âmbar, contável de longe
-STYLUS_HOT      = (0.740, 0.520, 0.140)   # a agulha: âmbar quente
-# O braço não é metal: é o facho. Ver `tonearm` — o CLAUDE.md §5.5 proíbe
-# "braço de metal com contrapeso desenhado" pelo nome, e manda no lugar
-# "feixe âmbar na agulha pulsando". Estas duas cores são esse feixe: fraco
-# no corpo do traço, quente onde ele encosta na música.
-ARM_LIGHT       = (0.560, 0.315, 0.095)   # o traço — âmbar baixo, não compete
-ARM_TIP         = (0.980, 0.700, 0.300)   # a agulha encostada — o ponto quente
-EDGE_RING       = (0.190, 0.132, 0.058)   # aro da borda e da bolacha — âmbar,
-                                          # não aço: era a última peça de
-                                          # metal no quadro
-DUST            = (0.120, 0.126, 0.140)   # as marcas de uso: cinza FRIO — são
-                                          # história do disco, não luz
-ALARM           = (0.740, 0.230, 0.225)   # side break — muted red, not bloom
-
-
-def _lerp(a, b, t):
-    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3))
+# A lei que elas escreviam (CLAUDE.md §5.5: corpo preto FRIO, âmbar como
+# única cor viva) não saiu com elas — ela mudou de casa para onde o disco é
+# desenhado hoje: o `ui/theme.py` (AMBER/AMBER_DIM sobre INK, ver `disco()`)
+# e o `VinylRenderer.kt` do celular. As duas conferências do `check.sh` que
+# medem a lei em números apontam para lá.
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -724,26 +699,115 @@ class Session:
 # The album on disk: running order, sides, loudness, words
 # ═══════════════════════════════════════════════════════════════════════════
 
-_LRC_LINE = re.compile(r"\[(\d+):(\d+(?:[.:]\d+)?)\]\s*(.*)")
+# Todos os carimbos do começo da linha, e o texto depois do último.
+_LRC_CARIMBO = re.compile(r"\[(\d+):(\d{1,2}(?:[.:]\d{1,3})?)\]")
+# [offset:+500] / [offset:-250] — em MILISSEGUNDOS, e positivo quer dizer
+# "a letra vem ANTES" no formato original (Lrcget, Lyricify, etc. escrevem
+# assim). Ver o porquê do sinal em parse_lrc.
+_LRC_OFFSET = re.compile(r"^\[offset:\s*([+-]?\d+)\s*\]", re.I)
 
 
 def parse_lrc(path):
-    """.lrc -> [(seconds, text)] sorted. Blank lines are kept on purpose:
-    they are the instrumental stretches, and dropping them leaves the last
-    sung line hanging on screen through a two-minute outro."""
-    out = []
+    """.lrc -> [(segundos, texto)] em ordem.
+
+    Linha em branco é guardada de propósito: é o trecho instrumental, e
+    jogá-la fora deixa o último verso cantado pendurado na tela por um
+    encerramento de dois minutos.
+
+    ── Duas coisas que faltavam, e as duas se veem na tela ──────────────────
+
+    **Carimbo REPETIDO.** O formato permite (e todo refrão usa) vários
+    carimbos na mesma linha:
+
+        [00:42.10][02:15.30][03:48.90]E o refrão volta aqui
+
+    O regex antigo casava o PRIMEIRO e mandava o resto para o texto. Ou
+    seja: o refrão aparecia uma vez só, na primeira vez que era cantado, e
+    escrito como "[02:15.30][03:48.90]E o refrão volta aqui" — com os
+    colchetes na cara, no meio da tela. Num arquivo bem feito isso é a maior
+    parte da letra.
+
+    **[offset:±ms].** É o conserto que quem sincronizou a letra deixou
+    escrito para toda a letra de uma vez, e ele era ignorado. Meio segundo
+    é o valor mais comum; meio segundo é exatamente o que separa "a linha
+    certa" de "a linha errada" numa música rápida.
+
+    O SINAL: no formato, offset positivo quer dizer "mostre mais cedo", ou
+    seja SUBTRAI do carimbo. É contraintuitivo e é o que está escrito nas
+    especificações do formato; inverter aqui dobraria o erro em vez de
+    corrigi-lo.
+
+    Centésimos, e não milésimos: `[01:23.45]` são 45 CENTÉSIMOS, não 45 ms.
+    Por isso o texto da fração é lido pelo que ele é — `float("0." + frac)`
+    — em vez de dividido por mil.
+    """
+    out, offset = [], 0.0
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                m = _LRC_LINE.match(line.strip())
-                if not m:
-                    continue
-                mm, ss, text = m.groups()
-                out.append((int(mm) * 60 + float(ss.replace(":", ".")), text.strip()))
+            texto = f.read()
     except Exception:
         return []
+    for linha in texto.splitlines():
+        linha = linha.strip()
+        if not linha:
+            continue
+        mo = _LRC_OFFSET.match(linha)
+        if mo:
+            try:
+                offset = int(mo.group(1)) / 1000.0
+            except ValueError:
+                offset = 0.0
+            continue
+        carimbos, fim = [], 0
+        for m in _LRC_CARIMBO.finditer(linha):
+            if m.start() != fim:        # o texto começou: o resto não é carimbo
+                break
+            mm, ss = m.groups()
+            if "." in ss or ":" in ss:
+                seg, frac = re.split(r"[.:]", ss, 1)
+                s = int(seg) + float("0." + frac)
+            else:
+                s = float(ss)
+            carimbos.append(int(mm) * 60 + s)
+            fim = m.end()
+        if not carimbos:
+            continue
+        corpo = linha[fim:].strip()
+        for t in carimbos:
+            out.append((max(0.0, t - offset), corpo))
     out.sort(key=lambda x: x[0])
     return out
+
+
+def find_lrc(caminho_da_faixa):
+    """O .lrc desta faixa, procurado como as coleções de verdade guardam.
+
+    **Sintoma:** metade da coleção "não tinha letra". Só se procurava
+    `faixa.lrc` ao lado do arquivo, com essa caixa exata — e um acervo que
+    passou por um Windows guarda `Faixa.LRC`, e vários programas de
+    sincronia guardam tudo numa subpasta `Lyrics/`. É a mesma doença das
+    cinco listas de nome de capa: o arquivo está lá, o jeito de perguntar é
+    que estava estreito.
+    """
+    if not caminho_da_faixa:
+        return None
+    base, _ext = os.path.splitext(caminho_da_faixa)
+    direto = base + ".lrc"
+    if os.path.isfile(direto):
+        return direto
+    pasta = os.path.dirname(caminho_da_faixa)
+    querido = os.path.basename(base).lower()
+    for sub in ("", "Lyrics", "lyrics", "Letras", "letras", ".lyrics"):
+        d = os.path.join(pasta, sub) if sub else pasta
+        try:
+            entradas = os.listdir(d)
+        except OSError:
+            continue
+        for e in entradas:
+            n, ext = os.path.splitext(e)
+            if ext.lower() == ".lrc" and n.lower() == querido:
+                return os.path.join(d, e)
+    return None
 
 
 def _probe_duration(path):
@@ -935,23 +999,6 @@ def log_play(folder, artist="", album="", cooldown=PLAY_COOLDOWN):
 
 _MESES = ("jan", "fev", "mar", "abr", "mai", "jun",
           "jul", "ago", "set", "out", "nov", "dez")
-
-
-def play_banner(plays, first_played, fallback=""):
-    """(esquerda, direita) para o canto no instante em que a agulha desce.
-
-    Por extenso na primeira vez porque "1ª VEZ" é uma contagem e "PRIMEIRA
-    VEZ" é um acontecimento — e é a segunda coisa que é verdade quando um
-    disco entra na coleção. Da segunda em diante o que interessa não é o
-    número sozinho, é há quanto tempo ele está com você.
-    """
-    if plays <= 1:
-        return "PRIMEIRA VEZ", fallback
-    dias = (time.time() - first_played) / 86400.0 if first_played else 0.0
-    if dias < 1.0:
-        return f"{plays}ª VEZ", fallback
-    d = time.localtime(first_played)
-    return f"{plays}ª VEZ", f"desde {d.tm_mday} de {_MESES[d.tm_mon - 1]}"
 
 
 # ── a estante ──────────────────────────────────────────────────────────────
@@ -1294,19 +1341,6 @@ def draw_record(candidates=None, exclude=(), rng=None):
     return _rng.choices(finalistas, weights=pesos, k=1)[0]
 
 
-def record_seed(folder):
-    """Um número estável por disco, para que cada um tenha as SUAS marcas.
-
-    Com a semente fixa que estava aqui antes, a coleção inteira carregava os
-    mesmos nove arranhões nos mesmos nove lugares — o oposto exato de ter
-    objetos. Derivando do caminho da pasta, o risco que o seu Kid A tem
-    perto da borda continua lá amanhã, e é dele.
-    """
-    h = hashlib.blake2s(os.path.normpath(folder or "?").encode("utf-8", "replace"),
-                        digest_size=4).digest()
-    return int.from_bytes(h, "big")
-
-
 class Album:
     """One record: its running order, its sides, and its loudness.
 
@@ -1333,10 +1367,12 @@ class Album:
         self.envelope = None    # (M,) float32 RMS at ENV_HZ, or None until ready
         self.env_ready = False
         self.year = ""
-        # A história deste disco, lida uma vez na abertura: o desenho usa a
-        # contagem para o desgaste e a semente para as marcas serem DELE.
-        self.seed = record_seed(folder)
-        self.plays, self.first_played, self.last_played = play_history(folder)
+        # A história deste disco, lida uma vez na abertura. Eram quatro
+        # campos: a `seed` e o `first_played` alimentavam as MARCAS DE USO
+        # que o deck desenhava (quanto mais tocado, mais riscado), e saíram
+        # com ele. Campo escrito e nunca lido lê como recurso que existe —
+        # ver a lição no CLAUDE.md.
+        self.plays, _primeira, self.last_played = play_history(folder)
         self._lock = threading.Lock()
         self._scan()
         if envelope:
@@ -1746,8 +1782,8 @@ class Album:
             return []
         tr = self.tracks[track_index]
         if "lrc" not in tr:
-            base = os.path.splitext(tr["path"])[0]
-            tr["lrc"] = parse_lrc(base + ".lrc") if os.path.isfile(base + ".lrc") else []
+            arq = find_lrc(tr.get("path"))
+            tr["lrc"] = parse_lrc(arq) if arq else []
         return tr["lrc"]
 
 
@@ -1886,635 +1922,40 @@ def _norm(s):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Geometry — everything below is pure numpy, returns NDC ready for
-# build_ribbon_strip, and is unit-testable without a window.
+# A GEOMETRIA DO DISCO SAIU DAQUI
 # ═══════════════════════════════════════════════════════════════════════════
-
-def _polar(cx, cy, r, theta, iso):
-    """Record space -> NDC. `r` is in units of the record's outer radius,
-    `theta` is measured clockwise from 12 o'clock, because that is the
-    direction a record turns and it makes every angle in this file read the
-    same way as the thing it draws."""
-    a = np.pi / 2.0 - theta
-    return np.stack([cx + np.cos(a) * r * iso[0],
-                     cy + np.sin(a) * r * iso[1]], axis=-1).astype(np.float32)
-
-
-def sheen_gain(theta, light_angle, strength=1.0):
-    """Two soft highlight lobes 180 degrees apart, fixed in SCREEN space.
-
-    A glossy black disc lit by one broad source shows exactly this: two
-    opposed sheens, and they stay put while the record turns under them.
-    Getting that right is most of why the disc reads as a physical object and
-    not as a flat circle — a uniformly shaded disc looks like a hole.
-    """
-    d = (theta - light_angle + np.pi) % (2.0 * np.pi) - np.pi
-    d2 = (theta - light_angle + np.pi / 2.0) % np.pi - np.pi / 2.0
-    del d
-    return 1.0 + strength * np.exp(-(d2 ** 2) / 0.050)
-
-
-def disc_body(cx, cy, radius, iso, light_angle, n=320,
-              rings=(0.024, 0.20, 0.38, 0.53, 0.66, 0.78, 0.88, 0.96, 1.0)):
-    """O corpo do disco: preto frio com o aro em âmbar.
-
-    Oito anéis com distribuição suave, gradiente do centro (VINYL_CORE) para
-    a borda (VINYL_RIM) e o brilho (SHEEN) caindo em potência a partir do
-    meio — sem corte duro e sem banda fantasma. Tesselagem adaptativa por
-    anel, e o furo do eixo fica vazio para a bolacha aparecer por ele.
-
-    O gradiente e o brilho já eram assim; o que mudou foram as CORES (ver a
-    paleta lá em cima): o brilho deixou de ser um especular branco de lâmpada
-    fora de quadro e passou a ser a luz âmbar da própria coisa.
-    """
-    out = []
-    for r0, r1 in zip(rings[:-1], rings[1:]):
-        r_mid = (r0 + r1) * 0.5
-        this_n = int(np.clip(radius * r_mid * 1100, 96, 512))
-        theta = np.linspace(0.0, 2.0 * np.pi, this_n, endpoint=True)
-        gain = sheen_gain(theta, light_angle)
-        p0 = _polar(cx, cy, r0 * radius, theta, iso)
-        p1 = _polar(cx, cy, r1 * radius, theta, iso)
-        # smooth warm gradient — no stepped bands
-        t0 = r0 ** 0.9
-        t1 = r1 ** 0.9
-        c0 = np.array(_lerp(VINYL_CORE, VINYL_RIM, t0), dtype=np.float32)
-        c1 = np.array(_lerp(VINYL_CORE, VINYL_RIM, t1), dtype=np.float32)
-        # sheen falls as pow from centre — soft, no phantom ring at 0.25
-        s0 = np.array(SHEEN, dtype=np.float32) * (r0 ** 1.7)
-        s1 = np.array(SHEEN, dtype=np.float32) * (r1 ** 1.7)
-        v = np.empty((2 * this_n, 7), dtype=np.float32)
-        v[0::2, 0:2] = p0
-        v[1::2, 0:2] = p1
-        v[0::2, 2:5] = c0[None, :] + s0[None, :] * (gain[:, None] - 1.0)
-        v[1::2, 2:5] = c1[None, :] + s1[None, :] * (gain[:, None] - 1.0)
-        v[:, 5] = 1.0
-        v[:, 6] = 0.0
-        out.append(v)
-    return out
-
-
-def _ring_time(i, n_rings, side_start, side_end):
-    """Ring index -> moment of the side. Outermost ring is the start, exactly
-    as the needle finds it."""
-    f = i / max(1, n_rings - 1)
-    return side_start + f * (side_end - side_start)
-
-
-def groove_rings(cx, cy, radius, iso, side, envelope, tracks, light_angle,
-                 n_rings=N_RINGS, played_ring=-1, half_width=0.85):
-    """The record's face: radius is time, brightness is loudness.
-
-    Each ring covers a slice of the side and is shaded by the real measured
-    RMS over that slice (peak-weighted, so a short loud passage is not
-    averaged into invisibility). A ring whose slice contains a track boundary
-    is drawn as the near-silent lead-out spiral instead — bright and thin —
-    which is what lets you count the songs on the disc by eye.
-
-    played_ring is the outermost ring the needle has NOT yet reached; rings
-    outside it are lit, rings inside it are still cold slate. Progress
-    therefore advances groove by groove rather than as a sliding bar, which
-    is both what a record does and, deliberately, not a number.
-    """
-    strips = []
-    s_start, s_end = side["start"], side["end"]
-    span = max(1e-6, (s_end - s_start) / max(1, n_rings - 1))
-    boundaries = [t["start"] for t in tracks[1:]] if tracks else []
-    # gap é um ANEL, não uma zona de 7s — índice mais próximo do boundary
-    gap_idx = set()
-    for b in boundaries:
-        idx = int(round((b - s_start) / span))
-        if 0 <= idx < n_rings:
-            gap_idx.add(idx)
-    for i in range(n_rings):
-        f = i / max(1, n_rings - 1)
-        r = R_PROG_OUT + (R_PROG_IN - R_PROG_OUT) * f
-        t = _ring_time(i, n_rings, s_start, s_end)
-        is_gap = i in gap_idx
-
-        loud = 0.55
-        if envelope is not None and len(envelope):
-            lo = int(max(0, (t - span * 0.5) * ENV_HZ))
-            hi = int(min(len(envelope), (t + span * 0.5) * ENV_HZ + 1))
-            if hi > lo:
-                seg = envelope[lo:hi]
-                loud = float(0.45 * seg.mean() + 0.55 * seg.max())
-        # honest shade: preto mais fundo para silêncio, loud preserva pico
-        loud_c = max(0.0, min(1.4, loud))
-        shade = 0.10 + 0.90 * (loud_c ** 0.62)
-
-        played = i < played_ring
-        base = GROOVE_PLAYED if played else GROOVE_UNPLAYED
-        if is_gap:
-            base = GROOVE_GAP
-            shade = 1.0  # único ponto que estoura — para contar faixas de olho
-
-        n = int(np.clip(radius * r * 900, 96, 384))
-        theta = np.linspace(0.0, 2.0 * np.pi, n, endpoint=True)
-        pts = _polar(cx, cy, r * radius, theta, iso)
-        # sulco é fosco — só 15% do brilho do corpo, modulado por loud
-        # (parede do sulco pega mais luz quando alto)
-        # Rotation-linked catch: grooves catch light as they pass under the source
-        light_catch = np.maximum(0.0, np.sin(theta * 2.0 - light_angle)) * 0.10
-        gain = sheen_gain(theta, light_angle, strength=0.22) * (0.85 + 0.15 * min(1.0, loud)) + light_catch
-        cols = np.empty((n, 4), dtype=np.float32)
-        cols[:, 0:3] = np.array(base, dtype=np.float32)[None, :] * (shade * gain)[:, None]
-        cols[:, 3] = 1.0
-        w = 0.18 if is_gap else half_width * (0.88 + 0.14 * min(1.0, loud))
-        strips.append((pts, cols, w))
-    return strips
-
-
-def boundary_ring(cx, cy, radius, iso, side, envelope, frac, light_angle,
-                  n_rings=N_RINGS, half_width=0.85):
-    """The one ring the needle is inside right now, lit only as far around as
-    the record has actually turned since it entered this groove. Without it
-    progress jumps a whole ring at a time (~14 seconds) and the disc reads as
-    a stepped gauge instead of a moving object."""
-    i = int(np.clip(frac * (n_rings - 1), 0, n_rings - 1))
-    sub = frac * (n_rings - 1) - i
-    f = i / max(1, n_rings - 1)
-    r = R_PROG_OUT + (R_PROG_IN - R_PROG_OUT) * f
-    n = int(np.clip(radius * r * 900, 96, 384))
-    cut = int(np.clip(sub, 0.0, 1.0) * (n - 1))
-    if cut < 2:
-        return None
-    theta = np.linspace(0.0, 2.0 * np.pi * (cut / (n - 1)), cut)
-    pts = _polar(cx, cy, r * radius, theta, iso)
-    gain = sheen_gain(theta, light_angle, strength=0.55)
-    cols = np.empty((cut, 4), dtype=np.float32)
-    cols[:, 0:3] = np.array(GROOVE_PLAYED, dtype=np.float32)[None, :] * gain[:, None]
-    cols[:, 3] = 1.0
-    return pts, cols, half_width * 1.05
-
-
-def live_groove(cx, cy, radius, iso, frac, mid, side_signal, rotation,
-                n_rings=N_RINGS, arc=2.6, half_width=1.05, depth=0.0048):
-    """The groove being read RIGHT NOW, modulated by the live waveform.
-
-    This is where the oscilloscope actually lives in ritual mode, and it is
-    not a decoration bolted onto a record — it is the same measurement, drawn
-    in the record's own coordinates. A stereo groove is cut with the two
-    channels on walls at +/-45 degrees, which means the SUM of the channels
-    moves the cutting head sideways (the groove wanders in radius) and the
-    DIFFERENCE moves it up and down (the groove gets deeper and shallower,
-    which on a played record shows as the wall catching more or less light).
-
-    So: mid displaces the arc radially, side brightens it. Both are real; a
-    mono passage draws a steady bright wander, a wide stereo one shimmers.
-    The arc trails behind the stylus over roughly the last half revolution
-    and fades out, because that is how far back you can still see the groove
-    the needle just came out of.
-    """
-    if mid is None or len(mid) < 8:
-        return None
-    i = frac * (n_rings - 1)
-    f = i / max(1, n_rings - 1)
-    r = R_PROG_OUT + (R_PROG_IN - R_PROG_OUT) * f
-    n = len(mid)
-    # theta runs backwards from the stylus: the newest sample sits under the
-    # needle and older ones trail away in the direction the disc came from.
-    theta = rotation + np.linspace(0.0, arc, n)[::-1]
-    m = np.asarray(mid, dtype=np.float32)
-    s = np.asarray(side_signal, dtype=np.float32) if side_signal is not None else np.zeros(n, np.float32)
-    peak = float(np.max(np.abs(m))) or 1e-6
-    m = m / max(peak, 0.08)
-    s_peak = float(np.max(np.abs(s))) or 1e-6
-    s_norm = np.clip(np.abs(s) / max(s_peak, 0.08), 0.0, 1.0)
-    m_abs = np.clip(np.abs(m), 0.0, 1.0)
-    # groove wanders with the MUSIC (signed), stereo widens the excursion
-    # depth 0.0048 is ~50% more visible than original 0.0032 but not cartoonish
-    rr = (r + m * depth * (1.0 + 0.28 * s_norm)) * radius
-    pts = _polar(cx, cy, rr, theta, iso)
-    fade = np.linspace(1.0, 0.04, n) ** 1.65
-    # brightness: trail fades, stereo shimmers, loudness gives a subtle pulse
-    bright = fade * (0.48 + 0.72 * s_norm) * (0.82 + 0.18 * m_abs)
-    cols = np.empty((n, 4), dtype=np.float32)
-    cols[:, 0:3] = np.array(STYLUS_HOT, dtype=np.float32)[None, :] * bright[:, None]
-    cols[:, 3] = 1.0
-    widths = half_width * (0.32 + 0.68 * fade)
-    return pts, cols, widths
-
-
-def edge_and_label_rings(cx, cy, radius, iso, light_angle, n=384):
-    """The disc's outer edge and the label's edge — the two hard lines that
-    tell you where the object stops."""
-    out = []
-    for r, col, w in ((R_OUTER, EDGE_RING, 1.5),
-                      (R_LEADIN, EDGE_RING, 0.7),
-                      (R_RUNOUT, EDGE_RING, 0.7),
-                      (R_LABEL, EDGE_RING, 1.0)):
-        theta = np.linspace(0.0, 2.0 * np.pi, n, endpoint=True)
-        pts = _polar(cx, cy, r * radius, theta, iso)
-        gain = sheen_gain(theta, light_angle, strength=0.8)
-        cols = np.empty((n, 4), dtype=np.float32)
-        cols[:, 0:3] = np.array(col, dtype=np.float32)[None, :] * gain[:, None]
-        cols[:, 3] = 1.0
-        out.append((pts, cols, w))
-    return out
-
-
-def wear_counts(plays):
-    """Quantas marcas um disco carrega depois de ser posto `plays` vezes.
-
-    Logarítmico e não linear porque é assim que desgaste é percebido: a
-    diferença entre nunca ter tocado e ter tocado três vezes é enorme, entre
-    trinta e quarenta não existe. E o piso nunca é zero — disco lacrado
-    também tem poeira, e uma superfície perfeitamente limpa não lê como
-    nova, lê como renderizada.
-    """
-    k = math.log2(1.0 + max(0, int(plays)))
-    return (int(min(14, round(2 + 3.2 * k))),
-            int(min(120, round(22 + 14.0 * k))))
-
-
-def wear_marks(cx, cy, radius, iso, rotation, seed=7, n_scratch=None,
-               n_dust=None, plays=0, crackle=0.0):
-    """Scratches and dust, fixed to the disc so they turn with it.
-
-    Two jobs. Honest one: a record that has been played has marks on it, and
-    imperfection is most of what separates an object you own from a rendered
-    circle. Practical one: a perfect circle rotating looks completely static,
-    so without something asymmetric on the face there is no visual evidence
-    the platter is turning at all.
-
-    `seed` é a IDENTIDADE do disco (ver record_seed) e `plays` é a sua
-    HISTÓRIA (ver play_history). Antes as duas eram constantes, e o efeito
-    era que a coleção inteira tinha a mesma cara: os mesmos nove arranhões
-    nos mesmos nove lugares em todo disco, novo ou surrado. Agora o disco que
-    você põe toda semana acumula marcas, o que ficou na estante não, e as de
-    cada um são só dele — que é a diferença entre uma pilha de arquivos e uma
-    coleção com objetos dentro.
-
-    `crackle` (0..1) é o estalo da agulha encostando. O campo já existia no
-    Deck, era zerado e decaído todo quadro e NINGUÉM o desenhava. Vale
-    mostrar porque é a única parte do ritual que acontece antes da música: o
-    meio segundo de ruído de superfície entre a agulha tocar o disco e a
-    primeira nota sair.
-    """
-    auto_scratch, auto_dust = wear_counts(plays)
-    n_scratch = auto_scratch if n_scratch is None else n_scratch
-    n_dust = auto_dust if n_dust is None else n_dust
-    rng = np.random.default_rng(seed)
-    glow = 1.0 + 2.2 * crackle
-    segs, cols = [], []
-    for _ in range(n_scratch):
-        r0 = rng.uniform(R_RUNOUT + 0.02, R_OUTER - 0.02)
-        a0 = rng.uniform(0, 2 * np.pi)
-        span = rng.uniform(0.05, 0.30)
-        k = 12
-        theta = rotation + a0 + np.linspace(0, span, k)
-        rr = r0 + rng.uniform(-0.004, 0.004) * np.linspace(0, 1, k)
-        p = _polar(cx, cy, rr * radius, theta, iso)
-        b = rng.uniform(0.35, 1.0) * glow
-        for j in range(k - 1):
-            segs.append(p[j])
-            segs.append(p[j + 1])
-            cols.append([DUST[0] * b, DUST[1] * b, DUST[2] * b, 1.0])
-    for _ in range(n_dust):
-        r0 = rng.uniform(R_SPINDLE, R_OUTER)
-        a0 = rng.uniform(0, 2 * np.pi)
-        theta = rotation + a0 + np.array([0.0, 0.006])
-        p = _polar(cx, cy, r0 * radius, theta, iso)
-        b = rng.uniform(0.15, 0.6) * glow
-        segs.append(p[0])
-        segs.append(p[1])
-        cols.append([DUST[0] * b, DUST[1] * b, DUST[2] * b, 1.0])
-    # A rajada do estalo, na cor da agulha porque é ruído DELA. Sorteada de
-    # novo a cada quadro de propósito: ruído de superfície que não cintila
-    # não é estalo, é sujeira desenhada. Fica na faixa de entrada, que é
-    # onde a agulha acabou de encostar.
-    if crackle > 0.02:
-        pop = np.random.default_rng()
-        for _ in range(int(90 * crackle)):
-            r0 = pop.uniform(R_PROG_OUT - 0.03, R_OUTER)
-            a0 = pop.uniform(0.0, 2.0 * np.pi)
-            theta = rotation + a0 + np.array([0.0, 0.010])
-            p = _polar(cx, cy, r0 * radius, theta, iso)
-            b = pop.uniform(0.4, 1.4) * crackle
-            segs.append(p[0])
-            segs.append(p[1])
-            cols.append([STYLUS_HOT[0] * b, STYLUS_HOT[1] * b,
-                         STYLUS_HOT[2] * b, 1.0])
-    if not segs:
-        return None
-    return np.array(segs, dtype=np.float32), np.array(cols, dtype=np.float32)
-
-
-# ── tonearm ────────────────────────────────────────────────────────────────
-# Real 9-inch arm geometry, in units of the record's outer radius (152mm):
-# effective length pivot->stylus 230mm, mounting distance spindle->pivot
-# 212mm (the 18mm difference is the overhang that makes the stylus reach
-# past the spindle, which is why a tonearm can track all the way to the
-# run-out). Using the real numbers rather than guessed ones is what gives the
-# arm its correct, slightly awkward sweep — a made-up pivot makes it swing
-# like a windscreen wiper.
-ARM_LENGTH = 230.0 / 152.0
-ARM_MOUNT = 212.0 / 152.0
-ARM_PIVOT_ANGLE = math.radians(42.0)   # clockwise from 12 o'clock: rear right
-# Onde a agulha para quando o braço está no alto.
+# Eram ~450 linhas de numpy que devolviam vértices prontos para o OpenGL: o
+# corpo do disco, os sulcos, o anel do intervalo, o sulco ao vivo, as marcas
+# de uso, o braço e a classe `Deck` (a cerimônia como máquina de estados).
+# Quem consumia era o deck — `scope.py` e `ritual.py` —, e o deck não existe
+# mais: o que ele desenhava, a tela cheia do lançador desenha melhor, com
+# pygame, sem GL e sem venv (ver `NowScreen._cheia` no ui/app.py).
 #
-# A nota antiga aqui dizia que o conserto certo seria trocar de ramo do
-# triângulo ao estacionar. MEDIDO, e é falso: com este pivô (212mm, 42° a
-# partir das 12h) o outro ramo estaciona a agulha em theta 116°, do outro
-# lado do eixo, e QUALQUER caminho contínuo entre os dois ramos passa por
-# s=0 — o braço apontando direto para o eixo, com a cabeça em cima do
-# RÓTULO. Não existe caminho não-cruzante entre os dois; a única saída pelo
-# ramo de tocar seria r>=1.5, e aí a cabeça sai por cima do quadro.
+# Não ficaram aqui "por precaução". Código que ninguém chama é pior do que
+# código nenhum: ele lê como um recurso que existe, e da próxima vez alguém
+# liga o fio nele — foi assim com o `set_text` do deck e com os campos mortos
+# do `Deck`. Está tudo no histórico do git, que é onde uma coisa que ninguém
+# executa deve morar.
 #
-# Então o descanso continua neste ramo, mas mais para fora do que estava
-# (era R_OUTER+0.07). Dois motivos, e o segundo é o que importa: a 1.07 a
-# agulha parada ficava a 3 GRAUS da faixa de entrada, então o CUE — 1,7s de
-# cerimônia inteiros — era um tremor invisível. A 1.26 são ~8°, e a saída
-# do braço até o disco vira um movimento que dá para ver. O primeiro motivo
-# é que 26% além da borda lê como fora do disco, e 7% lê como quase caindo
-# dentro dele.
-#
-# O que fazia isso parar de ser "pairando sem explicação" era um berço em U
-# desenhado em `arm_rest()` — que saiu junto com o resto do toca-discos de
-# mentira (ver `tonearm`). Não faz falta: o que pairava era um BRAÇO DE
-# METAL, e metal parado no ar pede alguma coisa embaixo. O facho, não —
-# parado ele simplesmente apaga, e o que fica é o ponto de onde ele vai
-# descer, que é a mesma coisa que a AGORA desenha quando não há nada tocando.
-ARM_REST_RADIUS = 1.26
-
-
-def arm_angle_for_radius(r):
-    """Solve for the arm's swing so the stylus lands at radius r.
-
-    Plain version of the maths: the spindle, the arm's pivot, and the stylus
-    make a triangle whose three side lengths we know — spindle-to-pivot is
-    fixed by where the arm is bolted down, pivot-to-stylus is the arm's own
-    length, and spindle-to-stylus is the radius we want. Knowing all three
-    sides fixes every angle in the triangle (law of cosines), so there is
-    exactly one way the arm can be pointing. That is the whole calculation.
-    """
-    r = max(0.02, min(r, ARM_MOUNT + ARM_LENGTH - 0.02))
-    cosang = (ARM_MOUNT ** 2 + ARM_LENGTH ** 2 - r ** 2) / (2.0 * ARM_MOUNT * ARM_LENGTH)
-    return math.acos(max(-1.0, min(1.0, cosang)))
-
-
-def stylus_xy(cx, cy, radius, iso, stylus_radius, lift=0.0):
-    """(pivô, ponta da agulha) em NDC, para o raio pedido.
-
-    Separado do tonearm porque o berço precisa saber exatamente onde o braço
-    para, e a única resposta que não mente é a mesma conta que desenha o
-    braço. Duplicar a fórmula seria pedir para o berço sair de lugar na
-    primeira vez que a geometria mudasse.
-    """
-    pv = _polar(cx, cy, ARM_MOUNT * radius, np.array([ARM_PIVOT_ANGLE]), iso)[0]
-    ang = arm_angle_for_radius(stylus_radius)
-    # Direction from the pivot back toward the spindle, then swung out by the
-    # angle solved above. Sign chosen so the arm sweeps inward (toward the
-    # label) as the record plays, which is the direction a real one goes.
-    base = math.atan2(cy - pv[1], (cx - pv[0]) / max(1e-6, iso[0]) * iso[1])
-    swing = base - ang
-    sx = pv[0] + math.cos(swing) * ARM_LENGTH * radius * iso[0]
-    sy = pv[1] + math.sin(swing) * ARM_LENGTH * radius * iso[1]
-    push = 1.0 + lift * 0.045
-    return pv, (pv[0] + (sx - pv[0]) * push, pv[1] + (sy - pv[1]) * push)
-
-
-def tonearm(cx, cy, radius, iso, stylus_radius, lift=0.0):
-    """O braço em LUZ: um traço que acende na ponta e some antes do pivô.
-
-    ── Por que não há tubo, contrapeso, cabeçote nem gimbal ──────────────────
-    Havia, e era o defeito. Tubo de alumínio em nove cópias paralelas — o
-    comentário dizia "real aluminium tube on a 152mm record is about 10mm
-    across" —, um contrapeso em barril de 41 segmentos atrás do pivô, um
-    cabeçote inclinado nos 23° de praxe, o anel do gimbal, e ao lado um berço
-    em U com pé. Uma peça de móvel desenhada em cinza-aço no meio de um
-    quadro cujo assunto é âmbar no escuro.
-
-    O CLAUDE.md §5.5 proíbe isso pelo nome ("braço de metal com contrapeso
-    desenhado") e diz o que vai no lugar: "feixe âmbar na agulha pulsando".
-    A AGORA já tinha tirado o braço dela pelo mesmo motivo — ver
-    `NowScreen._nothing` — e a lei avisa que isto já custou semanas de volta.
-
-    **O RITUAL não muda, e é ele que era para ser analógico.** A agulha anda
-    pelo lado, o raio é o tempo, o braço pivota de um ponto FORA do disco:
-    tudo isso é `stylus_xy`, que continua idêntica. O que muda é o material.
-    Em vez de metal iluminado por uma luz que não existe, o braço É a luz:
-
-        o corpo    fraco, e começa a 38% do caminho — perto do pivô não há
-                   nada, e é isso que impede o traço de ler como haste
-                   apoiada num parafuso
-        a ponta    quase toda a luz mora ali (o expoente 2.2), porque é ali
-                   que ele encosta na música
-        a agulha   uma cruz curta e quente, não um cabeçote
-
-    `lift` em [0,1] tira a agulha do sulco. Sem terceira dimensão, quem diz
-    "saiu" é a luz se retirando — o facho apaga e a ponta esfria — em vez de
-    um objeto subindo. E é por isso que o berço deixou de ser necessário: um
-    braço de metal parado no ar pede alguma coisa embaixo; um facho que se
-    apaga, não.
-    """
-    pv, (sx, sy) = stylus_xy(cx, cy, radius, iso, stylus_radius, lift)
-
-    segs, cols = [], []
-
-    def seg(a, b, color):
-        segs.append(np.array(a, dtype=np.float32))
-        segs.append(np.array(b, dtype=np.float32))
-        cols.append([color[0], color[1], color[2], 1.0])
-
-    # Levantado o facho não some de vez: some o suficiente para dizer que
-    # saiu do sulco, e fica o bastante para ainda se ver ONDE ele parou.
-    acende = 1.0 - 0.72 * lift
-    ux, uy = sx - pv[0], sy - pv[1]
-    n, t0 = 24, 0.38
-    for i in range(n):
-        a = t0 + (1.0 - t0) * (i / n)
-        b = t0 + (1.0 - t0) * ((i + 1) / n)
-        f = ((i + 1) / n) ** 2.2
-        c = tuple(v * f * acende for v in ARM_LIGHT)
-        seg((pv[0] + ux * a, pv[1] + uy * a),
-            (pv[0] + ux * b, pv[1] + uy * b), c)
-
-    # A agulha: uma cruz curta no ponto de contato. Curta e NÃO degenerada —
-    # o build_segs monta um quadrilátero a partir da normal do segmento, e
-    # um segmento de comprimento zero vira quatro vértices no mesmo lugar,
-    # ou seja, nada desenhado (foi assim que as "faíscas" do ritual.py
-    # passaram a existir no código sem nunca aparecer na tela).
-    ln = math.hypot(ux, uy) or 1.0
-    tx, ty = ux / ln, uy / ln
-    nx, ny = -ty, tx
-    quente = tuple(v * (0.35 + 0.65 * (1.0 - lift)) for v in ARM_TIP)
-    d = 0.012 * radius
-    seg((sx - tx * d, sy - ty * d), (sx + tx * d * 0.6, sy + ty * d * 0.6),
-        quente)
-    seg((sx - nx * d * 0.8, sy - ny * d * 0.8),
-        (sx + nx * d * 0.8, sy + ny * d * 0.8), quente)
-    return np.array(segs, dtype=np.float32), np.array(cols, dtype=np.float32), (sx, sy)
+# O que FICOU, porque a tela cheia usa: os raios do disco (R_OUTER e
+# companhia), a repartição em lados (`Album._build_sides`), o gesto do fim do
+# lado, e os três segundos da cerimônia logo abaixo.
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# The ceremony
+# A cerimônia — quanto dura cada parte da descida da agulha
 # ═══════════════════════════════════════════════════════════════════════════
-SPINUP, CUE, DROP, PLAY, LIFT, BREAK, RETURN, STOP = range(8)
-
-SPINUP_T = 1.1    # belt up to speed — honest, not a loading screen
-CUE_T    = 1.05   # arm swing over lead-in
-DROP_T   = 0.55   # stylus down — quick, decisive
-LIFT_T   = 1.0
-RETURN_T = 1.4
-# Quanto o braço leva para ser LEVADO do ponto em que subiu até o berço.
-# Antes não existia: o quadro em que o LIFT vencia jogava a agulha do meio
-# do disco para fora da borda de uma vez. Era a única parte da cerimônia que
-# acontecia instantaneamente — justamente o contrário do que a cerimônia é.
-TRAVEL_T = 1.3
-
-
-class Deck:
-    """Needle down, needle up, and the pause between sides.
-
-    Every phase here exists because a turntable makes you wait through it,
-    and waiting is the part that turns pressing play into an act. The spin-up
-    is not decoration: it is the two seconds where you have already committed
-    and the music has not started.
-    """
-
-    def __init__(self):
-        self.phase = SPINUP
-        self.t0 = time.monotonic()
-        self.rotation = 0.0
-        self.speed = 0.0          # revolutions per second, ramped
-        self.crackle = 0.0
-        # Havia aqui `side_index`, `pending_side` e `message`: três campos
-        # escritos uma vez no construtor e nunca lidos por linha nenhuma do
-        # sistema. Eles parecem o encanamento do aviso de virar o lado — que
-        # é a tese do projeto — e não são: quem diz o gesto é o
-        # `Album.gesto_do_lado`, e quem o desenha é o `legendas` do ritual.
-        # Estado morto com nome de recurso é pior do que estado nenhum: da
-        # próxima vez alguém liga o fio no lugar errado.
-        # Para onde este levantar vai dar. BREAK é a virada de lado (o prato
-        # continua girando, esperando você virar o disco); STOP é o fim do
-        # disco. Quem sabe a diferença é o RitualScene, que é quem enxerga o
-        # álbum inteiro — o Deck só executa.
-        self.after_lift = BREAK
-        # Onde a agulha estava quando o braço subiu, para o trajeto até o
-        # berço sair de onde ele realmente estava.
-        self.lift_radius = ARM_REST_RADIUS
-        # A alavanca de cue: 0 encostada, 1 no alto. Independente da fase
-        # porque pausar não é mudar de fase — o prato continua girando, o
-        # sulco continua embaixo, só a agulha sai dele. Ver update().
-        self.cue_ramp = 0.0
-
-    def elapsed(self):
-        return time.monotonic() - self.t0
-
-    def go(self, phase):
-        self.phase = phase
-        self.t0 = time.monotonic()
-
-    def spinning(self):
-        return self.phase not in (STOP,)
-
-    def stylus_down(self):
-        """A agulha está ENCOSTADA no sulco?
-
-        Não é a mesma pergunta que "a fase é PLAY": pausar levanta a alavanca
-        de cue (ver `update`), e durante a pausa a fase continua sendo PLAY
-        com a agulha no ar — que é justamente o gesto mais frequente do
-        aparelho.
-
-        Isto devolvia só `phase in (PLAY,)`, e ninguém a usava: o ritual.py
-        fazia a conta certa à mão, com o `arm_lift`. Duas respostas para a
-        mesma pergunta, e a errada de graça para quem encontrasse esta
-        primeiro.
-        """
-        return self.phase == PLAY and self.arm_lift() < 0.12
-
-    def update(self, dt, playing):
-        # A ALAVANCA DE CUE. `playing` chegava aqui e não era lido por
-        # ninguém: pausar deixava a agulha encostada num sulco parado, que é
-        # a única coisa que um toca-discos não faz. Num deck de verdade
-        # pausar É levantar o braço — o prato continua girando, a agulha sai
-        # do sulco e fica pairando exatamente sobre onde parou, e voltar é
-        # baixá-la de novo no mesmo lugar. É o gesto mais frequente do
-        # aparelho e era o único que não existia aqui.
-        #
-        # Fora da fase de propósito: PLAY continua sendo PLAY com a música
-        # pausada, e o raio não precisa ser congelado porque a posição não
-        # anda enquanto está pausado — a agulha já fica onde estava.
-        e = self.elapsed()
-        alvo = 0.0 if playing else 1.0
-        self.cue_ramp += (alvo - self.cue_ramp) * min(1.0, dt * 3.2)
-        if self.phase == SPINUP:
-            # ease toward speed, like a belt taking up
-            self.speed += (REV_PER_SEC - self.speed) * min(1.0, dt * 2.2)
-            if e >= SPINUP_T:
-                self.go(CUE)
-        elif self.phase == STOP:
-            self.speed *= max(0.0, 1.0 - dt * 1.1)
-        else:
-            self.speed += (REV_PER_SEC - self.speed) * min(1.0, dt * 3.0)
-        # Relê o cronômetro: um go() logo acima acabou de zerá-lo, e usar o
-        # `e` velho aqui faz a fase recém-entrada já vencer o próprio prazo
-        # no MESMO quadro. Era o que acontecia: no quadro em que o prato
-        # terminava de subir (e >= 2.0s), o go(CUE) zerava o t0 e a linha
-        # abaixo, ainda olhando e = 2.0 contra CUE_T = 1.7, mandava direto
-        # para o DROP. O CUE nunca acontecia - o braço nunca era visto
-        # saindo para cima da faixa de entrada, a agulha só aparecia já
-        # descendo. Achado pelo tools/test_ritual.py, não a olho.
-        e = self.elapsed()
-        if self.phase == CUE and e >= CUE_T:
-            self.go(DROP)
-        elif self.phase == DROP and e >= DROP_T:
-            self.crackle = 1.0
-            self.go(PLAY)
-        elif self.phase == LIFT and e >= LIFT_T:
-            self.go(self.after_lift)
-        elif self.phase == RETURN and e >= RETURN_T:
-            self.go(CUE)
-        self.rotation = (self.rotation + self.speed * dt * 2.0 * math.pi) % (2.0 * math.pi)
-        self.crackle *= max(0.0, 1.0 - dt * 2.5)
-        return self.phase
-
-    def arm_target_radius(self, play_radius):
-        """Where the stylus should be right now, including the swing."""
-        e = self.elapsed()
-        if self.phase == SPINUP:
-            return ARM_REST_RADIUS
-        if self.phase == CUE:
-            k = _ease(min(1.0, e / CUE_T))
-            return ARM_REST_RADIUS + (R_LEADIN - ARM_REST_RADIUS) * k
-        if self.phase == DROP:
-            return R_LEADIN
-        if self.phase == LIFT:
-            # Guardar aqui, e não no go(LIFT), porque é aqui que o raio de
-            # agora chega — é o quadro que sabe onde a agulha está. É o que
-            # a alavanca de cue faz de verdade: segura o braço onde estava.
-            self.lift_radius = play_radius
-            return play_radius
-        if self.phase in (BREAK, STOP):
-            k = _ease(min(1.0, e / TRAVEL_T))
-            return self.lift_radius + (ARM_REST_RADIUS - self.lift_radius) * k
-        if self.phase == RETURN:
-            # O braço já está no berço; o RETURN é a batida de espera antes
-            # de cuear de novo, e o CUE é quem o traz de volta ao disco.
-            return ARM_REST_RADIUS
-        return play_radius
-
-    def arm_lift(self):
-        """0 encostada, 1 no alto — o maior entre a fase e a alavanca de cue.
-
-        As duas coisas levantam o braço por motivos diferentes (a cerimônia e
-        a mão da pessoa) e o maior é o que vale: durante o DROP com a música
-        pausada a agulha não pode descer só porque a fase mandou.
-        """
-        e = self.elapsed()
-        if self.phase in (SPINUP, CUE, BREAK, RETURN, STOP):
-            return 1.0
-        if self.phase == DROP:
-            fase = max(0.0, 1.0 - _ease(min(1.0, e / DROP_T)))
-        elif self.phase == LIFT:
-            fase = _ease(min(1.0, e / LIFT_T))
-        else:
-            fase = 0.0
-        return max(fase, self.cue_ramp)
+# Três números, e eles moram AQUI porque três lugares os desenham ou esperam
+# por eles: a tela cheia do lançador (`NowScreen._cerimonia`), a AGORA
+# pequena, e o `stylus-deck`, que segura o som pausado até a agulha encostar.
+# Cópias à mão derivam, e o sintoma dessa deriva é o som entrando antes ou
+# depois do desenho — que é a única coisa que estes segundos existem para
+# acertar.
+#
+# Os estados nomeados e as durações do LIFT/RETURN/TRAVEL saíram junto com a
+# classe `Deck`: eram a máquina de estados do deck, e nada os lia mais.
+SPINUP_T = 1.1    # o prato saindo do zero — honesto, não é tela de espera
+CUE_T    = 1.05   # o braço indo até a faixa de entrada
+DROP_T   = 0.55   # a agulha descendo — rápido, decidido
 
 
-def _ease(t):
-    """Smootherstep. Mechanical things do not start and stop instantly."""
-    return t * t * t * (t * (t * 6 - 15) + 10)

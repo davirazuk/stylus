@@ -1,0 +1,4 @@
+# a saída do gerador de papel de parede
+vinyl-out/
+__pycache__/
+*.pyc

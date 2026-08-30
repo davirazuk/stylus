@@ -22,8 +22,8 @@ import os
 import sys
 
 
-def _com_o_deck_no_caminho():
-    """O vinyl mora em /usr/share/stylus/deck, não aqui.
+def _com_a_lib_no_caminho():
+    """O vinyl mora em /usr/share/stylus/lib, não aqui.
 
     Quem chama pelo `stylus` já recebe o PYTHONPATH pronto; quem roda o .py
     direto, não. As duas formas têm que funcionar, então o caminho é
@@ -31,15 +31,15 @@ def _com_o_deck_no_caminho():
     que serve para rodar do repositório sem instalar nada.
     """
     aqui = os.path.dirname(os.path.abspath(__file__))
-    for p in ("/usr/share/stylus/deck",
-              os.path.join(os.path.dirname(aqui), "deck")):
+    for p in ("/usr/share/stylus/lib",
+              os.path.join(os.path.dirname(aqui), "lib")):
         if os.path.isdir(p) and p not in sys.path:
             sys.path.insert(0, p)
 
 
 def raiz():
     """A pasta da coleção, ou o padrão sensato quando nada foi definido."""
-    _com_o_deck_no_caminho()
+    _com_a_lib_no_caminho()
     try:
         import vinyl
         r = vinyl.library_root()
@@ -74,7 +74,7 @@ def audio_ext():
 
     A resposta é a do `vinyl.AUDIO_EXT`, que é quem monta a estante.
     """
-    _com_o_deck_no_caminho()
+    _com_a_lib_no_caminho()
     try:
         import vinyl
         ext = tuple(getattr(vinyl, "AUDIO_EXT", ()) or ())
@@ -99,7 +99,7 @@ def find_cover(pasta, entries=None):
     passada por um Windows, que guarda `Folder.jpg` e `Cover.jpg` com
     maiúscula, o deck ficava sem capa nenhuma.
     """
-    _com_o_deck_no_caminho()
+    _com_a_lib_no_caminho()
     try:
         import vinyl
         return vinyl.find_cover(pasta, entries)

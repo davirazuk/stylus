@@ -32,7 +32,7 @@ import sys
 import threading
 import time
 
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 try:
     import vinyl
 except Exception as e:                                    # noqa: BLE001
@@ -205,6 +205,34 @@ class Olho:
         self._gravei = 0.0
         self._tentei = 0.0
 
+    def _anotar(self, al):
+        """Disco novo no prato: uma linha na memória da coleção.
+
+        **Sintoma:** o DIÁRIO ficava vazio no modo música. A memória da
+        coleção — quantas vezes, há quanto tempo — era escrita em DOIS
+        lugares: o módulo do disco na polybar, que só existe no modo área de
+        trabalho, e a cerimônia do deck. Ou seja: pôr um disco pela tela
+        cheia, que é o jeito NORMAL de usar este sistema, não anotava nada.
+        O diário ficava em branco, o "OS QUE VOLTAM" não desenhava nada, o
+        `stylus record` não tinha esquecidos para achar e o `Nx` do disco era
+        sempre a primeira vez. Nada disso dava erro; a página só ficava
+        vazia, que é o jeito mais caro de um recurso não existir.
+
+        Aqui é o lugar certo justamente porque este serviço sobe nos DOIS
+        modos (ver o `stylus-fundo`) e já sabe qual disco entrou. O
+        `log_play` deduplica por uma janela de dez minutos, então a barra
+        anotando a mesma colocação não conta duas vezes.
+        """
+        if al is None or not getattr(al, "folder", ""):
+            return
+        try:
+            vinyl.log_play(al.folder, getattr(al, "artist", ""),
+                           getattr(al, "name", ""))
+        except Exception:                     # noqa: BLE001
+            # Anotar é um bônus: não pode derrubar o vigia que avisa o fim
+            # do lado, que é a tese do sistema.
+            pass
+
     def onde(self):
         """(álbum, índice do lado, lado, quanto falta) — ou Nones."""
         snap = self.sessao.snapshot()
@@ -242,6 +270,7 @@ class Olho:
                 self.album = vinyl.Album(f, envelope=False) if f else None
             except Exception:                 # noqa: BLE001
                 self.album = None
+            self._anotar(self.album)
         al = self.album
         if al is None or not al.total or not al.sides:
             return None, None, None, 0.0

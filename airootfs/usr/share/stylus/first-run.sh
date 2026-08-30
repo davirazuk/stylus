@@ -15,9 +15,8 @@ CONF="$HOME/.config/stylus/library"
 [[ -s $CONF ]] && exit 0
 mkdir -p "$(dirname "$CONF")"
 
-PY=/usr/share/stylus/deck/venv/bin/python3
-[[ -x $PY ]] || PY=python3
-export PYTHONPATH=/usr/share/stylus/deck
+PY=python3
+export PYTHONPATH=/usr/share/stylus/lib
 
 achado=$("$PY" -c '
 import vinyl

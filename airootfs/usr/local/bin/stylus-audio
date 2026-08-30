@@ -38,7 +38,7 @@ OK = "\033[38;5;114m"; WARN = "\033[38;5;215m"; BAD = "\033[38;5;210m"; O = "\03
 # O deck fala com o mpv por socket; é de lá que sai o que o TOCADOR está
 # fazendo. Guardado porque este comando também tem que responder numa máquina
 # onde o deck nunca foi aberto.
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 try:
     import vinyl
 except Exception:                                         # noqa: BLE001

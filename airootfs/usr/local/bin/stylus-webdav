@@ -108,14 +108,14 @@ mostrar() {
 na_estante() { [[ -r $LIB_CONF ]] && grep -qxF "$MONTAGEM" "$LIB_CONF"; }
 
 # A pasta de casa, perguntada ao vinyl quando dá, e adivinhada como ele
-# adivinha quando não dá. O caminho do deck é uma variável porque escrevê-lo
-# fixo fazia isto devolver vazio em qualquer árvore que não fosse a
-# instalada — e vazio aqui significa "não escreve a casa", que é justamente
+# adivinha quando não dá. O caminho da biblioteca é uma variável porque
+# escrevê-lo fixo fazia isto devolver vazio em qualquer árvore que não fosse
+# a instalada — e vazio aqui significa "não escreve a casa", que é justamente
 # o defeito que esta função existe para evitar.
 raiz_de_casa() {
-    local deck="${STYLUS_DECK:-/usr/share/stylus/deck}" casa=""
-    if [[ -d $deck ]]; then
-        casa=$(PYTHONPATH="$deck" python3 -c \
+    local lib="${STYLUS_LIB:-/usr/share/stylus/lib}" casa=""
+    if [[ -d $lib ]]; then
+        casa=$(PYTHONPATH="$lib" python3 -c \
                'import vinyl; print(vinyl.library_root())' 2>/dev/null || true)
     fi
     if [[ -z ${casa:-} || ! -d ${casa:-} ]]; then

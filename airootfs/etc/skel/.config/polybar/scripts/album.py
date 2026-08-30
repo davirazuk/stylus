@@ -9,7 +9,7 @@ músicas.
 
     LADO A · 3/5 · vira em 12 min
 
-Clique esquerdo abre o deck com o disco que está tocando.
+Clique esquerdo mostra o disco que está tocando na tela toda.
 Clique direito abre a estante.
 
 Só estrutura, sem varredura de intensidade (Album(envelope=False)): esta é a
@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 try:
     import vinyl
 except Exception:

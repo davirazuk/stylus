@@ -16,7 +16,7 @@ source "$SHARE/venv.sh" 2>/dev/null || true
 if declare -F venv_python_ou_sistema >/dev/null; then
     PY=$(venv_python_ou_sistema)
 else
-    PY="$SHARE/deck/venv/bin/python3"; [[ -x $PY ]] || PY=python3
+    PY=python3
 fi
 
 usage() {

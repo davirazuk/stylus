@@ -21,8 +21,8 @@
 # Na grade: sem marca é seu, ◆ é disco do Qobuz, ▤ é playlist do Qobuz.
 set -uo pipefail
 SHARE=${STYLUS_SHARE:-/usr/share/stylus}
-PY=$SHARE/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
-export PYTHONPATH=$SHARE/deck
+PY=python3
+export PYTHONPATH=$SHARE/lib
 CACHE="$HOME/.cache/stylus/shelf.tsv"
 CACHE_Q="$HOME/.cache/stylus/shelf-qobuz.tsv"
 CACHE_L="$HOME/.cache/stylus/shelf-listas.tsv"

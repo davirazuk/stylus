@@ -1,56 +1,84 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  stylus-deck — põe um disco e abre o deck
+#  stylus-deck — põe um disco, e mostra o disco
 # ═══════════════════════════════════════════════════════════════════════════
 #      stylus deck "Radiohead/In Rainbows"    o disco inteiro, na ordem
 #      stylus deck loveless                   acha pelo nome, sem o caminho
 #      stylus deck                            sorteia um da estante
-#      stylus deck --silent  DISCO            sem som E sem sinal (só o desenho)
-#      stylus deck --quiet   DISCO            sinal de verdade, silêncio na sala
+#      stylus deck --quiet   DISCO            toca num sink nulo: silêncio na sala
 #      stylus deck --no-scope DISCO           só toca, sem tela  (= stylus play)
 #      stylus deck --recomeçar DISCO          do começo, ignorando onde parou
 #
-#  --silent e --quiet não são a mesma coisa e a diferença importa para
-#  conferir o desenho: --silent (--ao=null) não produz sinal nenhum, então o
-#  sulco ao vivo fica reto e não há o que julgar. --quiet manda o áudio para
-#  um sink nulo e aponta o deck para o monitor desse sink — a forma de onda é
-#  a de verdade, o alto-falante é que não toca.
+#  ── O que este comando é, agora que o deck não existe mais ───────────────
+#  O DECK era um segundo programa: OpenGL, um venv só dele com PyOpenGL,
+#  PortAudio, uma janela por cima do lançador. Ele saiu — o que ele desenhava
+#  o lançador desenha melhor, na tela cheia da AGORA ([f]), sem GL e sem
+#  venv. Ver `NowScreen._cheia` no ui/app.py.
 #
-#  Por que um lançador em vez de mandar tocar e pronto: o deck prefere falar
-#  com um mpv por socket IPC, porque assim sabe a posição exata E a ordem das
-#  faixas do lado inteiro. O MPRIS sozinho dá a faixa atual e mais nada, e o
-#  braço precisa saber quanto falta do LADO, não da música.
+#  O que sobrou aqui, e é a metade que sempre importou: PÔR O DISCO. Achar o
+#  álbum pelo nome, subir um mpv com as travas de áudio que blindam o caminho
+#  do sinal, e pôr a agulha de volta onde ela parou. Depois disso ele pede ao
+#  lançador para mostrar o disco na tela toda.
+#
+#  Por que um lançador em vez de mandar tocar e pronto: quem desenha prefere
+#  falar com um mpv por socket IPC, porque assim sabe a posição exata E a
+#  ordem das faixas do lado inteiro. O MPRIS sozinho dá a faixa atual e mais
+#  nada, e a agulha precisa saber quanto falta do LADO, não da música.
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
 SHARE=/usr/share/stylus
-DECK=$SHARE/deck
-PY="$DECK/venv/bin/python3"; [[ -x $PY ]] || PY=python3
-export PYTHONPATH="$DECK${PYTHONPATH:+:$PYTHONPATH}"
+LIB=$SHARE/lib
+PY=python3
+export PYTHONPATH="$LIB${PYTHONPATH:+:$PYTHONPATH}"
 
-SOCK="$HOME/.local/share/stylus/deck.sock"
+# Os caminhos de estado vêm do vinyl.py — escritos à mão aqui, no
+# stylus-qobuz e lá, eles já eram três cópias da mesma decisão. Ver a lição
+# das seis listas de extensão no CLAUDE.md: cópia que ninguém confere deriva.
+eval "$("$PY" -c 'import vinyl
+print("SOCK=%r" % vinyl.SOCKET_PATH)
+print("PIDFILE=%r" % vinyl.MPV_PIDFILE)
+print("RECADO=%r" % vinyl.UI_CMD)' 2>/dev/null)"
+: "${SOCK:=$HOME/.local/share/stylus/deck.sock}"
+: "${PIDFILE:=$HOME/.local/share/stylus/deck.mpv.pid}"
+: "${RECADO:=$HOME/.local/share/stylus/ui.cmd}"
 NULL_SINK=stylus_quiet
-SILENT=0; QUIET=0; SCOPE=1; VIEW=0; TARGET=""; RETOMAR=1
+
+# ── mostrar o disco na tela toda ─────────────────────────────────────────
+# O lançador é INSTÂNCIA ÚNICA (ver o stylus-ui): com ele já aberto — que é o
+# caso normal no modo música — não dá para abrir outra tela por cima. Então
+# o recado fica num arquivo que ele lê no quadro seguinte, e o `stylus-ui`
+# é chamado assim mesmo: se ele não estava aberto, abre já na tela cheia; se
+# estava, devolve 76 e o recado já chegou.
+mostrar_o_disco() {
+    mkdir -p "$(dirname "$RECADO")" 2>/dev/null || true
+    printf 'disco\n' > "$RECADO" 2>/dev/null || true
+    stylus-ui --disco
+    local rc=$?
+    (( rc == 76 )) && return 0
+    return $rc
+}
+QUIET=0; TELA=1; VIEW=0; TARGET=""; RETOMAR=1
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --silent)   SILENT=1; shift ;;
         --quiet)    QUIET=1; shift ;;
-        --no-scope) SCOPE=0; shift ;;
-        --view|--observar|--monitor) VIEW=1; SCOPE=1; shift ;;
+        # --no-scope é o nome antigo e continua valendo: está escrito no i3,
+        # na estante do rofi e no lançador. --sem-tela é o nome de hoje.
+        --no-scope|--sem-tela) TELA=0; shift ;;
+        --view|--observar|--monitor) VIEW=1; shift ;;
         --recomeçar|--recomecar|--do-inicio|--restart) RETOMAR=0; shift ;;
-        -h|--help)  sed -n '4,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        -h|--help)  sed -n '4,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *)          TARGET=$1; shift ;;
     esac
 done
 
-# ── modo view: só observa o que já toca, sem pôr disco novo ───────────────
-# É o que a AGORA usa para "abrir o deck" sem reiniciar o disco — só mostra
-# o ritual sincronizado com o mpv/MPRIS que já está tocando. Não toca no mpv,
-# não mata nada, não precisa de TARGET. Se nada estiver tocando, o ritual
-# vai mostrar "nada tocando" e esperar.
+# ── mostrar o disco que JÁ está tocando ───────────────────────────────────
+# Sem pôr disco novo, sem tocar no mpv, sem TARGET: é o lançador que abre a
+# tela cheia no que já está no prato. Ver `mostrar_o_disco`.
 if (( VIEW )); then
-    exec "$PY" "$DECK/ritual.py" --view
+    mostrar_o_disco
+    exit 0
 fi
 
 # ── achar o disco ──────────────────────────────────────────────────────────
@@ -101,7 +129,6 @@ if command -v playerctl >/dev/null; then
     done
 fi
 mkdir -p "$(dirname "$SOCK")"
-PIDFILE="$HOME/.local/share/stylus/deck.mpv.pid"
 if [[ -f $PIDFILE ]]; then
     _old=$(cat "$PIDFILE" 2>/dev/null || true)
     # Confere que o PID é mesmo um mpv nosso antes de matar: um PID reciclado
@@ -134,7 +161,6 @@ mpv_args=(--input-ipc-server="$SOCK" --no-video --term-status-msg= --really-quie
           #                  desta máquina é o do PipeWire (as teclas chamam
           #                  o pamixer), não o do tocador.
           --replaygain=no --af= --volume=100)
-(( SILENT )) && mpv_args+=(--ao=null)
 if (( QUIET )); then
     if ! pactl list sinks short 2>/dev/null | grep -q "\b$NULL_SINK\b"; then
         NULL_MOD=$(pactl load-module module-null-sink \
@@ -142,7 +168,7 @@ if (( QUIET )); then
             sink_properties=device.description=STYLUS-Quiet 2>/dev/null)
     fi
     mpv_args+=(--audio-device="pulse/$NULL_SINK")
-    export STYLUS_DECK_SOURCE="$NULL_SINK.monitor"
+    export STYLUS_AUDIO_SOURCE="$NULL_SINK.monitor"
 fi
 
 # Os arquivos vão UM A UM, não a pasta. Dando a pasta, o mpv enfileira tudo
@@ -256,9 +282,14 @@ else
     mpv_args+=("$TARGET")
 fi
 
-# Cerimônia: começa pausado, a agulha é quem dá o play quando toca o sulco.
+# Cerimônia: começa pausado, e o som entra quando a agulha encosta no sulco.
 # Em --no-scope (só tocar) não: ali é put_on e queremos som imediato.
-if (( SCOPE )); then
+#
+# Quem tirava a pausa era o ritual do deck, no fim da descida da agulha. Sem
+# ele, quem tira é o bloco lá embaixo — e tira MESMO que o lançador não
+# abra, porque um disco que fica pausado para sempre é o pior desfecho
+# possível desta linha.
+if (( TELA )); then
     mpv_args+=(--pause)
 fi
 
@@ -275,9 +306,29 @@ cleanup() {
 trap cleanup EXIT
 for _ in $(seq 1 50); do [[ -S $SOCK ]] && break; sleep 0.1; done
 
-if (( SCOPE )); then
-    "$PY" "$DECK/ritual.py"
-    # ritual saiu, música segue — desarma o trap de sink temporário e sai
+if (( TELA )); then
+    # ── a agulha desce, e só então sai som ────────────────────────────────
+    # Os segundos são os do vinyl.py (SPINUP_T + CUE_T + DROP_T), os MESMOS
+    # que a tela cheia usa para desenhar a descida. Duas cópias à mão do
+    # mesmo ritual derivam, e aí o som entra antes ou depois da agulha
+    # encostar — que é a única coisa que esta espera existe para acertar.
+    ESPERA=$("$PY" -c 'import vinyl
+print("%.2f" % (getattr(vinyl, "SPINUP_T", 1.1) + getattr(vinyl, "CUE_T", 1.05)
+                + getattr(vinyl, "DROP_T", 0.55)))' 2>/dev/null || echo 2.7)
+    (
+        sleep "$ESPERA"
+        # Pelo socket, com o MESMO cliente que o resto do sistema usa
+        # (vinyl._MpvIPC) — nada de socat, que não está em pacote nenhum
+        # aqui. O playerctl é a reserva; e se as duas falharem, ainda assim
+        # não se desiste calado: um disco pausado para sempre é justamente o
+        # defeito que este bloco existe para evitar.
+        "$PY" -c 'import sys, vinyl
+ipc = vinyl._MpvIPC()
+sys.exit(0 if ipc.command("set_property", "pause", False) is not None else 1)' \
+            2>/dev/null || playerctl -p mpv play 2>/dev/null || true
+    ) >/dev/null 2>&1 &
+    mostrar_o_disco
+    # a tela saiu, a música segue — desarma o trap do sink temporário e sai
     trap - EXIT
     cleanup
 else

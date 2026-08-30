@@ -9,7 +9,7 @@ import argparse
 import os
 import sys
 
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 import vinyl  # noqa: E402
 
 D = "\033[2m"; A = "\033[38;5;117m"; OK = "\033[38;5;114m"

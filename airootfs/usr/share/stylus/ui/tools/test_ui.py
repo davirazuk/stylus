@@ -105,7 +105,7 @@ def main():
 
     aqui = os.path.dirname(os.path.abspath(__file__))
     raiz = os.path.dirname(os.path.dirname(aqui))          # /usr/share/stylus
-    sys.path.insert(0, os.path.join(raiz, "deck"))
+    sys.path.insert(0, os.path.join(raiz, "lib"))
     sys.path.insert(0, os.path.join(raiz, "ui"))
 
     try:

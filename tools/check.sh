@@ -64,9 +64,9 @@ sec "atributos do vinyl que as ferramentas usam"
 # Aqui se importa o vinyl de verdade e se pergunta se cada `vinyl.NOME` que
 # as ferramentas escrevem existe mesmo.
 if python3 -c 'import numpy' 2>/dev/null; then
-    faltando=$(PYTHONPATH=airootfs/usr/share/stylus/deck python3 - <<'PYEOF'
+    faltando=$(PYTHONPATH=airootfs/usr/share/stylus/lib python3 - <<'PYEOF'
 import ast, os, sys
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     import vinyl
 except Exception as e:
@@ -149,8 +149,9 @@ else
     printf '  %s—%s pygame não instalado aqui; a interface não foi exercitada\n' "$y" "$z"
 fi
 
-sec "o ritual, sem GL"
-# **O deck tinha 119 conferências que nada rodava.** O `test_ritual.py` quer
+sec "a biblioteca do disco, sem tela"
+# **O deck tinha 119 conferências que nada rodava.** O `test_vinyl.py` (que
+# se chamava `test_ritual.py`) quer
 # um álbum de verdade (`--album PASTA`) e, sem ele, escolhe um da estante
 # configurada — que num contêiner de construção não existe. Resultado: o
 # arquivo que guarda a cerimônia, a contagem de lados, a agulha no sulco e a
@@ -160,7 +161,7 @@ sec "o ritual, sem GL"
 # O álbum de mentira sai daqui mesmo: oito WAVs de silêncio escritos pelo
 # módulo `wave` do próprio Python. Não precisa de ffmpeg, não toca em coleção
 # de ninguém, e some no fim.
-RITTEST=airootfs/usr/share/stylus/deck/tools/test_ritual.py
+RITTEST=airootfs/usr/share/stylus/tools/test_vinyl.py
 if [[ -f $RITTEST ]] && python3 -c 'import pygame, numpy' 2>/dev/null; then
     RITDIR=$(mktemp -d)
     if python3 - "$RITDIR" <<'WAVEOF'
@@ -175,17 +176,17 @@ for i in range(1, 9):
 WAVEOF
     then
         if out=$(python3 "$RITTEST" --album "$RITDIR/Artista/Disco" 2>&1); then
-            ok "$(grep -oE '[0-9]+ passaram' <<<"$out" | tail -1) no ritual"
+            ok "$(grep -oE '[0-9]+ passaram' <<<"$out" | tail -1) na biblioteca do disco"
         else
-            bad "o ritual tem conferência quebrada:"
+            bad "a biblioteca do disco tem conferência quebrada:"
             grep -E '✗' <<<"$out" | head -6 | sed 's/^/      /'
         fi
     else
-        bad "não deu para montar o disco de mentira do teste do ritual"
+        bad "não deu para montar o disco de mentira do teste"
     fi
     rm -rf "$RITDIR"
 else
-    printf '  %s—%s pygame/numpy não instalados aqui; o ritual não foi exercitado\n' "$y" "$z"
+    printf '  %s—%s pygame/numpy não instalados aqui; a biblioteca não foi exercitada\n' "$y" "$z"
 fi
 
 sec "links simbólicos"
@@ -469,10 +470,11 @@ sec "os arquivos que os comandos chamam existem"
 # de parede, em resolução nenhuma, e caía sempre na cor chapada. Um ano
 # assim e ninguém nota, porque o defeito é uma coisa que NÃO acontece.
 #
-# Dois caminhos não existem no repositório de propósito:
-#   deck/venv/…   o venv é construído dentro do chroot (o PyOpenGL não está
-#                 nos repositórios do Arch), então aqui ele não pode existir.
+# Um caminho não existe no repositório de propósito:
 #   lock/stylus-  é prefixo de nome montado em tempo de execução, não arquivo.
+#
+# (Havia um segundo, `deck/venv/…`, construído dentro do chroot por causa do
+# PyOpenGL. O deck saiu e o venv com ele.)
 faltando=()
 while read -r caminho; do
     # Ponto final colado no fim é pontuação, não nome de arquivo. Um comentário
@@ -481,7 +483,7 @@ while read -r caminho; do
     # seja, o preço de escrever uma frase bem pontuada era um teste vermelho.
     caminho=${caminho%%[.,;:)]}
     case $caminho in
-        /usr/share/stylus/deck/venv/*|/usr/share/stylus/lock/stylus-) continue ;;
+        /usr/share/stylus/lock/stylus-) continue ;;
         # Escrito pelo instalador em tempo de execução, e só quando o
         # plasma-workspace não trouxe um .desktop de sessão X11. Não pode
         # existir aqui: não é nosso, é um remendo para uma versão do Plasma.
@@ -1159,7 +1161,7 @@ import wave
 
 casa = tempfile.mkdtemp(prefix="stylus-sorteio-casa-")
 os.environ["HOME"] = casa
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     import vinyl                                          # noqa: E402
 except BaseException as e:                                # noqa: BLE001
@@ -1253,7 +1255,7 @@ plur=$(python3 - <<'PLUREOF'
 import sys
 import time
 
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 sys.path.insert(0, "airootfs/usr/share/stylus/ui")
 try:
     import model
@@ -1338,7 +1340,7 @@ if not kt.is_file():
     raise SystemExit(0)
 fonte = kt.read_text(encoding="utf-8")
 
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     import vinyl                                          # noqa: E402
 except BaseException as e:                                # noqa: BLE001
@@ -1398,7 +1400,7 @@ import importlib.machinery as _im
 import importlib.util as _iu
 import sys
 
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 spec = _iu.spec_from_loader("sw", _im.SourceFileLoader(
     "sw", "airootfs/usr/local/bin/stylus-side-watch"))
 mod = _iu.module_from_spec(spec)
@@ -2001,22 +2003,26 @@ fi
 # phosphor", e mandava o oposto da lei: especular BRANCO, sulcos cinzas
 # QUENTES, intervalos QUASE-BRANCOS. Ficou assim por meses depois de o braço
 # já ter virado luz. Escrever a lei em números é o que impede a próxima volta.
-sec "no deck, o que é luz é âmbar e o que é corpo é frio"
+sec "no lançador, o que é luz é âmbar e o que é corpo é frio"
 fora_da_lei=$(python3 - <<'LUZEOF'
 import re, pathlib
 
-txt = pathlib.Path("airootfs/usr/share/stylus/deck/vinyl.py").read_text()
+# A lei mora onde o disco é DESENHADO. Era o `deck/vinyl.py` (quinze cores em
+# ponto flutuante para o OpenGL); o deck saiu e quem desenha agora é o
+# `ui/theme.py`, com as cores da interface. A conferência mudou de arquivo
+# junto — uma que aponta para um arquivo que não existe mais passa verde para
+# sempre, que é o pior desfecho possível para uma conferência.
+txt = pathlib.Path("airootfs/usr/share/stylus/ui/theme.py").read_text()
 cor = {}
 for nome, r, g, b in re.findall(
-        r"^([A-Z_]+)\s*=\s*\(([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", txt, re.M):
-    cor[nome] = (float(r), float(g), float(b))
+        r"^([A-Z_]+)\s*=\s*\((\d{1,3}),\s*(\d{1,3}),\s*(\d{1,3})\)", txt, re.M):
+    cor[nome] = (int(r), int(g), int(b))
 
-# O que é LUZ no quadro: tem que ser claramente âmbar — vermelho bem acima do
-# azul. Branco (r≈b) reprova, e é exatamente o que estava escrito.
-luz = ("VINYL_RIM", "SHEEN", "GROOVE_PLAYED", "GROOVE_GAP", "EDGE_RING",
-       "STYLUS_HOT", "ARM_LIGHT", "ARM_TIP", "ALARM")
+# O que é LUZ no disco: âmbar, vermelho bem acima do azul. Branco (r≈b)
+# reprova — e "especular BRANCO" foi literalmente o que já esteve escrito.
+luz = ("AMBER", "AMBER_DIM", "AMBER_GLOW")
 # O que é CORPO: preto frio. O azul não pode ficar abaixo do vermelho.
-frio = ("VINYL_CORE", "GROOVE_UNPLAYED", "DUST")
+frio = ("INK", "INK_DEEP", "INK_SOFT", "INK_LIFT", "LINE")
 
 for nome in luz:
     if nome not in cor:
@@ -2024,22 +2030,45 @@ for nome in luz:
         continue
     r, g, b = cor[nome]
     if r <= b * 1.5:
-        print("%s = (%.3f, %.3f, %.3f): é luz e não é âmbar "
-              "(vermelho tem que passar de 1,5× o azul)" % (nome, r, g, b))
+        print("%s = (%d, %d, %d): é luz e não é âmbar "
+              "(vermelho tem que passar de 1,5x o azul)" % (nome, r, g, b))
 for nome in frio:
     if nome not in cor:
         print("%s: sumiu da paleta" % nome)
         continue
     r, g, b = cor[nome]
     if b < r:
-        print("%s = (%.3f, %.3f, %.3f): é corpo e está QUENTE "
+        print("%s = (%d, %d, %d): é corpo e está QUENTE "
               "(o azul não pode ficar abaixo do vermelho)" % (nome, r, g, b))
+
+# E o DESENHO do disco, que é onde a lei se desfaz na prática: quem "melhora
+# o visual" põe de volta o especular branco e a madeira. O `disco()` só pode
+# pintar com âmbar e com as cores de corpo — nenhuma cor solta, e nada de
+# TEXT (que é branco) no corpo do disco.
+# O `disco()` é a ÚLTIMA função do arquivo, então o fim dele é o fim do
+# texto: um lookahead por "próximo def" não casa nunca (e um regex que não
+# casa aqui reprovava dizendo "a lei ficou sem quem a cumpra", o que é o
+# oposto do que estava acontecendo).
+m = re.search(r"^def disco\(.*?(?=\ndef |\n# ═|\Z)", txt, re.M | re.S)
+if not m:
+    print("não achei o `disco()` no theme.py — a lei ficou sem quem a cumpra")
+else:
+    corpo = "\n".join(l for l in m.group(0).splitlines()
+                       if not l.lstrip().startswith("#"))
+    for solta in re.findall(r"\((\d{1,3}),\s*(\d{1,3}),\s*(\d{1,3})[,)]", corpo):
+        r, g, b = (int(x) for x in solta)
+        if (r, g, b) in cor.values() or max(r, g, b) <= 40:
+            continue
+        print("o disco() pinta (%d, %d, %d), que não é cor da paleta" % (r, g, b))
+    for branco in re.findall(r"\b(TEXT|TEXT_DIM|WHITE)\b", corpo):
+        print("o disco() usa %s: o brilho do disco é a luz âmbar dele, "
+              "não uma lâmpada branca fora de quadro" % branco)
 LUZEOF
 )
 if [[ -z $fora_da_lei ]]; then
-    ok "as 12 cores do disco seguem a §5.5"
+    ok "as 8 cores do disco do lançador seguem a §5.5"
 else
-    bad "a paleta do deck saiu da lei do desenho (CLAUDE.md §5.5):"
+    bad "a paleta do disco saiu da lei do desenho (CLAUDE.md §5.5):"
     printf '%s\n' "$fora_da_lei" | sed 's/^/      /'
 fi
 
@@ -2777,7 +2806,7 @@ esac
 sec "a assinatura do Qobuz é renovada sem cortar o som"
 saida=$(python3 - <<'RENOVAEOF' 2>/dev/null
 import importlib.util, json, os, shutil, sys, tempfile, time, traceback
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     # Loader explícito: o arquivo não termina em .py (é um COMANDO), e sem
     # isso o `spec_from_file_location` devolve um spec com loader=None e a
@@ -3063,7 +3092,7 @@ sec "a capa, escolhida do mesmo jeito em todo lugar"
 # nome de capa no sistema, e discordavam entre si.
 saida=$(python3 - <<'CAPAEOF' 2>&1
 import os, shutil, sys, tempfile, traceback
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     import vinyl
 except Exception as e:                                   # noqa: BLE001
@@ -3482,7 +3511,7 @@ for i in range(1, 7):
 WAVRECEOF
     saida=$(env PATH="$RECDIR/bin:/usr/bin:/bin" HOME="$RECDIR/casa" \
             FALSO="$RECDIR" STYLUS_LIBRARY="$RECDIR/estante" \
-            PYTHONPATH="airootfs/usr/share/stylus/deck:airootfs/usr/share/stylus/tools" \
+            PYTHONPATH="airootfs/usr/share/stylus/lib:airootfs/usr/share/stylus/tools" \
             python3 "$RECTEST" --play 2>&1)
     if [[ ! -f $RECDIR/chamou ]]; then
         bad "\`stylus record --play\` não chegou a pôr disco nenhum:"
@@ -3512,7 +3541,7 @@ sec "trocar de playlist do Qobuz troca o disco na mão do vigia"
 saida=$(python3 - <<'VIGIAEOF' 2>&1
 import importlib.machinery as im, importlib.util, os, shutil, sys, tempfile
 import traceback
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     spec = importlib.util.spec_from_loader(
         "sw", im.SourceFileLoader("sw", "airootfs/usr/local/bin/stylus-side-watch"))
@@ -3988,6 +4017,12 @@ sec "a loja de tela cheia mostra TODOS os favoritos"
 # enquanto a estante do rofi ao lado mostrava os 87. E a BUSCA pedia 25
 # resultados contra os 100 de lá.
 #
+# **E o segundo sintoma, relatado depois:** com a paginação escrita, a loja
+# parava em CINQUENTA. O `favorite/getUserFavorites` apara o limite em 50, o
+# laço pedia 100 e tratava a página curta como fim — enquanto o `total` na
+# mesma resposta dizia 213. O Qobuz de mentira desta conferência apara em 50
+# agora, que é o que o de verdade faz.
+#
 # A conferência roda o caminho da tela cheia contra um Qobuz de mentira com
 # 237 favoritos e conta o que chegou do outro lado.
 saida=$(python3 - <<'FAVCHEIAEOF' 2>&1
@@ -4004,6 +4039,13 @@ class Cli:
 
     def api_call(self, _rota, type=None, offset=0, limit=50, sec=None):
         self.chamadas.append((offset, limit))
+        # O Qobuz APARA o limite em 50 do lado dele, e é isso que o falso
+        # daqui não fazia: com um servidor que devolvia os 100 pedidos, a
+        # paginação passava verde — e na conta de verdade a loja parava em
+        # CINQUENTA discos, porque "veio menos do que pedi" era tratado como
+        # fim da lista. Um falso mais educado que o servidor real prova o
+        # caso fácil e esconde o que acontece.
+        limit = min(limit, 50)
         itens = [{"id": i, "title": "Disco %d" % i,
                   "artist": {"name": "Artista %d" % i}, "tracks_count": 10,
                   "maximum_bit_depth": 24, "maximum_sampling_rate": 96,
@@ -4060,6 +4102,80 @@ case "$saida" in
            printf '%s\n' "$saida" | sed 's/^/      /' ;;
 esac
 
+sec "a letra acompanha a música"
+# **Sintoma (relatado):** "a letra ainda não está sincronizada". Três coisas,
+# e as três se veem na tela:
+#
+#   · o DESTAQUE ia uma linha adiantado, sempre. A busca binária devolve a
+#     primeira linha que ainda NÃO chegou — quem está sendo cantada é a
+#     anterior — e a tela destacava a devolvida.
+#   · carimbo REPETIDO (`[00:42][02:15]refrão`, que é como todo refrão é
+#     escrito) casava só o primeiro: o refrão aparecia uma vez e com os
+#     outros colchetes impressos no meio do texto.
+#   · `[offset:±ms]`, que é o conserto que quem sincronizou deixou escrito,
+#     era ignorado. Meio segundo é o valor mais comum e é exatamente o que
+#     separa a linha certa da errada.
+saida=$(python3 - <<'LRCEOF' 2>&1
+import os
+import sys
+import tempfile
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
+sys.path.insert(0, "airootfs/usr/share/stylus/ui")
+try:
+    import vinyl
+except Exception as e:                                   # noqa: BLE001
+    print("PULA %s" % e)
+    raise SystemExit(0)
+
+d = tempfile.mkdtemp()
+arq = os.path.join(d, "faixa.lrc")
+with open(arq, "w", encoding="utf-8") as fh:
+    fh.write("[ti:x]\n[offset:+500]\n[00:10.00]um\n[00:12.5]dois\n"
+             "[00:42.10][02:15.30]refrao\n[01:00]tres\n")
+linhas = vinyl.parse_lrc(arq)
+erros = []
+if len(linhas) != 5:
+    erros.append("o .lrc tem 5 momentos e o parse devolveu %d "
+                 "(carimbo repetido perdido?)" % len(linhas))
+if any("[" in txt for _t, txt in linhas):
+    erros.append("sobrou colchete no TEXTO: %r" % [x for x in linhas if "[" in x[1]])
+if linhas and abs(linhas[0][0] - 9.5) > 0.01:
+    erros.append("o [offset:+500] não foi aplicado (primeira linha em %.2f, "
+                 "esperado 9.50)" % linhas[0][0])
+if len(linhas) > 1 and abs(linhas[1][0] - 12.0) > 0.01:
+    erros.append("[00:12.5] são 12,5s e virou %.2f "
+                 "(centésimos lidos como milésimos?)" % (linhas[1][0] + 0.5))
+
+# ── e o índice: a linha destacada é a que está sendo CANTADA ─────────────
+# Sem GL e sem janela: a conta do `App.lyric_state` é uma busca binária, e é
+# ela que estava errada. Aqui ela é refeita do jeito certo e comparada com o
+# que o app.py faz — lendo o código, porque é uma linha só e uma cópia dela
+# aqui não provaria nada.
+fonte = open("airootfs/usr/share/stylus/ui/app.py", encoding="utf-8").read()
+i = fonte.index("def lyric_state")
+corpo = fonte[i:i + 3000]
+corpo = corpo[:corpo.index("def backdrop")]
+if "return lines, lo\n" in corpo:
+    erros.append("o lyric_state devolve a linha SEGUINTE: a tela destaca o "
+                 "verso que ainda não foi cantado")
+elif "max(0, lo - 1)" not in corpo:
+    erros.append("não achei o ajuste do índice no lyric_state")
+
+if erros:
+    for e in erros:
+        print("ERRO %s" % e)
+else:
+    print("OK %d momentos, o offset vale e a linha destacada é a que canta"
+          % len(linhas))
+LRCEOF
+)
+case "$saida" in
+    OK*)   ok "${saida#OK }" ;;
+    PULA*) printf '  %s—%s sem o vinyl aqui: %s\n' "$y" "$z" "${saida#PULA }" ;;
+    *)     bad "a letra não acompanha a música:"
+           printf '%s\n' "$saida" | sed 's/^/      /' ;;
+esac
+
 sec "o celular e o computador concordam sobre o que é música"
 # A SÉTIMA cópia da lista de extensões de áudio morava no Library.kt do
 # celular, e discordava: faltavam .wma, .shn e .ape. Uma coleção com rip
@@ -4069,7 +4185,7 @@ sec "o celular e o computador concordam sobre o que é música"
 saida=$(python3 - <<'EXTKTEOF' 2>&1
 import re
 import sys
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     import vinyl
     kt = open("android/app/src/main/kotlin/io/stylus/player/Library.kt",
@@ -4285,7 +4401,7 @@ sec "o celular pede o mesmo GESTO que o computador"
 saida=$(python3 - <<'GESTOKTEOF' 2>&1
 import re
 import sys
-sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+sys.path.insert(0, "airootfs/usr/share/stylus/lib")
 try:
     import vinyl
     kt = open("android/app/src/main/kotlin/io/stylus/player/Lados.kt",
@@ -4402,7 +4518,7 @@ elif kt.count("\\t") < 3:
 else:
     # E o cooldown: contagem que mente é pior do que contagem nenhuma.
     import sys
-    sys.path.insert(0, "airootfs/usr/share/stylus/deck")
+    sys.path.insert(0, "airootfs/usr/share/stylus/lib")
     try:
         import vinyl
         cd = re.search(r"COOLDOWN_MS\s*=\s*([\d_]+)L", kt)

@@ -3,7 +3,7 @@
 #  branding-sync.sh — põe o STYLUS dentro de um sistema recém-instalado
 # ═══════════════════════════════════════════════════════════════════════════
 #  O pacstrap instala PACOTES. Tudo que faz este sistema ser o STYLUS — os
-#  comandos, o deck, a tela cheia, o tema, a configuração de áudio, o
+#  comandos, a biblioteca, a tela cheia, o tema, a configuração de áudio, o
 #  /etc/skel — não vem de pacote nenhum: vem do airootfs, e o airootfs só
 #  existe dentro do medium ao vivo. Alguém tem que copiar.
 #
@@ -159,22 +159,12 @@ info "/etc/skel…"
 copiar etc/skel
 ok "i3, polybar, rofi, fish, picom, dunst, gtk, qt"
 
-# ── 6. o ambiente Python do deck ───────────────────────────────────────────
-#  O venv é construído dentro do chroot na hora de fazer a ISO, porque o
-#  PyOpenGL não existe nos repositórios do Arch. Copiá-lo é o que faz o deck
-#  abrir na primeira vez sem rede — mas um venv é amarrado à VERSÃO do python
-#  que o criou, e o sistema instalado acabou de pegar o python de hoje. Se as
-#  versões não baterem, o venv existe e não roda, que é pior do que não
-#  existir: o stylus-ui prefere o venv quando ele está lá.
-VENV="$DST/usr/share/stylus/deck/venv"
-if [[ -d $VENV ]]; then
-    py_alvo=$(basename "$(find "$DST/usr/lib" -maxdepth 1 -name 'python3.*' -type d 2>/dev/null | sort -V | tail -1)" 2>/dev/null)
-    py_venv=$(basename "$(find "$VENV/lib" -maxdepth 1 -name 'python3.*' -type d 2>/dev/null | sort -V | tail -1)" 2>/dev/null)
-    if [[ -n $py_alvo && -n $py_venv && $py_alvo != "$py_venv" ]]; then
-        warn "o venv do deck é do $py_venv e o sistema tem $py_alvo — refazendo depois"
-        rm -rf "$VENV"
-    fi
-fi
+# ── 6. o venv do deck, que não existe mais ─────────────────────────────────
+#  Este bloco copiava (e conferia a versão do python de) um venv construído
+#  dentro do chroot, por causa do PyOpenGL. O deck saiu e o venv com ele;
+#  o que fica aqui é a limpeza para quem instalar por cima de uma ISO velha.
+VELHO_VENV="$DST/usr/share/stylus/lib/venv"
+[[ -d $VELHO_VENV ]] && rm -rf "$VELHO_VENV"
 
 # ── 7. modos ───────────────────────────────────────────────────────────────
 #  O airootfs viaja como zip em algumas mãos, e zip não guarda bit de
@@ -184,7 +174,7 @@ find "$DST/usr/local/bin" -maxdepth 1 -type f -name 'stylus*' -exec chmod 0755 {
 chmod 0755 "$DST/usr/local/bin/install-yay" 2>/dev/null
 chmod -R a+rX "$DST/usr/share/stylus" 2>/dev/null
 find "$DST/usr/share/stylus" -maxdepth 2 -type f -name '*.sh' -exec chmod 0755 {} + 2>/dev/null
-find "$DST/usr/share/stylus/tools" "$DST/usr/share/stylus/deck" -maxdepth 1 -type f -name '*.py' \
+find "$DST/usr/share/stylus/tools" "$DST/usr/share/stylus/lib" -maxdepth 1 -type f -name '*.py' \
      -exec chmod 0755 {} + 2>/dev/null
 find "$DST/etc/skel" -type f \( -name '*.sh' -o -name '.xinitrc' \) -exec chmod 0755 {} + 2>/dev/null
 chown -R 0:0 "$DST/usr/local/bin" "$DST/usr/share/stylus" "$DST/etc/skel" 2>/dev/null

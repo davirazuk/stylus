@@ -2,8 +2,8 @@
 # Escolhe a pasta da coleção sem terminal. Tenta descobrir sozinho primeiro,
 # porque na maioria das vezes a resposta certa já está no disco.
 set -uo pipefail
-PY=/usr/share/stylus/deck/venv/bin/python3; [[ -x $PY ]] || PY=python3
-export PYTHONPATH=/usr/share/stylus/deck
+PY=python3
+export PYTHONPATH=/usr/share/stylus/lib
 
 achado=$("$PY" -c 'import vinyl; r,n = vinyl.best_root(); print(f"{r}\t{n}" if r else "")')
 if [[ -n $achado ]]; then

@@ -21,7 +21,7 @@ import time
 from collections import Counter
 from datetime import datetime
 
-sys.path.insert(0, "/usr/share/stylus/deck")
+sys.path.insert(0, "/usr/share/stylus/lib")
 import vinyl  # noqa: E402
 
 D = "\033[2m"; B = "\033[1m"; A = "\033[38;5;117m"; P = "\033[38;5;218m"
