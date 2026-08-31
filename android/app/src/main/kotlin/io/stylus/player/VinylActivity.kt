@@ -677,13 +677,16 @@ class VinylActivity : AppCompatActivity() {
         // (não só ao toque na capa). E o glifo tem que seguir o estado.
         playPauseBtn?.setOnClickListener { togglePlayPause() }
 
-        // Lyrics panel — scrollable, shows current line + context
+        // Lyrics panel — scrollable, shows current line + context.
+        // Fundo semi-transparente com o INK_SOFT (16,18,25) da paleta,
+        // cantos arredondados e fading edge para a última linha não
+        // encostar na borda.
         lyricPanel = android.widget.ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             alpha = 0f
             setPadding(dp(16), dp(10), dp(16), dp(10))
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xE60A0C14.toInt())
+                setColor(0xE6101219.toInt())
                 cornerRadius = dp(20).toFloat()
             }
             isVerticalFadingEdgeEnabled = true
@@ -767,20 +770,26 @@ class VinylActivity : AppCompatActivity() {
                                 for (i in start until end) {
                                     val isCurrent = i == curIdx
                                     val distFromCur = Math.abs(i - curIdx)
-                                    val fade = if (isCurrent) 1f else (0.5f - distFromCur * 0.1f).coerceAtLeast(0.2f)
+                                    val fade = if (isCurrent) 1f else (0.45f - distFromCur * 0.12f).coerceAtLeast(0.18f)
                                     val tv = TextView(this@VinylActivity).apply {
                                         text = lys[i].second.ifBlank { "\u00B7" }
-                                        textSize = if (isCurrent) 14.5f else 11f
+                                        textSize = if (isCurrent) 16f else 11.5f
                                         setTextColor(
-                                            if (isCurrent) 0xFFe8ecf5.toInt()
+                                            if (isCurrent) 0xFFf0a030.toInt()
                                             else 0xFF768094.toInt()
                                         )
                                         gravity = android.view.Gravity.CENTER
-                                        setPadding(dp(4), dp(5), dp(4), dp(5))
+                                        setPadding(dp(6), dp(6), dp(6), dp(6))
                                         alpha = fade
                                         if (isCurrent) {
-                                            typeface = android.graphics.Typeface.DEFAULT_BOLD
-                                            letterSpacing = 0.02f
+                                            typeface = android.graphics.Typeface.create(
+                                                "sans-serif-medium",
+                                                android.graphics.Typeface.BOLD)
+                                            letterSpacing = 0.03f
+                                        } else {
+                                            typeface = android.graphics.Typeface.create(
+                                                "sans-serif",
+                                                android.graphics.Typeface.NORMAL)
                                         }
                                     }
                                     lyricInner?.addView(tv)
@@ -1141,7 +1150,7 @@ class VinylActivity : AppCompatActivity() {
             tp?.let {
                 it.gravity = android.view.Gravity.TOP or android.view.Gravity.START
                 it.leftMargin = (dm.widthPixels * 0.58f).toInt()
-                it.topMargin = (dm.heightPixels * 0.28f).toInt()
+                it.topMargin = (dm.heightPixels * 0.22f).toInt()
                 it.width = (dm.widthPixels * 0.38f).toInt()
                 titleView?.layoutParams = it
                 titleView?.gravity = android.view.Gravity.START
@@ -1150,11 +1159,23 @@ class VinylActivity : AppCompatActivity() {
             ti?.let {
                 it.gravity = android.view.Gravity.TOP or android.view.Gravity.START
                 it.leftMargin = (dm.widthPixels * 0.58f).toInt()
-                it.topMargin = (dm.heightPixels * 0.28f + dp(44)).toInt()
+                it.topMargin = (dm.heightPixels * 0.22f + dp(44)).toInt()
                 it.width = (dm.widthPixels * 0.38f).toInt()
                 trackInfoView?.layoutParams = it
                 trackInfoView?.gravity = android.view.Gravity.START
                 trackInfoView?.setPadding(dp(8), 0, 0, 0)
+            }
+            // Letra em landscape: à direita, abaixo do título, preenchendo
+            // o espaço entre o título e os controles.
+            lyricPanel?.let { lp ->
+                val lpp = lp.layoutParams as? FrameLayout.LayoutParams ?: return@let
+                lpp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                lpp.leftMargin = (dm.widthPixels * 0.58f).toInt()
+                lpp.topMargin = (dm.heightPixels * 0.22f + dp(88)).toInt()
+                lpp.width = (dm.widthPixels * 0.38f).toInt()
+                lpp.height = (dm.heightPixels * 0.44f).toInt()
+                lpp.bottomMargin = dp(12)
+                lp.layoutParams = lpp
             }
         } else {
             tp?.let {
@@ -1172,6 +1193,16 @@ class VinylActivity : AppCompatActivity() {
                 trackInfoView?.layoutParams = it
                 trackInfoView?.gravity = android.view.Gravity.CENTER
                 trackInfoView?.setPadding(24, 0, 24, 4)
+            }
+            // Letra em retrato: centro-inferior, acima dos controles.
+            lyricPanel?.let { lp ->
+                val lpp = lp.layoutParams as? FrameLayout.LayoutParams ?: return@let
+                lpp.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+                lpp.leftMargin = 0; lpp.topMargin = 0
+                lpp.width = (dm.widthPixels * 0.90f).toInt()
+                lpp.height = dp(190)
+                lpp.bottomMargin = dp(100)
+                lp.layoutParams = lpp
             }
         }
     }
