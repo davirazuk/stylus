@@ -3497,9 +3497,13 @@ class QobuzScreen(Screen):
 
         T.text(s, title, (rect.x, ty), 15,
                T.TEXT if sel else T.TEXT_DIM, maxw=rect.w)
-        T.text(s, artist, (rect.x, ty + 20), 13, T.TEXT_FAINT, maxw=rect.w)
+        r_artist = T.text(s, artist, (rect.x, ty + 20), 13, T.TEXT_FAINT,
+                          maxw=rect.w)
 
-        # linha de info: ano · faixas · qualidade
+        # linha de info: ano · faixas · qualidade. Posição medida a partir
+        # do FIM do artista — o artista pode quebrar em duas linhas em
+        # telas estreitas (1366x768), e o offset fixo (ty + 36) colava a
+        # info em cima dele.
         info_parts = []
         if year:
             info_parts.append(str(year))
@@ -3509,7 +3513,8 @@ class QobuzScreen(Screen):
             info_parts.append(quality)
         info = "  ·  ".join(info_parts)
         if info:
-            T.text(s, info, (rect.x, ty + 36), 12, T.TEXT_FAINT, maxw=rect.w)
+            T.text(s, info, (rect.x, r_artist.bottom + 4), 12, T.TEXT_FAINT,
+                   maxw=rect.w)
 
     def _draw_examing(self, s, r):
         """Overlay de exame — segurar o disco na mão."""
