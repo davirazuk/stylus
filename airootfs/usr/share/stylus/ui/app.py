@@ -2202,8 +2202,13 @@ class StackScreen(Screen):
             total += it.get("mins", 0)
             y += 104
         if total:
-            T.text(s, f"{int(total)} min de disco encostado no móvel",
-                   (x, y + 8), 19, T.TEXT_FAINT)
+            # Horas + minutos quando passa de 60 — "5h 23min" é mais
+            # lido que "323 min de disco".
+            hrs = int(total) // 60
+            mins = int(total) % 60
+            tempo = f"{hrs}h {mins:02d}min" if hrs > 0 else f"{mins} min"
+            T.text(s, f"{plural(len(st), 'disco')}  ·  {tempo} encostado no móvel",
+                   (x, y + 8), 19, T.TEXT_DIM)
         self.app.hint(s, r, "[enter] põe este e tira da pilha   [x] descarta   "
                             "[e] embaralha   [←][→] muda de lugar   "
                             "[t] monta uma noite   [Shift+G] guarda como lista")
