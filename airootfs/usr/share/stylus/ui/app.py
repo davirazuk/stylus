@@ -1588,19 +1588,29 @@ class NowScreen(Screen):
         # A capa pequena à esquerda do nome: o cartão inteiro se centra, e o
         # nome longo cede — a folga fixa entre capa e texto é o defeito que
         # esta casa já pagou em quatro telas.
+        # Sleeve: usa o mesmo desenho da ESTANTE e da PILHA — com lombada e
+        # brilho na capa — em vez de um retângulo chapado. A consistência
+        # visual entre as três telas é o que diz que são o mesmo sistema.
         cap = self.app.thumbs.get(it.get("cover")) if it.get("cover") else None
-        lado = int(min(64, max(28, R // 3, 0), max(28, min(64, sobra - 46))))
+        lado = int(min(72, max(32, R // 3, 0), max(32, min(72, sobra - 46))))
         larg_nome = min(int(r.w * 0.62), T.largura(it["name"], 24) + 8)
-        total = (lado + 14 if cap else 0) + larg_nome
-        x0 = cx - total // 2
+        cartao_larg = (lado + 20 if cap else 0) + larg_nome
+        cx_cartao = cx - cartao_larg // 2
         cy2 = ty + 92
+        # Painel sutil atrás do cartão — INK_LIFT com o mesmo radius da
+        # grade, para o cartão não flutuar no nada.
+        if sobra > 60:
+            pan = pygame.Rect(cx_cartao - 16, cy2 - lado // 2 - 12,
+                              cartao_larg + 32, lado + 40)
+            T.panel(s, pan, T.INK_LIFT, radius=10)
         if cap:
-            mini = pygame.transform.smoothscale(cap, (lado, lado))
-            s.blit(mini, (x0, cy2 - lado // 2))
-            x0 += lado + 14
-        T.text(s, it["name"], (x0, cy2 - 14), 24, T.AMBER, maxw=larg_nome)
+            sleeve_cr = pygame.Rect(cx_cartao, cy2 - lado // 2, lado, lado)
+            T.sleeve(s, sleeve_cr, cap)
+            cx_cartao += lado + 20
+        T.text(s, it["name"], (cx_cartao, cy2 - 14), 24, T.AMBER,
+               maxw=larg_nome)
         if it.get("artist") and cy2 + 30 < r.bottom:
-            T.text(s, it["artist"], (x0, cy2 + 12), 16, T.TEXT_FAINT,
+            T.text(s, it["artist"], (cx_cartao, cy2 + 12), 16, T.TEXT_FAINT,
                    maxw=larg_nome)
         y_dica = cy2 + lado // 2 + 22
         if y_dica + 18 < r.bottom:
@@ -2482,6 +2492,41 @@ class DiaryScreen(Screen):
         self.total_estante = len(itens)
         self.nunca = sum(1 for i in itens
                          if os.path.normpath(i["folder"]) not in postos)
+        # ── tendência: esta semana vs. a passada ──────────────────────
+        # `by_day` tem a data como chave e o total de postagens como valor.
+        # A comparação é só usar dois intervalos de 7 dias e ver se o
+        # número subiu ou desceu. É mais lido que um número puro — "33%
+        # mais" diz algo que "5 discos" não diz.
+        now = time.time()
+        hoje = time.localtime(now)
+        d_7 = time.strftime("%Y-%m-%d",
+                            time.localtime(now - 7 * 86400))
+        d_14 = time.strftime("%Y-%m-%d",
+                             time.localtime(now - 14 * 86400))
+        # Conta os dias de CADA semana que aparecem no registro. Se o
+        # registro tem só 3 dias de uma semana, a comparação é com os 3
+        # dias equivalentes da outra — senão a semana que acabou de
+        # começar parecia sempre vazia.
+        semana_atual = sum(v for d, v in self.by_day.items() if d > d_7)
+        semana_passada = sum(v for d, v in self.by_day.items()
+                            if d_14 < d <= d_7)
+        if semana_passada > 0 and semana_atual > 0:
+            pct = int((semana_atual - semana_passada) / semana_passada * 100)
+            if pct > 5:
+                self.tendencia = f"↑ {pct}% vs. semana passada"
+                self._tend_cor = T.GREEN
+            elif pct < -5:
+                self.tendencia = f"↓ {abs(pct)}% vs. semana passada"
+                self._tend_cor = T.RED
+            else:
+                self.tendencia = "→ mesma semana"
+                self._tend_cor = T.TEXT_FAINT
+        elif semana_atual > 0:
+            self.tendencia = "primeira semana"
+            self._tend_cor = T.TEXT_FAINT
+        else:
+            self.tendencia = ""
+            self._tend_cor = T.TEXT_FAINT
         idx = {os.path.normpath(i["folder"]): i for i in self.app.shelf.items}
         seen, out = set(), []
         for ts, fold in rows:
@@ -2528,6 +2573,12 @@ class DiaryScreen(Screen):
                (x, y), 24,
                T.TEXT_DIM)
         y += 46
+        # A tendência aparece como uma linha sutil abaixo do resumo.
+        # Setas (↑ ↓ →) e cor (verde/vermelho/cinza) dizem a direção
+        # sem precisar ler o número — que é a mesma lição do ✓/✗ do SINAL.
+        if self.tendencia:
+            T.text(s, self.tendencia, (x, y), 16, self._tend_cor)
+            y += 26
         # Quantas linhas cabem, em vez de sete sempre. Sete linhas de 84 px
         # mais o cabeçalho passam de 660 px: numa tela de 720 elas comiam o
         # calendário e a linha de dicas. Três é o piso — abaixo disso a
