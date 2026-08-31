@@ -15,6 +15,13 @@ android {
         versionCode = 1
         versionName = "0.1.0-vinyl"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                // Oboe vem como prefab exigindo c++_shared no pacote
+                arguments("-DANDROID_STL=c++_shared")
+            }
+        }
     }
 
     buildTypes {
@@ -34,7 +41,13 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures { viewBinding = true }
+    buildFeatures {
+        viewBinding = true
+        prefab = true
+    }
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt") }
+    }
 
     packaging {
         jniLibs { useLegacyPackaging = true }
@@ -50,6 +63,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:1.2.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    // Oboe via NDK — bit-perfect AAudio exclusive
-    // implementation project wires to app/src/main/cpp/CMakeLists
+    implementation("com.google.oboe:oboe:1.9.0")
+
+    testImplementation("junit:junit:4.13.2")
 }

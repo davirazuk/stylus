@@ -41,7 +41,7 @@ class BitPerfectPlayer(private val ctx: Context) {
     private var metaAlbum: String? = null
     private var metaDuration: Long = 0L
 
-    val exo: ExoPlayer = ExoPlayer.Builder(ctx)
+    val exo: ExoPlayer = ExoPlayer.Builder(ctx, StylusRenderersFactory(ctx))
         .setAudioAttributes(
             androidx.media3.common.AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
