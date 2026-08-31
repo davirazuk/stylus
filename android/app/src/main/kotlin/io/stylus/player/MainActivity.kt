@@ -400,13 +400,36 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun recomputeGridPadding() {
-        val bottom = maxOf(
-            searchContainer.bottom, statsBar.bottom,
-            if (recentScroll.visibility == View.VISIBLE) recentScroll.bottom else 0
-        )
-        // recycler.top é 0 (MATCH_PARENT na raiz); a borda de dp(12) é o
-        // respiro entre a pilha e a primeira fileira de capas.
-        val target = bottom - recycler.top + dp(12)
+        // A pilha flutuante (header + busca + stats) tem alturas que só
+        // ficam prontas depois do primeiro layout. O RECENTE (a horizontal
+        // do topo) sentava com topMargin fixo de dp(155) — número chutado
+        // que cabia sem o statsBar. Com o statsBar em cima, o RECENTE
+        // entrava por trás da busca e dos números. Agora o RECENTE desce
+        // junto com a grade: topMargin = stackBottom + dp(12), e a
+        // grade desce para baixo do RECENTE (ou do statsBar, quando ele
+        // é o último da pilha).
+        //
+        // Tudo aqui é em coordenadas do root (FrameLayout). recycler.top
+        // entra na conta do padding porque o padding é RELATIVO ao topo
+        // do recycler; o topMargin é absoluto no root.
+        val stackBottom = maxOf(searchContainer.bottom, statsBar.bottom)
+        val recentBottom = if (recentScroll.visibility == View.VISIBLE)
+                              recentScroll.bottom else stackBottom
+        val params = recentScroll.layoutParams as FrameLayout.LayoutParams
+        val novoTop = stackBottom + dp(12)
+        if (params.topMargin != novoTop) {
+            params.topMargin = novoTop
+            recentScroll.layoutParams = params
+        }
+        val rh = recentHeader.layoutParams as FrameLayout.LayoutParams
+        if (rh.topMargin != novoTop - dp(20)) {
+            rh.topMargin = novoTop - dp(20)
+            recentHeader.layoutParams = rh
+        }
+        // O padding top do recycler é onde a PRIMEIRA fileira começa dentro
+        // dele. recycler.top é 0 (MATCH_PARENT); a borda de dp(12) é o
+        // respiro entre o RECENTE e a primeira fileira de capas.
+        val target = recentBottom + dp(12)
         if (recycler.paddingTop != target) {
             recycler.setPadding(dp(10), target, dp(10), dp(60))
         }

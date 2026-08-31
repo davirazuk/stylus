@@ -87,6 +87,14 @@ class VinylActivity : AppCompatActivity() {
     private var dropAt = 0f  // nanoTime/1e9f when arm should drop
     private var cachedTracks: List<Library.Track>? = null
     private var cachedAlbumId: Long = -1
+    // Cache dos LADOS e dos anéis de cada lado. O frame callback rodava
+    // 60 vezes por segundo e recalculava tudo a partir das durações,
+    // alocando uma lista, percorrendo as faixas e construindo um array de
+    // floats — tudo isso para um disco que não muda enquanto toca.
+    // **Sintoma:** o desenho da capa (OpenGL) usa os anéis, e este cálculo
+    // estava na thread da UI competindo com o render. O frame pulava.
+    private var cachedSides: List<Lados.Lado>? = null
+    private var cachedGapFracs: Array<FloatArray>? = null
     // Em que LADO a agulha estava na volta passada. -1 = ainda não se sabe:
     // abrir o disco no meio do lado B não é "acabou o lado A".
     private var ladoAtual = -1
@@ -115,8 +123,18 @@ class VinylActivity : AppCompatActivity() {
     private var lyricInner: LinearLayout? = null
     private var prevBtn: TextView? = null
     private var nextBtn: TextView? = null
+    private var playPauseBtn: TextView? = null
     private var mediaReceiver: android.content.BroadcastReceiver? = null
     private var scrubTrack: android.media.AudioTrack? = null
+    // O volume do MPV / ExoPlayer. Os botões de volume do Android mexem no
+    // AudioManager.STREAM_MUSIC, que no caminho bit-perfect (USB DAC /
+    // AAudio exclusive) não é aplicado ao stream — e em alguns HALs
+    // (Samsung, Pixel) a barra de volume do sistema simplesmente não
+    // aparece. Este é o volume DE FATO, aplicado ao PCM antes do
+    // conversor. Vai de 0.0 a 1.5 (o 1.5 é boost pra cima do 100% do
+    // HAL — clipping no conversor, mas no fone faz diferença).
+    private var volumeMpv = 1.0f
+    private val volumeStep = 0.1f
 
     /** Synthesize a short vinyl scrub/scratch sound */
     private fun playScrubSound() {
@@ -215,9 +233,41 @@ class VinylActivity : AppCompatActivity() {
                     // primeiro quadro do disco seguinte contaria como uma
                     // virada de lado.
                     ladoAtual = -1
+                    // Cache dos lados e dos anéis — calculados UMA VEZ por
+                    // disco, não a cada quadro. O `repartir` percorre as
+                    // faixas; o loop dos anéis percorre de novo. Os dois
+                    // viram trabalho de thread da UI competindo com o
+                    // render OpenGL, e o frame pulava.
+                    val tracksNow = cachedTracks
+                    if (tracksNow != null && tracksNow.isNotEmpty()) {
+                        val sides = Lados.repartir(tracksNow.map { it.duration })
+                        cachedSides = sides
+                        cachedGapFracs = Array(sides.size) { i ->
+                            val start = sides[i].start
+                            val end = sides[i].end
+                            val span = maxOf(1L, end - start)
+                            val arr = ArrayList<Float>(tracksNow.size)
+                            var accum = 0L
+                            for (t in tracksNow) {
+                                accum += t.duration
+                                if (accum > start && accum < end) {
+                                    arr.add(((accum - start).toFloat() / span)
+                                                .coerceIn(0.01f, 0.99f))
+                                }
+                            }
+                            val out = FloatArray(arr.size)
+                            for (k in arr.indices) out[k] = arr[k]
+                            out
+                        }
+                    } else {
+                        cachedSides = null
+                        cachedGapFracs = null
+                    }
                 }
                 val tracks = cachedTracks
-                if (tracks != null && tracks.isNotEmpty()) {
+                val sides = cachedSides
+                if (tracks != null && tracks.isNotEmpty() && sides != null
+                        && sides.isNotEmpty()) {
                     lastTracks = tracks
                     val posMs = when {
                         playing && player != null && player!!.duration > 0 -> {
@@ -231,10 +281,11 @@ class VinylActivity : AppCompatActivity() {
                         }
                         else -> 0L
                     }
-                    val sides = Lados.repartir(tracks.map { it.duration })
                     val iLado = Lados.indiceEm(sides, posMs)
-                    val sideStart = sides[iLado].start
-                    val sideEnd = sides[iLado].end
+                        .coerceIn(0, sides.size - 1)
+                    val side = sides[iLado]
+                    val sideStart = side.start
+                    val sideEnd = side.end
                     // O FIM DO LADO É UM ACONTECIMENTO. Sem isto a música
                     // passava de um lado para o outro sozinha, em silêncio —
                     // que é o que um tocador digital faz e o que este
@@ -250,15 +301,8 @@ class VinylActivity : AppCompatActivity() {
                     restaNoLado = (sideEnd - posMs).coerceAtLeast(0L)
                     val span = maxOf(1L, sideEnd - sideStart)
                     renderer.playProgress = ((posMs - sideStart).toFloat() / span).coerceIn(0f, 1f)
-                    val gaps = mutableListOf<Float>()
-                    var accum = 0L
-                    for (t in tracks) {
-                        accum += t.duration
-                        if (accum > sideStart && accum < sideEnd) {
-                            gaps.add(((accum - sideStart).toFloat() / span).coerceIn(0.01f, 0.99f))
-                        }
-                    }
-                    renderer.gapFracs = gaps.toFloatArray()
+                    // anéis: cache por lado, lookup O(1).
+                    renderer.gapFracs = cachedGapFracs?.get(iLado)
                 }
             } else if (playing && player != null) {
                 val dur = player!!.duration
@@ -396,7 +440,7 @@ class VinylActivity : AppCompatActivity() {
                         textSize = 13f
                         setPadding(24, 24, 24, 8)
                         gravity = android.view.Gravity.CENTER
-                        setShadowLayer(8f, 0f, 2f, 0xAA000000.toInt())
+                        setShadowLayer(8f, 0f, 2f, 0xAA080a11.toInt())
                     }
                     root.addView(titleView, FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -409,7 +453,7 @@ class VinylActivity : AppCompatActivity() {
                         textSize = 11f
                         gravity = android.view.Gravity.CENTER
                         setPadding(24, 0, 24, 4)
-                        setShadowLayer(6f, 0f, 1f, 0xAA000000.toInt())
+                        setShadowLayer(6f, 0f, 1f, 0xAA080a11.toInt())
                     }
                     root.addView(trackInfoView, FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -423,148 +467,180 @@ class VinylActivity : AppCompatActivity() {
         }
 
         // ── Bottom: time + controls + hint + progress ──
+        // A régua de baixo era uma fileira de glifos Unicode coloridos —
+        // seis botões do mesmo tamanho sem hierarquia, sem botão de
+        // play/pause visível, e a cor mudava sozinha sem dizer qual
+        // estado estava ativo. Agora há DOIS níveis:
+        //   · primário: o play/pause, grande, circular, âmbar — o gesto
+        //     principal, e o único que o olho procura sem ler.
+        //   · secundário: shuffle, repeat, soneca, cast — ícones menores
+        //     alinhados, com fundo redondo e ripple.
         timeView = TextView(this).apply {
-            setTextColor(0xFF768094.toInt())
-            textSize = 11f
+            setTextColor(0xFF8a95aa.toInt())
+            textSize = 12f
             gravity = android.view.Gravity.CENTER
-            setPadding(0, 0, 0, 4)
-            setShadowLayer(4f, 0f, 1f, 0xAA000000.toInt())
+            setPadding(0, dp(2), 0, dp(8))
+            // tipo mono-esque: a fonte do sistema em tabular fica
+            // monoespaçada o suficiente para o tempo não dançar quando
+            // os dígitos mudam.
+            typeface = android.graphics.Typeface.MONOSPACE
+            letterSpacing = 0.08f
         }
 
-        val controlsRow = LinearLayout(this).apply {
+        // ── botões de ícone: um helper só. Fundo redondo, ripple, e a cor
+        // do glifo é o que muda entre ativo e inativo. Tudo programático
+        // — sem drawable XML, sem recurso novo. O clique é definido DEPOIS
+        // (via setOnClickListener) para evitar referência futura a uma
+        // variável que ainda não existe — Kotlin não deixa o lambda capturar
+        // algo que está sendo declarado.
+        val inativo = 0xFF768094.toInt()
+        val ativo = 0xFFf0a030.toInt()
+        val cinza = 0xFF4A5570.toInt()
+        fun iconeBtn(glyph: String, size: Float, cor: Int = inativo): TextView {
+            return TextView(this@VinylActivity).apply {
+                text = glyph
+                setTextColor(cor)
+                textSize = size
+                gravity = android.view.Gravity.CENTER
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0x14FFFFFF)
+                    cornerRadius = dp(18).toFloat()
+                    setStroke(0, 0)
+                }
+                setPadding(dp(10), dp(10), dp(10), dp(10))
+                isClickable = true
+                isFocusable = true
+                foreground = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(0x44FFFFFF),
+                    null, null)
+            }
+        }
+
+        // ── play/pause grande — círculo âmbar no centro, com o glifo.
+        // O único botão da tela que não é igual aos outros, e por motivo:
+        // é o único que a pessoa procura sem ler o resto.
+        playPauseBtn = TextView(this).apply {
+            text = "▶"
+            // Usa INK (7,8,11) — a cor de fundo da paleta — para o glifo
+            // do play. Um tom mais claro que INK não seria visível sobre o
+            // âmbar; mais escuro era flagged pelo check.sh como derivado.
+            // INK já é doctestada como existente.
+            setTextColor(0xFF07080b.toInt())
+            textSize = 26f
+            gravity = android.view.Gravity.CENTER
+            typeface = android.graphics.Typeface.create("sans-serif-medium",
+                                                       android.graphics.Typeface.NORMAL)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFf0a030.toInt())
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+            }
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            isClickable = true
+            isFocusable = true
+            elevation = 8f
+            foreground = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x66FFFFFF),
+                null, null)
+        }
+
+        prevBtn = iconeBtn("⏮", 18f)
+        nextBtn = iconeBtn("⏭", 18f)
+        prevBtn?.setOnClickListener { skipToPrev() }
+        nextBtn?.setOnClickListener { skipToNext() }
+
+        // ── fileira primária: prev / play / next ──
+        val primaryRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER
-            setPadding(0, 0, 0, 0)
         }
-        prevBtn = TextView(this).apply {
-            text = "\u25C0"
-            setTextColor(0xFF768094.toInt())
-            textSize = 18f
-            setPadding(dp(24), dp(8), dp(24), dp(8))
-            setOnClickListener { skipToPrev() }
-        }
-        controlsRow.addView(prevBtn)
-        controlsRow.addView(TextView(this).apply {
-            setPadding(dp(16), 0, dp(16), 0)
-        })
-        nextBtn = TextView(this).apply {
-            text = "\u25B6"
-            setTextColor(0xFF768094.toInt())
-            textSize = 18f
-            setPadding(dp(24), dp(8), dp(24), dp(8))
-            setOnClickListener { skipToNext() }
-        }
-        controlsRow.addView(nextBtn)
+        primaryRow.addView(prevBtn, LinearLayout.LayoutParams(
+            dp(56), dp(56)).apply { marginEnd = dp(28) })
+        primaryRow.addView(playPauseBtn, LinearLayout.LayoutParams(
+            dp(72), dp(72)))
+        primaryRow.addView(nextBtn, LinearLayout.LayoutParams(
+            dp(56), dp(56)).apply { marginStart = dp(28) })
 
-        // Shuffle button
-        var shuffleBtnRef: TextView? = null
-        val shuffleBtn = TextView(this).apply {
-            text = "\u21C4"
-            setTextColor(0xFF4A5570.toInt())
-            textSize = 14f
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            setOnClickListener {
-                val p = player ?: return@setOnClickListener
-                p.toggleShuffle()
-                setTextColor(if (p.shuffleMode) 0xFFf0a030.toInt() else 0xFF4A5570.toInt())
-                textSize = if (p.shuffleMode) 16f else 14f
-            }
-            shuffleBtnRef = this
+        // ── fileira secundária: shuffle, repeat, soneca, cast ──
+        val secondaryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(6), 0, 0)
         }
-        controlsRow.addView(shuffleBtn)
+        val shuffleBtn = iconeBtn("⇄", 16f, cinza)
+        shuffleBtn.setOnClickListener {
+            val p = player ?: return@setOnClickListener
+            p.toggleShuffle()
+            shuffleBtn.setTextColor(if (p.shuffleMode) ativo else cinza)
+        }
+        secondaryRow.addView(shuffleBtn, LinearLayout.LayoutParams(
+            dp(40), dp(40)).apply { marginEnd = dp(20) })
 
-        // Repeat button
-        var repeatBtnRef: TextView? = null
-        val repeatBtn = TextView(this).apply {
-            text = "\u27F3"
-            setTextColor(0xFF4A5570.toInt())
-            textSize = 14f
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            setOnClickListener {
-                val p = player ?: return@setOnClickListener
-                p.toggleRepeat()
-                text = when (p.repeatMode) {
-                    1 -> "\u27F3\u2081"
-                    2 -> "\u27F3"
-                    else -> "\u27F3"
-                }
-                val active = p.repeatMode != 0
-                setTextColor(if (active) 0xFFf0a030.toInt() else 0xFF4A5570.toInt())
-                textSize = if (active) 16f else 14f
-            }
-            repeatBtnRef = this
+        val repeatBtn = iconeBtn("⟳", 16f, cinza)
+        repeatBtn.setOnClickListener {
+            val p = player ?: return@setOnClickListener
+            p.toggleRepeat()
+            val active = p.repeatMode != 0
+            repeatBtn.text = if (p.repeatMode == 1) "⟲" else "⟳"
+            repeatBtn.setTextColor(if (active) ativo else cinza)
         }
-        controlsRow.addView(repeatBtn)
+        secondaryRow.addView(repeatBtn, LinearLayout.LayoutParams(
+            dp(40), dp(40)).apply { marginEnd = dp(20) })
 
-        // Sleep timer button
-        val sleepBtn = TextView(this).apply {
-            text = "\u23F0"
-            setTextColor(0xFF768094.toInt())
-            textSize = 14f
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-            setOnClickListener {
-                // As MESMAS opções do computador (`App.SONECA`), na mesma
-                // ordem e com as mesmas palavras: a coleção é a mesma nos
-                // dois lados e o vocabulário também tem que ser. O "fim do
-                // lado" é o que interessa num sistema sobre discos —
-                // ninguém adormece no meio de um lado por vontade própria.
-                val options = arrayOf("não parar", "15 min", "30 min",
-                                      "45 min", "60 min", "90 min",
-                                      "no fim do lado")
-                val values = longArrayOf(0, 15*60000, 30*60000, 45*60000,
-                                         60*60000, 90*60000, -1)
-                androidx.appcompat.app.AlertDialog.Builder(this@VinylActivity)
-                    .setTitle("Parar sozinho")
-                    .setItems(options) { _, which ->
-                        val editor = getSharedPreferences("stylus", MODE_PRIVATE).edit()
-                        devolveVolume()
-                        sleepFadeFrom = 0L
-                        sleepAtSideEnd = values[which] < 0
-                        if (values[which] > 0) {
-                            sleepTimerEnd = System.currentTimeMillis() + values[which]
-                            editor.putLong("sleep_timer_end", sleepTimerEnd).apply()
-                        } else {
-                            sleepTimerEnd = 0
-                            editor.remove("sleep_timer_end").apply()
-                        }
-                        android.widget.Toast.makeText(this@VinylActivity,
-                            options[which], android.widget.Toast.LENGTH_SHORT).show()
-                    }.show()
-            }
+        val sleepBtn = iconeBtn("⏰", 15f, cinza)
+        sleepBtn.setOnClickListener {
+            val options = arrayOf("não parar", "15 min", "30 min",
+                                  "45 min", "60 min", "90 min",
+                                  "no fim do lado")
+            val values = longArrayOf(0, 15*60000, 30*60000, 45*60000,
+                                     60*60000, 90*60000, -1)
+            androidx.appcompat.app.AlertDialog.Builder(this@VinylActivity)
+                .setTitle("Parar sozinho")
+                .setItems(options) { _, which ->
+                    val editor = getSharedPreferences("stylus", MODE_PRIVATE).edit()
+                    devolveVolume()
+                    sleepFadeFrom = 0L
+                    sleepAtSideEnd = values[which] < 0
+                    if (values[which] > 0) {
+                        sleepTimerEnd = System.currentTimeMillis() + values[which]
+                        editor.putLong("sleep_timer_end", sleepTimerEnd).apply()
+                    } else {
+                        sleepTimerEnd = 0
+                        editor.remove("sleep_timer_end").apply()
+                    }
+                    android.widget.Toast.makeText(this@VinylActivity,
+                        options[which], android.widget.Toast.LENGTH_SHORT).show()
+                }.show()
         }
-        controlsRow.addView(sleepBtn)
+        secondaryRow.addView(sleepBtn, LinearLayout.LayoutParams(
+            dp(40), dp(40)).apply { marginEnd = dp(20) })
 
-        // DLNA cast button
-        val castBtn = TextView(this).apply {
-            text = "\u25C8"
-            setTextColor(0xFF4A5570.toInt())
-            textSize = 14f
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            setOnClickListener { showCastDialog() }
-        }
-        controlsRow.addView(castBtn)
+        val castBtn = iconeBtn("◈", 15f, cinza)
+        castBtn.setOnClickListener { showCastDialog() }
+        secondaryRow.addView(castBtn, LinearLayout.LayoutParams(dp(40), dp(40)))
 
         val hint = TextView(this).apply {
-            text = "toque = pausar | swipe = faixa | duplo toque = playlist"
+            text = "toque = pausar · swipe = faixa · duplo = playlist"
             setTextColor(0xFF8a95aa.toInt())
-            textSize = 8f
+            textSize = 9f
             gravity = android.view.Gravity.CENTER
             alpha = 0.4f
+            letterSpacing = 0.05f
             // Fade out after 5 seconds
             postDelayed({
                 animate().alpha(0f).setDuration(1000).start()
             }, 5000)
         }
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100; progress = 0
-            layoutParams = LinearLayout.LayoutParams(dp(260), dp(3)).apply { topMargin = dp(6) }
-            visibility = View.GONE
-        }
 
-        // Seekable seekbar — tap or drag to seek
+        // Seekable seekbar — tap or drag to seek. A tintaria padrão do
+        // Android é verde-limão, e fica berrante contra o resto. Amber
+        // casa com a paleta; o buffered usa um âmbar mais baixo para
+        // não competir com o polegar.
         val seekBar = android.widget.SeekBar(this).apply {
             max = 100; progress = 0
-            layoutParams = LinearLayout.LayoutParams(dp(260), dp(16)).apply { topMargin = dp(2) }
+            layoutParams = LinearLayout.LayoutParams(dp(280), dp(20)).apply { topMargin = dp(10) }
+            progressTintList = android.content.res.ColorStateList.valueOf(0xFFf0a030.toInt())
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x33FFFFFF)
+            thumbTintList = android.content.res.ColorStateList.valueOf(0xFFf0a030.toInt())
             setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                 override fun onStartTrackingTouch(sb: android.widget.SeekBar) {}
                 override fun onProgressChanged(sb: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
@@ -584,17 +660,22 @@ class VinylActivity : AppCompatActivity() {
         val bottomCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setPadding(0, 0, 0, dp(16))
+            setPadding(0, 0, 0, dp(20))
         }
         bottomCol.addView(timeView)
-        bottomCol.addView(controlsRow)
-        bottomCol.addView(hint)
+        bottomCol.addView(primaryRow)
+        bottomCol.addView(secondaryRow)
         bottomCol.addView(seekBar)
+        bottomCol.addView(hint)
         root.addView(bottomCol, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL))
         bottomBar = bottomCol
+
+        // O play/pause grande precisa responder ao play/pause também
+        // (não só ao toque na capa). E o glifo tem que seguir o estado.
+        playPauseBtn?.setOnClickListener { togglePlayPause() }
 
         // Lyrics panel — scrollable, shows current line + context
         lyricPanel = android.widget.ScrollView(this).apply {
@@ -797,6 +878,11 @@ class VinylActivity : AppCompatActivity() {
                         }
                     } catch (_: Exception) {}
                     player?.pause()
+                    // Aplica o volume do MPV ao player recém-criado; sem
+                    // isto a primeira faixa sairia no 1.0 mesmo se o gesto
+                    // já tivesse mudado o volumeMpv (não muda entre
+                    // Activities, mas pode mudar entre rotações).
+                    applyVolumeMpv()
                 }
             }
         }
@@ -830,20 +916,14 @@ class VinylActivity : AppCompatActivity() {
                         finish()
                         return true
                     }
-                    // Right half of screen = volume control
+                    // Right half of screen = volume control. Mexe no
+                    // volume DO MPV, não no do sistema: o do sistema não
+                    // chega ao caminho bit-perfect (HAL ignora STREAM_MUSIC
+                    // em algumas Samsung/Pixel), e era por isso que o
+                    // gesto "não funcionava".
                     if (e1.x > resources.displayMetrics.widthPixels * 0.6f) {
-                        val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-                        val maxVol = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-                        val curVol = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                        val delta = if (dy < 0) 1 else -1
-                        val newVol = (curVol + delta).coerceIn(0, maxVol)
-                        am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, newVol, 0)
-                        // Show volume indicator
-                        val pct = ((newVol.toFloat() / maxVol) * 100).toInt()
-                        volumeOverlay?.text = "\uD83D\uDD0A  $pct%"
-                        volumeOverlay?.alpha = 0.9f
-                        volumeHandler?.removeCallbacksAndMessages(null)
-                        volumeHandler?.postDelayed({ volumeOverlay?.alpha = 0f }, 1200)
+                        val delta = if (dy < 0) volumeStep else -volumeStep
+                        bumpVolumeMpv(delta)
                         return true
                     }
                     // Left half = seek
@@ -896,6 +976,14 @@ class VinylActivity : AppCompatActivity() {
         } else {
             registerReceiver(mediaReceiver, filter)
         }
+        // Estado inicial: o glifo do botão grande segue o `playing` (que
+        // começa true para "view", false para o ceremony), e o volume do
+        // MPV já entra aplicado — sem isto a primeira faixa do primeiro
+        // disco sai no 1.0 mesmo se a pessoa já tinha mexido no gesto
+        // antes (não acontece aqui, mas acontece se a Activity for
+        // recriada por rotação).
+        refreshPlayPauseGlyph()
+        applyVolumeMpv()
     }
 
     private fun togglePlayPause() {
@@ -919,6 +1007,69 @@ class VinylActivity : AppCompatActivity() {
                 }
             }
         }
+        refreshPlayPauseGlyph()
+    }
+
+    // O glifo do botão grande segue o estado: ▶ quando toca, ⏸ quando
+    // está parado. A chamada acontece em todo toggle, na abertura (o
+    // deck começa tocando) e quando o serviço manda uma ação externa
+    // (fone, notificação). Sem isto, o botão mente.
+    private fun refreshPlayPauseGlyph() {
+        playPauseBtn?.text = if (playing) "⏸" else "▶"
+    }
+
+    // ── volume do MPV / ExoPlayer ──────────────────────────────────────────
+    // **Sintoma:** os botões de volume do Android (e o gesto vertical na
+    // metade direita) mexem no AudioManager.STREAM_MUSIC. No caminho
+    // bit-perfect (USB DAC / AAudio exclusive) este volume NÃO é aplicado
+    // ao stream — o HAL ignora. E em alguns Samsung / Pixel a barra de
+    // volume do sistema nem aparece, então não há nem como saber se está
+    // mudando. Resultado: "o botão de volume não funciona".
+    //
+    // A solução é um volume DE FATO, aplicado ao PCM pelo próprio player
+    // (exo.volume), que vai de 0.0 a 1.5. Acima de 1.0 o clipping é no
+    // ExoPlayer (não no DAC), e em fones faz diferença audível. O gesto
+    // vertical e as teclas de hardware do telefone agora mexem aqui.
+    private fun bumpVolumeMpv(delta: Float) {
+        volumeMpv = (volumeMpv + delta).coerceIn(0f, 1.5f)
+        applyVolumeMpv()
+        showVolumeOverlay()
+    }
+
+    private fun applyVolumeMpv() {
+        player?.exo?.volume = volumeMpv
+    }
+
+    private fun showVolumeOverlay() {
+        val pct = (volumeMpv * 100f).toInt()
+        // O ícone muda conforme o volume: alto-falante, alto-falante com
+        // onda, mudo. É o que toda barra de volume decente mostra.
+        val icone = when {
+            volumeMpv <= 0.001f -> "🔇"
+            volumeMpv < 0.5f -> "🔈"
+            volumeMpv < 1.0f -> "🔉"
+            else -> "🔊"
+        }
+        volumeOverlay?.text = "$icone  $pct%"
+        volumeOverlay?.alpha = 0.9f
+        volumeHandler?.removeCallbacksAndMessages(null)
+        volumeHandler?.postDelayed({ volumeOverlay?.alpha = 0f }, 1200)
+    }
+
+    // As teclas de volume do telefone passam pelo sistema antes da Activity,
+    // e mexem no AudioManager. Aqui interceptamos e consumimos o evento
+    // para que (a) o gesto de fato mude o volume do MPV, e (b) a barra do
+    // sistema, quando aparece, NÃO pule junto — são dois volumes
+    // diferentes agora.
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        when (event.keyCode) {
+            android.view.KeyEvent.KEYCODE_VOLUME_UP ->
+                if (event.action == android.view.KeyEvent.ACTION_DOWN) bumpVolumeMpv(volumeStep)
+            android.view.KeyEvent.KEYCODE_VOLUME_DOWN ->
+                if (event.action == android.view.KeyEvent.ACTION_DOWN) bumpVolumeMpv(-volumeStep)
+            else -> return super.dispatchKeyEvent(event)
+        }
+        return true
     }
 
     private fun skipToNext() {
@@ -1221,7 +1372,7 @@ class VinylActivity : AppCompatActivity() {
         canvas.clipPath(path)
         canvas.drawBitmap(src, srcRect, dstRect, paint)
         val ringPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.STROKE; strokeWidth = size * 0.02f; color = 0x40000000
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = size * 0.02f; color = 0x40080a11
         }
         canvas.drawCircle(size / 2f, size / 2f, size / 2f - size * 0.01f, ringPaint)
         val holePaint = android.graphics.Paint().apply {
@@ -1230,7 +1381,7 @@ class VinylActivity : AppCompatActivity() {
         }
         canvas.drawCircle(size / 2f, size / 2f, size * 0.040f, holePaint)
         val holeRing = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.STROKE; strokeWidth = size * 0.008f; color = 0x60000000
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = size * 0.008f; color = 0x60080a11
         }
         canvas.drawCircle(size / 2f, size / 2f, size * 0.042f, holeRing)
         return out

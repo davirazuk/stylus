@@ -834,11 +834,16 @@ class NowScreen(Screen):
             # OUTRA faixa do MESMO lado — virar de lado muda a seção, não
             # a faixa, e a "próxima" passa a ser o lado seguinte (ver
             # a dica da tela cheia, que já trata disso).
+            #
+            # Em telas apertadas (800x600) o espaço entre o título e o
+            # rodapé é apertado: a próxima aparece só se couber com folga,
+            # senão o subtítulo "3ª vez · 12 faixas" desce e a faixa
+            # subseqüente sobe, e os dois se encontram.
             try:
                 i_atual = al.tracks.index(track)
                 if i_atual + 1 < len(al.tracks):
                     prox = al.tracks[i_atual + 1]
-                    if prox is not track:
+                    if prox is not track and r.bottom - (y + 32) > 80:
                         T.text(s,
                                "▸  %02d  %s" % (i_atual + 2,
                                                 prox.get("title") or ""),
@@ -1306,6 +1311,26 @@ class NowScreen(Screen):
             T.text(s, "%02d  %s" % (n_t, track.get("title") or ""),
                    (r.centerx, y), 22, T.TEXT_DIM, anchor="midtop", maxw=larg)
             y += 30
+            # ▸ A próxima faixa — mesmo desenho da AGORA normal, para as
+            # duas telas contarem a mesma história. Apagada de propósito:
+            # a próxima é só o que vem depois, não o assunto.
+            # Em telas apertadas (800x600) o espaço entre o título e o
+            # bloco de letras não aguenta mais uma linha: a faixa mais a
+            # visualização cruzam — o subtítulo "3ª vez · 12 faixas" sobe
+            # e o título da próxima desce, e os dois se encontram no
+            # meio.
+            try:
+                i_atual = al.tracks.index(track)
+                if i_atual + 1 < len(al.tracks):
+                    prox = al.tracks[i_atual + 1]
+                    if prox is not track and r.bottom - y > 60:
+                        T.text(s, "▸  %02d  %s" % (i_atual + 2,
+                                                    prox.get("title") or ""),
+                               (r.centerx, y), 17, T.TEXT_FAINT,
+                               anchor="midtop", maxw=larg)
+                        y += 26
+            except ValueError:
+                pass
         # ── a letra, no tempo dela ────────────────────────────────────────
         # A linha que está sendo cantada, grande, e a seguinte apagada — que
         # é como uma legenda se lê: você acompanha e sabe o que vem.
@@ -2372,10 +2397,14 @@ class SignalScreen(Screen):
             T.text(s, "ponha um disco para medir o caminho inteiro",
                    (bx, vy), 21, T.TEXT_FAINT, maxw=bw)
         elif clean:
-            T.text(s, "▸ sem conversão: o arquivo chega como foi gravado",
+            # O ✓ verde antes do veredito: a cor já dizia que estava bom,
+            # mas o glifo deixa o estado óbvio a um metro — sem precisar
+            # ler.
+            T.text(s, "✓  sem conversão — o arquivo chega como foi gravado",
                    (bx, vy), 24, T.GREEN, bold=True, maxw=bw)
         else:
-            T.text(s, f"▸ reamostrado {frate / 1000:g} → {graph / 1000:g} kHz",
+            T.text(s,
+                   f"✗  reamostrado {frate / 1000:g} → {graph / 1000:g} kHz",
                    (bx, vy), 24, T.RED, bold=True, maxw=bw)
             # Em parágrafo, não cortada: uma explicação com reticências no
             # meio não explica nada.
