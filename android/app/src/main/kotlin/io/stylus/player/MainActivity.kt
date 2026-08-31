@@ -32,7 +32,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var recycler: RecyclerView
     private lateinit var emptyView: TextView
+    private lateinit var searchContainer: FrameLayout
     private lateinit var statsBar: LinearLayout
+    private lateinit var statsView: TextView
     private lateinit var recentScroll: android.widget.HorizontalScrollView
     private lateinit var recentRow: LinearLayout
     private lateinit var recentHeader: TextView
@@ -161,7 +163,7 @@ class MainActivity : AppCompatActivity() {
         ))
 
         // Search — on top of grid
-        val searchContainer = FrameLayout(this).apply {
+        searchContainer = FrameLayout(this).apply {
             setPadding(dp(16), dp(0), dp(16), dp(0))
         }
         searchInput = EditText(this).apply {
@@ -199,6 +201,12 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(20), dp(4), dp(20), dp(2))
             gravity = Gravity.CENTER_VERTICAL
         }
+        statsView = TextView(this).apply {
+            setTextColor(0xFF8a95aa.toInt())
+            textSize = 10f
+            letterSpacing = 0.02f
+        }
+        statsBar.addView(statsView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(statsBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(118) })
@@ -241,7 +249,6 @@ class MainActivity : AppCompatActivity() {
             textSize = 11f
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        statsBar.tag = bottomText  // store reference
 
         val shuffleBtn = TextView(this).apply {
             text = "\u21C4"
@@ -317,6 +324,27 @@ class MainActivity : AppCompatActivity() {
         ).apply { bottomMargin = dp(40) })
 
         setContentView(root)
+
+        // Grade rodeia sob a pilha flutuante: o padding top precisa
+        // caber a pilha inteira (header+search+stats+RECENTE), que só
+        // fica pronta depois do primeiro layout. Sonda o bottom da
+        // pilha em runtime em vez de hardcodar dp(290) — que deixava
+        // a primeira fileira atrás da seção RECENTE quando ela existe.
+        //
+        // **Sintoma:** o listener sozinho não bastava. O primeiro layout
+        // dispara com `recentScroll` ainda GONE (a estante é assíncrona —
+        // depende de permissão + scan), e o padding ficava curto:
+        // calculado só com o statsBar, a primeira fileira da grade
+        // entrava atrás dos cards do RECENTE quando eles apareciam.
+        // O `applyFilter` chama `recomputeGridPadding` DEPOIS de tornar
+        // o RECENTE visível, e o listener cuida de mudanças tardias
+        // (rotação, redimensionamento).
+        root.post {
+            root.viewTreeObserver.addOnGlobalLayoutListener {
+                recomputeGridPadding()
+            }
+        }
+
         if (hasPermission()) loadAlbums() else requestPermission()
     }
 
@@ -371,6 +399,19 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun recomputeGridPadding() {
+        val bottom = maxOf(
+            searchContainer.bottom, statsBar.bottom,
+            if (recentScroll.visibility == View.VISIBLE) recentScroll.bottom else 0
+        )
+        // recycler.top é 0 (MATCH_PARENT na raiz); a borda de dp(12) é o
+        // respiro entre a pilha e a primeira fileira de capas.
+        val target = bottom - recycler.top + dp(12)
+        if (recycler.paddingTop != target) {
+            recycler.setPadding(dp(10), target, dp(10), dp(60))
+        }
+    }
+
     private fun applyFilter() {
         val query = searchInput?.text?.toString()?.trim()?.lowercase() ?: ""
         filteredAlbums = if (query.isEmpty()) allAlbums else {
@@ -394,10 +435,7 @@ class MainActivity : AppCompatActivity() {
             else -> "${Texto.plural(filteredAlbums.size, "disco")} \u2022 " +
                     "${Texto.plural(totalTracks, "faixa")} \u2022 ${totalH}h${totalM}m"
         }
-        val tv = statsBar.tag as? TextView
-        tv?.text = statsText
-
-        // Recently played section
+        statsView.text = statsText
         val recentAlbums = allAlbums
             .filter { prefs.getLong("played_${it.id}", 0L) > 0 }
             .sortedByDescending { prefs.getLong("played_${it.id}", 0L) }
@@ -413,11 +451,44 @@ class MainActivity : AppCompatActivity() {
                     setPadding(dp(3), dp(3), dp(3), dp(3))
                     isClickable = true
                     layoutParams = LinearLayout.LayoutParams(dp(110), ViewGroup.LayoutParams.WRAP_CONTENT)
+                    // O RECENTE era uma capa chapada num fundo quase preto:
+                    // a grade de baixo tem card arredondado com borda ao
+                    // toque, e o RECENTE (que é a mesma coisa, só horizontal)
+                    // não tinha. Dois desenhos para o mesmo objeto, lado a
+                    // lado — a inconsistência que o gesto do toque também
+                    // não acusava (sem mudança visual, sem feedback).
+                    val bg = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(0xFF07080b.toInt())
+                        cornerRadius = dp(6).toFloat()
+                    }
+                    background = bg
+                    setOnTouchListener { _, event ->
+                        when (event.action) {
+                            android.view.MotionEvent.ACTION_DOWN -> {
+                                bg.setColor(0xFF1a1e28.toInt())
+                                bg.setStroke(1, 0xFF343a48.toInt())
+                            }
+                            android.view.MotionEvent.ACTION_UP,
+                            android.view.MotionEvent.ACTION_CANCEL -> {
+                                bg.setColor(0xFF07080b.toInt())
+                                bg.setStroke(0, 0)
+                            }
+                        }
+                        false
+                    }
                 }
                 val img = ImageView(this).apply {
                     layoutParams = LinearLayout.LayoutParams(dp(104), dp(104))
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     setBackgroundColor(0xFF07080b.toInt())
+                    clipToOutline = true
+                    outlineProvider = object : android.view.ViewOutlineProvider() {
+                        override fun getOutline(view: View,
+                                                outline: android.graphics.Outline) {
+                            outline.setRoundRect(0, 0, view.width, view.height,
+                                                 dp(6).toFloat())
+                        }
+                    }
                 }
                 card.addView(img)
                 val name = TextView(this).apply {
@@ -470,6 +541,12 @@ class MainActivity : AppCompatActivity() {
                 albumAdapter?.updateData(filteredAlbums)
             }
         }
+        // O RECENTE foi desenhado nesta volta do filtro (ou foi escondido).
+        // O listener global pega mudanças futuras; esta chamada garante que
+        // a grade desce AGORA para baixo da pilha, sem esperar o próximo
+        // layout. Sem ela, o primeiro quadro pós-scan ainda mostra a grade
+        // atrás do RECENTE — o defeito que este método existe para evitar.
+        recomputeGridPadding()
     }
 
     private var usbReceiver: android.content.BroadcastReceiver? = null
