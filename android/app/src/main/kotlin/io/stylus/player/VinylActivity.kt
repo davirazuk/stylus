@@ -339,6 +339,26 @@ class VinylActivity : AppCompatActivity() {
                 }
             }
             elevation = 6f
+            // A capa é o MAIOR objeto da tela e era puramente decorativa —
+            // girava, brilhava, e não respondia ao toque. O gesto óbvio
+            // ("toco no disco pra pausar") não fazia nada, e o play/pause
+            // tinha que vir do botão de baixo ou do espaço, que não está
+            // visível enquanto a capa ocupa o centro.
+            //
+            // Sintoma: a única coisa grande na tela que não tem gesto é a
+            // coisa que TODO app de música usa como gesto. O play/pause é
+            // também o único comando sem destino descoberto — o [enter] da
+            // estante não tem equivalente na capa girando.
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { togglePlayPause() }
+            // O ripple nativo do Android num ImageView pede foreground; sem
+            // ele, o toque some sem feedback. É o mesmo motivo pelo qual o
+            // card da estante pinta borda ao toque.
+            val fg = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x33FFFFFF.toInt()),
+                null, null)
+            foreground = fg
         }
         root.addView(coverView)
 
