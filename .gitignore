@@ -7,3 +7,5 @@ airootfs/usr/share/stylus/deck/venv/
 airootfs/usr/share/stylus/deck/*.bak
 .claude/
 .aider*
+android/app/.cxx/
+android/local.properties

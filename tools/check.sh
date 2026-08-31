@@ -432,6 +432,10 @@ casas=$(grep -rIn --exclude-dir=.git --exclude-dir=work --exclude-dir=out \
         --exclude-dir=.claude --exclude-dir=build --exclude-dir=.gradle \
         --exclude-dir=node_modules --exclude='.aider*' \
         --exclude=local.properties \
+        # .cxx/ é o cache de build NDK do Android (CMake/prefab): grava o
+        # caminho absoluto de quem compilou, e numa máquina nova ele é sempre
+        # "/home/alguém/" que não é a do usuário do medium.
+        --exclude-dir=.cxx \
         --exclude=_raiz.py --exclude=CLAUDE.md --exclude=README.md \
         -E '/home/[a-z_][a-z0-9_-]*/' . 2>/dev/null |
         # Só linha de CÓDIGO. Um comentário que EXPLICA por que a casa de

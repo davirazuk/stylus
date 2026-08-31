@@ -824,6 +824,28 @@ class NowScreen(Screen):
             T.text(s, f"{n:02d}  {track.get('title') or ''}", (x, y), 30,
                    T.TEXT, maxw=w)
             y += 48
+            # ▸ A próxima faixa. O disco já tem a ordem e o sistema já sabe
+            # qual é; dizer o que vem é a mesma tese do sulco mostrando
+            # onde a agulha está: a tela inteira passa a contar a mesma
+            # história sobre o disco que está no prato.
+            #
+            # É uma linha apagada de propósito: o assunto é a faixa que toca,
+            # a próxima é só o que vem depois. E só aparece se a próxima é
+            # OUTRA faixa do MESMO lado — virar de lado muda a seção, não
+            # a faixa, e a "próxima" passa a ser o lado seguinte (ver
+            # a dica da tela cheia, que já trata disso).
+            try:
+                i_atual = al.tracks.index(track)
+                if i_atual + 1 < len(al.tracks):
+                    prox = al.tracks[i_atual + 1]
+                    if prox is not track:
+                        T.text(s,
+                               "▸  %02d  %s" % (i_atual + 2,
+                                                prox.get("title") or ""),
+                               (x, y), 20, T.TEXT_FAINT, maxw=w)
+                        y += 32
+            except ValueError:
+                pass
 
         # Informativos no rodapé
         #
@@ -2113,7 +2135,11 @@ class StackScreen(Screen):
                 T.panel(s, row.inflate(16, 8), T.INK_LIFT, radius=10)
             cr = pygame.Rect(row.x, row.y, 84, 84)
             cov = self.app.thumbs.get(it["cover"])
-            T.sleeve(s, cr, cov)
+            # O `selected` no sleeve: a lombada e a luz da capa mudam quando
+            # é o disco da pilha que está em foco. Sem isto, o disco da
+            # linha selecionada era o mesmo desenho dos outros — a seleção
+            # ficava no painel de fundo, e a capa não respondia.
+            T.sleeve(s, cr, cov, selected=sel)
             T.text(s, f"{i + 1}", (row.x - 18, row.y + 30), 22,
                    T.AMBER if sel else T.TEXT_FAINT, anchor="topright")
             T.text(s, it["name"], (cr.right + 20, row.y + 14), 24,
@@ -2692,6 +2718,7 @@ class DiaryScreen(Screen):
         cell = max(4, min(30, rect.w // semanas - gap, rect.h // 7 - gap))
         base = time.time() - dias * 86400
         maxi = max(self.by_day.values()) if self.by_day else 1
+        hoje_key = time.strftime("%Y-%m-%d", hoje)
         for d in range(dias + 1):
             ts = base + d * 86400
             lt = time.localtime(ts)
@@ -2707,6 +2734,16 @@ class DiaryScreen(Screen):
             else:
                 c = T.INK_SOFT
             pygame.draw.rect(s, c, (x, y, cell, cell), border_radius=2)
+            # HOJE: o dia de hoje fica com um anel fino em âmbar, por cima do
+            # quadradinho. É a única coisa que distingue "hoje" dos outros
+            # dias — sem ele, o quadrado de hoje some no meio dos outros com
+            # um disco só, e a pessoa que abre o diário numa terça-feira em
+            # branco não acha onde está. Anel fino (1 px) para não virar
+            # enfeite, e só em volta (não dentro, que apagaria a contagem).
+            if key == hoje_key and cell >= 6:
+                pygame.draw.rect(s, T.AMBER, (x - 1, y - 1,
+                                              cell + 2, cell + 2),
+                                 width=1, border_radius=3)
         # A legenda vai logo abaixo da ÚLTIMA linha desenhada, não abaixo do
         # retângulo: o retângulo é o espaço oferecido, e o desenho quase nunca
         # o preenche inteiro.
@@ -5195,6 +5232,11 @@ class App:
         self.gato_tentativas = 0
         self._gato_ultima = 0.0           # última tentativa, para o aviso
         self._gato_segurando = 0.0        # desde quando a combinação está de pé
+        # A folha de teclas: [?] abre uma folha centralizada com TODAS as
+        # teclas agrupadas por assunto, e fecha com [?] ou [esc]. Existe
+        # porque as dicas de rodapé dizem só o que cada seção usa — uma tecla
+        # nova (ex.: o ▸ "próxima faixa" da AGORA) ficaria sem paradeiro.
+        self.help_open = False
         # Shuffle/repeat state — persisted across restarts
         _prefs = _load_prefs()
         # Nasce desligado SEMPRE, e não do arquivo de gosto: embaralhar é uma
@@ -6133,6 +6175,19 @@ class App:
             # ícone + nome com mais espaço
             T.text(s, T.icon(sc.icon), (34, y + 4), 22, cor)
             T.text(s, sc.name, (68, y + 8), 18, cor, bold=atual)
+            # O ritual no trilho: quando um disco está sendo posto, a AGORA
+            # pulsa em âmbar. O AGORA é o único ícone que pode ser o lugar
+            # onde isto está acontecendo, e a tela INTEIRA já pulsa lá dentro
+            # — o trilho precisa saber também, senão a pessoa que abre o menu
+            # para conferir outra coisa perde o fio. É a mesma família da
+            # bolinha do Bluetooth quando conecta: um detalhe que diz "está
+            # rolando" sem ocupar espaço.
+            if (self.cerimonia_t0 > 0 and i == 0):
+                pulso = 0.5 + 0.5 * math.sin(time.time() * 4.0)
+                alfa = int(40 + pulso * 60)
+                anel = pygame.Surface((40, 40), pygame.SRCALPHA)
+                pygame.draw.circle(anel, (*T.AMBER_GLOW, alfa), (20, 20), 16, 2)
+                s.blit(anel, (24, y - 4))
             if i < len(self.screens):
                 T.text(s, str(i + 1), (w - 22, y + 10), 15, T.TEXT_FAINT,
                        anchor="topright")
@@ -6194,6 +6249,97 @@ class App:
     # está ali — e este aviso, com a tela cheia no ar, é o ÚNICO: o vigia não
     # manda notificação quando a interface está aberta.
     FLIP_DUR = 30.0
+
+    def _draw_help(self, s):
+        """A folha de teclas: um cartão central com tudo que o sistema faz.
+
+        POR QUE
+        ------
+        O rodapé de cada seção diz só o que AQUELA seção usa. Uma tecla nova —
+        o ▸ "próxima faixa" da AGORA, por exemplo — fica sem paradeiro: o
+        ícone aparece, a tecla funciona, e a pessoa não tem como descobrir que
+        existe. O mesmo problema que a dica da estante tinha antes do "· p…"
+        virar "· [enter] põe o disco": uma coisa que existe e não se vê.
+
+        A folha é global (sempre a mesma, em qualquer seção), cabe no espaço
+        entre a moldura e o disco, e se abre e fecha com a mesma tecla. Dois
+        grupos: navegação (entre seções e na grade) e disco (o que se faz com
+        o disco que está no prato). O terceiro — a oficina — não cabe aqui
+        sem virar uma enciclopédia.
+        """
+        # Conteúdo: [(rótulo_grupo, [(tecla, descrição), ...])]. Mantido curto
+        # de propósito — o que não cabe aqui está no manual e nas dicas das
+        # próprias telas.
+        grupos = [
+            ("NAVEGAÇÃO", [
+                ("[1]–[9]",  "vai para a seção"),
+                ("[tab] / [esc]", "abre o trilho"),
+                ("↑ ↓ ← → / hjkl", "anda na grade"),
+                ("[enter]",   "escolhe / põe o disco"),
+                ("[f]",       "o disco na tela toda"),
+                ("[esc]",     "volta (sai da tela cheia, fecha a folha)"),
+                ("[?]",       "abre e fecha esta folha"),
+                ("[F5]",      "reler a estante"),
+            ]),
+            ("DISCO", [
+                ("[space]",   "pausa / continua"),
+                ("[←] / [→]", "busca dentro da faixa"),
+                ("[n] / [p]", "próxima / anterior faixa"),
+                ("[v] / [b]", "vira o lado / põe o lado B"),
+                ("[s]",       "embaralha"),
+                ("[Shift+R]", "repete o lado / disco"),
+                ("[Shift+G]", "trava do gato"),
+                ("[t]",       "soneca (parar sozinho)"),
+                ("[+]/[-]",   "volume"),
+                ("[Shift+L]", "busca letra (.lrc)"),
+                ("[d]",       "disco sozinho: liga/desliga"),
+                ("[r]",       "sorteia um disco"),
+                ("[▸]",       "olha a próxima faixa"),
+            ]),
+        ]
+        # Mede o tamanho que o cartão precisa ter: a maior etiqueta define a
+        # coluna da esquerda, e a maior descrição a coluna da direita. Layout
+        # medido, e não chutado — a mesma lição do job_panel: um piso fixo
+        # come espaço nas etiquetas curtas e aperta as longas.
+        col_gap = 28
+        max_tecla = max(T.largura(t, 17) for _, linhas in grupos for t, _ in linhas)
+        max_desc = max(T.largura(d, 17) for _, linhas in grupos for _, d in linhas)
+        # A altura de cada linha é a maior das duas fontes (tecla em bold 17,
+        # descrição em 17 normal — iguais, mas o piso fica se um dia mudar).
+        alt_linha = 26
+        # Espaço para os títulos dos grupos: 26 + 8 de folga.
+        altura = sum(34 + len(linhas) * alt_linha for _, linhas in grupos) + 40
+        largura = int(max_tecla + col_gap + max_desc) + 72
+        # Centraliza, com um teto e um piso para a folha caber na tela
+        # pequena (800x600) sem encostar nas bordas.
+        x = max(40, (self.W - largura) // 2)
+        y = max(60, (self.H - altura) // 2)
+        card = pygame.Rect(x, y, largura, altura)
+        # O cartão é desenhado DEPOIS da tela, mas precisa parecer primeiro
+        # que tudo: leve escurecimento no fundo (não preto, senão vira
+        # "a máquina travou" em vez de "tem algo por cima").
+        sombra = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        sombra.fill((*T.INK, 170))
+        s.blit(sombra, (0, 0))
+        T.panel(s, card, T.INK_SOFT, radius=14, border=T.LINE)
+        # Título
+        T.text(s, "STYLUS — teclas", (card.x + 24, card.y + 18), 22,
+               T.AMBER, bold=True)
+        T.text(s, "[?] fecha", (card.right - 24, card.y + 22), 14,
+               T.TEXT_FAINT, anchor="topright")
+        pygame.draw.line(s, T.AMBER_DIM,
+                         (card.x + 24, card.y + 52),
+                         (card.right - 24, card.y + 52))
+        cy = card.y + 70
+        for rotulo, linhas in grupos:
+            T.text(s, rotulo, (card.x + 24, cy), 13, T.AMBER, bold=True)
+            cy += 26
+            for tecla, desc in linhas:
+                T.text(s, tecla, (card.x + 28, cy), 17, T.TEXT, bold=True)
+                T.text(s, desc, (card.x + 28 + int(max_tecla) + col_gap, cy),
+                       17, T.TEXT_DIM, maxw=card.w - (max_tecla + col_gap + 52))
+                cy += alt_linha
+            cy += 8
 
     def _watch_side(self):
         """Quando o LADO vira, a tela inteira diz.
@@ -6363,6 +6509,18 @@ class App:
         return False
 
     def _key(self, ev):
+        # A folha de teclas é modal: [?] alterna, [esc] fecha (não abre —
+        # ESC aqui significa "voltar", e a folha já não é "voltar"). As
+        # outras teclas, com a folha aberta, são engolidas: seria pior ela
+        # fechar sozinha quando o gato pisa ou quando o disco vira.
+        if (ev.key == pygame.K_SLASH
+                and (ev.mod & pygame.KMOD_SHIFT)):
+            self.help_open = not self.help_open
+            return None
+        if self.help_open:
+            if ev.key == pygame.K_ESCAPE:
+                self.help_open = False
+            return None
         # A TRAVA vem antes de tudo, inclusive do aviso de virar o lado e do
         # formulário: travado é travado. O que a tecla faz aqui é só CONTAR
         # — e a contagem não é enfeite, é o que responde de manhã à pergunta
@@ -6646,6 +6804,13 @@ class App:
                        (body.x + 40, body.y + 60), 20, T.RED, maxw=body.w - 80)
             if not inteira:
                 self._draw_rail(self.surf, rail_w)
+            # A folha de teclas — desenhada por cima de tudo (tela, trilho,
+            # disco) porque é uma folha. `_idle_disco` ainda pode abrir a
+            # tela cheia do disco enquanto ela está aberta, e a folha tem
+            # que continuar visível: o usuário pode estar consultando uma
+            # tecla com o disco no prato.
+            if self.help_open:
+                self._draw_help(self.surf)
             self._watch_side()
             self._anoitece(self.surf)
             self._gato_destrava()

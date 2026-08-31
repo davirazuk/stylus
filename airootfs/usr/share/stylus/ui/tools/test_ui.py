@@ -1798,6 +1798,66 @@ def main():
     except Exception:                                       # noqa: BLE001
         bad("conferência de colisão", traceback.format_exc())
 
+    # ── a folha de teclas ──────────────────────────────────────────────────
+    # POR QUE
+    # ------
+    # O [?] abre uma folha centralizada com TODAS as teclas. Aqui confere-se
+    # que ela abre com [?], fecha com [?] e com [esc], e não introduz
+    # sobreposição em nenhuma das seções (a folha é desenhada por cima de
+    # tudo, mas o que está DEBAIXO dela não pode ter bug por causa dela).
+    secao("a folha de teclas")
+    try:
+        # Fecha, para começar fechado.
+        if app.help_open:
+            app._key(pygame.event.Event(pygame.KEYDOWN,
+                                        key=pygame.K_SLASH,
+                                        unicode="?", mod=pygame.KMOD_SHIFT))
+        app._key(pygame.event.Event(pygame.KEYDOWN,
+                                    key=pygame.K_SLASH,
+                                    unicode="?", mod=pygame.KMOD_SHIFT))
+        if not app.help_open:
+            bad("[?] não abriu a folha")
+        else:
+            # Desenha em todas as seções com a folha aberta, e nada pode
+            # estourar nem quebrar a tela de baixo.
+            for i, tela in enumerate(app.screens):
+                app._goto(i)
+                for _ in range(3):
+                    try:
+                        app.screens[i].draw(app.surf, corpo)
+                        app._draw_help(app.surf)
+                    except Exception as e:            # noqa: BLE001
+                        bad(f"{tela.name} com folha aberta quebrou: {e}")
+                        break
+                else:
+                    continue
+                break
+            else:
+                ok(f"a folha abre com [?] e desenha nas {len(app.screens)} seções")
+            # Fecha com [esc] (o B do controle).
+            app._key(pygame.event.Event(pygame.KEYDOWN,
+                                        key=pygame.K_ESCAPE,
+                                        unicode="", mod=0))
+            if app.help_open:
+                bad("[esc] não fechou a folha")
+            else:
+                ok("[esc] fecha a folha")
+            # E fecha com [?] de novo.
+            app._key(pygame.event.Event(pygame.KEYDOWN,
+                                        key=pygame.K_SLASH,
+                                        unicode="?", mod=pygame.KMOD_SHIFT))
+            if not app.help_open:
+                bad("[?] não abriu a folha na segunda vez")
+            app._key(pygame.event.Event(pygame.KEYDOWN,
+                                        key=pygame.K_SLASH,
+                                        unicode="?", mod=pygame.KMOD_SHIFT))
+            if app.help_open:
+                bad("[?] não fechou a folha")
+            else:
+                ok("[?] alterna abrir e fechar")
+    except Exception:                                   # noqa: BLE001
+        bad("conferência da folha", traceback.format_exc())
+
     # ── outros alfabetos ──────────────────────────────────────────────────
     secao("outros alfabetos")
     try:
