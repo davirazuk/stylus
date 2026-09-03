@@ -154,13 +154,14 @@ static void shelf_cover_at(float x, float y, float cw, Album *a, int is_sel)
 
 static void draw_shelf(Ui *u, Library *lib, Player *p)
 {
-    (void)p;
     int n = lib->nalbums;
     const int COLS = 3;
     int vis = COLS * 3;
     int scroll = u->sel / vis * vis;
     if (scroll < 0) scroll = 0;
     u->shelf_scroll = scroll;
+
+    const Album *now = player_current_album(p);
 
     float card_w = 296, card_h = 330, gap = 26;
     float mx0 = (SCRW - (COLS * card_w + (COLS - 1) * gap)) / 2.0f;
@@ -176,7 +177,10 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
             float y = my0 + r * (card_h + gap);
             if (y > SCRH - 60) continue;
             int is_sel = (idx == u->sel);
+            int is_now = (a == now);
             vita2d_draw_rectangle(x, y, card_w, card_h, is_sel ? 0x1DFFAA28 : 0x0A0E15);
+            if (is_now)
+                vita2d_draw_rectangle(x + 8, y + 8, 10, 10, COL_AMBER); /* tocando */
             shelf_cover_at(x, y, card_w, a, is_sel);
             /* rótulo */
             unsigned int acol = is_sel ? COL_AMBER : COL_TEXT_DIM;
@@ -240,8 +244,8 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
         default:         rep = "rep:todas"; break;
         }
     }
-    char ctl[150];
-    snprintf(ctl, sizeof(ctl), "%s[dir] troca   [quad] -10s   [sel] %s %s",
+    char ctl[170];
+    snprintf(ctl, sizeof(ctl), "%s[dir] troca   [^v] +-10s   [sel] %s %s",
              glow, rep, (p && player_shuffle(p)) ? "sorteio:sim" : "sorteio:não");
     vita2d_pvf_draw_text(u->font, (int)tx, 348, COL_TEXT_DIM, 0.55f, ctl);
 
@@ -405,6 +409,8 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_RIGHT)    { action = 5; }   /* next */
         if (edge & SCE_CTRL_LEFT)     { action = 6; }   /* prev */
         if (edge & SCE_CTRL_SQUARE)   { action = 7; }   /* seek -10s */
+        if (edge & SCE_CTRL_UP)       { action = 16; }  /* seek +10s */
+        if (edge & SCE_CTRL_DOWN)     { action = 7; }   /* seek -10s */
         if (edge & SCE_CTRL_L1)        { u->view = VIEW_RECS; u->rec_sel = 0; action = 8; }
         if (edge & SCE_CTRL_R1)        { u->view = VIEW_PLAYLISTS; u->pl_sel = 0; action = 9; }
         if (edge & SCE_CTRL_SELECT)    { action = 14; } /* repetição */

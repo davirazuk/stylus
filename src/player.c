@@ -198,10 +198,10 @@ static void *player_thread(void *arg)
             }
             if (rc == MPG123_DONE) {
                 /* fim da faixa: registra e decide o que vem (repetição/sorteio) */
-                const Track *done_t = slot_at(p, p->cur);
                 PlayerCompleteFn cb = p->complete_cb;
                 void *ud = p->complete_ud;
                 pthread_mutex_lock(&p->mtx);
+                const Track *done_t = slot_at(p, p->cur);
                 int at_end = (p->cur + 1 >= p->nslots);
                 if (p->repeat == REPEAT_ONE) {
                     /* repete a mesma faixa */
@@ -433,10 +433,11 @@ int player_seek(Player *p, int seconds)
 {
     pthread_mutex_lock(&p->mtx);
     int r = -1;
-    if (p->mh) {
+    if (p->mh && p->out_rate > 0) {
         off_t target = (off_t)seconds * p->out_rate;
         off_t got = mpg123_seek(p->mh, target, SEEK_SET);
-        if (got >= 0) { p->position_sec = seconds; r = 0; }
+        /* usa o que a API realmente alcançou (clampa no fim da faixa) */
+        if (got >= 0) { p->position_sec = (int)(got / p->out_rate); r = 0; }
     }
     pthread_mutex_unlock(&p->mtx);
     return r;

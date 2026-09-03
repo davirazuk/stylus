@@ -198,6 +198,9 @@ int main(int argc, char *argv[])
         case 15: /* alterna o sorteio */
             player_set_shuffle(player, !player_shuffle(player));
             break;
+        case 16: /* avança +10s */
+            player_seek(player, player_track_seconds(player) + 10);
+            break;
         default:
             break;
         }
