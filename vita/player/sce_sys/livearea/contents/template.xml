@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A LiveArea: o disco à direita, o botão à esquerda. Sem isto o VPK
+     instalava como um quadrado em branco entre os jogos. -->
+<livearea style="a1" format-ver="01.00" content-rev="1">
+  <livearea-background>
+    <image>bg.png</image>
+  </livearea-background>
+  <gate>
+    <startup-image>startup.png</startup-image>
+  </gate>
+</livearea>

@@ -42,11 +42,38 @@ struct Player {
     void *complete_ud;
 
     PlayerState state;
-    int position_sec;
+    /* O relógio conta QUADROS DECODIFICADOS e desconta o que ainda está no
+       anel, porque é isso que a pessoa ouve. A conta antiga era
+       `done / (canais*2 * taxa)` em inteiros: 8192 / 176400 é ZERO, e a
+       posição nunca saía de 00:00 — o tempo parado, a agulha na borda, a
+       barra vazia e o ponto de continuação sempre no começo da faixa. */
+    long long decoded_frames;
+    long long track_frames;     /* duração em quadros, 0 se desconhecida */
+
+    /* quantas faixas seguidas o decodificador recusou: sem isto, uma lista
+       inteira de FLAC faz o worker girar para sempre procurando a próxima */
+    int skips;
+    char last_error[128];
 };
 
 static SDL_AudioDeviceID dev;
 static Player *g_player;
+
+/* quadros ainda no anel, isto é: decodificados e ainda não ouvidos */
+static long long ring_backlog_frames(const Player *p)
+{
+    if (p->out_enc_need == 0) return 0;
+    size_t filled = (p->ring_head - p->ring_tail) & RING_MASK;
+    return (long long)(filled / p->out_enc_need);
+}
+
+static int position_sec(const Player *p)
+{
+    if (p->out_rate <= 0) return 0;
+    long long f = p->decoded_frames - ring_backlog_frames(p);
+    if (f < 0) f = 0;
+    return (int)(f / p->out_rate);
+}
 
 /* ---------- ring ---------- */
 static size_t ring_filled(const Player *p)
@@ -102,10 +129,21 @@ static void sdl_cb(void *udata, Uint8 *stream, int len)
 static int open_track(Player *p, const Track *t)
 {
     if (p->mh) { mpg123_close(p->mh); mpg123_delete(p->mh); p->mh = NULL; }
+    if (!t) return -1;
+    /* Um .flac chega aqui: o scanner o mostra na estante de propósito, mas o
+       decodificador é o mpg123. Recusar pelo nome antes de abrir poupa uma
+       abertura de arquivo e dá um recado certo em vez de "erro". */
+    if (!t->decodable) {
+        snprintf(p->last_error, sizeof(p->last_error),
+                 "%.72s: formato que este app não toca", t->title);
+        return -1;
+    }
     int e = 0;
     p->mh = mpg123_new(NULL, &e);
     if (!p->mh) return -1;
     if (mpg123_open(p->mh, t->path) != MPG123_OK) {
+        snprintf(p->last_error, sizeof(p->last_error), "%.90s: não abriu", t->title);
+        mpg123_close(p->mh);
         mpg123_delete(p->mh);
         p->mh = NULL;
         return -1;
@@ -113,6 +151,8 @@ static int open_track(Player *p, const Track *t)
     int freq, chans, enc;
     long lfreq;
     if (mpg123_getformat(p->mh, &lfreq, &chans, &enc) != MPG123_OK) {
+        snprintf(p->last_error, sizeof(p->last_error), "%.90s: formato ilegível", t->title);
+        mpg123_close(p->mh);
         mpg123_delete(p->mh);
         p->mh = NULL;
         return -1;
@@ -134,10 +174,21 @@ static int open_track(Player *p, const Track *t)
     want.userdata = p;
     dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (dev == 0) {
+        snprintf(p->last_error, sizeof(p->last_error), "o áudio não abriu");
+        mpg123_close(p->mh);
         mpg123_delete(p->mh);
         p->mh = NULL;
         return -1;
     }
+    /* faixa nova, anel vazio: sem isto o resto do PCM da anterior toca por
+       cima do começo desta, e o relógio já conta a nova */
+    p->ring_head = p->ring_tail = 0;
+    p->decoded_frames = 0;
+    {
+        off_t len = mpg123_length(p->mh);
+        p->track_frames = len > 0 ? (long long)len : 0;
+    }
+    p->last_error[0] = '\0';
     SDL_PauseAudioDevice(dev, 0);
     return 0;
 }
@@ -149,17 +200,35 @@ static void close_stream(Player *p)
     p->ring_head = p->ring_tail = 0;
 }
 
-static void load_next_ready(Player *p)
+/* Abre a faixa em p->cur; se ela não abrir, ANDA para a seguinte em vez de
+   parar a sessão morta. Uma faixa corrompida no meio de um álbum, ou um
+   disco em FLAC, encerravam tudo em silêncio — da poltrona, "o app parou".
+   `dir` é +1 ou -1: pular para trás quando quem chamou foi o [esquerda]. */
+static void load_next_ready_dir(Player *p, int dir)
 {
     p->state = PLAYER_STOPPED;
     if (dev) SDL_PauseAudioDevice(dev, 1);
-    const Track *t = slot_at(p, p->cur);
-    if (t && open_track(p, t) == 0) {
-        p->state = PLAYER_PLAYING;
-        p->position_sec = 0;
-        p->first_push = true;
+    if (p->nslots <= 0) return;
+
+    /* no máximo uma volta: com a lista inteira ilegível isto TERMINA */
+    for (int tries = 0; tries < p->nslots; tries++) {
+        const Track *t = slot_at(p, p->cur);
+        if (t && open_track(p, t) == 0) {
+            p->state = PLAYER_PLAYING;
+            p->first_push = true;
+            p->skips = tries;
+            return;
+        }
+        p->cur += dir;
+        if (p->cur >= p->nslots) p->cur = 0;
+        if (p->cur < 0) p->cur = p->nslots - 1;
     }
+    /* nenhuma abriu: para, e o last_error já diz por quê */
+    p->cur = 0;
+    p->skips = p->nslots;
 }
+
+static void load_next_ready(Player *p) { load_next_ready_dir(p, 1); }
 
 static void *player_thread(void *arg)
 {
@@ -194,7 +263,8 @@ static void *player_thread(void *arg)
                 memcpy(p->ring + whead, buf, first);
                 if (w > first) memcpy(p->ring, buf + first, w - first);
                 p->ring_head = (whead + w) & RING_MASK;
-                p->position_sec += (int)(done / (p->out_enc_need * p->out_rate));
+                if (p->out_enc_need)
+                    p->decoded_frames += (long long)(done / p->out_enc_need);
             }
             if (rc == MPG123_DONE) {
                 /* fim da faixa: registra e decide o que vem (repetição/sorteio) */
@@ -325,6 +395,8 @@ int player_load_album(Player *p, Library *lib, int album_idx, int start_track)
     if (!p || !lib || album_idx < 0 || album_idx >= lib->nalbums) return -1;
     Album *a = &lib->albums[album_idx];
     if (a->ntracks == 0) return -1;
+    /* as durações vêm daqui; sem elas o disco não tem raio e a barra não anda */
+    album_load_meta(a);
     if (start_track < 0 || start_track >= a->ntracks) start_track = 0;
     const Track *ts[256];
     int n = a->ntracks < 256 ? a->ntracks : 256;
@@ -402,7 +474,9 @@ void player_prev(Player *p)
         p->cur--;
         if (p->cur < 0) p->cur = p->nslots - 1;
         close_stream(p);
-        load_next_ready(p);
+        /* para trás: se esta não abrir, a anterior — não a seguinte, senão
+           [esquerda] num disco com uma faixa ilegível ANDA para a frente */
+        load_next_ready_dir(p, -1);
         pthread_cond_broadcast(&p->cond);
     }
     pthread_mutex_unlock(&p->mtx);
@@ -431,13 +505,23 @@ bool player_shuffle(Player *p) { return p ? p->shuffle : false; }
 
 int player_seek(Player *p, int seconds)
 {
+    if (!p) return -1;
     pthread_mutex_lock(&p->mtx);
     int r = -1;
     if (p->mh && p->out_rate > 0) {
+        if (seconds < 0) seconds = 0;
         off_t target = (off_t)seconds * p->out_rate;
         off_t got = mpg123_seek(p->mh, target, SEEK_SET);
         /* usa o que a API realmente alcançou (clampa no fim da faixa) */
-        if (got >= 0) { p->position_sec = (int)(got / p->out_rate); r = 0; }
+        if (got >= 0) {
+            /* ESVAZIA o anel. Sem isto, o mpg123 pula mas até seis segundos
+               de PCM velho continuam na fila e tocam depois do salto: o
+               [cima] mexia no relógio e a música só obedecia meio minuto
+               depois, que lê como "o seek não funciona". */
+            p->ring_head = p->ring_tail = 0;
+            p->decoded_frames = (long long)got;
+            r = 0;
+        }
     }
     pthread_mutex_unlock(&p->mtx);
     return r;
@@ -452,8 +536,27 @@ const Album *player_current_album(const Player *p)
 }
 int player_track_seconds(const Player *p)
 {
-    return p && p->mh ? p->position_sec : 0;
+    return p && p->mh ? position_sec(p) : 0;
 }
+
+/* Duração da faixa em segundos, ou -1 se o decodificador não soube dizer.
+   -1 é "não sei" e a tela precisa poder distinguir isso de "dura zero": a
+   AGORA dividia por uma duração 1 e desenhava o disco sempre no fim. */
+int player_track_duration(const Player *p)
+{
+    if (!p || !p->mh || p->out_rate <= 0 || p->track_frames <= 0) return -1;
+    return (int)(p->track_frames / p->out_rate);
+}
+
+/* A última coisa que deu errado, para a tela poder DIZER em vez de ficar
+   quieta. Vazio quando não houve nada. */
+const char *player_last_error(const Player *p)
+{
+    return p ? p->last_error : "";
+}
+
+/* Quantas faixas o decodificador teve de pular para chegar nesta. */
+int player_skipped(const Player *p) { return p ? p->skips : 0; }
 int player_track_count(const Player *p) { return p ? p->nslots : 0; }
 const Track *player_current_track(const Player *p)
 {

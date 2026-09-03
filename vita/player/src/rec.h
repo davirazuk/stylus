@@ -3,7 +3,6 @@
 
 #include "library.h"
 
-#define REC_HISTORY_DIR_DEFAULT "ux0:data/vitastylus"
 #define REC_HISTORY_FILE "history.txt"
 
 /* Recomendação baseada em conteúdo (sem colaboração).

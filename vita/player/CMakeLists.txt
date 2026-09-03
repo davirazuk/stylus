@@ -11,10 +11,10 @@ endif()
 project(vitastylus C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Stilus Vinil")
+set(VITA_APP_NAME "STYLUS Vinil")
 set(VITA_TITLEID  "STYS00001")
 set(VITA_VERSION  "01.00")
-set(VITA_TITLE  "Stilus")
+set(VITA_TITLE  "STYLUS")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2 -ffunction-sections -fdata-sections")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
@@ -31,6 +31,8 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/rec.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/scrobble.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/resume.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/fsutil.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/ui_layout.c
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -74,4 +76,11 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
+  FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/icon0.png sce_sys/icon0.png
+  FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/bg.png
+       sce_sys/livearea/contents/bg.png
+  FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/startup.png
+       sce_sys/livearea/contents/startup.png
+  FILE ${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/livearea/contents/template.xml
+       sce_sys/livearea/contents/template.xml
 )

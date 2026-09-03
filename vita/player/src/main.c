@@ -10,6 +10,8 @@
 #include <time.h>
 
 #include "library.h"
+#include "paths.h"
+#include "fsutil.h"
 #include "player.h"
 #include "ui.h"
 #include "playlist.h"
@@ -17,12 +19,11 @@
 #include "scrobble.h"
 #include "resume.h"
 
-#define MUSIC_ROOT "ux0:music"
-
-/* recomendações e playlists moram no cartão, junto do app */
-#define UX0_DATA_DIR        "ux0:data/vitastylus"
-#define PLAYLIST_DIR        UX0_DATA_DIR "/playlists"
-#define REC_HISTORY_BASE    UX0_DATA_DIR
+/* recomendações e playlists moram no cartão, junto do app — os caminhos são
+   do paths.h, que é o único dono deles */
+#define UX0_DATA_DIR        STYLUS_DATA_DIR
+#define PLAYLIST_DIR        STYLUS_PLAYLISTS
+#define REC_HISTORY_BASE    STYLUS_DATA_DIR
 
 /* módulos de rede são pré-carregados para o futuro (Qobuz); inofensivo agora */
 static void load_modules(void)
@@ -33,11 +34,29 @@ static void load_modules(void)
     sceSysmoduleLoadModule(SCE_SYSMODULE_SSL);
 }
 
+/* O Vita dá ao homebrew um heap pequeno por padrão, e uma coleção grande não
+   cabe: cada Track são ~1,5 KB e um cartão com 5000 faixas já pede 8 MB só de
+   estrutura, mais as capas decodificadas. Sem isto o malloc começa a devolver
+   NULL no meio da varredura e a estante fica pela metade, em silêncio. */
+unsigned int sceLibcHeapSize = 128 * 1024 * 1024;
+unsigned int _newlib_heap_size_user = 128 * 1024 * 1024;
+
+/* Fila de faixas terminadas.
+   O callback do player roda na THREAD DE ÁUDIO. Escrever o histórico dali
+   mexia no mesmo `Rec` que o laço principal estava lendo para montar as
+   recomendações — realloc de um lado, leitura do outro. Aqui o callback só
+   ENFILEIRA (um produtor, um consumidor, sem trava) e quem escreve em disco é
+   o laço principal, que é também quem lê. */
+#define DONE_Q 16
+
 /* estado persistente que sobrevive o loop e alimenta a UI a cada frame */
 typedef struct {
     Playlist *plists;
     int nplists;
     Rec rec;
+    const Track *done_q[DONE_Q];
+    volatile int done_head;   /* escrito pela thread de áudio */
+    volatile int done_tail;   /* lido pelo laço principal */
     const Track **recs; /* ponteiros dentro de lib; dono é main (rebuild) */
     int nrecs;
     int recs_cap;
@@ -56,14 +75,30 @@ static void session_free(Session *s)
     memset(s, 0, sizeof(*s));
 }
 
-/* ao terminar uma faixa (>=50% tocada já aconteceu no player), marca no histórico */
+/* thread de áudio: só enfileira. Fila cheia perde a mais nova, que é melhor
+   que sobrescrever uma que o laço ainda não leu. */
 static void on_track_done(const Track *t, void *ud)
 {
     Session *s = ud;
     if (!t || !s) return;
-    rec_play(&s->rec, t->path, REC_HISTORY_BASE);
-    scrobble_log(REC_HISTORY_BASE, t, (long)time(NULL));
-    s->dirty_recs = true;
+    int head = s->done_head;
+    int next = (head + 1) % DONE_Q;
+    if (next == s->done_tail) return;
+    s->done_q[head] = t;
+    s->done_head = next;
+}
+
+/* laço principal: escreve o histórico e o scrobble */
+static void drain_done(Session *s)
+{
+    while (s->done_tail != s->done_head) {
+        const Track *t = s->done_q[s->done_tail];
+        s->done_tail = (s->done_tail + 1) % DONE_Q;
+        if (!t) continue;
+        rec_play(&s->rec, t->path, REC_HISTORY_BASE);
+        scrobble_log(REC_HISTORY_BASE, t, (long)time(NULL));
+        s->dirty_recs = true;
+    }
 }
 
 /* reconstrói a lista recomendada (chamado quando o histórico muda) */
@@ -140,6 +175,12 @@ static void write_resume(Player *player)
     }
 }
 
+/* desenhada durante a varredura, a cada punhado de pastas */
+static void scan_progress(void *ud, const char *where, int files)
+{
+    ui_draw_scanning((Ui *)ud, where, files);
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -153,8 +194,22 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    /* ANTES de qualquer escrita. O `mkdir` cru não cria pai, e ninguém criava
+       este: o histórico, o scrobble e o ponto de continuação abriam o arquivo
+       para escrita numa pasta inexistente, o fopen devolvia NULL, cada função
+       voltava em silêncio e NADA do que a pessoa ouviu era guardado — entre
+       sessões o app esquecia tudo, sem uma linha de erro em lugar nenhum. */
+    mkdir_p(UX0_DATA_DIR);
+    mkdir_p(PLAYLIST_DIR);
+
+    Ui *boot = ui_create();
+
     Library lib;
-    library_init(&lib, MUSIC_ROOT);
+    library_init(&lib);
+    library_roots_from(&lib, UX0_DATA_DIR);
+    /* varrer um cartão cheio leva segundos; sem esta tela é preto e parado,
+       que da poltrona é indistinguível de travado */
+    library_set_progress(&lib, scan_progress, boot);
     library_scan(&lib);
 
     Session ses;
@@ -163,11 +218,12 @@ int main(int argc, char *argv[])
     rec_load(&ses.rec, REC_HISTORY_BASE);
     recs_rebuild(&ses, &lib);
 
-    Ui *ui = ui_create();
+    Ui *ui = boot;
     Player *player = player_create();
     if (!ui || !player) {
         if (ui) ui_destroy(ui);
         if (player) player_destroy(player);
+        library_free(&lib);
         session_free(&ses);
         vita2d_fini();
         sceKernelExitProcess(1);
@@ -204,10 +260,14 @@ int main(int argc, char *argv[])
         case 7:
             player_seek(player, player_track_seconds(player) - 10);
             break;
-        case 11: /* tocar recomendações */
-            if (ses.nrecs > 0)
-                player_load_list(player, &lib, ses.recs, ses.nrecs, 0);
+        case 11: { /* tocar recomendações, a partir da que está MARCADA */
+            int ri = ui_rec_idx(ui);
+            if (ses.nrecs > 0) {
+                if (ri < 0 || ri >= ses.nrecs) ri = 0;
+                player_load_list(player, &lib, ses.recs, ses.nrecs, ri);
+            }
             break;
+        }
         case 12: { /* tocar playlist selecionada */
             int pi = ui_playlist_idx(ui);
             if (ses.plists && pi >= 0 && pi < ses.nplists && ses.plists[pi].n > 0) {
@@ -252,18 +312,28 @@ int main(int argc, char *argv[])
         default:
             break;
         }
+        drain_done(&ses);
         /* se uma faixa terminou, a lista recomendada muda: inline no frame */
         if (ses.dirty_recs)
             recs_rebuild(&ses, &lib);
         ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
         ui_frame(ui, &lib, player);
-        /* persiste o ponto de continuação ~2x/s; robusto mesmo se o app for
-           suspenso/derrubado sem saída limpa */
-        if ((++frame & 31) == 0 && player_state(player) != PLAYER_STOPPED)
-            write_resume(player);
+        /* Persiste o ponto de continuação a cada ~2 s, e SÓ quando ele mudou:
+           robusto se o app for suspenso sem saída limpa, sem escrever no
+           cartão duas vezes por segundo a noite inteira. */
+        if ((++frame & 127) == 0 && player_state(player) != PLAYER_STOPPED) {
+            static int last_written = -1;
+            int now_sec = player_track_seconds(player);
+            if (now_sec != last_written) {
+                write_resume(player);
+                last_written = now_sec;
+            }
+        }
     }
 
+    if (player_state(player) != PLAYER_STOPPED) write_resume(player);
     player_destroy(player);
+    drain_done(&ses);
     ui_destroy(ui);
     session_free(&ses);
     library_free(&lib);
