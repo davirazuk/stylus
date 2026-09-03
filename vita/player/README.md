@@ -41,10 +41,19 @@ Saída: `build/vitastylus.vpk`.
 | Triângulo | — | estante | estante | estante |
 | L1 / R1 | recs / playlists | recs / playlists | — | — |
 | Select | alterna sorteio | cicla repetição | — | — |
+| R2 | — | — | — | apaga playlist (2 toques) |
 
 Repetição: `[select]` no deck alterna **todas → uma → desligada**. O estado
 (shuffle/rep) aparece no rodapé do deck. A estante marca o disco em reprodução
-com um quadradinho âmbar no canto do card.
+com um quadradinho âmbar no canto do card; recs e playlists mostram a capa/
+disco da linha.
+
+## Continuar onde parou
+
+O app grava (a cada ~0,5s) faixa, posição, repetição e sorteio em
+`ux0:data/vitastylus/last_session`. Ao abrir de novo, volta para essa faixa
+**em pausa** — `[O]` recomeça. Isso sobrevive a suspensão/queda sem saída
+limpa.
 
 ## Recomendações
 
@@ -89,6 +98,7 @@ sessão futura. Hoje o app é local, sem fingir o streaming.
 - `src/playlist.c/.h` — M3U8 (carregar/salvar/criar com nome único)
 - `src/rec.c/.h` — histórico por faixa e construção da lista recomendada
 - `src/scrobble.c/.h` — registro de escuta em TSV compatível com o PC
+- `src/resume.c/.h` — ponto de continuação (faixa+posição+rep+sorteio)
 - `src/ui.c/.h` — estante, deck vinil (disco âmbar, sulcos, agulha, halo), recs, playlists
 - `CMakeLists.txt` / `build.sh` — pipeline VPK (vita.cmake)
 
@@ -115,9 +125,10 @@ faixa pedida.
 - [x] VPK compila sem warnings (~1.18 MB), jogada completa no host
 - [x] Biblioteca: agrupamento/ordenação/capas (405 álbuns, 339 com capa)
 - [x] Sessão: álbum, playlists, recomendações — com shuffle/repetição
-- [x] Playlists M3U8 (criar/salvar/carregar), criação com nome único
-- [x] Recomendações por histórico de completação
+- [x] Playlists M3U8 (criar/salvar/carregar/apagar), criação com nome único
+- [x] Recomendações por histórico de completação (com capas)
 - [x] Registro de escuta (TSV compatível com `stylus phone scrobbles`)
+- [x] Continuar a sessão onde parou (faixa+posição em pausa)
 - [ ] Teste de hardware no Vita (cartão no aparelho; sem via de cópia confirmada)
 - [ ] FLAC/OGG decode (o scanner já enumera; o cartão atual é MP3)
 - [ ] Qobuz/streaming e scrobbling online (precisa de rede real; ver acima)

@@ -41,4 +41,8 @@ int playlist_new(Playlist **array, int *count, const char *name_prefix,
 /* sanitiza um nome para uso como nome de arquivo (sem '/' etc.). Mutável. */
 void playlist_sanitize_name(char *name);
 
+/* apaga a playlist no índice `idx`: libera a entrada, desloca o resto do
+   array e remove o .m3u em `dir`. Devolve 0 ok, -1 erro (sem/nada). */
+int playlist_remove_file(Playlist *array, int *count, int idx, const char *dir);
+
 #endif

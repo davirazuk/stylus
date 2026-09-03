@@ -35,6 +35,7 @@ struct Ui {
     int nplists;
     const Track **recs;
     int nrecs;
+    bool pl_armed;       /* confirmação em 2 toques p/ apagar playlist */
 };
 
 /* ---------- círculos (vita2d não tem primitiva de círculo) ---------- */
@@ -309,7 +310,7 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
     (void)p;
     vita2d_pvf_draw_text(u->font, 24, 22, COL_AMBER, 1.0f, "PLAYLISTS");
     vita2d_pvf_draw_text(u->font, 24, SCRH - 38, COL_TEXT_DIM, 0.55f,
-                         "[tri] estante   [O] tocar   [quad] salvar o atual como nova");
+                         "[tri] estante   [O] tocar   [quad] salvar o atual   [R2] apagar");
 
     if (!u->plists || u->nplists <= 0) {
         vita2d_pvf_draw_text(u->font, 40, 120, COL_TEXT_DIM, 0.8f,
@@ -323,16 +324,19 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
         int idx = scroll + r;
         if (idx >= u->nplists) break;
         Playlist *pl = &u->plists[idx];
-        int y = 70 + r * 34;
+        int y = 70 + r * 40;
         int is_sel = (idx == u->pl_sel);
         if (is_sel)
-            vita2d_draw_rectangle(24, y, SCRW - 48, 30, 0x14FFAA28);
+            vita2d_draw_rectangle(24, y, SCRW - 48, 34, u->pl_armed ? 0x33FF4444 : 0x14FFAA28);
+        if (is_sel && u->pl_armed)
+            vita2d_draw_rectangle(24, y, SCRW - 48, 2, 0xFFFF4444);
+        draw_disc(28 + 15, y + 2 + 15, 15, 0.2f, pl->n > 0 ? pl->n : 1);
         char line[180];
-        snprintf(line, sizeof(line), "♪  %s", pl->name[0] ? pl->name : "(sem nome)");
-        vita2d_pvf_draw_text(u->font, 32, (int)(y + 4), is_sel ? COL_AMBER : COL_TEXT,
-                             0.62f, line);
-        snprintf(line, sizeof(line), "%d faixa(s)", pl->n);
-        vita2d_pvf_draw_text(u->font, 32, (int)(y + 18), COL_TEXT_DIM, 0.5f, line);
+        snprintf(line, sizeof(line), "%s", pl->name[0] ? pl->name : "(sem nome)");
+        vita2d_pvf_draw_text(u->font, 66, (int)(y + 6), is_sel ? COL_AMBER : COL_TEXT,
+                             0.60f, line);
+        snprintf(line, sizeof(line), "%d faixas", pl->n);
+        vita2d_pvf_draw_text(u->font, 66, (int)(y + 2 + 19), COL_TEXT_DIM, 0.5f, line);
     }
 }
 
@@ -408,12 +412,16 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_CROSS)    { action = 11; } /* tocar recomendações */
         if (edge & SCE_CTRL_RIGHT)    { action = 11; }
     } else if (u->view == VIEW_PLAYLISTS) {
-        if (edge & SCE_CTRL_DOWN) { u->pl_sel++; action = 1; }
-        if (edge & SCE_CTRL_UP)   { if (u->pl_sel > 0) u->pl_sel--; action = 1; }
-        if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
-        if (edge & SCE_CTRL_CROSS)    { action = 12; } /* tocar playlist */
-        if (edge & SCE_CTRL_RIGHT)    { action = 12; }
-        if (edge & SCE_CTRL_SQUARE)   { action = 13; } /* add atual p/ playlist */
+        if (edge & SCE_CTRL_DOWN) { u->pl_sel++; action = 1; u->pl_armed = false; }
+        if (edge & SCE_CTRL_UP)   { if (u->pl_sel > 0) u->pl_sel--; action = 1; u->pl_armed = false; }
+        if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; u->pl_armed = false; }
+        if (edge & SCE_CTRL_CROSS)    { action = 12; u->pl_armed = false; } /* tocar playlist */
+        if (edge & SCE_CTRL_RIGHT)    { action = 12; u->pl_armed = false; }
+        if (edge & SCE_CTRL_SQUARE)   { action = 13; u->pl_armed = false; } /* salvar atual como nova */
+        if (edge & SCE_CTRL_R2) { /* apagar: 1º armado p/ conferir, 2º apaga */
+            if (u->pl_armed) action = 17;
+            else u->pl_armed = true;
+        }
     } else {
         if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
         if (edge & SCE_CTRL_CIRCLE)   { action = 4; }   /* toggle play */
