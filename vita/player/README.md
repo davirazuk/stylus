@@ -35,15 +35,16 @@ Saída: `build/vitastylus.vpk`.
 
 | Botão | Estante | Deck (tocando) | Recs | Playlists |
 | --- | --- | --- | --- | --- |
-| D-pad | navega grade | troca faixa | navega | navega |
+| D-pad | navega grade | ◄► troca faixa · ▲▼ seek ±10s | navega | navega |
 | Cross/O | toca álbum | pausa/recomeça | toca recs | toca playlist |
-| Square | — | seek −10s | — | cria playlist do atual |
+| Square | — | seek −10s (legado) | — | cria playlist do atual |
 | Triângulo | — | estante | estante | estante |
 | L1 / R1 | recs / playlists | recs / playlists | — | — |
 | Select | alterna sorteio | cicla repetição | — | — |
 
 Repetição: `[select]` no deck alterna **todas → uma → desligada**. O estado
-(shuffle/rep) aparece no rodapé do deck.
+(shuffle/rep) aparece no rodapé do deck. A estante marca o disco em reprodução
+com um quadradinho âmbar no canto do card.
 
 ## Recomendações
 
