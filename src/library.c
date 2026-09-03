@@ -260,3 +260,19 @@ void album_free_cover(Album *alb)
     alb->cover_len = 0;
     alb->cover_loaded = false;
 }
+
+int library_find_track_by_path(Library *lib, Album **out_album, const char *path)
+{
+    if (out_album) *out_album = NULL;
+    if (!lib || !path) return -1;
+    for (int i = 0; i < lib->nalbums; i++) {
+        Album *a = &lib->albums[i];
+        for (int j = 0; j < a->ntracks; j++) {
+            if (strcmp(a->tracks[j].path, path) == 0) {
+                if (out_album) *out_album = a;
+                return j;
+            }
+        }
+    }
+    return -1;
+}

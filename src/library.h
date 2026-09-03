@@ -52,4 +52,8 @@ void library_sort(Library *lib);
 int album_load_cover(Album *alb);           /* 0 ok / tem; 1 sem; -1 erro */
 void album_free_cover(Album *alb);
 
+/* busca a faixa pelo caminho completo (ex.: para retomar a sessão).
+   Devolve o índice global no array de tracks do dono, -1 se não achar. */
+int library_find_track_by_path(Library *lib, Album **out_album, const char *path);
+
 #endif
