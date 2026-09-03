@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "sides.h"
+
 #define MAX_PATH_LEN 1024
 #define MAX_TITLE_LEN 256
 #define MAX_NAME_LEN 256
@@ -42,6 +44,7 @@ struct Album {
     int cap;
     int ndecodable;              /* quantas destas o VPK toca */
     int seconds_total;           /* soma das durações conhecidas, -1 se nenhuma */
+    Sides lados;                 /* a tese do sistema: o disco tem LADOS */
     bool meta_loaded;            /* já leu as tags (título/duração) */
     /* capa embutida do primeiro arquivo que tiver APIC front cover */
     unsigned char *cover;

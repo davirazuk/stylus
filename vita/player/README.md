@@ -4,7 +4,11 @@ Porte do tocador Stylus (PC/Android) para PS Vita: biblioteca local com capas,
 estante de álbuns, deck vinil em âmbar sobre quase-preto, playlists,
 recomendações e registro de escuta.
 
-Áudio: MP3 (a família MPEG-1/2 layer I–III, via mpg123).
+**Áudio: MP3, FLAC, Ogg Vorbis, Opus e WAV.** O FLAC sai idêntico ao
+original — o teste compara amostra a amostra com o WAV de origem. O Vita
+entrega 16 bits e um punhado de taxas, então um FLAC de 96 kHz/24 bits é
+reamostrado e reduzido antes de virar som: **o deck diz isso na tela**, em
+vez de imprimir a qualidade do arquivo e deixar você achar que ouviu aquilo.
 
 ## Instalar
 
@@ -53,9 +57,9 @@ título perde esse número — mas só quando o disco INTEIRO é numerado e a
 numeração é densa. `1979.mp3` continua se chamando 1979, e `99 Problems.mp3`
 sozinho numa pasta não vira "Problems".
 
-Arquivos `.flac`, `.m4a`, `.ogg`, `.opus`, `.wav` e companhia **aparecem na
-estante**, marcados como não-tocáveis. Escondê-los faria o app dizer "não
-achei nada" para quem tem a coleção inteira em FLAC.
+Arquivos que não têm decodificador (`.m4a`, `.wma`, `.ape`…) **aparecem na
+estante mesmo assim**, marcados. Escondê-los faria o app dizer "não achei
+nada" para quem tem a coleção inteira num formato só.
 
 ## Controles
 
@@ -64,12 +68,71 @@ achei nada" para quem tem a coleção inteira em FLAC.
 | D-pad | navega (repete se segurar) | ◄► troca faixa · ▲▼ seek ±10 s | navega | navega |
 | ✕ / ○ | toca o disco | pausa / recomeça | toca a partir da marcada | toca |
 | △ | vai ao que está tocando | volta à estante | estante | estante |
-| □ | — | seek −10 s | — | guarda o que toca como lista |
+| □ | régua de letras (ir para) | letra ↔ ordem do lado | — | guarda o que toca |
 | L1 / R1 | recs / playlists | recs / playlists | ↔ | ↔ |
 | Select | alterna sorteio | cicla repetição | — | apaga a lista (2 toques) |
+| **R1 + L1** | — | **apaga a tela e continua tocando** | — | — |
+| **R1 + □** | — | **soneca** (esmaece 20 s → fim do lado → off) | — | — |
+| **R1 + △** | — | **ouvir enquanto joga** | — | — |
 | Start | sai | sai | sai | sai |
 
-Repetição: `[select]` no deck cicla **todas → uma → desligada**.
+### Toque
+
+A tela é sensível ao toque e o app inteiro a ignorava.
+
+- **estante**: toque num disco para pôr; arraste de lado para virar a página
+- **deck**: toque no disco pausa; arraste a barra para buscar; arraste de
+  lado para trocar de faixa
+- **recs / playlists**: toque numa linha para tocar dali
+
+## O disco tem LADOS
+
+É a tese do sistema inteiro, e o tocador do Vita não a tinha — um álbum aqui
+era uma fila de arquivos, como em qualquer outro tocador.
+
+O deck diz **DISCO 2 · LADO C**, quanto falta para **virar** (não para a
+faixa acabar), e no fim do lado o gesto que o objeto pede — que não é o mesmo
+nos dois casos:
+
+- lado ímpar → *"vire o disco para o LADO B"*
+- lado par de um duplo → *"ponha o DISCO 2, LADO C"* (você levanta e vai até
+  a estante)
+
+O corte é a **transliteração** do `Album._build_sides` do desktop, não uma
+reinvenção: 45 min = 2 lados, 74 = 4, 90 = 4, e 21 min cabem inteiros num
+lado só. O `check.sh` reparte **1887 formas de disco** pelas duas regras e
+compara lado a lado, contra o `vinyl.py` de verdade — não contra uma cópia
+dele, que derivaria.
+
+## A letra
+
+Um `.lrc` ao lado do arquivo: `[□]` no deck troca a ordem do lado pela letra,
+com a linha que está sendo cantada em âmbar. Lê `[offset:±ms]`, aceita
+`[00:40]` sem centésimos, e `[00:30][01:00]refrão` — uma linha com dois
+momentos, que é como todo refrão de `.lrc` é escrito — vira as duas
+aparições.
+
+## Ouvir enquanto joga
+
+**`[R1+△]` no deck** abre a tela que explica isto, e ela detecta se o plugin
+está instalado.
+
+O Vita **suspende** qualquer aplicativo que sai da frente — este inclusive —
+e isso não é contornável de dentro de um VPK. O **Music Premium**
+(cuevavirus) destrava o app **MÚSICA da Sony** para tocar dentro dos jogos;
+ele não faz um homebrew qualquer continuar tocando. Um homebrew só tocaria
+por trás sendo ele próprio um plugin de kernel, que é outro programa.
+
+O que dá para fazer, e o app faz:
+
+- **`[R1+L1]` apaga a tela e continua tocando.** O OLED é o que come a
+  bateria num tocador de música; assim ele toca por horas.
+- **O timer de suspensão do Vita é cancelado enquanto toca.** Sem isso o
+  aparelho suspendia sozinho depois de alguns minutos sem toque e um álbum
+  inteiro nunca chegava ao fim.
+- **Ao voltar de um jogo, o app retoma exatamente onde parou**, em pausa.
+- A tela do `[R1+△]` mostra a **pasta e a faixa** para você achar o mesmo
+  disco no app Música — é a mesma `ux0:music`.
 
 ## Dados do app
 
@@ -105,10 +168,17 @@ Rode se mexer no desenho; o `sce_sys/` fica versionado.
 
 Roda em qualquer máquina com `gcc`, sem VitaSDK e sem Vita. Cobre:
 
+- **os decodificadores, contra ÁUDIO DE VERDADE** (`tools/decoder_test.c`):
+  gera um sinal conhecido, codifica em FLAC/Ogg/Opus/MP3/WAV e decodifica de
+  volta. Do FLAC e do WAV exige as amostras **idênticas**, uma a uma — um
+  decodificador que troque os canais, erre o intercalado ou perca um bloco
+  reprova aqui e passaria em qualquer teste que só olhasse "tocou alguma
+  coisa". Também exige que depois de um seek venha o áudio **daquele ponto**;
+- **o corte dos LADOS contra o desktop**, 1887 formas de disco;
 - **o núcleo, exercitado de verdade** (`tools/host_test.c`): uma coleção de
   mentira é montada em disco e varrida — ordem das faixas, número tirado do
-  nome, faixas soltas na raiz, FLAC marcado, dedup de raízes, `roots.txt`, e
-  as duas frases diferentes de "não achei nada";
+  nome, faixas soltas na raiz, dedup de raízes, `roots.txt`, os lados, a
+  letra, e as duas frases diferentes de "não achei nada";
 - **a geometria das telas** (`src/ui_layout.c` é puro de propósito): toda a
   grade, o disco, a coluna de texto e as listas medidos contra a tela, em
   várias resoluções. É o defeito mais repetido deste projeto e o único jeito
@@ -117,8 +187,10 @@ Roda em qualquer máquina com `gcc`, sem VitaSDK e sem Vita. Cobre:
   função órfã, lista de extensão duplicada, caminho montado à mão, heap
   declarado.
 
-Cada uma foi medida com o defeito posto de propósito: seis dos sete sabotados
-ficam vermelhos.
+Cada uma foi medida com o defeito posto de propósito — e uma delas passou
+verde na primeira tentativa: o teste do seek procurava com o decodificador
+recém-aberto, quando o defeito só existe depois de ter LIDO alguma coisa.
+Corrigido, os nove sabotados ficam vermelhos.
 
 ## Coisas que já custaram tempo
 
@@ -170,6 +242,28 @@ ficam vermelhos.
   varredura e a estante fica pela metade, calada.
 - **O VPK saía sem ícone e sem LiveArea**: um quadrado em branco no menu do
   Vita, que é a diferença entre "um app" e "um arquivo".
+- **O Vita SUSPENDE sozinho depois de alguns minutos sem toque**, e suspenso
+  o áudio para: um álbum inteiro nunca chegava ao fim se ninguém encostasse
+  no aparelho. Cancelar o timer é uma linha e nada no app a tinha. A TELA,
+  ao contrário, deixamos apagar — é um tocador de música, e o OLED é a
+  bateria.
+- **O painel de toque é 1920×1088, o dobro da tela.** Usar as coordenadas
+  cruas põe todo toque no canto superior esquerdo. É o erro que se comete
+  uma vez.
+- **`[quad]` no deck era um segundo "seek −10 s"**, duplicando o `[baixo]` —
+  uma tecla gasta em nada num aparelho que tem poucas.
+- **O libFLAC pede `utimensat`, que o newlib do Vita não tem.** Só LEMOS
+  FLAC, mas o escritor de metadados mora no mesmo `.a` e o linker estático
+  cobra o símbolo. O stub devolve erro em vez de fingir sucesso.
+- **`TRACKNUMBER=7/12` vira faixa 712** sem parar no primeiro não-dígito, e
+  `7/12` é a forma mais comum de escrever isso.
+- **O `ov_read` e o `op_read` devolvem MENOS do que se pediu sem que isso
+  seja fim de faixa** — um pacote por vez. Tratar "menos que o pedido" como
+  fim corta a música no primeiro pacote curto.
+- **Procurar num FLAC sem esvaziar o buffer** faz o PCM de antes do salto
+  tocar depois dele. E o teste que existia para pegar isso passava verde,
+  porque procurava com o decodificador recém-aberto — sem nada no buffer não
+  há o que ficar velho.
 
 ## A lei do desenho (§5.5)
 
@@ -184,9 +278,8 @@ palavras no código do desenho e confere a paleta em números.
 
 - [ ] Teste em aparelho de verdade (este VPK foi construído e conferido no
       host; o hardware não passou por ele)
-- [ ] FLAC/OGG/M4A decode — o scanner já os enumera e os marca
+- [ ] M4A/AAC e WMA — aparecem na estante, marcados, sem decodificador
 - [ ] Qobuz/streaming (precisa de rede real no Vita para valer)
-- [ ] Áudio em segundo plano: **limite de plataforma, não de código.** O Vita
-      SUSPENDE o app quando você abre outro. Nenhum homebrew de app comum
-      continua tocando por trás; só um plugin de CFW, que é outro projeto. O
-      que este VPK faz é voltar exatamente de onde estava, em pausa.
+- [ ] Áudio em segundo plano DESTE app: **limite de plataforma, não de
+      código** — ver "Ouvir enquanto joga" acima. Faria falta um plugin de
+      kernel, que é outro programa.

@@ -1,9 +1,13 @@
 #include "ui.h"
 #include "paths.h"
 #include "ui_layout.h"
+#include "sides.h"
+#include "lyrics.h"
 
 #include <vita2d.h>
 #include <psp2/ctrl.h>
+#include <psp2/touch.h>
+#include <psp2/kernel/processmgr.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -48,7 +52,7 @@
 #define FOOT_Y   (SCRH - 34)
 #define HINT_Y   (SCRH - 14)
 
-typedef enum { VIEW_SHELF = 0, VIEW_DECK, VIEW_RECS, VIEW_PLAYLISTS } View;
+typedef enum { VIEW_SHELF = 0, VIEW_DECK, VIEW_RECS, VIEW_PLAYLISTS, VIEW_HANDOFF } View;
 
 /* ---------- cache de capas ----------
    O desenho antigo chamava vita2d_load_JPEG_buffer e vita2d_free_texture DENTRO
@@ -63,6 +67,25 @@ typedef struct {
     unsigned age;
 } CoverSlot;
 
+/* A CERIMÔNIA. É o que o deck do desktop tinha de próprio e a §5.5 chama de
+   sagrado: o prato sai do zero e acelera, o braço vem de fora e desce, a
+   agulha encosta. Sem ela um disco "começa a tocar" como um arquivo abre.
+
+   Ela NÃO é encenada ao abrir o app com música já tocando: ali o disco não
+   foi posto agora, foi encontrado no meio, e encenar a descida da agulha
+   seria mentira sobre o que aconteceu. É a diferença entre um ritual e uma
+   animação de abertura. */
+typedef enum { RIT_OFF = 0, RIT_SPINUP, RIT_CUE, RIT_DROP } RitualPhase;
+
+#define RIT_SPINUP_S 1.10f
+#define RIT_CUE_S    0.65f
+#define RIT_DROP_S   0.38f
+
+#define SPECT_BANDS 16
+#define SPARKS 14
+
+typedef struct { float x, y, vx, vy, life; } Spark;
+
 struct Ui {
     vita2d_pvf *font;
     View view;
@@ -71,6 +94,34 @@ struct Ui {
     int rec_sel;
     float halo_phase;
     float disc_angle;      /* acumula: o disco PÁRA quando a música pára */
+    float spin;            /* velocidade do prato, 0..1 — a cerimônia a sobe */
+
+    RitualPhase rit;
+    float rit_t;
+
+    float spect[SPECT_BANDS];
+    Spark sparks[SPARKS];
+
+    /* toque */
+    float scrub_to;
+    int   touch_x, touch_y;
+    bool  touch_down, touch_was_down;
+    int   touch_start_x, touch_start_y;
+    int   touch_frames;
+    bool  touch_moved;
+    bool  scrubbing;
+
+    Lyrics lrc;
+    bool  show_lyrics;
+
+    /* busca por letra inicial: uma estante de quatrocentos discos não se
+       navega item por item, e o d-pad é tudo que existe */
+    bool  jump_open;
+    int   jump_letter;   /* 0..25 = A..Z, 26 = # */
+
+    /* repouso: a tela apaga e a música segue */
+    bool  resting;
+    int   rest_idle;
 
     CoverSlot cache[COVER_CACHE];
     unsigned clock;
@@ -248,12 +299,49 @@ static void draw_cover_fit(vita2d_texture *tex, float x, float y, float side)
     vita2d_draw_texture_scale(tex, x + (side - dw) / 2, y + (side - dh) / 2, s, s);
 }
 
+/* ---------- o fundo do deck: a capa, esborratada ---------- */
+
+/* Não é um blur de verdade — não há shader aqui. São seis cópias deslocadas e
+   quase transparentes, que a esta escala lê como desfoque e custa seis blits.
+   Escala COBRINDO: uma capa quadrada esticada numa tela 16:9 sai com quase o
+   dobro da largura, e o olho pega isso na hora. */
+static void deck_backdrop(Ui *u, Album *a)
+{
+    vita2d_texture *tex = cover_tex(u, a);
+    if (!tex) return;
+    float tw = (float)vita2d_texture_get_width(tex);
+    float th = (float)vita2d_texture_get_height(tex);
+    if (tw <= 0 || th <= 0) return;
+
+    float s = SCRW / tw;
+    if (th * s < SCRH) s = SCRH / th;
+    s *= 1.12f;                       /* folga para os deslocamentos */
+    float dw = tw * s, dh = th * s;
+    float x = (SCRW - dw) / 2, y = (SCRH - dh) / 2;
+
+    static const float off[6][2] = {
+        {0,0}, {-9,-6}, {9,6}, {-6,7}, {6,-7}, {0,11}
+    };
+    for (int i = 0; i < 6; i++)
+        vita2d_draw_texture_tint_scale(tex, x + off[i][0], y + off[i][1], s, s,
+                                       RGBA8(255, 255, 255, 26));
+
+    /* escurece de novo: o texto vem por cima e o fundo é cenário, não assunto */
+    vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(7, 9, 13, 176));
+}
+
 /* ---------- o disco ---------- */
 
 /* Os sulcos são as faixas DESTE disco, e o anel aceso é onde a agulha está.
-   Cinco anéis fixos desenhariam o mesmo objeto para um single e para um LP. */
+   Cinco anéis fixos desenhariam o mesmo objeto para um single e para um LP.
+
+   No aro vai o ESPECTRO: raio = energia, grave no alto, espelhado nos dois
+   lados. Parado, é uma circunferência — e é isso que ele tem que ser quando
+   não há som, porque o anel é a única fonte e ausência de dado não vira
+   afirmação de nível. */
 static void draw_disc(float cx, float cy, float r, float progress,
-                      int ntracks, int track_idx, float angle)
+                      int ntracks, int track_idx, float angle,
+                      const float *spect, float spin)
 {
     if (r < 6) { alpha_fill(cx, cy, r, 0.5f, COL_AMBER); return; }
     alpha_fill(cx, cy, r, 0.10f, COL_AMBER);
@@ -271,27 +359,60 @@ static void draw_disc(float cx, float cy, float r, float progress,
     float read_r = r * (1.0f - progress * 0.86f);
     alpha_ring(cx, cy, read_r, 2.5f, 0.34f, COL_AMBER_BRIGHT);
 
+    if (spect) {
+        for (int i = 0; i < SPECT_BANDS; i++) {
+            float v = spect[i];
+            /* grave no alto, espelhado: a fatia i vai para os dois lados */
+            float a0 = -1.5707963f + (float)i * 3.14159265f / (float)SPECT_BANDS;
+            float step = 3.14159265f / (float)SPECT_BANDS;
+            for (int side = 0; side < 2; side++) {
+                float a = side ? -1.5707963f - (float)i * step - step * 0.5f
+                               : a0 + step * 0.5f;
+                float len = 3.0f + v * r * 0.20f;
+                float x0 = cx + cosf(a) * (r + 2.0f);
+                float y0 = cy + sinf(a) * (r + 2.0f);
+                float x1 = cx + cosf(a) * (r + 2.0f + len);
+                float y1 = cy + sinf(a) * (r + 2.0f + len);
+                unsigned int c = (COL_AMBER & 0x00FFFFFF) |
+                                 ((unsigned int)(60.0f + v * 150.0f) << 24);
+                vita2d_draw_line(x0, y0, x1, y1, c);
+            }
+        }
+    }
+
     /* o selo, com uma marca que gira — é o que diz que ele ESTÁ girando */
     alpha_fill(cx, cy, r * 0.16f, 0.16f, COL_AMBER);
     float mx = cx + cosf(angle) * r * 0.12f;
     float my = cy + sinf(angle) * r * 0.12f;
-    alpha_fill(mx, my, 2.5f, 0.9f, COL_AMBER_BRIGHT);
+    alpha_fill(mx, my, 2.5f, 0.55f + 0.4f * spin, COL_AMBER_BRIGHT);
     alpha_fill(cx, cy, 3.0f, 0.85f, COL_AMBER);
 }
 
 /* O braço é o FACHO, não um tubo de alumínio: quase toda a luz mora na ponta,
-   o corpo começa a 38% do caminho, e levantado ele apaga. */
-static void draw_needle(float cx, float cy, float r, float phase, float progress, bool live)
+   o corpo começa a 38% do caminho, e levantado ele apaga.
+
+   `cue` é 0 no descanso (fora do disco) e 1 no sulco; `down` é 0 suspenso e
+   1 encostado. A cerimônia move os dois; fora dela valem 1 e 1. */
+static void draw_needle(float cx, float cy, float r, float phase, float progress,
+                        bool live, float cue, float down)
 {
-    float ang = -1.5707963f + phase * 0.18f;
-    float read_r = r * (1.0f - progress * 0.86f);
+    float park = -1.5707963f + 0.95f;         /* o descanso, fora do prato */
+    float play = -1.5707963f + phase * 0.18f;
+    float ang = park + (play - park) * cue;
+
+    float rest_r = r * 1.30f;                 /* suspenso, fora do sulco */
+    float groove_r = r * (1.0f - progress * 0.86f);
+    float read_r = rest_r + (groove_r - rest_r) * cue;
+
     float px = cx + cosf(ang) * read_r;
     float py = cy + sinf(ang) * read_r;
-    float ox = cx + cosf(ang) * (r * 1.45f);
-    float oy = cy + sinf(ang) * (r * 1.45f);
+    /* suspenso, a agulha paira um pouco acima do sulco */
+    py -= (1.0f - down) * 9.0f;
 
-    float a = live ? 1.0f : 0.25f;
-    /* corpo: começa longe do pivô e vai acendendo */
+    float ox = cx + cosf(ang) * (r * 1.55f);
+    float oy = cy + sinf(ang) * (r * 1.55f);
+
+    float a = (live || cue > 0.01f) ? (0.30f + 0.70f * down) : 0.25f;
     for (int i = 4; i <= 10; i++) {
         float t0 = 0.38f + (float)(i - 4) * 0.062f;
         float t1 = t0 + 0.062f;
@@ -302,8 +423,7 @@ static void draw_needle(float cx, float cy, float r, float phase, float progress
                          ((unsigned int)(k * 150.0f * a) << 24);
         vita2d_draw_line(x0, y0, x1, y1, c);
     }
-    /* a agulha: uma cruz curta e quente */
-    if (live) {
+    if (down > 0.5f && live) {
         vita2d_draw_line(px - 4, py, px + 4, py, COL_AMBER_BRIGHT);
         vita2d_draw_line(px, py - 4, px, py + 4, COL_AMBER_BRIGHT);
     }
@@ -316,6 +436,96 @@ static void draw_halo(float cx, float cy, float base_r, float phase)
     float r = base_r * (1.0f + 0.03f * sinf(phase * 1.7f));
     alpha_ring(cx, cy, r * 1.12f, 16.0f, 0.05f, COL_COLD);
     alpha_ring(cx, cy, r * 1.05f, 7.0f, 0.09f, COL_COLD);
+}
+
+/* ---------- a cerimônia ---------- */
+
+void ui_begin_ritual(Ui *u)
+{
+    if (!u) return;
+    u->rit = RIT_SPINUP;
+    u->rit_t = 0.0f;
+    u->spin = 0.0f;
+    for (int i = 0; i < SPARKS; i++) u->sparks[i].life = 0.0f;
+}
+
+bool ui_in_ritual(const Ui *u) { return u && u->rit != RIT_OFF; }
+
+/* Sem cerimônia (o app abriu com música já tocando), o prato já está a plena
+   rotação — não há nada a encenar. */
+void ui_skip_ritual(Ui *u)
+{
+    if (!u) return;
+    u->rit = RIT_OFF;
+    u->rit_t = 0.0f;
+    u->spin = 1.0f;
+}
+
+static void ritual_step(Ui *u, bool live)
+{
+    const float dt = 1.0f / 60.0f;
+    if (u->rit == RIT_OFF) {
+        /* o prato acompanha o som: parar a música PARA o disco */
+        float target = live ? 1.0f : 0.0f;
+        u->spin += (target - u->spin) * 0.06f;
+        return;
+    }
+    u->rit_t += dt;
+    switch (u->rit) {
+    case RIT_SPINUP:
+        /* acelera com folga no fim: um prato de verdade não chega na rotação
+           de repente, e é essa folga que faz o olho ler "pesado" */
+        u->spin = 1.0f - (1.0f - u->rit_t / RIT_SPINUP_S) * (1.0f - u->rit_t / RIT_SPINUP_S);
+        if (u->spin < 0) u->spin = 0;
+        if (u->rit_t >= RIT_SPINUP_S) { u->spin = 1.0f; u->rit = RIT_CUE; u->rit_t = 0; }
+        break;
+    case RIT_CUE:
+        u->spin = 1.0f;
+        if (u->rit_t >= RIT_CUE_S) { u->rit = RIT_DROP; u->rit_t = 0; }
+        break;
+    case RIT_DROP:
+        u->spin = 1.0f;
+        if (u->rit_t >= RIT_DROP_S) { u->rit = RIT_OFF; u->rit_t = 0; }
+        break;
+    default:
+        break;
+    }
+}
+
+/* As faíscas da gota da agulha. O crackle existia no deck do desktop e nunca
+   foi desenhado — e quando foi, cada faísca era um segmento de comprimento
+   ZERO, que desenha exatamente nada. Aqui elas são círculos com raio mínimo
+   garantido, pelo mesmo motivo. */
+static void sparks_spawn(Ui *u, float x, float y)
+{
+    for (int i = 0; i < SPARKS; i++) {
+        if (u->sparks[i].life > 0.0f) continue;
+        float a = (float)(rand() % 628) / 100.0f;
+        float sp = 0.6f + (float)(rand() % 100) / 60.0f;
+        u->sparks[i].x = x;
+        u->sparks[i].y = y;
+        u->sparks[i].vx = cosf(a) * sp;
+        u->sparks[i].vy = sinf(a) * sp - 0.5f;
+        u->sparks[i].life = 0.5f + (float)(rand() % 50) / 100.0f;
+    }
+}
+
+static void sparks_draw(Ui *u)
+{
+    for (int i = 0; i < SPARKS; i++) {
+        Spark *s = &u->sparks[i];
+        if (s->life <= 0.0f) continue;
+        s->life -= 1.0f / 60.0f;
+        s->x += s->vx;
+        s->y += s->vy;
+        s->vy += 0.06f;
+        if (s->life <= 0.0f) continue;
+        float a = s->life;
+        if (a > 1.0f) a = 1.0f;
+        /* raio mínimo 1: abaixo disso o fill_circle não põe um pixel e a
+           faísca "existe" sem aparecer, que é o defeito que já aconteceu */
+        alpha_fill(s->x, s->y, 1.0f + a * 1.6f, a * 0.9f, COL_AMBER_BRIGHT);
+    }
 }
 
 /* ---------- fundo ---------- */
@@ -382,7 +592,7 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
 {
     int n = lib->nalbums;
     header(u, "ESTANTE",
-           "[X] toca   [tri] o que toca   [sel] sorteio   [L1] recs   [R1] playlists   [start] sai");
+           "[X] toca  [tri] o que toca  [quad] ir para  [sel] sorteio  [L1] recs  [R1] playlists");
 
     if (n <= 0) { shelf_empty(u, lib); return; }
 
@@ -418,7 +628,7 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
             } else if (a->cover_loaded) {
                 /* sem capa: o disco É o desenho, não um aviso de falta */
                 draw_disc(ix + side / 2, iy + side / 2, side / 2.2f,
-                          0.18f, a->ntracks, -1, u->disc_angle);
+                          0.18f, a->ntracks, -1, u->disc_angle, NULL, 0.0f);
             } else {
                 /* ainda carregando: um aro, e nenhuma afirmação */
                 alpha_ring(ix + side / 2, iy + side / 2, side / 2.4f, 1.0f, 0.10f, COL_COLD);
@@ -443,6 +653,36 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
             text_elided(u, (int)x + 7, (int)(y + g.sub_dy),
                         a->ndecodable == 0 ? COL_ALARM : COL_TEXT_DIM, 0.50f, tw, sub);
         }
+    }
+
+    if (u->jump_open) {
+        /* a régua de letras: A..Z e #, com as que existem acesas. Uma letra
+           que não tem disco não pode parecer escolhível. */
+        vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(7, 9, 13, 232));
+        text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, "IR PARA");
+        float bw = (SCRW - 2 * PAD_X) / 9.0f;
+        for (int i = 0; i < 27; i++) {
+            int col = i % 9, row = i / 9;
+            float x = PAD_X + col * bw, y = 140.0f + row * 74.0f;
+            char L[4];
+            snprintf(L, sizeof(L), "%c", i < 26 ? 'A' + i : '#');
+            bool tem = false;
+            for (int k = 0; k < n && !tem; k++) {
+                const char *nm = lib->albums[k].artist[0] ? lib->albums[k].artist
+                                                          : lib->albums[k].album;
+                char c0 = nm[0];
+                if (c0 >= 'a' && c0 <= 'z') c0 -= 32;
+                if (i < 26) tem = (c0 == 'A' + i);
+                else tem = !(c0 >= 'A' && c0 <= 'Z');
+            }
+            bool sel = (i == u->jump_letter);
+            if (sel) vita2d_draw_rectangle(x, y - 30, bw - 8, 46, TINT_SEL);
+            text(u, (int)x + 14, (int)y, tem ? (sel ? COL_AMBER : COL_TEXT)
+                                             : COL_TEXT_FAINT, 1.1f, L);
+        }
+        text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f,
+             "[dir] escolhe   [X] vai   [tri] volta");
+        return;
     }
 
     char cnt[96];
@@ -491,23 +731,74 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     if (progress > 1) progress = 1;
 
     u->halo_phase += 0.05f;
-    if (live) u->disc_angle += 0.06f;   /* o disco PÁRA quando a música pára */
+    ritual_step(u, live);
+    /* o ângulo acumula com a VELOCIDADE do prato: durante a partida ele
+       acelera de verdade, e parada a música ele desacelera até parar */
+    u->disc_angle += 0.075f * u->spin;
+
+    float cue = 1.0f, down = 1.0f;
+    if (u->rit == RIT_SPINUP)   { cue = 0.0f; down = 0.0f; }
+    else if (u->rit == RIT_CUE) { cue = u->rit_t / RIT_CUE_S; down = 0.0f; }
+    else if (u->rit == RIT_DROP){ cue = 1.0f; down = u->rit_t / RIT_DROP_S; }
+
+    player_spectrum(p, u->spect, SPECT_BANDS);
 
     UiDeckGeom g;
     ui_deck_geom(SCRW, SCRH, &g);
     float cx = g.cx, cy = g.cy, base_r = g.r;
+    /* o fundo é a CAPA deste disco, esborratada e escura — não uma textura
+       genérica. É a única coisa na tela que diz "este disco" antes de a
+       pessoa ler uma letra. */
+    deck_backdrop(u, (Album *)a);
+
     draw_halo(cx, cy, base_r, u->halo_phase);
-    draw_disc(cx, cy, base_r, progress, a->ntracks, player_track_idx(p), u->disc_angle);
-    draw_needle(cx, cy, base_r, u->halo_phase, progress, live);
+    draw_disc(cx, cy, base_r, progress, a->ntracks, player_track_idx(p),
+              u->disc_angle, live ? u->spect : NULL, u->spin);
+    draw_needle(cx, cy, base_r, u->halo_phase, progress, live, cue, down);
+
+    /* a agulha ENCOSTOU: é aqui que as faíscas nascem, uma vez */
+    if (u->rit == RIT_DROP && u->rit_t < 1.2f / 60.0f) {
+        float ang = -1.5707963f + u->halo_phase * 0.18f;
+        sparks_spawn(u, cx + cosf(ang) * base_r, cy + sinf(ang) * base_r);
+    }
+    sparks_draw(u);
+
+    /* A CAPA no meio do disco, no lugar do selo: é o que faz o objeto na tela
+       ser ESTE disco e não um disco. */
+    {
+        vita2d_texture *tex = cover_tex(u, (Album *)a);
+        if (tex) {
+            float side = base_r * 0.30f;
+            draw_cover_fit(tex, cx - side, cy - side, side * 2);
+            alpha_ring(cx, cy, side * 1.02f, 1.5f, 0.35f, COL_AMBER);
+            alpha_fill(cx, cy, 3.0f, 0.9f, COL_AMBER_BRIGHT);
+        }
+    }
 
     float tx = g.text_x;
     float tw = g.text_w;
 
     header(u, live ? "AGORA  ·  TOCANDO" : "AGORA  ·  PAUSADO",
-           "[tri] estante   [L1] recs   [R1] playlists");
+           "[tri] estante  [L1] recs  [R1] playlists  [R1+L1] apaga a tela  "
+           "[R1+quad] soneca  [R1+tri] ouvir jogando  [toque] no disco pausa");
 
     text_elided(u, (int)tx, 126, COL_AMBER, 0.72f, tw, a->artist[0] ? a->artist : "—");
     text_elided(u, (int)tx, 168, COL_TEXT, 1.00f, tw, a->album);
+
+    /* O LADO. É a tese do sistema e o tocador do Vita não a tinha: um álbum
+       aqui era uma fila de arquivos, como em qualquer outro tocador. */
+    int lado = -1;
+    if (a->lados.n > 0) lado = sides_of_track(&a->lados, player_track_idx(p));
+    if (lado >= 0) {
+        char rot[12], linha[96];
+        sides_label(&a->lados, lado, rot, sizeof(rot));
+        if (a->lados.discos > 1)
+            snprintf(linha, sizeof(linha), "DISCO %d  ·  %s", lado / 2 + 1, rot);
+        else
+            snprintf(linha, sizeof(linha), "%s", rot);
+        text(u, (int)tx, 194, COL_AMBER, 0.56f, linha);
+    }
+
     text_elided(u, (int)tx, 214, COL_TEXT, 0.66f, tw, t ? t->title : "—");
 
     char cur[16], tot[16], info[160];
@@ -517,14 +808,94 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
              cur, tot, player_track_idx(p) + 1, player_track_count(p));
     text_elided(u, (int)tx, 244, COL_TEXT_DIM, 0.56f, tw, info);
 
-    vita2d_draw_rectangle(tx, 262, tw, 3, COL_BAR_BED);
-    if (dur > 0) vita2d_draw_rectangle(tx, 262, tw * progress, 3, COL_AMBER);
+    vita2d_draw_rectangle(tx, g.bar_y, tw, g.bar_h, COL_BAR_BED);
+    if (dur > 0) {
+        vita2d_draw_rectangle(tx, g.bar_y, tw * progress, g.bar_h, COL_AMBER);
+        /* a cabeça da barra: sem ela não dá para ver onde tocar para buscar */
+        alpha_fill(tx + tw * progress, g.bar_y + g.bar_h / 2, 4.0f, 0.9f, COL_AMBER_BRIGHT);
+    }
+
+    /* O CAMINHO DO SINAL, medido e não prometido. Um FLAC de 96k/24 num Vita
+       vira 48k/16 antes de sair — a tela diz isso em vez de imprimir a
+       qualidade do arquivo e deixar a pessoa achar que ouviu aquilo. */
+    {
+        PlayerSignal sig;
+        player_signal(p, &sig);
+        char sl[200];
+        if (sig.rate_file > 0) {
+            char extra[96] = "";
+            if (sig.resampled || sig.requantized)
+                snprintf(extra, sizeof(extra), "  →  %ld Hz / 16 bits",
+                         sig.rate_out);
+            snprintf(sl, sizeof(sl), "%s  ·  %ld Hz / %d bits%s",
+                     sig.kind, sig.rate_file, sig.bits_file, extra);
+        } else {
+            /* sem medida, travessão: acusação tirada da ausência de dado é
+               a doença que a tela SINAL do desktop pegou */
+            snprintf(sl, sizeof(sl), "%s  ·  —", sig.kind);
+        }
+        text_elided(u, (int)tx, (int)(g.bar_y + 20), 
+                    (sig.resampled || sig.requantized) ? COL_TEXT_DIM : COL_AMBER,
+                    0.48f, tw, sl);
+    }
 
     /* a ORDEM DO LADO: onde não há letra, é para a contracapa que se olha */
+    /* durante a cerimônia a tela DIZ o que está acontecendo: sem isso é uma
+       animação bonita que ninguém entende */
+    if (u->rit != RIT_OFF) {
+        const char *frase = u->rit == RIT_SPINUP ? "o prato ganha rotação"
+                          : u->rit == RIT_CUE    ? "a agulha vai ao sulco"
+                                                 : "encostou";
+        text(u, (int)tx, (int)(g.bar_y + 44), COL_AMBER, 0.56f, frase);
+    } else if (lado >= 0 && dur > 0) {
+        /* "vira em X min": quanto falta para o FIM DO LADO, não da faixa. É a
+           única coisa que este sistema diz e nenhum outro tocador diz. */
+        const Side *sd = &a->lados.sides[lado];
+        int falta = 0;
+        for (int i = player_track_idx(p) + 1; i <= sd->last && i < a->ntracks; i++)
+            if (a->tracks[i].seconds > 0) falta += a->tracks[i].seconds;
+        falta += (dur - pos);
+        char aviso[160];
+        if (falta <= 20 && lado + 1 < a->lados.n) {
+            /* o lado ACABOU: o gesto que o objeto pede — virar o disco não é
+               o mesmo que trocar de disco, e num duplo isso importa */
+            sides_gesture(&a->lados, lado + 1, aviso, sizeof(aviso));
+            text_elided(u, (int)tx, (int)(g.bar_y + 44), COL_ALARM, 0.60f, tw, aviso);
+        } else if (falta > 20) {
+            snprintf(aviso, sizeof(aviso), "%s em %d min",
+                     (lado + 1 < a->lados.n) ? "vira" : "acaba",
+                     (falta + 59) / 60);
+            text(u, (int)tx, (int)(g.bar_y + 44), COL_TEXT_DIM, 0.52f, aviso);
+        }
+    }
+
+    /* A LETRA, no tempo. Só é carregada quando a faixa muda — ler o .lrc a
+       cada quadro é I/O por quadro, que foi o defeito do celular. */
+    if (t) lyrics_load(&u->lrc, t->path);
+    bool tem_letra = u->lrc.n > 0;
+
+    if (tem_letra && u->show_lyrics && u->rit == RIT_OFF) {
+        int cur_line = lyrics_at(&u->lrc, pos * 1000);
+        int rows = g.list_rows;
+        int first = cur_line - 1;
+        if (first < 0) first = 0;
+        for (int r = 0; r < rows && first + r < u->lrc.n; r++) {
+            int idx = first + r;
+            int y = (int)(g.list_y + r * g.list_step);
+            if (y > FOOT_Y - 26) break;
+            bool agora = (idx == cur_line);
+            /* a linha que está sendo cantada em âmbar, as outras apagadas */
+            text_elided(u, (int)tx, y, agora ? COL_AMBER : COL_TEXT_FAINT,
+                        agora ? 0.60f : 0.52f, tw, u->lrc.lines[idx].text);
+        }
+        goto lyrics_done;
+    }
+
     int shown = 0;
     int from = player_track_idx(p) - 2;
     if (from < 0) from = 0;
-    for (int i = from; i < a->ntracks && shown < g.list_rows; i++, shown++) {
+    for (int i = from; i < a->ntracks && shown < g.list_rows && u->rit == RIT_OFF;
+         i++, shown++) {
         int y = (int)(g.list_y + shown * g.list_step);
         if (y > FOOT_Y - 26) break;
         bool is_now = (t && &a->tracks[i] == t);
@@ -543,16 +914,31 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
         }
     }
 
+lyrics_done:;
     const char *rep = "rep todas";
     switch (player_repeat(p)) {
     case REPEAT_OFF: rep = "rep off"; break;
     case REPEAT_ONE: rep = "rep 1";   break;
     default: break;
     }
-    char ctl[200];
-    snprintf(ctl, sizeof(ctl), "%s   ·   %s   ·   %s",
+    char ctl[240];
+    snprintf(ctl, sizeof(ctl), "%s   ·   %s   ·   %s%s",
              live ? "[O] pausa" : "[O] recomeça",
-             rep, player_shuffle(p) ? "sorteio ligado" : "sorteio desligado");
+             rep, player_shuffle(p) ? "sorteio ligado" : "sorteio desligado",
+             /* uma tecla que a tela desenha e não anuncia não existe */
+             tem_letra ? (u->show_lyrics ? "   ·   [quad] ordem do lado"
+                                         : "   ·   [quad] letra") : "");
+    /* a soneca tem que APARECER quando está armada: um estado que muda o que
+       o aparelho vai fazer e não se vê é o pior tipo de estado */
+    {
+        int sm = player_sleep_mode(p);
+        if (sm == 1)
+            text(u, (int)PAD_X, FOOT_Y - 20, COL_ALARM, 0.54f,
+                 "soneca: esmaecendo   ·   [R1+quad] desliga");
+        else if (sm == 2)
+            text(u, (int)PAD_X, FOOT_Y - 20, COL_ALARM, 0.54f,
+                 "soneca: para no fim do lado   ·   [R1+quad] desliga");
+    }
     text_elided(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f, SCRW - 2 * PAD_X, ctl);
 
     const char *err = player_last_error(p);
@@ -569,7 +955,8 @@ static void row_thumb(Ui *u, Album *a, float x, float y, float side, int ntracks
 {
     vita2d_texture *tex = a ? cover_tex(u, a) : NULL;
     if (tex) draw_cover_fit(tex, x, y, side);
-    else draw_disc(x + side / 2, y + side / 2, side / 2.2f, 0.18f, ntracks, -1, u->disc_angle);
+    else draw_disc(x + side / 2, y + side / 2, side / 2.2f, 0.18f, ntracks, -1,
+                   u->disc_angle, NULL, 0.0f);
 }
 
 static void draw_recs(Ui *u, Library *lib, Player *p)
@@ -666,6 +1053,96 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
     }
 }
 
+/* ---------- ouvir enquanto joga ---------- */
+
+/* O plugin Music Premium (cuevavirus) libera o app MÚSICA OFICIAL da Sony
+   para continuar tocando dentro dos jogos. Ele NÃO faz um homebrew qualquer
+   continuar tocando: o Vita SUSPENDE todo aplicativo que sai da frente, e
+   isso não é contornável de dentro de um VPK — o plugin roda no kernel e
+   destrava o caminho de áudio DAQUELE app, não deste.
+   Dizer isso é melhor do que prometer o que não acontece. */
+static bool plugin_instalado(void)
+{
+    static int cache = -1;
+    if (cache >= 0) return cache != 0;
+    const char *onde[] = {
+        "ur0:tai/music_premium.skprx",
+        "ux0:tai/music_premium.skprx",
+        "ur0:tai/music_nonstop.skprx",
+        NULL
+    };
+    cache = 0;
+    for (int i = 0; onde[i]; i++) {
+        FILE *f = fopen(onde[i], "rb");
+        if (f) { fclose(f); cache = 1; break; }
+    }
+    return cache != 0;
+}
+
+static void draw_handoff(Ui *u, Library *lib, Player *p)
+{
+    (void)lib;
+    header(u, "OUVIR ENQUANTO JOGA", "[tri] volta");
+
+    const Album *a = player_current_album(p);
+    bool tem = plugin_instalado();
+
+    int y = 96;
+    text(u, (int)PAD_X, y, tem ? COL_AMBER : COL_TEXT_DIM, 0.66f,
+         tem ? "Music Premium: instalado"
+             : "Music Premium: não achei o plugin");
+    y += 34;
+
+    /* A verdade primeiro, e sem rodeio: é limite de plataforma, não de código. */
+    text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
+        "O Vita SUSPENDE qualquer aplicativo que sai da frente — este inclusive.");
+    y += 24;
+    text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
+        "O Music Premium destrava o app MÚSICA da Sony nos jogos, não este VPK.");
+    y += 24;
+    text_elided(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f, SCRW - 2 * PAD_X,
+        "Um homebrew só tocaria por trás sendo ele próprio um plugin de kernel.");
+    y += 38;
+
+    text(u, (int)PAD_X, y, COL_AMBER, 0.60f, "o caminho que funciona hoje:");
+    y += 28;
+    const char *passos[] = {
+        "1.  aqui: [start] sai — a faixa e a posição ficam guardadas",
+        "2.  abra o app MÚSICA e ponha o mesmo disco (é a MESMA pasta)",
+        "3.  entre no jogo; o plugin mantém o som",
+        "4.  ao voltar, este app retoma exatamente onde parou, em pausa",
+        NULL
+    };
+    for (int i = 0; passos[i]; i++, y += 24)
+        text_elided(u, (int)PAD_X + 10, y, COL_TEXT, 0.54f,
+                    SCRW - 2 * PAD_X - 10, passos[i]);
+
+    y += 18;
+    if (a && a->key[0]) {
+        /* O app Música navega PASTAS. Dizer qual é poupa a busca — é a mesma
+           ux0:music que esta estante varreu. */
+        char linha[MAX_PATH_LEN + 64];
+        snprintf(linha, sizeof(linha), "no app Música, a pasta é:  %s", a->key);
+        text_elided(u, (int)PAD_X, y, COL_AMBER, 0.54f, SCRW - 2 * PAD_X, linha);
+        y += 24;
+        const Track *t = player_current_track(p);
+        if (t) {
+            snprintf(linha, sizeof(linha), "e a faixa:  %s", t->file);
+            text_elided(u, (int)PAD_X, y, COL_TEXT_DIM, 0.52f, SCRW - 2 * PAD_X, linha);
+        }
+    } else {
+        text(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f,
+             "ponha um disco e volte aqui para ver a pasta dele");
+    }
+
+    if (!tem)
+        text_elided(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.52f, SCRW - 2 * PAD_X,
+            "o plugin vai em ur0:tai/music_premium.skprx, na seção *KERNEL do config.txt");
+    else
+        text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.52f,
+             "com a tela apagada ([R1+L1]) este app segue tocando por horas");
+}
+
 /* ---------- a varredura ---------- */
 
 void ui_draw_scanning(Ui *u, const char *where, int files)
@@ -679,7 +1156,7 @@ void ui_draw_scanning(Ui *u, const char *where, int files)
 
     float cx = SCRW / 2.0f, cy = SCRH / 2.0f - 20;
     draw_halo(cx, cy, 78, u->halo_phase);
-    draw_disc(cx, cy, 76, 0.0f, 12, -1, u->halo_phase * 3.0f);
+    draw_disc(cx, cy, 76, 0.0f, 12, -1, u->halo_phase * 3.0f, NULL, 1.0f);
 
     const char *t = "procurando os discos";
     text(u, (int)(cx - text_w(u, 0.78f, t) / 2), (int)cy + 130, COL_AMBER, 0.78f, t);
@@ -699,18 +1176,62 @@ void ui_draw_scanning(Ui *u, const char *where, int files)
 
 /* ---------- frame ---------- */
 
+/* O REPOUSO. A tela apaga, a música segue.
+ *
+ * É o mais perto de "ouvir enquanto faz outra coisa" que um aplicativo comum
+ * de Vita chega: o sistema SUSPENDE qualquer app que saia da frente, e isso
+ * não é contornável de dentro de um VPK — só um plugin de CFW, que roda no
+ * SceShell e é outro programa. O que dá para fazer é o que importa quase
+ * tanto no sofá: a tela OLED apagada gasta pouquíssimo, e o disco continua.
+ *
+ * Fica um pulso âmbar mínimo, não um preto absoluto: preto total lê como
+ * "desligou" e a pessoa aperta o botão de força. */
+static void draw_rest(Ui *u, Player *p)
+{
+    vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(0, 0, 0, 255));
+    bool live = player_state(p) == PLAYER_PLAYING;
+    if (!live) return;
+    u->halo_phase += 0.02f;
+    float a = 0.10f + 0.06f * sinf(u->halo_phase);
+    alpha_fill(SCRW / 2.0f, SCRH / 2.0f, 15.0f, a, COL_AMBER);
+    const Track *t = player_current_track(p);
+    if (t) {
+        char b[300];
+        elide(u, b, sizeof(b), 0.46f, SCRW - 120.0f, t->title);
+        text(u, (int)(SCRW / 2 - text_w(u, 0.46f, b) / 2), SCRH / 2 + 46,
+             RGBA8(60, 46, 20, 255), 0.46f, b);
+    }
+}
+
 int ui_frame(Ui *u, Library *lib, Player *p)
 {
     u->clock++;
     u->loaded_this_frame = 0;
 
+    /* entra em repouso sozinho depois de um tempo parado COM música tocando:
+       parado sem música é alguém escolhendo um disco, e apagar a tela na cara
+       de quem está escolhendo é hostil */
+    if (!u->resting && player_state(p) == PLAYER_PLAYING) {
+        if (++u->rest_idle > 60 * 90) u->resting = true;
+    } else if (player_state(p) != PLAYER_PLAYING) {
+        u->rest_idle = 0;
+    }
+
     vita2d_start_drawing();
+    if (u->resting) {
+        vita2d_clear_screen();
+        draw_rest(u, p);
+        vita2d_end_drawing();
+        vita2d_swap_buffers();
+        return 0;
+    }
     vita2d_clear_screen();
     draw_bg();
 
     if (u->view == VIEW_SHELF)      draw_shelf(u, lib, p);
     else if (u->view == VIEW_DECK)  draw_deck(u, lib, p);
     else if (u->view == VIEW_RECS)  draw_recs(u, lib, p);
+    else if (u->view == VIEW_HANDOFF) draw_handoff(u, lib, p);
     else                            draw_playlists(u, lib, p);
 
     vita2d_end_drawing();
@@ -728,6 +1249,49 @@ int ui_frame(Ui *u, Library *lib, Player *p)
 #define REPEAT_EVERY 4    /* e um passo a cada tantos depois */
 #define DPAD (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT)
 
+/* O painel de toque devolve 0..1919 x 0..1087 — o DOBRO da tela, porque ele
+   tem resolução maior que ela. Usar as coordenadas cruas põe todo toque no
+   canto superior esquerdo, e é o erro que se comete uma vez. */
+static void touch_read(Ui *u)
+{
+    SceTouchData td;
+    memset(&td, 0, sizeof(td));
+    u->touch_was_down = u->touch_down;
+    u->touch_down = false;
+    if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &td, 1) >= 0 && td.reportNum > 0) {
+        u->touch_down = true;
+        u->touch_x = td.report[0].x / 2;
+        u->touch_y = td.report[0].y / 2;
+    }
+    if (u->touch_down && !u->touch_was_down) {
+        u->touch_start_x = u->touch_x;
+        u->touch_start_y = u->touch_y;
+        u->touch_frames = 0;
+        u->touch_moved = false;
+    } else if (u->touch_down) {
+        u->touch_frames++;
+        int dx = u->touch_x - u->touch_start_x;
+        int dy = u->touch_y - u->touch_start_y;
+        if (dx * dx + dy * dy > 18 * 18) u->touch_moved = true;
+    }
+}
+
+static bool tap_released(const Ui *u)
+{
+    /* Um toque é curto e parado. Sem exigir as duas coisas, todo arrasto
+       termina disparando o item onde o dedo largou. */
+    return u->touch_was_down && !u->touch_down && !u->touch_moved &&
+           u->touch_frames < 30;
+}
+
+static bool in_rect(int x, int y, float rx, float ry, float rw, float rh)
+{
+    return x >= rx && x < rx + rw && y >= ry && y < ry + rh;
+}
+
+bool ui_resting(const Ui *u) { return u && u->resting; }
+float ui_scrub(const Ui *u) { return (u && u->scrubbing) ? u->scrub_to : -1.0f; }
+
 int ui_handle_input(Ui *u)
 {
     static uint32_t prev = 0;
@@ -741,6 +1305,16 @@ int ui_handle_input(Ui *u)
     uint32_t edge = cur & ~prev;
     prev = cur;
 
+    touch_read(u);
+
+    /* No repouso, QUALQUER coisa acorda e nada mais acontece: senão a tecla
+       que acorda também troca de disco no escuro. */
+    if (u->resting) {
+        if (edge || u->touch_down) { u->resting = false; u->rest_idle = 0; }
+        return 0;
+    }
+    if (edge || u->touch_down) u->rest_idle = 0;
+
     uint32_t dir_now = cur & DPAD;
     if (dir_now != held_dir) { held_dir = dir_now; held_frames = 0; }
     else if (dir_now) {
@@ -751,6 +1325,18 @@ int ui_handle_input(Ui *u)
     }
 
     int action = 0;
+    if (u->view == VIEW_SHELF && u->jump_open) {
+        if (edge & SCE_CTRL_RIGHT) u->jump_letter++;
+        if (edge & SCE_CTRL_LEFT)  u->jump_letter--;
+        if (edge & SCE_CTRL_DOWN)  u->jump_letter += 9;
+        if (edge & SCE_CTRL_UP)    u->jump_letter -= 9;
+        if (u->jump_letter < 0) u->jump_letter = 0;
+        if (u->jump_letter > 26) u->jump_letter = 26;
+        if (edge & (SCE_CTRL_TRIANGLE | SCE_CTRL_CIRCLE)) u->jump_open = false;
+        if (edge & SCE_CTRL_CROSS) { u->jump_open = false; action = 19; }
+        if (edge & SCE_CTRL_START) return -1;
+        return action;
+    }
     if (u->view == VIEW_SHELF) {
         if (edge & SCE_CTRL_DOWN)  { u->sel += SHELF_COLS; action = 1; }
         if (edge & SCE_CTRL_UP)    { if (u->sel >= SHELF_COLS) u->sel -= SHELF_COLS; action = 1; }
@@ -765,6 +1351,7 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_L1) { u->view = VIEW_RECS; action = 8; }
         if (edge & SCE_CTRL_R1) { u->view = VIEW_PLAYLISTS; action = 9; }
         if (edge & SCE_CTRL_SELECT) action = 15;
+        if (edge & SCE_CTRL_SQUARE) { u->jump_open = true; action = 0; }
     } else if (u->view == VIEW_RECS) {
         if (edge & SCE_CTRL_DOWN) { u->rec_sel++; action = 1; }
         if (edge & SCE_CTRL_UP)   { if (u->rec_sel > 0) u->rec_sel--; action = 1; }
@@ -794,20 +1381,118 @@ int ui_handle_input(Ui *u)
         }
         /* qualquer outra tecla desarma: confirmar tem que exigir a MESMA */
         if (armed_before && action && action != 17) u->pl_armed = false;
+    } else if (u->view == VIEW_HANDOFF) {
+        if (edge & (SCE_CTRL_TRIANGLE | SCE_CTRL_CIRCLE | SCE_CTRL_CROSS)) {
+            u->view = VIEW_DECK;
+            action = 0;
+        }
+        if (edge & SCE_CTRL_START) action = -1;
+        return action;
     } else { /* deck */
-        if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
+        if (edge & SCE_CTRL_TRIANGLE) {
+            /* com [R1] segurado, a tela do "ouvir enquanto joga" */
+            if (cur & SCE_CTRL_R1) { u->view = VIEW_HANDOFF; action = 0; }
+            else { u->view = VIEW_SHELF; action = 10; }
+        }
         if (edge & SCE_CTRL_CIRCLE)   action = 4;
         if (edge & SCE_CTRL_CROSS)    action = 4;
         if (edge & SCE_CTRL_RIGHT)    action = 5;
         if (edge & SCE_CTRL_LEFT)     action = 6;
         if (edge & SCE_CTRL_UP)       action = 16;
         if (edge & SCE_CTRL_DOWN)     action = 7;
-        if (edge & SCE_CTRL_SQUARE)   action = 7;
-        if (edge & SCE_CTRL_L1) { u->view = VIEW_RECS; action = 8; }
-        if (edge & SCE_CTRL_R1) { u->view = VIEW_PLAYLISTS; action = 9; }
+        /* [quad] alterna letra ↔ ordem do lado. Era um segundo "seek -10s",
+           duplicando o [baixo] — uma tecla gasta em nada. */
+        /* [quad] alterna letra ↔ ordem do lado; com [R1] segurado, cicla a
+           soneca. Uma tecla que a tela desenha e não anuncia não existe, e
+           as duas estão escritas no rodapé. */
+        if (edge & SCE_CTRL_SQUARE) {
+            if (cur & SCE_CTRL_R1) action = 20;
+            else u->show_lyrics = !u->show_lyrics;
+        }
+        if ((edge & SCE_CTRL_L1) && !(cur & SCE_CTRL_R1)) { u->view = VIEW_RECS; action = 8; }
+        if ((edge & SCE_CTRL_R1) && !(cur & SCE_CTRL_L1)) { u->view = VIEW_PLAYLISTS; action = 9; }
         if (edge & SCE_CTRL_SELECT)   action = 14;
+        /* [R1] segurado + [L1]: apaga a tela e continua tocando. Duas teclas
+           porque uma sozinha se aperta no bolso. */
+        if ((edge & SCE_CTRL_L1) && (cur & SCE_CTRL_R1)) {
+            u->resting = true;
+            u->view = VIEW_DECK;
+            action = 0;
+        }
     }
     if (edge & SCE_CTRL_START) action = -1;
+
+    /* ---------- o toque ----------
+       O Vita tem uma tela sensível ao toque e o app inteiro a ignorava: pôr
+       um disco era navegar uma grade com o direcional, item por item, com a
+       coisa desenhada bem ali. */
+    if (u->view == VIEW_SHELF) {
+        UiShelfGeom g;
+        ui_shelf_geom(SCRW, SCRH, &g);
+        if (tap_released(u)) {
+            for (int r = 0; r < UI_SHELF_ROWS; r++)
+                for (int cix = 0; cix < UI_SHELF_COLS; cix++) {
+                    float x = g.x0 + cix * (g.card_w + g.gap);
+                    float y = g.y0 + r * (g.card_h + g.gap);
+                    if (!in_rect(u->touch_x, u->touch_y, x, y, g.card_w, g.card_h))
+                        continue;
+                    int idx = (u->sel / UI_SHELF_PAGE) * UI_SHELF_PAGE
+                              + r * UI_SHELF_COLS + cix;
+                    u->sel = idx;
+                    u->view = VIEW_DECK;
+                    action = 2;
+                }
+        } else if (u->touch_was_down && !u->touch_down && u->touch_moved) {
+            /* arrastar de lado vira página; a grade é paginada, não rolada */
+            int dx = u->touch_x - u->touch_start_x;
+            if (dx < -60) { u->sel += UI_SHELF_PAGE; action = 1; }
+            else if (dx > 60) { u->sel -= UI_SHELF_PAGE; if (u->sel < 0) u->sel = 0; action = 1; }
+        }
+    } else if (u->view == VIEW_DECK) {
+        UiDeckGeom g;
+        ui_deck_geom(SCRW, SCRH, &g);
+        /* arrastar a barra busca: enquanto o dedo estiver nela, o main lê o
+           ui_scrub() e manda o player. Soltar confirma. */
+        float bx = g.text_x, bw = g.text_w;
+        float band_y = g.bar_y - 14, band_h = g.bar_h + 28;
+        if (u->touch_down && (u->scrubbing ||
+            in_rect(u->touch_start_x, u->touch_start_y, bx, band_y, bw, band_h))) {
+            u->scrubbing = true;
+            float f = ((float)u->touch_x - bx) / (bw > 1 ? bw : 1);
+            if (f < 0) f = 0;
+            if (f > 1) f = 1;
+            u->scrub_to = f;
+        } else if (u->scrubbing && !u->touch_down) {
+            u->scrubbing = false;
+            action = 18;                     /* confirma a busca */
+        } else if (tap_released(u)) {
+            float dx = (float)u->touch_x - g.cx, dy = (float)u->touch_y - g.cy;
+            if (dx * dx + dy * dy < g.r * g.r) action = 4;   /* o disco: pausa */
+        } else if (u->touch_was_down && !u->touch_down && u->touch_moved &&
+                   !u->scrubbing) {
+            int dx = u->touch_x - u->touch_start_x;
+            if (dx < -70) action = 5;
+            else if (dx > 70) action = 6;
+        }
+    } else {
+        UiListGeom lg;
+        ui_list_geom(SCRW, SCRH, &lg);
+        if (tap_released(u)) {
+            for (int r = 0; r < lg.rows; r++) {
+                float y = lg.y0 + r * lg.row_h;
+                if (!in_rect(u->touch_x, u->touch_y, lg.x, y, lg.w, lg.row_h)) continue;
+                if (u->view == VIEW_RECS) {
+                    u->rec_sel = (u->rec_sel / lg.rows) * lg.rows + r;
+                    u->view = VIEW_DECK;
+                    action = 11;
+                } else {
+                    u->pl_sel = (u->pl_sel / lg.rows) * lg.rows + r;
+                    u->view = VIEW_DECK;
+                    action = 12;
+                }
+            }
+        }
+    }
 
     if (u->sel < 0) u->sel = 0;
     if (u->rec_sel < 0) u->rec_sel = 0;
@@ -838,6 +1523,8 @@ void ui_destroy(Ui *u)
 int ui_selected(const Ui *u)      { return u ? u->sel : 0; }
 int ui_playlist_idx(const Ui *u)  { return u ? u->pl_sel : 0; }
 int ui_rec_idx(const Ui *u)       { return u ? u->rec_sel : 0; }
+int ui_jump_letter(const Ui *u)   { return u ? u->jump_letter : 0; }
+void ui_set_sel(Ui *u, int i)     { if (u) u->sel = i < 0 ? 0 : i; }
 int ui_view(const Ui *u)          { return u ? (int)u->view : (int)VIEW_SHELF; }
 
 void ui_set_data(Ui *u, Playlist *plists, int nplists,

@@ -1,6 +1,6 @@
 #include "player.h"
 
-#include <mpg123.h>
+#include "decoder.h"
 #include <SDL2/SDL.h>
 
 #include <pthread.h>
@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 #define RING_SIZE (1 << 20)   /* 1 MiB de PCM por canal intercalado */
 #define RING_MASK (RING_SIZE - 1)
@@ -25,7 +26,8 @@ struct Player {
     bool first_push;
 
     /* estado do stream */
-    mpg123_handle *mh;
+    Decoder *dec;
+    DecFormat dfmt;
     long out_rate;
     int out_channels;
     size_t out_enc_need;        /* bytes por frame (channels*bytesPerSample) */
@@ -54,6 +56,16 @@ struct Player {
        inteira de FLAC faz o worker girar para sempre procurando a próxima */
     int skips;
     char last_error[128];
+    int hw_rate, hw_channels;   /* o que o APARELHO aceitou, não o que se pediu */
+
+    /* A SONECA. Um `pause` seco no meio da faixa é o contrário do que este
+       sistema faz — ele é sobre discos, e um disco acaba no fim do LADO.
+       Duas formas: esmaecer em vinte segundos, ou parar no fim do lado.
+       O ganho digital desses vinte segundos é exceção consciente à tese do
+       bit-perfect, e está escrita aqui ao lado por isso. */
+    int sleep_mode;             /* 0 desligada, 1 esmaecendo, 2 no fim do lado */
+    float sleep_gain;           /* 1.0 → 0.0 durante o esmaecer */
+    int sleep_at_track;         /* fim do lado: última faixa a tocar, -1 n/d */
 };
 
 static SDL_AudioDeviceID dev;
@@ -124,69 +136,90 @@ static void sdl_cb(void *udata, Uint8 *stream, int len)
     }
     if (take < need)
         memset(stream + take, 0, (size_t)(need - take));
+
+    /* O esmaecer da soneca, aplicado AQUI e em nenhum outro lugar: é o único
+       ponto por onde todo o som passa. Em POTÊNCIA (o quadrado do ganho), que
+       é como o ouvido ouve — linear, os últimos dez segundos somem de uma vez
+       e os dez primeiros não mudam nada. */
+    if (p->sleep_mode == 1) {
+        short *s16 = (short *)stream;
+        size_t n = need / 2;
+        float g = p->sleep_gain;
+        for (size_t i = 0; i < n; i++) {
+            float gg = g * g;
+            s16[i] = (short)((float)s16[i] * gg);
+        }
+        /* desce proporcional ao TEMPO deste buffer, não por chamada: o
+           tamanho do buffer varia e um passo fixo daria fades diferentes */
+        if (p->out_rate > 0 && p->out_enc_need > 0) {
+            float secs = (float)(need / p->out_enc_need) / (float)p->out_rate;
+            p->sleep_gain -= secs / 20.0f;
+            if (p->sleep_gain <= 0.0f) {
+                p->sleep_gain = 0.0f;
+                p->state = PLAYER_PAUSED;
+            }
+        }
+    }
 }
 
 static int open_track(Player *p, const Track *t)
 {
-    if (p->mh) { mpg123_close(p->mh); mpg123_delete(p->mh); p->mh = NULL; }
+    if (p->dec) { dec_close(p->dec); p->dec = NULL; }
     if (!t) return -1;
-    /* Um .flac chega aqui: o scanner o mostra na estante de propósito, mas o
-       decodificador é o mpg123. Recusar pelo nome antes de abrir poupa uma
-       abertura de arquivo e dá um recado certo em vez de "erro". */
-    if (!t->decodable) {
+    /* A pergunta "eu sei tocar isto?" tem UM dono, o decoder.c. Perguntá-la
+       aqui por extensão criaria a segunda metade que discorda da primeira. */
+    if (dec_kind_of(t->path) == DEC_NONE) {
         snprintf(p->last_error, sizeof(p->last_error),
                  "%.72s: formato que este app não toca", t->title);
         return -1;
     }
-    int e = 0;
-    p->mh = mpg123_new(NULL, &e);
-    if (!p->mh) return -1;
-    if (mpg123_open(p->mh, t->path) != MPG123_OK) {
+    p->dec = dec_open(t->path);
+    if (!p->dec) {
         snprintf(p->last_error, sizeof(p->last_error), "%.90s: não abriu", t->title);
-        mpg123_close(p->mh);
-        mpg123_delete(p->mh);
-        p->mh = NULL;
         return -1;
     }
-    int freq, chans, enc;
-    long lfreq;
-    if (mpg123_getformat(p->mh, &lfreq, &chans, &enc) != MPG123_OK) {
+    dec_format(p->dec, &p->dfmt);
+    if (p->dfmt.rate <= 0 || p->dfmt.channels <= 0) {
         snprintf(p->last_error, sizeof(p->last_error), "%.90s: formato ilegível", t->title);
-        mpg123_close(p->mh);
-        mpg123_delete(p->mh);
-        p->mh = NULL;
+        dec_close(p->dec);
+        p->dec = NULL;
         return -1;
     }
-    freq = (int)lfreq;
-    p->out_rate = lfreq;
-    p->out_channels = chans;
-    p->out_enc_need = (size_t)chans * 2; /* 16-bit */
+    p->out_rate = p->dfmt.rate;
+    p->out_channels = p->dfmt.channels;
+    p->out_enc_need = (size_t)p->dfmt.channels * 2; /* int16 sempre */
 
     /* reconfigura o device SDL se o formato mudou */
     SDL_CloseAudioDevice(dev);
     SDL_AudioSpec want, have;
     SDL_zero(want);
-    want.freq = freq;
+    want.freq = (int)p->dfmt.rate;
     want.format = AUDIO_S16;
-    want.channels = (Uint8)chans;
+    want.channels = (Uint8)p->dfmt.channels;
     want.samples = 1024;
     want.callback = sdl_cb;
     want.userdata = p;
     dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (dev == 0) {
         snprintf(p->last_error, sizeof(p->last_error), "o áudio não abriu");
-        mpg123_close(p->mh);
-        mpg123_delete(p->mh);
-        p->mh = NULL;
+        dec_close(p->dec);
+        p->dec = NULL;
         return -1;
     }
+    /* O que o APARELHO recebeu, que não é sempre o que se pediu: o Vita sai
+       em 16 bits e num punhado de taxas, e um FLAC de 96k/24 é reamostrado e
+       reduzido antes de virar som. A tela diz isso — a tese do projeto é não
+       mentir sobre o caminho do sinal. */
+    p->hw_rate = have.freq;
+    p->hw_channels = have.channels;
+
     /* faixa nova, anel vazio: sem isto o resto do PCM da anterior toca por
        cima do começo desta, e o relógio já conta a nova */
     p->ring_head = p->ring_tail = 0;
     p->decoded_frames = 0;
     {
-        off_t len = mpg123_length(p->mh);
-        p->track_frames = len > 0 ? (long long)len : 0;
+        long long len = dec_length(p->dec);
+        p->track_frames = len > 0 ? len : 0;
     }
     p->last_error[0] = '\0';
     SDL_PauseAudioDevice(dev, 0);
@@ -195,7 +228,7 @@ static int open_track(Player *p, const Track *t)
 
 static void close_stream(Player *p)
 {
-    if (p->mh) { mpg123_close(p->mh); mpg123_delete(p->mh); p->mh = NULL; }
+    if (p->dec) { dec_close(p->dec); p->dec = NULL; }
     if (dev) { SDL_CloseAudioDevice(dev); dev = 0; }
     p->ring_head = p->ring_tail = 0;
 }
@@ -241,7 +274,7 @@ static void *player_thread(void *arg)
             pthread_cond_wait(&p->cond, &p->mtx);
         if (!p->thread_run) { pthread_mutex_unlock(&p->mtx); break; }
 
-        if (!p->mh) {
+        if (!p->dec) {
             pthread_mutex_unlock(&p->mtx);
             continue;
         }
@@ -254,8 +287,8 @@ static void *player_thread(void *arg)
                 SDL_Delay(1);
                 continue;
             }
-            size_t done = 0;
-            int rc = mpg123_read(p->mh, buf, sizeof(buf), &done);
+            long got = dec_read(p->dec, buf, sizeof(buf));
+            size_t done = got > 0 ? (size_t)got : 0;
             if (done > 0) {
                 size_t whead = p->ring_head, w = done;
                 size_t first = RING_SIZE - whead;
@@ -266,13 +299,18 @@ static void *player_thread(void *arg)
                 if (p->out_enc_need)
                     p->decoded_frames += (long long)(done / p->out_enc_need);
             }
-            if (rc == MPG123_DONE) {
+            if (got <= 0) {
                 /* fim da faixa: registra e decide o que vem (repetição/sorteio) */
                 PlayerCompleteFn cb = p->complete_cb;
                 void *ud = p->complete_ud;
                 pthread_mutex_lock(&p->mtx);
                 const Track *done_t = slot_at(p, p->cur);
                 int at_end = (p->cur + 1 >= p->nslots);
+                /* soneca "fim do lado": esta era a última, e é aqui que ela
+                   acaba — não num relógio que não sabe onde o lado termina */
+                if (p->sleep_mode == 2 && p->sleep_at_track >= 0 &&
+                    p->cur >= p->sleep_at_track)
+                    at_end = 1, p->repeat = REPEAT_OFF;
                 if (p->repeat == REPEAT_ONE) {
                     /* repete a mesma faixa */
                 } else if (at_end) {
@@ -296,9 +334,6 @@ static void *player_thread(void *arg)
                 pthread_mutex_unlock(&p->mtx);
                 if (cb) cb(done_t, ud);
                 break;
-            }
-            if (rc == MPG123_NEW_FORMAT) {
-                mpg123_getformat(p->mh, &p->out_rate, &p->out_channels, NULL);
             }
         }
     }
@@ -423,7 +458,7 @@ void player_stop(Player *p)
 void player_play(Player *p)
 {
     pthread_mutex_lock(&p->mtx);
-    if (!p->mh) { pthread_mutex_unlock(&p->mtx); return; }
+    if (!p->dec) { pthread_mutex_unlock(&p->mtx); return; }
     p->state = PLAYER_PLAYING;
     SDL_PauseAudioDevice(dev, 0);
     pthread_cond_broadcast(&p->cond);
@@ -446,7 +481,7 @@ void player_toggle(Player *p)
     if (p->state == PLAYER_PLAYING) {
         p->state = PLAYER_PAUSED;
         SDL_PauseAudioDevice(dev, 1);
-    } else if (p->mh) {
+    } else if (p->dec) {
         p->state = PLAYER_PLAYING;
         SDL_PauseAudioDevice(dev, 0);
         pthread_cond_broadcast(&p->cond);
@@ -492,6 +527,19 @@ void player_set_repeat(Player *p, RepeatMode m)
 
 RepeatMode player_repeat(Player *p) { return p ? p->repeat : REPEAT_OFF; }
 
+/* modo 0 desliga, 1 esmaece agora (20 s), 2 para no fim do lado */
+void player_set_sleep(Player *p, int mode, int last_track)
+{
+    if (!p) return;
+    pthread_mutex_lock(&p->mtx);
+    p->sleep_mode = mode;
+    p->sleep_gain = 1.0f;
+    p->sleep_at_track = last_track;
+    pthread_mutex_unlock(&p->mtx);
+}
+
+int player_sleep_mode(const Player *p) { return p ? p->sleep_mode : 0; }
+
 void player_set_shuffle(Player *p, bool on)
 {
     if (!p) return;
@@ -508,18 +556,18 @@ int player_seek(Player *p, int seconds)
     if (!p) return -1;
     pthread_mutex_lock(&p->mtx);
     int r = -1;
-    if (p->mh && p->out_rate > 0) {
+    if (p->dec && p->out_rate > 0) {
         if (seconds < 0) seconds = 0;
-        off_t target = (off_t)seconds * p->out_rate;
-        off_t got = mpg123_seek(p->mh, target, SEEK_SET);
+        long long target = (long long)seconds * p->out_rate;
+        long long got = dec_seek(p->dec, target);
         /* usa o que a API realmente alcançou (clampa no fim da faixa) */
         if (got >= 0) {
-            /* ESVAZIA o anel. Sem isto, o mpg123 pula mas até seis segundos
+            /* ESVAZIA o anel. Sem isto, o decodificador pula mas até seis segundos
                de PCM velho continuam na fila e tocam depois do salto: o
                [cima] mexia no relógio e a música só obedecia meio minuto
                depois, que lê como "o seek não funciona". */
             p->ring_head = p->ring_tail = 0;
-            p->decoded_frames = (long long)got;
+            p->decoded_frames = got;
             r = 0;
         }
     }
@@ -536,7 +584,7 @@ const Album *player_current_album(const Player *p)
 }
 int player_track_seconds(const Player *p)
 {
-    return p && p->mh ? position_sec(p) : 0;
+    return p && p->dec ? position_sec(p) : 0;
 }
 
 /* Duração da faixa em segundos, ou -1 se o decodificador não soube dizer.
@@ -544,7 +592,7 @@ int player_track_seconds(const Player *p)
    AGORA dividia por uma duração 1 e desenhava o disco sempre no fim. */
 int player_track_duration(const Player *p)
 {
-    if (!p || !p->mh || p->out_rate <= 0 || p->track_frames <= 0) return -1;
+    if (!p || !p->dec || p->out_rate <= 0 || p->track_frames <= 0) return -1;
     return (int)(p->track_frames / p->out_rate);
 }
 
@@ -557,6 +605,90 @@ const char *player_last_error(const Player *p)
 
 /* Quantas faixas o decodificador teve de pular para chegar nesta. */
 int player_skipped(const Player *p) { return p ? p->skips : 0; }
+
+/* O CAMINHO DO SINAL, medido e não prometido: o formato do arquivo, a taxa e
+   a profundidade dele, e o que o aparelho realmente recebeu. Sem tocador, um
+   travessão — acusação tirada da ausência de dado é a doença que a tela SINAL
+   do desktop pegou. */
+/* O ESPECTRO, medido no PCM que está prestes a ser ouvido.
+ *
+ * Goertzel, não FFT: são dezesseis frequências fixas, e para dezesseis alvos
+ * o Goertzel custa menos que montar uma FFT inteira e jogar fora 90% dela.
+ * As bandas são espaçadas em LOG porque é assim que o ouvido divide o
+ * espectro — dezesseis bandas lineares dariam quinze de agudo e uma de tudo
+ * o que a pessoa reconhece como música.
+ *
+ * Lê do ring_tail, que é o que o callback vai entregar em seguida: ler do
+ * head mostraria o que só vai soar daqui a seis segundos, e o anel adiantado
+ * é justamente o que faz um "visualizador" não bater com o som. */
+void player_spectrum(Player *p, float *out, int nbands)
+{
+    if (!out || nbands <= 0) return;
+    for (int i = 0; i < nbands; i++) out[i] = 0.0f;
+    if (!p || p->state != PLAYER_PLAYING || p->out_rate <= 0) return;
+
+    size_t frame = p->out_enc_need ? p->out_enc_need : 4;
+    size_t filled = (p->ring_head - p->ring_tail) & RING_MASK;
+    size_t want = 1024 * frame;
+    if (filled < want) return;
+
+    /* mono: a soma dos canais. Um espectro por canal seria dois desenhos e a
+       tela tem um disco só. */
+    static float mono[1024];
+    size_t t = p->ring_tail;
+    int ch = p->out_channels > 0 ? p->out_channels : 2;
+    for (int i = 0; i < 1024; i++) {
+        long acc = 0;
+        for (int c = 0; c < ch; c++) {
+            size_t off = (t + (size_t)(i * ch + c) * 2) & RING_MASK;
+            short v;
+            memcpy(&v, p->ring + off, 2);
+            acc += v;
+        }
+        /* Hann: sem janela, cada banda vaza nas vizinhas e o anel inteiro
+           sobe e desce junto, que lê como pulsar e não como espectro. */
+        float w = 0.5f * (1.0f - cosf(6.2831853f * (float)i / 1023.0f));
+        mono[i] = (float)acc / (float)(ch * 32768) * w;
+    }
+
+    for (int b = 0; b < nbands; b++) {
+        /* 40 Hz a 12 kHz, em log */
+        float f = 40.0f * powf(12000.0f / 40.0f, (float)b / (float)(nbands - 1 > 0 ? nbands - 1 : 1));
+        float k = f * 1024.0f / (float)p->out_rate;
+        float w = 6.2831853f * k / 1024.0f;
+        float coeff = 2.0f * cosf(w);
+        float s0 = 0, s1 = 0, s2 = 0;
+        for (int i = 0; i < 1024; i++) {
+            s0 = mono[i] + coeff * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        float mag = sqrtf(s1 * s1 + s2 * s2 - coeff * s1 * s2) / 512.0f;
+        /* em dB: linear, o grave come a tela inteira e o resto é uma linha */
+        float db = 20.0f * log10f(mag + 1e-6f);
+        float v = (db + 60.0f) / 60.0f;
+        if (v < 0) v = 0;
+        if (v > 1) v = 1;
+        out[b] = v;
+    }
+}
+
+void player_signal(const Player *p, PlayerSignal *out)
+{
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+    if (!p || !p->dec) { out->kind = "—"; return; }
+    out->kind = dec_kind_name(dec_kind(p->dec));
+    out->rate_file = p->dfmt.rate_native;
+    out->bits_file = p->dfmt.bits_native;
+    out->rate_out = p->hw_rate;
+    out->channels = p->hw_channels;
+    /* 16 bits não é escolha nossa: o sceAudioOut do Vita não tem outra. */
+    out->bits_out = 16;
+    out->resampled = (p->hw_rate > 0 && p->dfmt.rate_native > 0 &&
+                      p->hw_rate != p->dfmt.rate_native);
+    out->requantized = (p->dfmt.bits_native > 16);
+}
 int player_track_count(const Player *p) { return p ? p->nslots : 0; }
 const Track *player_current_track(const Player *p)
 {

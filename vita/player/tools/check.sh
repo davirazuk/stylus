@@ -24,12 +24,73 @@ if ! command -v gcc >/dev/null 2>&1; then
     skip "PULA: sem gcc nesta máquina"
 else
     out=$(gcc -std=gnu11 -Wall -Wextra -Werror -I"$SRC" -o /tmp/vitastylus_host_test \
-          tools/host_test.c tools/tags_stub.c "$SRC"/library.c "$SRC"/fsutil.c "$SRC"/ui_layout.c 2>&1)
+          tools/host_test.c tools/decoder_stub.c "$SRC"/library.c "$SRC"/fsutil.c \
+          "$SRC"/ui_layout.c "$SRC"/sides.c "$SRC"/lyrics.c -lm 2>&1)
     if [ $? -ne 0 ]; then
         fail "o teste de host não compila" "$out"
     else
         if /tmp/vitastylus_host_test; then pass "as conferências do núcleo passam"
         else fail "o teste de host reprovou (a saída está acima)"; fi
+    fi
+fi
+
+printf '\n\033[1mdecodificadores (contra áudio de verdade)\033[0m\n'
+# Este é o único teste que precisa de coisa de fora: as bibliotecas de áudio
+# e os codificadores que geram as fixtures. Onde não houver, PULA — uma
+# conferência que reprova por falta de dependência ensina a ignorar a
+# conferência inteira.
+DEC_PKGS="libmpg123 flac vorbisfile opusfile"
+if ! command -v gcc >/dev/null 2>&1 || ! command -v pkg-config >/dev/null 2>&1; then
+    skip "PULA: sem gcc/pkg-config"
+elif ! pkg-config --exists $DEC_PKGS 2>/dev/null; then
+    skip "PULA: faltam as bibliotecas ($DEC_PKGS)"
+elif ! command -v flac >/dev/null 2>&1 || ! command -v oggenc >/dev/null 2>&1 \
+   || ! command -v opusenc >/dev/null 2>&1 || ! command -v lame >/dev/null 2>&1; then
+    skip "PULA: faltam os codificadores (flac, oggenc, opusenc, lame)"
+else
+    FX=/tmp/vitastylus_fixtures
+    if [ ! -f "$FX/tone.flac" ]; then
+        python3 tools/make_fixtures.py "$FX" >/dev/null 2>&1 || true
+    fi
+    if [ ! -f "$FX/tone.flac" ]; then
+        fail "não consegui gerar as fixtures de áudio"
+    else
+        out=$(gcc -std=gnu11 -Wall -Wextra -Werror -I"$SRC" -o /tmp/vitastylus_dectest \
+              tools/decoder_test.c "$SRC"/decoder.c \
+              $(pkg-config --cflags $DEC_PKGS) $(pkg-config --libs $DEC_PKGS) -lm 2>&1) || true
+        if [ ! -x /tmp/vitastylus_dectest ]; then
+            fail "o teste do decodificador não compila" "$out"
+        elif /tmp/vitastylus_dectest "$FX"; then
+            pass "FLAC sai idêntico ao original, e os cinco formatos decodificam"
+        else
+            fail "o teste do decodificador reprovou (a saída está acima)"
+        fi
+    fi
+fi
+
+printf '\n\033[1mos lados: as duas metades cortam igual\033[0m\n'
+# Não compara marcador nem trecho de código — compara o CORTE, repartindo a
+# MESMA grade de discos pelas duas regras. As peças podem estar todas
+# presentes e o resultado sair diferente, que foi o que aconteceu com o
+# celular quando o teto físico entrou só de um lado. E o lado de lá é o
+# vinyl.py DE VERDADE, não uma cópia dele: uma cópia derivaria.
+if ! command -v gcc >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    skip "PULA: sem gcc/python3"
+else
+    gcc -std=gnu11 -Wall -Wextra -Werror -I"$SRC" -o /tmp/vitastylus_sides_dump \
+        tools/sides_dump.c "$SRC"/sides.c -lm 2>/dev/null
+    if [ ! -x /tmp/vitastylus_sides_dump ]; then
+        fail "o despejo dos lados não compila"
+    else
+        out=$(python3 tools/compara_lados.py /tmp/vitastylus_sides_dump 2>&1)
+        rc=$?
+        if [ $rc -eq 77 ]; then
+            skip "$(echo "$out" | head -1)"
+        elif [ $rc -eq 0 ]; then
+            pass "$(echo "$out" | tail -1)"
+        else
+            fail "o corte dos lados DIVERGE do desktop" "$out"
+        fi
     fi
 fi
 
@@ -94,7 +155,10 @@ printf '\n\033[1mfunção órfã\033[0m\n'
 orphans=""
 for fn in album_load_cover album_load_meta library_status library_roots_from \
           mkdir_p path_join ui_draw_scanning player_last_error player_track_duration \
-          ui_rec_idx drain_done; do
+          ui_rec_idx drain_done dec_open dec_probe dec_seek dec_kind_of \
+          player_signal player_spectrum player_set_sleep sides_build \
+          sides_gesture sides_of_track lyrics_load lyrics_at \
+          ui_begin_ritual ui_skip_ritual ui_resting ui_scrub ui_jump_letter; do
     n=$(grep -how "$fn" "$SRC"/*.c "$SRC"/*.h tools/*.c 2>/dev/null | wc -l)
     # 1 = só a definição; 2 = definição + protótipo. Chamada de verdade é >2.
     [ "$n" -le 2 ] && orphans="$orphans $fn"
@@ -108,11 +172,19 @@ fi
 printf '\n\033[1muma lista, um dono\033[0m\n'
 # Seis listas de extensão de áudio que discordavam entre si custaram caro no
 # desktop. Aqui a resposta mora no library.c e em lugar nenhum mais.
+# Duas perguntas, dois donos, e nenhuma escrita duas vezes: "isto é música?"
+# é do library.c (a estante mostra o que não toca, de propósito) e "eu sei
+# tocar isto?" é do decoder.c, que é quem tem os decodificadores.
 n=$(grep -l '"\.mp3"' "$SRC"/*.c | wc -l)
-if [ "$n" -le 1 ]; then
-    pass "a lista de extensões de áudio existe em UM arquivo"
+if [ "$n" -le 2 ]; then
+    pass "cada pergunta sobre formato tem um dono só"
 else
-    fail "há mais de uma lista de extensão de áudio" "$(grep -l '"\.mp3"' "$SRC"/*.c)"
+    fail "lista de extensão espalhada" "$(grep -l '"\.mp3"' "$SRC"/*.c)"
+fi
+if grep -q 'decodable_ext.*dec_kind_of' "$SRC"/library.c; then
+    pass "a estante pergunta ao decoder o que ele sabe tocar"
+else
+    fail "a estante tem a PRÓPRIA ideia do que é tocável (vai divergir)"
 fi
 # E a pasta dos dados também: escrita em dois lugares, um deles deriva.
 n=$(grep -ho 'ux0:data/vitastylus' "$SRC"/*.c | wc -l)
@@ -129,6 +201,43 @@ if [ -n "$bad" ]; then
     fail "caminho montado à mão no scanner (use path_join)" "$bad"
 else
     pass "o scanner monta caminho pelo path_join"
+fi
+
+printf '\n\033[1mo aparelho\033[0m\n'
+# O Vita SUSPENDE sozinho depois de alguns minutos sem toque, e suspenso o
+# áudio para: um álbum inteiro nunca chegava ao fim se ninguém encostasse.
+if grep -q 'sceKernelPowerTick' "$SRC"/main.c; then
+    pass "o timer de suspensão é cancelado enquanto toca"
+else
+    fail "sem sceKernelPowerTick: o Vita suspende no meio do disco"
+fi
+# ...mas a TELA pode apagar: é um tocador de música, e o OLED é a bateria.
+if grep -q 'DISABLE_OLED' "$SRC"/main.c; then
+    fail "não trave a tela acesa: é um tocador, o OLED come a bateria"
+else
+    pass "a tela continua livre para apagar"
+fi
+# O painel de toque é 1920x1088, o dobro da tela.
+if grep -q 'report\[0\].x / 2' "$SRC"/ui.c; then
+    pass "o toque é convertido da resolução do painel para a da tela"
+else
+    fail "o toque usa coordenadas cruas (todo toque cai no canto)"
+fi
+
+printf '\n\033[1ma cerimônia (§5.5)\033[0m\n'
+# Abrir o app com música já tocando NÃO encena a cerimônia: o disco não foi
+# posto agora, foi encontrado no meio. É a diferença entre um ritual e uma
+# animação de abertura.
+if grep -q 'ui_skip_ritual' "$SRC"/main.c && \
+   grep -A3 'try_resume(&lib, player)' "$SRC"/main.c | grep -q 'ui_skip_ritual'; then
+    pass "retomar a sessão NÃO encena a descida da agulha"
+else
+    fail "o resume encena a cerimônia (mentira sobre o que aconteceu)"
+fi
+if grep -q 'ui_begin_ritual' "$SRC"/main.c; then
+    pass "pôr um disco encena a cerimônia"
+else
+    fail "nada encena a cerimônia — ela existe e nunca roda"
 fi
 
 printf '\n\033[1mmemória\033[0m\n'

@@ -3,6 +3,7 @@
 #include <psp2/ctrl.h>
 #include <psp2/sysmodule.h>
 #include <psp2/appmgr.h>
+#include <psp2/power.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +19,8 @@
 #include "rec.h"
 #include "scrobble.h"
 #include "resume.h"
+#include "decoder.h"
+#include "sides.h"
 
 /* recomendações e playlists moram no cartão, junto do app — os caminhos são
    do paths.h, que é o único dono deles */
@@ -188,6 +191,7 @@ int main(int argc, char *argv[])
 
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
     load_modules();
+    dec_global_init();
 
     if (vita2d_init() < 0) {
         sceAppMgrLoadExec("app0:eboot.bin", NULL, NULL);
@@ -232,7 +236,10 @@ int main(int argc, char *argv[])
 
     ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
 
+    /* Abrir com música já tocando NÃO encena a cerimônia: o disco não foi
+       posto agora, foi encontrado no meio. */
     try_resume(&lib, player);
+    ui_skip_ritual(ui);
 
     int running = 1;
     int frame = 0;
@@ -244,8 +251,9 @@ int main(int argc, char *argv[])
             break;
         case 2: {
             int idx = ui_selected(ui);
-            if (idx >= 0 && idx < lib.nalbums)
-                player_load_album(player, &lib, idx, 0);
+            if (idx >= 0 && idx < lib.nalbums &&
+                player_load_album(player, &lib, idx, 0) == 0)
+                ui_begin_ritual(ui);   /* a pessoa PÔS um disco: encena */
             break;
         }
         case 4:
@@ -264,7 +272,8 @@ int main(int argc, char *argv[])
             int ri = ui_rec_idx(ui);
             if (ses.nrecs > 0) {
                 if (ri < 0 || ri >= ses.nrecs) ri = 0;
-                player_load_list(player, &lib, ses.recs, ses.nrecs, ri);
+                if (player_load_list(player, &lib, ses.recs, ses.nrecs, ri) == 0)
+                    ui_begin_ritual(ui);
             }
             break;
         }
@@ -274,8 +283,8 @@ int main(int argc, char *argv[])
                 const Track *tracks[1600];
                 int n = playlist_to_tracks(&lib, &ses.plists[pi],
                                            tracks, 1600);
-                if (n > 0)
-                    player_load_list(player, &lib, tracks, n, 0);
+                if (n > 0 && player_load_list(player, &lib, tracks, n, 0) == 0)
+                    ui_begin_ritual(ui);
             }
             break;
         }
@@ -303,6 +312,39 @@ int main(int argc, char *argv[])
         case 16: /* avança +10s */
             player_seek(player, player_track_seconds(player) + 10);
             break;
+        case 19: { /* a régua: pula para o primeiro disco daquela letra */
+            int want = ui_jump_letter(ui);
+            for (int i = 0; i < lib.nalbums; i++) {
+                const char *nm = lib.albums[i].artist[0] ? lib.albums[i].artist
+                                                         : lib.albums[i].album;
+                char c0 = nm[0];
+                if (c0 >= 'a' && c0 <= 'z') c0 -= 32;
+                int letra = (c0 >= 'A' && c0 <= 'Z') ? c0 - 'A' : 26;
+                if (letra == want) { ui_set_sel(ui, i); break; }
+            }
+            break;
+        }
+        case 20: { /* a soneca: desligada → esmaece → fim do lado → desligada */
+            int m2 = (player_sleep_mode(player) + 1) % 3;
+            int last = -1;
+            if (m2 == 2) {
+                /* o fim do LADO, não um relógio: é o disco que decide */
+                const Album *a = player_current_album(player);
+                if (a && a->lados.n > 0) {
+                    int l = sides_of_track(&a->lados, player_track_idx(player));
+                    if (l >= 0) last = a->lados.sides[l].last;
+                }
+                if (last < 0) m2 = 0;   /* sem lados, não prometa o que não sabe */
+            }
+            player_set_sleep(player, m2, last);
+            break;
+        }
+        case 18: { /* o dedo largou a barra: busca para onde ele apontou */
+            float f = ui_scrub(ui);
+            int dur = player_track_duration(player);
+            if (f >= 0 && dur > 0) player_seek(player, (int)(f * (float)dur));
+            break;
+        }
         case 17: { /* apagar playlist (confirmado em 2 toques via R2) */
             int pi = ui_playlist_idx(ui);
             if (ses.plists && pi >= 0 && pi < ses.nplists)
@@ -312,9 +354,23 @@ int main(int argc, char *argv[])
         default:
             break;
         }
+        /* O Vita SUSPENDE sozinho depois de alguns minutos sem toque, e
+           suspenso o áudio para: um álbum inteiro nunca chegava ao fim se a
+           pessoa não encostasse no aparelho. Cancelar o timer de suspensão é
+           uma linha, e nada no app a tinha.
+
+           A tela, ao contrário, DEIXAMOS apagar: é um tocador de música, e o
+           OLED aceso é o que come a bateria. Por isso só o timer de suspensão
+           é cancelado, e não o da tela. */
+        if (player_state(player) == PLAYER_PLAYING)
+            sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+
         drain_done(&ses);
-        /* se uma faixa terminou, a lista recomendada muda: inline no frame */
-        if (ses.dirty_recs)
+        /* No repouso a tela está apagada e ninguém está olhando: remontar a
+           lista recomendada varre a coleção inteira, e fazer isso a cada
+           faixa com a tela preta é gastar bateria para desenhar nada. Fica
+           marcado como sujo e é refeito quando a pessoa voltar. */
+        if (ses.dirty_recs && !ui_resting(ui))
             recs_rebuild(&ses, &lib);
         ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
         ui_frame(ui, &lib, player);

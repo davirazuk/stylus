@@ -53,6 +53,29 @@ int  player_track_seconds(const Player *p); /* posição atual segundos */
 int  player_track_duration(const Player *p); /* duração, -1 se desconhecida */
 const char *player_last_error(const Player *p); /* "" quando não houve nada */
 int  player_skipped(const Player *p);        /* faixas puladas por não abrir */
+
+/* o caminho do sinal, MEDIDO */
+typedef struct {
+    const char *kind;    /* "FLAC", "MP3"… "—" quando não há nada tocando */
+    long rate_file;      /* taxa do arquivo */
+    int  bits_file;      /* profundidade do arquivo */
+    long rate_out;       /* taxa que o aparelho aceitou */
+    int  bits_out;       /* 16: o Vita não tem outra */
+    int  channels;
+    bool resampled;      /* a taxa mudou no caminho */
+    bool requantized;    /* a profundidade desceu */
+} PlayerSignal;
+void player_signal(const Player *p, PlayerSignal *out);
+
+/* Espectro do que está prestes a soar, `nbands` valores em 0..1.
+   Zerado quando não há som — o anel é a única fonte, e ausência de dado não
+   pode virar afirmação de silêncio nem de nível. */
+void player_spectrum(Player *p, float *out, int nbands);
+
+/* A SONECA. 0 desliga, 1 esmaece em 20 s, 2 para quando a faixa
+   `last_track` (a última do lado) terminar. */
+void player_set_sleep(Player *p, int mode, int last_track);
+int  player_sleep_mode(const Player *p);
 const Track *player_current_track(const Player *p);
 int player_track_count(const Player *p);
 int player_session_tracks(Player *p, const Track **out, int max);
