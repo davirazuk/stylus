@@ -9,3 +9,4 @@ airootfs/usr/share/stylus/deck/*.bak
 .aider*
 android/app/.cxx/
 android/local.properties
+vita/player/build/
