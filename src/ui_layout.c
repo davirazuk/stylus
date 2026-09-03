@@ -47,7 +47,10 @@ void ui_deck_geom(int scrw, int scrh, UiDeckGeom *g)
     g->cy = f.body_y + avail_h / 2.0f + 12.0f;
     g->text_x = g->cx + r + 42.0f;
     g->text_w = (float)scrw - f.pad_x - g->text_x;
-    g->list_y = g->cy - r * 0.03f + 8.0f;
+    g->bar_y = 262.0f;
+    g->bar_h = 4.0f;
+    if (g->bar_y > f.foot_y - 120.0f) g->bar_y = f.foot_y - 120.0f;
+    g->list_y = g->bar_y + 34.0f;
     g->list_step = 22.0f;
     g->list_rows = (int)((f.foot_y - 26.0f - g->list_y) / g->list_step);
     if (g->list_rows > 6) g->list_rows = 6;

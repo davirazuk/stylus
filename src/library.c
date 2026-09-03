@@ -1,7 +1,7 @@
 #include "library.h"
 #include "paths.h"
 #include "fsutil.h"
-#include "tags.h"
+#include "decoder.h"
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -22,12 +22,10 @@ static const char *EXT_AUDIO[] = {
     NULL
 };
 
-/* O que ESTE VPK sabe decodificar. É mpg123: a família MPEG-1/2 layer I-III.
-   Listar as outras na estante e não tocá-las seria mentira; deixá-las de fora
-   da estante seria pior — a pessoa com um cartão de FLAC veria "0 discos" e
-   concluiria que o app não acha nada. Então elas aparecem, apagadas, e a tela
-   diz o formato. */
-static const char *EXT_DECODABLE[] = { ".mp3", ".mp2", ".mp1", ".mpga", NULL };
+/* "Eu sei tocar isto?" quem responde é o decoder.c, que é quem tem os
+   decodificadores. Havia uma lista de extensões aqui e outra lá dentro: a
+   segunda ganhou FLAC, Vorbis e Opus e esta não, e o resultado teria sido um
+   disco marcado "não tocável" na estante que o player toca sem reclamar. */
 
 static bool ends_with_ext(const char *name, const char *ext)
 {
@@ -44,7 +42,7 @@ static bool in_ext_list(const char *name, const char **list)
 }
 
 bool audio_ext(const char *name)     { return name && in_ext_list(name, EXT_AUDIO); }
-bool decodable_ext(const char *name) { return name && in_ext_list(name, EXT_DECODABLE); }
+bool decodable_ext(const char *name) { return name && dec_kind_of(name) != DEC_NONE; }
 
 /* ---------------- nome de arquivo → número + título ---------------- */
 
@@ -503,7 +501,7 @@ void library_free(Library *lib)
     free(lib->albums);
     lib->albums = NULL;
     lib->nalbums = lib->cap = 0;
-    tags_exit();
+    dec_global_exit();
 }
 
 Album *library_album(Library *lib, int i)
@@ -521,17 +519,16 @@ int album_load_meta(Album *alb)
     int total = 0, known = 0;
     for (int i = 0; i < alb->ntracks; i++) {
         Track *t = &alb->tracks[i];
-        if (!t->decodable) continue;   /* o leitor de tags é o mpg123 */
-        char ti[MAX_TITLE_LEN], ar[MAX_NAME_LEN], al[MAX_NAME_LEN];
-        int num = -1, sec = -1;
-        if (tags_read(t->path, ti, sizeof(ti), ar, sizeof(ar), al, sizeof(al),
-                      &num, &sec, NULL, 0, NULL, 0) != 0)
-            continue;
-        if (ti[0]) snprintf(t->title, MAX_TITLE_LEN, "%s", ti);
-        if (sec > 0) { t->seconds = sec; total += sec; known++; }
-        if (!alb->artist[0] && ar[0]) snprintf(alb->artist, MAX_NAME_LEN, "%s", ar);
-        if (al[0] && (!alb->album[0] || !strcmp(alb->album, "(sem pasta)")))
-            snprintf(alb->album, MAX_NAME_LEN, "%s", al);
+        if (!t->decodable) continue;
+        DecTags dt;
+        if (dec_probe(t->path, &dt, 0) != 0) continue;
+        if (dt.title[0]) snprintf(t->title, MAX_TITLE_LEN, "%s", dt.title);
+        if (dt.number > 0 && t->number < 0) t->number = dt.number;
+        if (dt.seconds > 0) { t->seconds = dt.seconds; total += dt.seconds; known++; }
+        if (!alb->artist[0] && dt.artist[0]) snprintf(alb->artist, MAX_NAME_LEN, "%s", dt.artist);
+        if (dt.album[0] && (!alb->album[0] || !strcmp(alb->album, "(sem pasta)")))
+            snprintf(alb->album, MAX_NAME_LEN, "%s", dt.album);
+        dec_tags_free(&dt);
     }
     /* Duração zero não é "não sei", é "não dura nada": as faixas que faltam
        recebem a MEDIANA das que deram, senão o total mente e a agulha aponta
@@ -543,6 +540,14 @@ int album_load_meta(Album *alb)
             if (alb->tracks[i].seconds <= 0) { alb->tracks[i].seconds = med; total += med; }
         alb->seconds_total = total;
     }
+    /* Os LADOS. Só agora: antes das tags não há duração, e sem duração não há
+       lado — repartir por número de faixas seria inventar um objeto. */
+    if (known > 0) {
+        int durs[512];
+        int n = alb->ntracks < 512 ? alb->ntracks : 512;
+        for (int i = 0; i < n; i++) durs[i] = alb->tracks[i].seconds;
+        sides_build(durs, n, &alb->lados);
+    }
     return 0;
 }
 
@@ -553,28 +558,24 @@ int album_load_cover(Album *alb)
     alb->cover_loaded = true;
     if (!alb->tracks || alb->ntracks == 0) return 1;
 
+    /* Uma passada por faixa, não duas. A versão anterior chamava o leitor
+       DUAS vezes por arquivo — a primeira só para medir o tamanho da capa —
+       o que num FLAC significa abrir e varrer os metadados duas vezes. */
     for (int i = 0, tried = 0; i < alb->ntracks && tried < 8; i++) {
         if (!alb->tracks[i].decodable) continue;
         tried++;
-        char t[MAX_TITLE_LEN], a[MAX_NAME_LEN], al[MAX_NAME_LEN];
-        int num, sec;
-        size_t need = 0;
-        if (tags_read(alb->tracks[i].path, t, sizeof(t), a, sizeof(a), al, sizeof(al),
-                      &num, &sec, NULL, 0, &need, 1) != 0)
-            continue;
-        if (need == 0) continue;
-        unsigned char *buf = malloc(need);
-        if (!buf) return -1;
-        size_t got = 0;
-        if (tags_read(alb->tracks[i].path, t, sizeof(t), a, sizeof(a), al, sizeof(al),
-                      &num, &sec, buf, need, &got, 1) != 0 || got == 0 || got > need) {
-            free(buf);
-            continue;
+        DecTags dt;
+        if (dec_probe(alb->tracks[i].path, &dt, 1) != 0) continue;
+        if (!alb->artist[0] && dt.artist[0])
+            snprintf(alb->artist, MAX_NAME_LEN, "%s", dt.artist);
+        if (dt.cover && dt.cover_len > 0) {
+            alb->cover = dt.cover;          /* passa a posse; não libera */
+            alb->cover_len = dt.cover_len;
+            dt.cover = NULL;
+            dec_tags_free(&dt);
+            return 0;
         }
-        if (!alb->artist[0] && a[0]) snprintf(alb->artist, MAX_NAME_LEN, "%s", a);
-        alb->cover = buf;
-        alb->cover_len = got;
-        return 0;
+        dec_tags_free(&dt);
     }
     return 1;
 }

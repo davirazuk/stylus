@@ -31,6 +31,8 @@ typedef struct {
 typedef struct {
     float cx, cy, r;         /* o disco */
     float text_x, text_w;    /* a coluna à direita dele */
+    float bar_y, bar_h;      /* a barra de progresso — o toque a usa para
+                                buscar, então a geometria dela é pública */
     float list_y, list_step;
     int   list_rows;
 } UiDeckGeom;

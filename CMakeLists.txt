@@ -20,11 +20,16 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2 -ffunction-sect
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+# o opusfile.h faz #include <opus_multistream.h> sem o prefixo da pasta
+include_directories(SYSTEM $ENV{VITASDK}/arm-vita-eabi/include/opus)
 
 add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/main.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/library.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/tags.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/decoder.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/compat.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/sides.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/lyrics.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/player.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ui.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/playlist.c
@@ -35,6 +40,8 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ui_layout.c
 )
 
+# A ordem importa num link estático: quem usa vem ANTES de quem fornece.
+# opusfile → opus → ogg; vorbisfile → vorbis → ogg; FLAC → ogg.
 target_link_libraries(${PROJECT_NAME}
   vita2d
   vitashark
@@ -43,6 +50,12 @@ target_link_libraries(${PROJECT_NAME}
   jpeg
   z
   mpg123
+  FLAC
+  vorbisfile
+  vorbis
+  opusfile
+  opus
+  ogg
   SDL2
   SDL2main
   SceGxm_stub
