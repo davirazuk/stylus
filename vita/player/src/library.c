@@ -175,6 +175,14 @@ int library_scan(Library *lib)
         }
     }
     library_sort(lib);
+    /* `owner` aponta para dentro de `albums`, que é realocado durante a
+       varredura e reordenado pelo sort — o ponteiro fica velho. Reamarra cada
+       faixa ao seu álbum AQUI, quando o array já está estável. */
+    for (int i = 0; i < lib->nalbums; i++) {
+        Album *a = &lib->albums[i];
+        for (int j = 0; j < a->ntracks; j++)
+            a->tracks[j].owner = a;
+    }
     return lib->nalbums ? 0 : 0; /* mesmo vazio retorna ok; UI mostra vazio */
 }
 

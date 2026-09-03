@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "scrobble.h"
 
 #include <vita2d.h>
 #include <psp2/ctrl.h>
@@ -19,7 +20,8 @@
 #define COL_TEXT_DIM     0xFF5A6270
 #define COL_COLD         0xFF20304A
 
-typedef enum { VIEW_SHELF = 0, VIEW_DECK, VIEW_RECS, VIEW_PLAYLISTS } View;
+typedef enum { VIEW_SHELF = 0, VIEW_DECK, VIEW_RECS, VIEW_PLAYLISTS,
+               VIEW_HISTORY, VIEW_TOPS } View;
 
 struct Ui {
     vita2d_pvf *font;
@@ -36,6 +38,11 @@ struct Ui {
     const Track **recs;
     int nrecs;
     bool pl_armed;       /* confirmação em 2 toques p/ apagar playlist */
+    Scrob *scrob;        /* banco de escuta standalone (stats) */
+    int hist_sel;        /* linha do histórico recente */
+    int tops_sel;        /* linha do top de álbuns */
+    Album **topbuf;      /* vetor de álbuns do top (recomputado por frame) */
+    int ntopbuf;
 };
 
 /* ---------- círculos (vita2d não tem primitiva de círculo) ---------- */
@@ -340,6 +347,106 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
     }
 }
 
+/* ---------- histórico (banco standalone) ---------- */
+static void draw_history(Ui *u, Library *lib, Player *p)
+{
+    (void)lib;
+    (void)p;
+    vita2d_pvf_draw_text(u->font, 24, 22, COL_AMBER, 1.0f, "HISTÓRICO");
+    vita2d_pvf_draw_text(u->font, 24, SCRH - 38, COL_TEXT_DIM, 0.55f,
+                         "[tri] estante   [R2] top   [DIR] navega");
+    if (!u->scrob || u->scrob->nrecent <= 0) {
+        vita2d_pvf_draw_text(u->font, 40, 120, COL_TEXT_DIM, 0.8f,
+                             "ainda sem escutas — toque algo");
+        return;
+    }
+    /* puxa tudo (até recent_max) e desenha a janela visível por scroll */
+    int cap = u->scrob->nrecent;
+    if (cap > 256) cap = 256;
+    const char *paths[256];
+    long ts[256];
+    int got = scrob_recent(u->scrob, paths, ts, cap);
+
+    int vis = 12;
+    int scroll = (u->hist_sel / vis) * vis;
+    if (scroll < 0) scroll = 0;
+    for (int r = 0; r < vis && scroll + r < got; r++) {
+        int absi = scroll + r;
+        int y = 70 + r * 40;
+        int is_sel = (absi == u->hist_sel);
+        if (is_sel)
+            vita2d_draw_rectangle(24, y, SCRW - 48, 34, 0x14FFAA28);
+        /* resolve o álbum/artista pelo caminho; senão mostra o nome do arquivo */
+        Album *alb = NULL;
+        int ti = library_find_track_by_path(lib, &alb, paths[absi]);
+        const char *label = paths[absi];
+        const char *sub = "";
+        if (ti >= 0 && alb) {
+            label = alb->tracks[ti].title;
+            sub = alb->artist;
+        } else {
+            const char *sl = strrchr(paths[absi], '/');
+            label = sl ? sl + 1 : paths[absi];
+        }
+        char line[520];
+        snprintf(line, sizeof(line), "%.44s", label);
+        vita2d_pvf_draw_text(u->font, 32, (int)(y + 6), is_sel ? COL_AMBER : COL_TEXT,
+                             0.60f, line);
+        char tsbuf[32];
+        snprintf(tsbuf, sizeof(tsbuf), "%ld", ts[absi]);
+        vita2d_pvf_draw_text(u->font, 32, (int)(y + 2 + 19), COL_TEXT_DIM, 0.5f,
+                             sub[0] ? sub : tsbuf);
+    }
+}
+
+/* ---------- mais tocadas (banco standalone) ---------- */
+static void draw_tops(Ui *u, Library *lib, Player *p)
+{
+    (void)lib;
+    (void)p;
+    vita2d_pvf_draw_text(u->font, 24, 22, COL_AMBER, 1.0f, "MAIS TOCADAS");
+    vita2d_pvf_draw_text(u->font, 24, SCRH - 38, COL_TEXT_DIM, 0.55f,
+                         "[tri] estante   [R2] histórico   [DIR] navega");
+    if (!u->scrob || u->scrob->nalbums <= 0) {
+        vita2d_pvf_draw_text(u->font, 40, 120, COL_TEXT_DIM, 0.8f,
+                             "ainda sem escutas — toque algo");
+        return;
+    }
+    if (!u->topbuf) {
+        u->topbuf = malloc((size_t)(u->scrob->nalbums > 0 ? u->scrob->nalbums : 1)
+                           * sizeof(Album *));
+    }
+    if (!u->topbuf) return;
+    u->ntopbuf = scrob_top_albums(u->scrob, u->topbuf, u->scrob->nalbums);
+    int vis = 11;
+    int scroll = (u->tops_sel / vis) * vis;
+    if (scroll < 0) scroll = 0;
+    for (int r = 0; r < vis; r++) {
+        int idx = scroll + r;
+        if (idx >= u->ntopbuf) break;
+        Album *a = u->topbuf[idx];
+        int y = 70 + r * 40;
+        int is_sel = (idx == u->tops_sel);
+        if (is_sel)
+            vita2d_draw_rectangle(24, y, SCRW - 48, 34, 0x14FFAA28);
+        vita2d_texture *tex = cover_to_tex(a);
+        if (tex) {
+            float s = 30.0f / (float)vita2d_texture_get_width(tex);
+            vita2d_draw_texture_scale(tex, 28, y + 2, s, s);
+            vita2d_free_texture(tex);
+        } else {
+            draw_disc(28 + 15, y + 2 + 15, 15, 0.2f, a->ntracks);
+        }
+        char line[520];
+        snprintf(line, sizeof(line), "%s", a->album);
+        vita2d_pvf_draw_text(u->font, 66, (int)(y + 6), is_sel ? COL_AMBER : COL_TEXT,
+                             0.60f, line);
+        snprintf(line, sizeof(line), "%s · %d toques",
+                 a->artist[0] ? a->artist : "?", scrob_album_count(u->scrob, a));
+        vita2d_pvf_draw_text(u->font, 66, (int)(y + 2 + 19), COL_TEXT_DIM, 0.5f, line);
+    }
+}
+
 /* ---------- frame ---------- */
 int ui_frame(Ui *u, Library *lib, Player *p)
 {
@@ -371,8 +478,12 @@ int ui_frame(Ui *u, Library *lib, Player *p)
         draw_deck(u, lib, p);
     else if (u->view == VIEW_RECS)
         draw_recs(u, lib, p);
-    else
+    else if (u->view == VIEW_PLAYLISTS)
         draw_playlists(u, lib, p);
+    else if (u->view == VIEW_HISTORY)
+        draw_history(u, lib, p);
+    else
+        draw_tops(u, lib, p);
 
     vita2d_end_drawing();
     vita2d_swap_buffers();
@@ -404,6 +515,7 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_CROSS)  { u->view = VIEW_DECK; action = 2; }
         if (edge & SCE_CTRL_L1)   { u->view = VIEW_RECS; u->rec_sel = 0; action = 8; }
         if (edge & SCE_CTRL_R1)   { u->view = VIEW_PLAYLISTS; u->pl_sel = 0; action = 9; }
+        if (edge & SCE_CTRL_R2)   { u->view = VIEW_HISTORY; u->hist_sel = 0; action = 1; }
         if (edge & SCE_CTRL_SELECT) { action = 15; } /* sorteio */
     } else if (u->view == VIEW_RECS) {
         if (edge & SCE_CTRL_DOWN) { u->rec_sel++; action = 1; }
@@ -411,6 +523,15 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
         if (edge & SCE_CTRL_CROSS)    { action = 11; } /* tocar recomendações */
         if (edge & SCE_CTRL_RIGHT)    { action = 11; }
+        if (edge & SCE_CTRL_R2)       { u->view = VIEW_HISTORY; u->hist_sel = 0; action = 1; }
+    } else if (u->view == VIEW_HISTORY || u->view == VIEW_TOPS) {
+        int is_hist = (u->view == VIEW_HISTORY);
+        int *sel = is_hist ? &u->hist_sel : &u->tops_sel;
+        if (edge & SCE_CTRL_DOWN) { (*sel)++; action = 1; }
+        if (edge & SCE_CTRL_UP)   { if (*sel > 0) (*sel)--; action = 1; }
+        if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
+        if (edge & SCE_CTRL_R2)
+            u->view = is_hist ? VIEW_TOPS : VIEW_HISTORY;
     } else if (u->view == VIEW_PLAYLISTS) {
         if (edge & SCE_CTRL_DOWN) { u->pl_sel++; action = 1; u->pl_armed = false; }
         if (edge & SCE_CTRL_UP)   { if (u->pl_sel > 0) u->pl_sel--; action = 1; u->pl_armed = false; }
@@ -432,6 +553,7 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_DOWN)     { action = 7; }   /* seek -10s */
         if (edge & SCE_CTRL_L1)        { u->view = VIEW_RECS; u->rec_sel = 0; action = 8; }
         if (edge & SCE_CTRL_R1)        { u->view = VIEW_PLAYLISTS; u->pl_sel = 0; action = 9; }
+        if (edge & SCE_CTRL_R2)        { u->view = VIEW_HISTORY; u->hist_sel = 0; action = 1; }
         if (edge & SCE_CTRL_SELECT)    { action = 14; } /* repetição */
     }
     if (edge & SCE_CTRL_START) action = -1; /* sair */
@@ -454,7 +576,9 @@ Ui *ui_create(void)
 
 void ui_destroy(Ui *u)
 {
+    if (!u) return;
     if (u->font) vita2d_free_pvf(u->font);
+    free(u->topbuf);
     free(u);
 }
 
@@ -486,4 +610,10 @@ void ui_set_recs(Ui *u, const Track **recs, int nrecs)
     u->recs = recs;
     u->nrecs = nrecs;
     if (u->rec_sel >= u->nrecs && u->nrecs > 0) u->rec_sel = u->nrecs - 1;
+}
+
+void ui_set_scrob(Ui *u, Scrob *s)
+{
+    if (!u) return;
+    u->scrob = s;
 }

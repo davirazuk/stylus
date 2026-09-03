@@ -16,6 +16,7 @@
 #include "rec.h"
 #include "scrobble.h"
 #include "resume.h"
+#include "lastfm.h"
 
 #define MUSIC_ROOT "ux0:music"
 
@@ -41,8 +42,10 @@ typedef struct {
     const Track **recs; /* ponteiros dentro de lib; dono é main (rebuild) */
     int nrecs;
     int recs_cap;
+    Scrob scrob;         /* banco de escuta standalone (histórico + top) */
     bool dirty_plists;
     bool dirty_recs;
+    bool dirty_scrob_ui;
 } Session;
 
 #define RECS_MAX 200
@@ -53,6 +56,7 @@ static void session_free(Session *s)
     if (s->plists) playlist_free(s->plists, s->nplists);
     free(s->recs);
     rec_free(&s->rec);
+    scrob_free(&s->scrob);
     memset(s, 0, sizeof(*s));
 }
 
@@ -62,8 +66,15 @@ static void on_track_done(const Track *t, void *ud)
     Session *s = ud;
     if (!t || !s) return;
     rec_play(&s->rec, t->path, REC_HISTORY_BASE);
-    scrobble_log(REC_HISTORY_BASE, t, (long)time(NULL));
+    /* banco standalone: registra a escuta AQUI, no Vita — sem depender de PC.
+       Só apende no arquivo (seguro p/ thread); a UI re-agrega no loop. */
+    scrob_append_file(REC_HISTORY_BASE, t, (long)time(NULL));
+    /* camada opcional last.fm: enfileira offline sempre; o upload só sai com
+       credencial + rede (ver lastfm_sync). Nunca bloqueia aqui. */
+    lastfm_enqueue(REC_HISTORY_BASE, t, (long)time(NULL),
+                   t->seconds > 0 ? t->seconds : 0);
     s->dirty_recs = true;
+    s->dirty_scrob_ui = true;
 }
 
 /* reconstrói a lista recomendada (chamado quando o histórico muda) */
@@ -161,7 +172,13 @@ int main(int argc, char *argv[])
     memset(&ses, 0, sizeof(ses));
     playlist_load_dir(&ses.plists, &ses.nplists, PLAYLIST_DIR);
     rec_load(&ses.rec, REC_HISTORY_BASE);
+    scrob_load(&ses.scrob, &lib, REC_HISTORY_BASE);
     recs_rebuild(&ses, &lib);
+
+    /* last.fm (opcional): só sobe escutas se houver credencial + rede */
+    LastfmConfig lfm;
+    lastfm_config_load(&lfm, REC_HISTORY_BASE);
+    time_t last_lfm_sync = 0;
 
     Ui *ui = ui_create();
     Player *player = player_create();
@@ -255,8 +272,19 @@ int main(int argc, char *argv[])
         /* se uma faixa terminou, a lista recomendada muda: inline no frame */
         if (ses.dirty_recs)
             recs_rebuild(&ses, &lib);
+        if (ses.dirty_scrob_ui) {
+            scrob_load(&ses.scrob, &lib, REC_HISTORY_BASE);
+            ses.dirty_scrob_ui = false;
+        }
         ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
+        ui_set_scrob(ui, &ses.scrob);
         ui_frame(ui, &lib, player);
+        /* last.fm: tenta esvaziar a fila a cada ~2min (se configurado). O
+           bloqueio do POST aqui é aceito (raro); ver nota no net.c. */
+        if (lfm.configured && (long)time(NULL) - last_lfm_sync >= 120) {
+            lastfm_sync(&lfm, REC_HISTORY_BASE);
+            last_lfm_sync = (long)time(NULL);
+        }
         /* persiste o ponto de continuação ~2x/s; robusto mesmo se o app for
            suspenso/derrubado sem saída limpa */
         if ((++frame & 31) == 0 && player_state(player) != PLAYER_STOPPED)

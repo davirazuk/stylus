@@ -5,10 +5,13 @@
 #include "player.h"
 #include "playlist.h"
 
+typedef struct Scrob Scrob;
+
 typedef struct Ui Ui;
 
 void ui_set_data(Ui *u, Playlist *plists, int nplists, const Track **recs, int nrecs);
 void ui_set_recs(Ui *u, const Track **recs, int nrecs);
+void ui_set_scrob(Ui *u, Scrob *s);
 
 Ui *ui_create(void);
 void ui_destroy(Ui *u);

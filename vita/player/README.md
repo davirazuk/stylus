@@ -28,8 +28,11 @@ Saída: `build/vitastylus.vpk`.
 4. Dados do app em `ux0:data/vitastylus/`:
    - `playlists/*.m3u` — as playlists (M3U8)
    - `history.txt` — contagem por faixa (base das recomendações)
-   - `stylus-scrobbles.tsv` — registro de escuta, MESMO formato do Android
-     do Stylus: `timestamp<TAB>artista<TAB>álbum<TAB>pasta`
+   - `stylus-scrobbles.tsv` — diário de escuta (ver "Scrobbling") —
+     `timestamp<TAB>caminho<TAB>artista<TAB>álbum`
+   - `lastfm-queue.tsv` — fila offline de escutas aguardando upload
+     (opcional)
+   - `lastfm.config` — credencial last.fm (api_key/api_secret/sk, opcional)
 
 ## Controles
 
@@ -64,10 +67,23 @@ ponderados pela afinidade dos artistas que a pessoa mais ouviu. Tocar com
 
 ## Scrobbling (registro de escuta)
 
-O player grava uma linha por disco posto em `stylus-scrobbles.tsv` (formato
-idêntico ao do Android). Para entrar na memória da coleção no PC, traga o
-arquivo e rode `stylus phone scrobbles` — o mesmo canal que já junta o que
-tocou no celular (resolução por artista/álbum quando a pasta não casa).
+**Standalone no Vita, sem depender de PC nem de rede.** Cada faixa tocada até o
+fim entra no diário local `stylus-scrobbles.tsv`. A tela do app mostra essa
+estatística:
+
+- **`[R2]` a partir da estante/recs/deck → Histórico** (diário recente).
+- **`[R2]` de novo → Mais ouvidas** (top discos por toque, com capa).
+- `[R2]` alterna entre Histórico e Mais ouvidas; `[△]` volta à estante.
+
+Além do banco local, o last.fm é **opcional e offline-first**: a escuta vai
+sempre para a fila local `lastfm-queue.tsv`. Se houver credencial
+(`lastfm.config`: api_key, api_secret e a sk de sessão) e rede, o app tenta
+esvaziar a fila a cada ~2 min via `track.scrobble`. Sem rede ou sem credencial,
+a fila fica intacta — nada se perde, sai no primeiro upload.
+
+Para configurar, edite `lastfm.config` no cartão com os três valores (o PC tem
+o fluxo de login em `stylus-scrobble login`, do qual se copia a `sk`). Sem
+arquivo, `configured=false` e só o banco local roda.
 
 ## Background audio (o que é possível no Vita)
 
@@ -97,7 +113,10 @@ sessão futura. Hoje o app é local, sem fingir o streaming.
 - `src/player.c/.h` — decodificação (mpg123)→anel→SDL2; sessão (slots), shuffle, repetição, seek
 - `src/playlist.c/.h` — M3U8 (carregar/salvar/criar com nome único)
 - `src/rec.c/.h` — histórico por faixa e construção da lista recomendada
-- `src/scrobble.c/.h` — registro de escuta em TSV compatível com o PC
+- `src/scrobble.c/.h` — diário de escuta standalone no Vita (conta por faixa/álbum, recentes, tops)
+- `src/lastfm.c/.h` — fila offline de last.fm + assinatura MD5 e `track.scrobble`
+- `src/md5.c/.h` — MD5 portátil (assinatura last.fm)
+- `src/net.c/.h` — POST HTTP: sceNetHttp no Vita, libcurl no host (para testar)
 - `src/resume.c/.h` — ponto de continuação (faixa+posição+rep+sorteio)
 - `src/ui.c/.h` — estante, deck vinil (disco âmbar, sulcos, agulha, halo), recs, playlists
 - `CMakeLists.txt` / `build.sh` — pipeline VPK (vita.cmake)
@@ -120,6 +139,13 @@ host (`/tmp/opencode/vita_shuffle_test.c`): permutação correta, wrap de
 repetição, repeat-um fica parado, repeat-off para no fim, shuffle começa na
 faixa pedida.
 
+A fila last.fm (`lastfm.c`) e o MD5 (`md5.c`) também rodam no PC,
+com `net.c` caindo no caminho libcurl (por isso o upload pode ser testado com
+rede real aqui mesmo): `/tmp/opencode/vita_lastfm_test.c`.
+Sem config, a fila offline fica intacta; com rede real + config falsa, o
+servidor responde erro de API json e o código descarta as linhas — confirma o
+caminho HTTP+assinatura+form de ponta a ponta.
+
 ## Estado
 
 - [x] VPK compila sem warnings (~1.18 MB), jogada completa no host
@@ -127,9 +153,11 @@ faixa pedida.
 - [x] Sessão: álbum, playlists, recomendações — com shuffle/repetição
 - [x] Playlists M3U8 (criar/salvar/carregar/apagar), criação com nome único
 - [x] Recomendações por histórico de completação (com capas)
-- [x] Registro de escuta (TSV compatível com `stylus phone scrobbles`)
+- [x] Registro de escuta standalone (diário + histórico + tops na tela do Vita)
+- [x] Fila offline de last.fm (upload `track.scrobble` quando há rede+credencial)
 - [x] Continuar a sessão onde parou (faixa+posição em pausa)
 - [ ] Teste de hardware no Vita (cartão no aparelho; sem via de cópia confirmada)
 - [ ] FLAC/OGG decode (o scanner já enumera; o cartão atual é MP3)
-- [ ] Qobuz/streaming e scrobbling online (precisa de rede real; ver acima)
+- [ ] Upload last.fm validado no Vita em si (rede real; valido no PC via libcurl)
+- [ ] Qobuz/streaming (precisa de rede real no Vita; ver acima)
 - [ ] Background audio em jogo (requer plugin de CFW; ver acima)

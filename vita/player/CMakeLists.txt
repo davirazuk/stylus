@@ -31,6 +31,9 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/rec.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/scrobble.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/resume.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/md5.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/net.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/lastfm.c
 )
 
 target_link_libraries(${PROJECT_NAME}
