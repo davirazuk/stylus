@@ -243,6 +243,12 @@ int main(int argc, char *argv[])
         case 16: /* avança +10s */
             player_seek(player, player_track_seconds(player) + 10);
             break;
+        case 17: { /* apagar playlist (confirmado em 2 toques via R2) */
+            int pi = ui_playlist_idx(ui);
+            if (ses.plists && pi >= 0 && pi < ses.nplists)
+                playlist_remove_file(ses.plists, &ses.nplists, pi, PLAYLIST_DIR);
+            break;
+        }
         default:
             break;
         }

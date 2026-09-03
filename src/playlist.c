@@ -183,3 +183,21 @@ void playlist_free(Playlist *pl, int count)
     }
     free(pl);
 }
+
+int playlist_remove_file(Playlist *array, int *count, int idx, const char *dir)
+{
+    if (!array || !count || idx < 0 || idx >= *count) return -1;
+    Playlist *pl = &array[idx];
+    if (pl->name[0]) {
+        char path[1024 + PLAYLIST_NAME_MAX];
+        snprintf(path, sizeof(path), "%s/%s.m3u", dir, pl->name);
+        remove(path);
+    }
+    for (int j = 0; j < pl->n; j++) free(pl->files[j]);
+    free(pl->files);
+    memset(pl, 0, sizeof(*pl));
+    for (int i = idx; i + 1 < *count; i++)
+        array[i] = array[i + 1];
+    (*count)--;
+    return 0;
+}
