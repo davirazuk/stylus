@@ -1,0 +1,72 @@
+name: build
+
+# Três coisas separadas de propósito.
+#
+# `check` roda em qualquer ubuntu com gcc e é a que pega quase tudo: exercita
+# a varredura de verdade, decodifica ÁUDIO de verdade (FLAC comparado amostra
+# a amostra com o original) e MEDE a geometria das telas. Não depende de SDK
+# nenhum, então não quebra quando o VitaSDK muda por baixo.
+#
+# `vpk` constrói o binário. Essa depende do mundo externo — o toolchain e os
+# pacotes —, que é justamente o que muda sozinho: no STYLUS já pegou três
+# nomes de pacote que o Arch trocou. Vermelha ela e verde a `check`, o
+# defeito é do ambiente e não do código.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: conferências (sem VitaSDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bibliotecas e codificadores de áudio
+        # O teste do decodificador precisa das bibliotecas para compilar e dos
+        # codificadores para GERAR as fixtures. Sem eles o check.sh PULA essa
+        # parte em vez de reprovar — uma conferência que reprova por falta de
+        # dependência ensina a ignorar a conferência inteira.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libmpg123-dev libflac-dev libvorbis-dev \
+                                      libopusfile-dev flac vorbis-tools \
+                                      opus-tools lame
+      - name: tools/check.sh
+        run: ./tools/check.sh
+
+  vpk:
+    name: constrói o VPK
+    runs-on: ubuntu-latest
+    container: vitasdk/vitasdk:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: dependências do container
+        run: apk add --no-cache build-base cmake git bash
+
+      - name: bibliotecas do Vita
+        run: |
+          vdpm libvita2d vitaShaRK freetype libpng libjpeg-turbo zlib \
+               mpg123 SDL2 flac libogg libvorbis opus opusfile
+
+      - name: constrói
+        run: ./build.sh
+
+      - name: o VPK tem ícone e LiveArea
+        # Um VPK sem sce_sys/ instala como um quadrado em branco no menu do
+        # Vita. Já saiu assim uma vez; conferir é uma linha.
+        run: |
+          cd build
+          unzip -l vitastylus.vpk
+          unzip -l vitastylus.vpk | grep -q 'sce_sys/icon0.png'
+          unzip -l vitastylus.vpk | grep -q 'sce_sys/livearea/contents/template.xml'
+          unzip -l vitastylus.vpk | grep -q 'eboot.bin'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vitastylus-vpk
+          path: build/vitastylus.vpk
+          if-no-files-found: error
