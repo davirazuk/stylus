@@ -10,14 +10,17 @@
 #define MAX_TITLE_LEN 256
 #define MAX_NAME_LEN 256
 
+typedef struct Album Album;
+
 typedef struct {
     char path[MAX_PATH_LEN];   /* caminho completo do arquivo */
     char title[MAX_TITLE_LEN]; /* título da faixa (tag) ou base do arquivo */
     int  number;               /* número da faixa, -1 se sem tag */
     int  seconds;              /* duração, -1 se desconhecida */
+    Album *owner;              /* álbum que contém esta faixa */
 } Track;
 
-typedef struct {
+struct Album {
     char key[MAX_PATH_LEN];      /* caminho do dir do álbum relativo ao root (id único) */
     char artist[MAX_NAME_LEN];
     char album[MAX_NAME_LEN];    /* último segmento do key, para exibição */
@@ -28,7 +31,7 @@ typedef struct {
     unsigned char *cover;      /* dono dos bytes (JPEG/PNG) */
     size_t cover_len;
     bool cover_loaded;
-} Album;
+};
 
 typedef struct {
     Album *albums;
