@@ -122,6 +122,13 @@ airootfs/
 android/app/…/player/      o app do celular, em Kotlin. NADA aqui compila
                               Kotlin: o que prova a lógica dele é o check.sh
                               traduzindo-a de volta para Python.
+vita/player/               o tocador do PS Vita, em C (vita2d + mpg123). Tem
+                              o SEU PRÓPRIO tools/check.sh, que roda sem
+                              VitaSDK e sem Vita: monta uma coleção de mentira
+                              em disco e a varre de verdade, e MEDE a
+                              geometria das telas (o ui_layout.c é puro para
+                              isso). A história dele também vive sozinha em
+                              github.com/davirazuk/vitastylus.
 ```
 
 **O DECK NÃO EXISTE MAIS.** Era um segundo programa — OpenGL, um venv de
