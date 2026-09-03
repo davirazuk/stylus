@@ -15,6 +15,7 @@
 #include "playlist.h"
 #include "rec.h"
 #include "scrobble.h"
+#include "resume.h"
 
 #define MUSIC_ROOT "ux0:music"
 
@@ -101,6 +102,44 @@ static int playlist_to_tracks(Library *lib, const Playlist *pl,
     return n;
 }
 
+/* retoma onde o app foi encerrado/suspenso, sempre em pausa */
+static void try_resume(Library *lib, Player *player)
+{
+    Resume r;
+    resume_load(UX0_DATA_DIR, &r);
+    if (!r.valid) return;
+    Album *alb = NULL;
+    int ti = library_find_track_by_path(lib, &alb, r.track_path);
+    if (ti < 0 || !alb) return;
+    for (int i = 0; i < lib->nalbums; i++)
+        if (&lib->albums[i] == alb) {
+            player_set_repeat(player, (RepeatMode)r.repeat);
+            player_set_shuffle(player, r.shuffle);
+            player_load_album(player, lib, i, ti);
+            if (r.position_sec > 0)
+                player_seek(player, r.position_sec);
+            player_pause(player);
+            break;
+        }
+}
+
+/* grava o ponto de continuação (chamado periodicamente e a cada faixa) */
+static void write_resume(Player *player)
+{
+    const Track *t = player_current_track(player);
+    if (!t || !t->path[0]) return;
+    Resume r;
+    memset(&r, 0, sizeof(r));
+    snprintf(r.track_path, sizeof(r.track_path), "%s", t->path);
+    r.position_sec = player_track_seconds(player);
+    r.repeat = (int)player_repeat(player);
+    r.shuffle = player_shuffle(player);
+    if (r.track_path[0]) {
+        r.valid = true;
+        resume_save(UX0_DATA_DIR, &r);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -137,7 +176,10 @@ int main(int argc, char *argv[])
 
     ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
 
+    try_resume(&lib, player);
+
     int running = 1;
+    int frame = 0;
     while (running) {
         int act = ui_handle_input(ui);
         switch (act) {
@@ -209,6 +251,10 @@ int main(int argc, char *argv[])
             recs_rebuild(&ses, &lib);
         ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
         ui_frame(ui, &lib, player);
+        /* persiste o ponto de continuação ~2x/s; robusto mesmo se o app for
+           suspenso/derrubado sem saída limpa */
+        if ((++frame & 31) == 0 && player_state(player) != PLAYER_STOPPED)
+            write_resume(player);
     }
 
     player_destroy(player);

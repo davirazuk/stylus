@@ -259,7 +259,7 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
 {
     (void)lib;
     (void)p;
-    int vis = 12;
+    int vis = 11;
     int scroll = (u->rec_sel / vis) * vis;
     if (scroll < 0) scroll = 0;
     vita2d_pvf_draw_text(u->font, 24, 22, COL_AMBER, 1.0f, "RECOMENDADO");
@@ -275,19 +275,30 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
         int idx = scroll + r;
         if (idx >= u->nrecs) break;
         const Track *t = u->recs[idx];
-        int y = 70 + r * 34;
+        int y = 70 + r * 40;
         int is_sel = (idx == u->rec_sel);
         if (is_sel)
-            vita2d_draw_rectangle(24, y, SCRW - 48, 30, 0x14FFAA28);
+            vita2d_draw_rectangle(24, y, SCRW - 48, 34, 0x14FFAA28);
+        /* miniatura da capa do álbum */
+        const Album *a = t->owner;
+        if (a) {
+            vita2d_texture *tex = cover_to_tex(a);
+            if (tex) {
+                float s = 30.0f / (float)vita2d_texture_get_width(tex);
+                vita2d_draw_texture_scale(tex, 28, y + 2, s, s);
+                vita2d_free_texture(tex);
+            } else {
+                draw_disc(28 + 15, y + 2 + 15, 15, 0.2f, a->ntracks);
+            }
+        }
         char line[160];
-        const char *artist = t->owner ? t->owner->artist : "";
-        snprintf(line, sizeof(line), "%3d.  %.40s  —  %.40s",
-                 idx + 1, t->title, artist);
-        vita2d_pvf_draw_text(u->font, 32, (int)(y + 4), is_sel ? COL_AMBER : COL_TEXT,
-                             0.62f, line);
-        if (t->owner)
-            vita2d_pvf_draw_text(u->font, 32, (int)(y + 18), COL_TEXT_DIM, 0.5f,
-                                 t->owner->album);
+        const char *artist = a ? a->artist : "";
+        snprintf(line, sizeof(line), "%.42s  —  %.40s", t->title, artist);
+        vita2d_pvf_draw_text(u->font, 66, (int)(y + 6), is_sel ? COL_AMBER : COL_TEXT,
+                             0.60f, line);
+        if (a)
+            vita2d_pvf_draw_text(u->font, 66, (int)(y + 2 + 19), COL_TEXT_DIM, 0.5f,
+                                 a->album);
     }
 }
 
