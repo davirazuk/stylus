@@ -27,6 +27,9 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/tags.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/player.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ui.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/playlist.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/rec.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/scrobble.c
 )
 
 target_link_libraries(${PROJECT_NAME}

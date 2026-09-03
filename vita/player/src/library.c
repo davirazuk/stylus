@@ -90,6 +90,7 @@ static int add_track(Album *a, const char *full, const char *base)
     snprintf(t->title, MAX_TITLE_LEN, "%s", base);
     t->number = -1;
     t->seconds = -1;
+    t->owner = a;
     a->ntracks++;
     return 0;
 }

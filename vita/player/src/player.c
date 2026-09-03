@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 #define RING_SIZE (1 << 20)   /* 1 MiB de PCM por canal intercalado */
 #define RING_MASK (RING_SIZE - 1)
@@ -30,8 +31,15 @@ struct Player {
     size_t out_enc_need;        /* bytes por frame (channels*bytesPerSample) */
 
     Library *lib;
-    int album_idx;
-    int track_idx;
+    const Track **slots;        /* sessão: lista de faixas a tocar (não dono) */
+    int nslots;
+    int *order;                 /* ordem de execução: slots[order[i]]; sorteio p/ shuffle */
+    int cur;                    /* índice atual em order[] (posição na sessão) */
+    RepeatMode repeat;
+    bool shuffle;
+
+    PlayerCompleteFn complete_cb;
+    void *complete_ud;
 
     PlayerState state;
     int position_sec;
@@ -44,6 +52,28 @@ static Player *g_player;
 static size_t ring_filled(const Player *p)
 {
     return (p->ring_head - p->ring_tail) & RING_MASK;
+}
+
+/* faixa na posição i da sessão, respeitando a ordem (de perto do sorteio) */
+static const Track *slot_at(const Player *p, int i)
+{
+    if (!p->slots || p->nslots <= 0) return NULL;
+    if (p->shuffle && p->order) {
+        if (i < 0 || i >= p->nslots) i = 0;
+        i = p->order[i];
+    }
+    if (i < 0 || i >= p->nslots) return NULL;
+    return p->slots[i];
+}
+
+/* baralha a ordem (Fisher–Yates) para o modo sorteio */
+static void reshuffle(Player *p)
+{
+    if (!p->order || p->nslots <= 0) return;
+    for (int i = p->nslots - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        int t = p->order[i]; p->order[i] = p->order[j]; p->order[j] = t;
+    }
 }
 
 static void sdl_cb(void *udata, Uint8 *stream, int len)
@@ -123,21 +153,11 @@ static void load_next_ready(Player *p)
 {
     p->state = PLAYER_STOPPED;
     if (dev) SDL_PauseAudioDevice(dev, 1);
-    /* decide próxima faixa */
-    int idx = p->track_idx;
-    if (p->lib && p->album_idx >= 0 && p->album_idx < p->lib->nalbums) {
-        Album *a = &p->lib->albums[p->album_idx];
-        if (a->ntracks > 0) {
-            if (idx < 0) idx = 0;
-            if (idx >= a->ntracks) idx = 0; /* loopa o álbum */
-            p->track_idx = idx;
-            if (open_track(p, &a->tracks[idx]) == 0) {
-                p->state = PLAYER_PLAYING;
-                p->position_sec = 0;
-                p->first_push = true;
-                return;
-            }
-        }
+    const Track *t = slot_at(p, p->cur);
+    if (t && open_track(p, t) == 0) {
+        p->state = PLAYER_PLAYING;
+        p->position_sec = 0;
+        p->first_push = true;
     }
 }
 
@@ -177,13 +197,34 @@ static void *player_thread(void *arg)
                 p->position_sec += (int)(done / (p->out_enc_need * p->out_rate));
             }
             if (rc == MPG123_DONE) {
-                /* fim da faixa: avança */
+                /* fim da faixa: registra e decide o que vem (repetição/sorteio) */
+                const Track *done_t = slot_at(p, p->cur);
+                PlayerCompleteFn cb = p->complete_cb;
+                void *ud = p->complete_ud;
                 pthread_mutex_lock(&p->mtx);
-                p->track_idx++;
+                int at_end = (p->cur + 1 >= p->nslots);
+                if (p->repeat == REPEAT_ONE) {
+                    /* repete a mesma faixa */
+                } else if (at_end) {
+                    if (p->repeat == REPEAT_ALL) {
+                        if (p->shuffle) reshuffle(p);
+                        p->cur = 0;
+                    } else {
+                        p->cur = 0; /* fim da sessão: para aqui */
+                        p->state = PLAYER_STOPPED;
+                        if (dev) SDL_PauseAudioDevice(dev, 1);
+                        pthread_mutex_unlock(&p->mtx);
+                        if (cb) cb(done_t, ud);
+                        break;
+                    }
+                } else {
+                    p->cur++;
+                }
                 load_next_ready(p);
                 if (p->state == PLAYER_PLAYING)
                     pthread_cond_broadcast(&p->cond); /* self */
                 pthread_mutex_unlock(&p->mtx);
+                if (cb) cb(done_t, ud);
                 break;
             }
             if (rc == MPG123_NEW_FORMAT) {
@@ -194,6 +235,15 @@ static void *player_thread(void *arg)
     return NULL;
 }
 
+void player_set_complete_cb(Player *p, PlayerCompleteFn fn, void *ud)
+{
+    if (!p) return;
+    pthread_mutex_lock(&p->mtx);
+    p->complete_cb = fn;
+    p->complete_ud = ud;
+    pthread_mutex_unlock(&p->mtx);
+}
+
 Player *player_create(void)
 {
     Player *p = calloc(1, sizeof(*p));
@@ -202,8 +252,10 @@ Player *player_create(void)
     pthread_cond_init(&p->cond, NULL);
     p->thread_run = true;
     p->state = PLAYER_STOPPED;
-    p->album_idx = -1;
-    p->track_idx = -1;
+    p->cur = -1;
+    p->nslots = 0;
+    p->repeat = REPEAT_ALL;
+    srand((unsigned)time(NULL));
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
         free(p);
         return NULL;
@@ -222,6 +274,8 @@ void player_destroy(Player *p)
     pthread_cond_broadcast(&p->cond);
     pthread_mutex_unlock(&p->mtx);
     pthread_join(p->thread, NULL);
+    free(p->slots);
+    free(p->order);
     close_stream(p);
     pthread_mutex_destroy(&p->mtx);
     pthread_cond_destroy(&p->cond);
@@ -230,22 +284,58 @@ void player_destroy(Player *p)
     g_player = NULL;
 }
 
-int player_load(Player *p, Library *lib, int album_idx, int start_track)
+/* monta a sessão a partir de um array (não copia os tracks; copia o array) */
+static int set_session(Player *p, Library *lib, const Track *const *tracks, int n, int start)
 {
-    if (!p || album_idx < 0 || album_idx >= lib->nalbums) return -1;
-    Album *a = &lib->albums[album_idx];
-    if (a->ntracks == 0) return -1;
-    if (start_track < 0 || start_track >= a->ntracks) start_track = 0;
-
+    if (n <= 0) return -1;
     pthread_mutex_lock(&p->mtx);
+    if (p->slots) free(p->slots);
+    if (p->order) free(p->order);
+    p->slots = malloc((size_t)(n > 0 ? n : 1) * sizeof(const Track *));
+    p->order = malloc((size_t)(n > 0 ? n : 1) * sizeof(int));
+    if (!p->slots || !p->order) {
+        free(p->slots); free(p->order);
+        p->slots = NULL; p->order = NULL;
+        p->nslots = 0;
+        pthread_mutex_unlock(&p->mtx);
+        return -1;
+    }
+    for (int i = 0; i < n; i++) {
+        p->slots[i] = tracks[i];
+        p->order[i] = i;
+    }
+    p->nslots = n;
     p->lib = lib;
-    p->album_idx = album_idx;
-    p->track_idx = start_track;
+    if (p->shuffle) reshuffle(p);
+    p->cur = (start >= 0 && start < n) ? start : 0;
+    /* em shuffle, 'start' vira o primeiro da ordem sorteada só se ainda couber */
+    if (p->shuffle && start >= 0 && start < n) {
+        for (int i = 0; i < n; i++)
+            if (p->order[i] == start) { p->cur = i; break; }
+    }
     close_stream(p);
     load_next_ready(p);
     pthread_cond_broadcast(&p->cond);
     pthread_mutex_unlock(&p->mtx);
     return 0;
+}
+
+int player_load_album(Player *p, Library *lib, int album_idx, int start_track)
+{
+    if (!p || !lib || album_idx < 0 || album_idx >= lib->nalbums) return -1;
+    Album *a = &lib->albums[album_idx];
+    if (a->ntracks == 0) return -1;
+    if (start_track < 0 || start_track >= a->ntracks) start_track = 0;
+    const Track *ts[256];
+    int n = a->ntracks < 256 ? a->ntracks : 256;
+    for (int i = 0; i < n; i++) ts[i] = &a->tracks[i];
+    return set_session(p, lib, ts, n, start_track);
+}
+
+int player_load_list(Player *p, Library *lib, const Track *const *tracks, int n, int start)
+{
+    if (!p || !tracks || n <= 0) return -1;
+    return set_session(p, lib, tracks, n, start);
 }
 
 void player_stop(Player *p)
@@ -295,30 +385,49 @@ void player_toggle(Player *p)
 void player_next(Player *p)
 {
     pthread_mutex_lock(&p->mtx);
-    p->track_idx++;
-    if (p->lib && p->album_idx >= 0 && p->album_idx < p->lib->nalbums) {
-        Album *a = &p->lib->albums[p->album_idx];
-        if (p->track_idx >= a->ntracks) p->track_idx = 0;
+    if (p->nslots > 0) {
+        p->cur++;
+        if (p->cur >= p->nslots) p->cur = 0;
+        close_stream(p);
+        load_next_ready(p);
+        pthread_cond_broadcast(&p->cond);
     }
-    close_stream(p);
-    load_next_ready(p);
-    pthread_cond_broadcast(&p->cond);
     pthread_mutex_unlock(&p->mtx);
 }
 
 void player_prev(Player *p)
 {
     pthread_mutex_lock(&p->mtx);
-    p->track_idx--;
-    if (p->lib && p->album_idx >= 0 && p->album_idx < p->lib->nalbums) {
-        Album *a = &p->lib->albums[p->album_idx];
-        if (p->track_idx < 0) p->track_idx = a->ntracks - 1;
+    if (p->nslots > 0) {
+        p->cur--;
+        if (p->cur < 0) p->cur = p->nslots - 1;
+        close_stream(p);
+        load_next_ready(p);
+        pthread_cond_broadcast(&p->cond);
     }
-    close_stream(p);
-    load_next_ready(p);
-    pthread_cond_broadcast(&p->cond);
     pthread_mutex_unlock(&p->mtx);
 }
+
+void player_set_repeat(Player *p, RepeatMode m)
+{
+    if (!p) return;
+    pthread_mutex_lock(&p->mtx);
+    p->repeat = m;
+    pthread_mutex_unlock(&p->mtx);
+}
+
+RepeatMode player_repeat(Player *p) { return p ? p->repeat : REPEAT_OFF; }
+
+void player_set_shuffle(Player *p, bool on)
+{
+    if (!p) return;
+    pthread_mutex_lock(&p->mtx);
+    if (on && !p->shuffle && p->order) reshuffle(p);
+    p->shuffle = on;
+    pthread_mutex_unlock(&p->mtx);
+}
+
+bool player_shuffle(Player *p) { return p ? p->shuffle : false; }
 
 int player_seek(Player *p, int seconds)
 {
@@ -334,21 +443,27 @@ int player_seek(Player *p, int seconds)
 }
 
 PlayerState player_state(Player *p) { return p ? p->state : PLAYER_STOPPED; }
-int player_album_idx(Player *p) { return p ? p->album_idx : -1; }
-int player_track_idx(Player *p) { return p ? p->track_idx : -1; }
+int player_track_idx(Player *p) { return p ? p->cur : -1; }
+const Album *player_current_album(const Player *p)
+{
+    const Track *t = slot_at(p, p ? p->cur : -1);
+    return t ? t->owner : NULL;
+}
 int player_track_seconds(const Player *p)
 {
     return p && p->mh ? p->position_sec : 0;
 }
-int player_track_count(const Player *p)
-{
-    if (!p || !p->lib || p->album_idx < 0) return 0;
-    return p->lib->albums[p->album_idx].ntracks;
-}
+int player_track_count(const Player *p) { return p ? p->nslots : 0; }
 const Track *player_current_track(const Player *p)
 {
-    if (!p || !p->lib || p->album_idx < 0 || p->album_idx >= p->lib->nalbums) return NULL;
-    Album *a = &p->lib->albums[p->album_idx];
-    if (p->track_idx < 0 || p->track_idx >= a->ntracks) return NULL;
-    return &a->tracks[p->track_idx];
+    return slot_at(p, p ? p->cur : -1);
+}
+int player_session_tracks(Player *p, const Track **out, int max)
+{
+    if (!p || !out || max <= 0) return 0;
+    pthread_mutex_lock(&p->mtx);
+    int n = p->nslots < max ? p->nslots : max;
+    for (int i = 0; i < n; i++) out[i] = slot_at(p, i);
+    pthread_mutex_unlock(&p->mtx);
+    return n;
 }
