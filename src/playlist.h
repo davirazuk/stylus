@@ -6,7 +6,6 @@
 #include "library.h"
 
 #define PLAYLIST_NAME_MAX 128
-#define PLAYLIST_DIR_DEFAULT "ux0:data/vitastylus/playlists"
 #define PLAYLIST_NAME_PREFIX "Mix"
 
 /* Uma playlist = lista ordenada de caminhos (M3U8). Cada linha é o caminho

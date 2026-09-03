@@ -50,6 +50,9 @@ PlayerState player_state(Player *p);
 int player_track_idx(Player *p);
 const Album *player_current_album(const Player *p); /* owner do track atual (p/ deck) */
 int  player_track_seconds(const Player *p); /* posição atual segundos */
+int  player_track_duration(const Player *p); /* duração, -1 se desconhecida */
+const char *player_last_error(const Player *p); /* "" quando não houve nada */
+int  player_skipped(const Player *p);        /* faixas puladas por não abrir */
 const Track *player_current_track(const Player *p);
 int player_track_count(const Player *p);
 int player_session_tracks(Player *p, const Track **out, int max);

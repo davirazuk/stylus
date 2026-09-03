@@ -16,6 +16,13 @@ void ui_destroy(Ui *u);
 /* desenha um frame; retorna 0 */
 int ui_frame(Ui *u, Library *lib, Player *p);
 
+/* a tela da varredura: chamada de dentro do library_scan, porque varrer um
+   cartão cheio leva segundos e um preto parado lê como travado */
+void ui_draw_scanning(Ui *u, const char *where, int files);
+
+/* índice da faixa recomendada marcada (o [O] começa por ELA, não pela 1ª) */
+int ui_rec_idx(const Ui *u);
+
 /* controle: reserva para o main ler input
    0=sem, -1=sair, 2=abrir album, 4=toggle play, 5=next, 6=prev, 7=seek-10,
    10=voltar à estante, 11=tocar recomendações, 12=tocar playlist,
