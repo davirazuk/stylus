@@ -232,6 +232,11 @@ int main(int argc, char *argv[])
        que da poltrona é indistinguível de travado */
     library_set_progress(&lib, scan_progress, boot);
     library_scan(&lib);
+    /* Deixa o que a varredura viu escrito no cartão. Quem conserta o app
+       quase nunca é quem está com o aparelho na mão, e a tela some quando se
+       muda de tela — foi um arquivo assim que revelou o opendir devolvendo
+       NULL. Custa uma escrita pequena por arranque. */
+    library_report(&lib, STYLUS_DATA_DIR "/varredura.txt");
 
     Session ses;
     memset(&ses, 0, sizeof(ses));

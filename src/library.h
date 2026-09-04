@@ -95,6 +95,18 @@ void library_sort(Library *lib);
    um silêncio. */
 void library_status(const Library *lib, char *out, size_t cap);
 
+/* Grava um relatório da varredura em `path`, uma linha por raiz.
+
+   POR QUE, se a estante já mostra o library_status: porque a tela some
+   quando se muda de tela, e porque quem conserta o app quase nunca é quem
+   está com o aparelho na mão. Foi exatamente um arquivo assim, deixado no
+   cartão por uma build de teste, que revelou que o `opendir("ux0:music")`
+   devolvia NULL — coisa que nenhuma leitura do código pegava e que a tela,
+   sozinha, não teria como provar depois.
+
+   É pequeno, roda uma vez por arranque, e nunca falha o arranque. */
+void library_report(const Library *lib, const char *path);
+
 /* Lê as tags (título, número, duração) do álbum. Caro: uma abertura de arquivo
    por faixa. NÃO reordena — a ordem sai do nome do arquivo na varredura, e
    reordenar aqui invalidaria os `Track *` que o player e as recomendações já

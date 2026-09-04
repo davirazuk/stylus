@@ -445,6 +445,48 @@ int library_scan(Library *lib)
     return 0;
 }
 
+void library_report(const Library *lib, const char *path)
+{
+    if (!lib || !path) return;
+    FILE *f = fopen(path, "w");
+    if (!f) return;                       /* nunca atrapalha o arranque */
+
+    fprintf(f, "vitastylus  build %s %s\n", __DATE__, __TIME__);
+    /* Qual API abriu as pastas: o opendir do newlib já devolveu NULL para
+       "ux0:music" nas três formas, e a troca pelo sceIoDopen é justamente o
+       conserto — se um dia isto voltar a falhar, é a primeira coisa a saber. */
+#ifdef __vita__
+    fprintf(f, "dir api     sceIoDopen/sceIoDread\n");
+#else
+    fprintf(f, "dir api     opendir/readdir\n");
+#endif
+    fprintf(f, "raizes      %d%s\n", lib->nroots,
+            lib->roots_from_config ? " (de roots.txt)" : " (padrao)");
+    for (int i = 0; i < lib->nroots; i++) {
+        const ScanRoot *r = &lib->roots[i];
+        fprintf(f, "  [%c] %-28s audio=%d outros=%d\n",
+                r->opened ? 'x' : ' ', r->path, r->audio, r->other);
+    }
+    fprintf(f, "pastas      %d\n", lib->dirs_seen);
+    fprintf(f, "arquivos    %d  (audio %d)\n", lib->files_seen, lib->audio_found);
+    fprintf(f, "albuns      %d\n", lib->nalbums);
+
+    int faixas = 0, maior = 0;
+    for (int i = 0; i < lib->nalbums; i++) {
+        faixas += lib->albums[i].ntracks;
+        if (lib->albums[i].ntracks > maior) maior = lib->albums[i].ntracks;
+    }
+    /* Nada de contar duração aqui: o ID3 é lido sob demanda, então neste
+       instante NENHUMA foi lida, e um "sem duracao: 3728" pareceria defeito
+       sendo o funcionamento normal. */
+    fprintf(f, "faixas      %d  (maior album: %d)\n", faixas, maior);
+
+    char st[512];
+    library_status(lib, st, sizeof(st));
+    fprintf(f, "estado      %s\n", st);
+    fclose(f);
+}
+
 void library_status(const Library *lib, char *out, size_t cap)
 {
     if (!out || !cap) return;
