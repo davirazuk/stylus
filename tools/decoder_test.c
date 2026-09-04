@@ -249,6 +249,28 @@ static void test_teto_bgm(void)
     dec_format(d, &f);
     okf(f.rate > 0 && f.rate <= TETO, "com teto, a saída cabe na porta BGM",
         "saída %ld, teto %ld", f.rate, TETO);
+    /* O teto é uma POLÍTICA, não um alvo. Mirar nele dava 47999 Hz — taxa
+       que não existe em aparelho nenhum, e razão de reamostragem patológica
+       (48000/47999) para ganhar 1 Hz. Tem que cair numa taxa PADRÃO. */
+    {
+        static const long PADRAO[] = { 48000, 44100, 32000, 24000, 22050,
+                                       16000, 12000, 11025, 8000 };
+        int eh_padrao = 0;
+        for (unsigned k = 0; k < sizeof(PADRAO) / sizeof(PADRAO[0]); k++)
+            if (f.rate == PADRAO[k]) eh_padrao = 1;
+        okf(eh_padrao, "e cai numa taxa PADRÃO, não no próprio teto",
+            "saída %ld", f.rate);
+    }
+    /* A DURAÇÃO tem que sobreviver à reamostragem. Se o length viesse em
+       quadros da taxa nativa, todo MP3 de 48 kHz mostraria o tempo 8,8%
+       errado — e a barra, a agulha e o ponto de continuação junto. */
+    {
+        long long q = dec_length(d);
+        double secs = f.rate > 0 && q > 0 ? (double)q / (double)f.rate : 0;
+        okf(secs > 3.9 && secs < 4.1,
+            "e a duração continua a mesma depois de reamostrar",
+            "%lld quadros a %ld Hz = %.3f s (esperado ~4)", q, f.rate, secs);
+    }
     okf(f.rate_native == 48000,
         "e a taxa do ARQUIVO continua sendo dita (a tela não mente)",
         "nativo %ld", f.rate_native);

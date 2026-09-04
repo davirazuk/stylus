@@ -42,6 +42,23 @@ static bool ext_is(const char *path, const char *ext)
    não mentir sobre o caminho do sinal. */
 static long g_max_rate;   /* 0 = sem teto */
 
+/* O teto é uma POLÍTICA (47999, o limiar do SDL2), não um alvo de
+   reamostragem. Mirar no próprio teto foi um erro que custou uma medição:
+   um MP3 de 48000 virava 47999 Hz — uma taxa que não existe em aparelho
+   nenhum, e uma razão de reamostragem patológica (48000/47999) para ganhar
+   1 Hz. O Vita trabalha nas taxas padrão; o alvo tem que ser a maior delas
+   que caiba no teto. */
+static const long TAXAS_PADRAO[] = {
+    48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000
+};
+
+static long alvo_para(long teto)
+{
+    for (unsigned i = 0; i < sizeof(TAXAS_PADRAO) / sizeof(TAXAS_PADRAO[0]); i++)
+        if (TAXAS_PADRAO[i] <= teto) return TAXAS_PADRAO[i];
+    return teto;   /* teto absurdamente baixo: melhor algo que nada */
+}
+
 void dec_set_max_rate(long hz) { g_max_rate = hz > 0 ? hz : 0; }
 long dec_max_rate(void)        { return g_max_rate; }
 
@@ -311,15 +328,19 @@ Decoder *dec_open(const char *path)
         /* acima do teto, pede a reamostragem ao mpg123 e reabre: é preciso
            reabrir porque o FORCE_RATE só vale a partir da próxima abertura */
         if (g_max_rate > 0 && rate > g_max_rate) {
+            long alvo = alvo_para(g_max_rate);
             mpg123_close(d->mh);
-            if (mpg123_param(d->mh, MPG123_FORCE_RATE, g_max_rate, 0.0) == MPG123_OK &&
+            if (mpg123_param(d->mh, MPG123_FORCE_RATE, alvo, 0.0) == MPG123_OK &&
                 mpg123_open(d->mh, path) == MPG123_OK &&
                 mpg123_getformat(d->mh, &saida, &ch, &enc) == MPG123_OK &&
                 saida > 0) {
                 /* reamostrado: `rate` continua sendo a do ARQUIVO */
             } else {
-                /* não deu: melhor tocar sem BGM do que não tocar */
+                /* não deu: melhor tocar sem BGM do que não tocar. Desfaz o
+                   FORCE_RATE, senão a "volta ao normal" continuaria forçando
+                   e o comentário acima seria mentira. */
                 mpg123_close(d->mh);
+                mpg123_param(d->mh, MPG123_FORCE_RATE, 0, 0.0);
                 if (mpg123_open(d->mh, path) != MPG123_OK) goto fail;
                 if (mpg123_getformat(d->mh, &saida, &ch, &enc) != MPG123_OK) goto fail;
             }
