@@ -1,6 +1,8 @@
 #ifndef STYLUS_UI_H
 #define STYLUS_UI_H
 
+#include <stddef.h>
+
 #include "library.h"
 #include "player.h"
 #include "playlist.h"
@@ -77,6 +79,12 @@ int ui_handle_input(Ui *u);
    qual tela se está — sem isso, provar que um atalho leva aonde promete
    depende de olhar uma imagem. */
 int ui_view_dbg(const Ui *u);
+
+/* O saneamento do texto que vem DE FORA (nome de arquivo, tag, título do
+   Qobuz), como o desenho o aplica. Exposto pelo mesmo motivo do ui_view_dbg:
+   sem isto, provar que a aspa curva de um nome de arquivo não vira
+   quadradinho na tela depende de olhar uma foto da tela. */
+void ui_texto_dbg(char *dst, size_t cap, const char *src);
 
 /* acessores de estado */
 int ui_selected(const Ui *u);          /* álbum marcado na estante */

@@ -90,9 +90,53 @@ int main(int argc, char **argv)
         printf("  (sem coleção: só a estante foi medida)\n");
     }
 
+    /* ---- o texto que vem DE FORA ----
+       Nome de arquivo, tag e título do Qobuz não foram escritos por nós, e um
+       caractere que a fonte do aparelho não tem não some: vira quadradinho.
+       Aconteceu nesta coleção — a tela de recomendados mostrava
+       "[]All I need[] but its finally shoegazed". */
+    printf("\n\033[1mo texto que vem de fora\033[0m\n");
+    {
+        static const struct { const char *cru, *esperado, *o_que; } casos[] = {
+            /* as strings vêm partidas de propósito: "\x9CAll" faria o compilador
+   engolir o "A" como dígito hexa e virar outro caractere */
+            { "\xE2\x80\x9C" "All I need" "\xE2\x80\x9D", "\"All I need\"",
+              "aspas curvas em UTF-8 viram aspas retas" },
+            { "\x93" "All I need" "\x94", "\"All I need\"",
+              "aspas curvas em CP1252 (nome de arquivo do Windows) tambem" },
+            { "Sigur R\xC3\xB3s", "Sigur R\xC3\xB3s",
+              "acento que JA e UTF-8 fica intacto" },
+            { "Sigur R\xF3s", "Sigur R\xC3\xB3s",
+              "acento em Latin-1 vira UTF-8 em vez de virar lixo" },
+            { "Don\xE2\x80\x99t Look Back", "Don't Look Back",
+              "apostrofo tipografico vira o reto" },
+            { "A \xE2\x80\x94 B", "A \xE2\x80\x94 B",
+              "o travessao, que a fonte TEM, fica" },
+            /* U+FF02: o que o baixador de video poe no lugar da aspa, para o
+               nome caber num sistema de arquivos. Foi ESTE que apareceu. */
+            { "\xEF\xBC\x82" "All I need" "\xEF\xBC\x82", "\"All I need\"",
+              "a aspa de largura inteira do nome de arquivo baixado" },
+            { "quem\xEF\xBC\x9F", "quem?",
+              "e a interrogacao de largura inteira, do mesmo bloco" },
+            { NULL, NULL, NULL }
+        };
+        for (int i = 0; casos[i].cru; i++) {
+            char saida[256];
+            ui_texto_dbg(saida, sizeof(saida), casos[i].cru);
+            if (strcmp(saida, casos[i].esperado) == 0) {
+                printf("  \033[32m✓\033[0m %s\n", casos[i].o_que);
+            } else {
+                falhas++;
+                printf("  \033[31m✗\033[0m %s\n", casos[i].o_que);
+                printf("      saiu \"%s\", esperava \"%s\"\n",
+                       saida, casos[i].esperado);
+            }
+        }
+    }
+
     ui_destroy(u);
     library_free(&lib);
-    printf(falhas ? "\n\033[31mdesenho acima do teto\033[0m\n"
-                  : "\n\033[32mo desenho cabe no orçamento\033[0m\n");
+    printf(falhas ? "\n\033[31malgo acima do teto ou fora da fonte\033[0m\n"
+                  : "\n\033[32mo desenho cabe no orçamento, e o texto na fonte\033[0m\n");
     return falhas ? 1 : 0;
 }

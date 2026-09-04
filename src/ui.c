@@ -289,6 +289,149 @@ static void thick_line(float x0, float y0, float x1, float y1, float w,
         vita2d_draw_line(x0 + nx * o, y0 + ny * o, x1 + nx * o, y1 + ny * o, color);
 }
 
+/* ---------- o texto que a fonte do aparelho consegue desenhar ----------
+
+   O que passa por aqui não é só literal do programa: é NOME DE ARQUIVO, tag
+   de MP3, título vindo do Qobuz — texto que outra pessoa escreveu, em outro
+   computador, com outro teclado. E um caractere que a PVF do sistema não tem
+   NÃO some: vira um quadradinho. Nesta coleção, na tela de recomendados, um
+   título com aspas curvas aparecia literalmente assim:
+
+       []All I need[] but its finally shoegazed
+
+   Duas coisas diferentes acontecem aqui, e as duas vêm de fora:
+
+   1. ASPAS E TRAÇOS TIPOGRÁFICOS. A aspa curva é U+201C e falta na maioria
+      das fontes de interface; a reta existe em todas. Trocar é perda zero —
+      ninguém lê aspa reta como defeito, e todo mundo lê quadradinho como
+      defeito.
+
+   2. NOME DE ARQUIVO QUE NÃO É UTF-8. Cartão FAT32 gravado por Windows traz
+      nome em CP1252, e ali a aspa curva é UM byte: 0x93. Lido como UTF-8
+      aquilo é sequência inválida e o que sai na tela é lixo — inclusive nos
+      acentos, que é como um "coração" vira "coraÃ§Ã£o". Aqui um byte solto é
+      promovido pela tabela do CP1252, que é de onde ele veio.
+
+   O que NÃO se faz: trocar por "?" o que não se reconhece. Um título em
+   japonês, num aparelho da Sony, tem chance real de ter fonte; três
+   interrogações não têm chance nenhuma de virar o título de volta. Só se
+   troca o que tem equivalente ASCII de verdade.
+
+   O tools/glifos.py é o outro lado desta regra: ele confere os literais que
+   NÓS escrevemos; isto trata o texto que chega de fora, que nenhuma
+   conferência de código alcança. */
+
+/* O CP1252 nos 32 lugares em que ele difere do Latin-1 — e é justamente essa
+   faixa que carrega as aspas curvas e os travessões do Word. */
+static const unsigned short CP1252_ALTO[32] = {
+    0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+    0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
+    0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+    0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178
+};
+
+/* Um caractere UTF-8; byte inválido volta como CP1252 em vez de virar lixo. */
+static unsigned int utf8_prox(const unsigned char **pp)
+{
+    const unsigned char *p = *pp;
+    unsigned int c = *p;
+    int extra = 0;
+    unsigned int cp = 0;
+
+    if (c < 0x80)                    { *pp = p + 1; return c; }
+    else if ((c & 0xE0) == 0xC0)     { cp = c & 0x1F; extra = 1; }
+    else if ((c & 0xF0) == 0xE0)     { cp = c & 0x0F; extra = 2; }
+    else if ((c & 0xF8) == 0xF0)     { cp = c & 0x07; extra = 3; }
+    else                             { *pp = p + 1;
+                                       return c < 0xA0 ? CP1252_ALTO[c - 0x80] : c; }
+
+    for (int i = 1; i <= extra; i++)
+        if ((p[i] & 0xC0) != 0x80) {   /* não era UTF-8: era um byte de 8 bits */
+            *pp = p + 1;
+            return c < 0xA0 ? CP1252_ALTO[c - 0x80] : c;
+        }
+    for (int i = 1; i <= extra; i++) cp = (cp << 6) | (p[i] & 0x3F);
+    *pp = p + extra + 1;
+    return cp;
+}
+
+/* O equivalente ASCII, quando existe DE VERDADE. NULL = deixa como está. */
+static const char *troca_ascii(unsigned int cp)
+{
+    switch (cp) {
+    case 0x00A0: return " ";                                  /* espaço fixo */
+    case 0x00AD: case 0xFEFF: return "";        /* invisíveis, e só atrapalham */
+    case 0x2018: case 0x2019: case 0x201A: case 0x201B:
+    case 0x2032: return "\'";
+    case 0x201C: case 0x201D: case 0x201E: case 0x201F:
+    case 0x2033: return "\"";
+    case 0x2010: case 0x2011: case 0x2012: case 0x2015:
+    case 0x2212: return "-";
+    case 0x2022: return "·";                       /* marcador vira ponto médio */
+    case 0x2044: return "/";
+    case 0x2039: return "<";
+    case 0x203A: return ">";
+    case 0x02C6: return "^";
+    case 0x02DC: return "~";
+    case 0x2030: return "%";
+    case 0x0192: return "f";
+    }
+    return NULL;
+}
+
+static void utf8_poe(char **d, char *fim, unsigned int cp)
+{
+    if (cp < 0x80) {
+        if (*d + 1 < fim) *(*d)++ = (char)cp;
+    } else if (cp < 0x800) {
+        if (*d + 2 < fim) {
+            *(*d)++ = (char)(0xC0 | (cp >> 6));
+            *(*d)++ = (char)(0x80 | (cp & 0x3F));
+        }
+    } else if (cp < 0x10000) {
+        if (*d + 3 < fim) {
+            *(*d)++ = (char)(0xE0 | (cp >> 12));
+            *(*d)++ = (char)(0x80 | ((cp >> 6) & 0x3F));
+            *(*d)++ = (char)(0x80 | (cp & 0x3F));
+        }
+    } else {
+        if (*d + 4 < fim) {
+            *(*d)++ = (char)(0xF0 | (cp >> 18));
+            *(*d)++ = (char)(0x80 | ((cp >> 12) & 0x3F));
+            *(*d)++ = (char)(0x80 | ((cp >> 6) & 0x3F));
+            *(*d)++ = (char)(0x80 | (cp & 0x3F));
+        }
+    }
+}
+
+/* Devolve `dst`, sempre — é feito para entrar direto na chamada de desenho. */
+static const char *tela_texto(char *dst, size_t cap, const char *src)
+{
+    char *d = dst, *fim = dst + cap;
+    if (!src) { dst[0] = 0; return dst; }
+    const unsigned char *p = (const unsigned char *)src;
+    while (*p && d + 4 < fim) {
+        unsigned int cp = utf8_prox(&p);
+        if (cp < 0x20) { if (cp) *d++ = ' '; continue; }  /* controle vira espaço */
+        /* AS FORMAS DE LARGURA INTEIRA. Quem baixa vídeo da internet troca os
+           caracteres que o sistema de arquivos proíbe pelo gêmeo de largura
+           inteira: a aspa vira U+FF02, a interrogação U+FF1F, a barra U+FF0F.
+           O nome fica válido no cartão e ilegível na tela — foi exatamente
+           assim que apareceu, nas recomendações desta coleção,
+           "[]All I need[] but its finally shoegazed". O bloco inteiro é o
+           ASCII deslocado de 0xFEE0, então desfazer é uma subtração. */
+        if (cp >= 0xFF01 && cp <= 0xFF5E) cp -= 0xFEE0;
+        else if (cp == 0x3000) cp = ' ';          /* o espaço ideográfico */
+        const char *t = troca_ascii(cp);
+        if (t) { while (*t && d + 1 < fim) *d++ = *t++; }
+        else   utf8_poe(&d, fim, cp);
+    }
+    *d = 0;
+    return dst;
+}
+
+#define TELA_TXT 640
+
 static float text_w(Ui *u, float scale, const char *s)
 {
     return (float)vita2d_pvf_text_width(u->font, scale, s);
@@ -298,7 +441,9 @@ static float text_w(Ui *u, float scale, const char *s)
    como defeito; terminar numa palavra inteira lê como resumo. */
 static void elide(Ui *u, char *dst, size_t cap, float scale, float maxw, const char *src)
 {
-    snprintf(dst, cap, "%s", src);
+    /* SANEIA ANTES DE MEDIR: o corte é decidido pela largura, e a largura é
+       a do texto que vai mesmo ser desenhado. */
+    tela_texto(dst, cap, src);
     if (text_w(u, scale, dst) <= maxw) return;
     size_t n = strlen(dst);
     while (n > 1) {
@@ -420,7 +565,11 @@ static float hint2(Ui *u, float x, float cy, Btn a, Btn b, const char *txt)
 
 static void text(Ui *u, int x, int y, unsigned int col, float scale, const char *s)
 {
-    vita2d_pvf_draw_text(u->font, x, y, col, scale, s);
+    /* TODO texto passa por aqui, inclusive o que veio do cartão e da rede.
+       É o único ponto por onde a UI escreve, e por isso é onde o saneamento
+       cabe: sanear na varredura deixaria de fora o Qobuz e as playlists. */
+    char b[TELA_TXT];
+    vita2d_pvf_draw_text(u->font, x, y, col, scale, tela_texto(b, sizeof(b), s));
 }
 
 static void text_elided(Ui *u, int x, int y, unsigned int col, float scale,
@@ -2934,6 +3083,11 @@ void ui_set_sel(Ui *u, int i)     { if (u) u->sel = i < 0 ? 0 : i; }
 int ui_view_dbg(const Ui *u) { return u ? (int)u->view : 0; }
 
 void ui_set_bgm(Ui *u, bool ok) { if (u) u->bgm_port_ok = ok; }
+
+void ui_texto_dbg(char *dst, size_t cap, const char *src)
+{
+    tela_texto(dst, cap, src);
+}
 
 void ui_set_data(Ui *u, Playlist *plists, int nplists,
                  const Track **recs, int nrecs)

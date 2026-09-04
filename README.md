@@ -299,6 +299,18 @@ Corrigido, os nove sabotados ficam vermelhos.
 - **O `ov_read` e o `op_read` devolvem MENOS do que se pediu sem que isso
   seja fim de faixa** — um pacote por vez. Tratar "menos que o pedido" como
   fim corta a música no primeiro pacote curto.
+- **O nome do arquivo virava quadradinho na tela.** Nas recomendações desta
+  coleção lia-se `[]All I need[] but its finally shoegazed`: quem baixa vídeo
+  da internet troca a aspa — que o sistema de arquivos proíbe — pelo gêmeo de
+  LARGURA INTEIRA (U+FF02), e a fonte do aparelho não tem esse. O
+  `tools/glifos.py` nunca pegaria: ele confere os literais que NÓS
+  escrevemos, e este texto vem de fora. Agora todo texto passa por um
+  saneamento no desenho — largura inteira volta a ASCII, aspa e traço
+  tipográficos viram os retos, e um nome que não é UTF-8 (cartão FAT32
+  gravado por Windows) é promovido pelo CP1252 em vez de virar lixo. O que
+  não tem equivalente ASCII de verdade — um título em coreano — fica como
+  está: no aparelho da Sony ele tem chance de ter fonte, e três
+  interrogações não têm chance nenhuma de virar o título de volta.
 - **Procurar num FLAC sem esvaziar o buffer** faz o PCM de antes do salto
   tocar depois dele. E o teste que existia para pegar isso passava verde,
   porque procurava com o decodificador recém-aberto — sem nada no buffer não
