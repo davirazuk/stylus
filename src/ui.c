@@ -509,10 +509,14 @@ static void deck_backdrop(Ui *u, Album *a)
     };
     for (int i = 0; i < 6; i++)
         vita2d_draw_texture_tint_scale(tex, x + off[i][0], y + off[i][1], s, s,
-                                       RGBA8(255, 255, 255, 26));
+                                       RGBA8(255, 255, 255, 20));
 
-    /* escurece de novo: o texto vem por cima e o fundo é cenário, não assunto */
-    vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(7, 9, 13, 176));
+    /* Escurece de novo — e MAIS do que parecia preciso. Com 176 dava para
+       ler a foto: uma arquibancada de estádio atrás do texto, disputando
+       atenção com o disco e com a lista de faixas. Um fundo que se pode
+       DESCREVER não é fundo. A 208 sobra a cor e a mancha, que é tudo o que
+       ele precisa dar. */
+    vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(7, 9, 13, 208));
 }
 
 /* ---------- o disco ---------- */
@@ -567,13 +571,19 @@ static void draw_disc(float cx, float cy, float r, float progress,
             for (int side = 0; side < 2; side++) {
                 float a = side ? -1.5707963f - (float)i * step - step * 0.5f
                                : a0 + step * 0.5f;
-                float len = 3.0f + v * r * 0.20f;
-                float x0 = cx + cosf(a) * (r + 2.0f);
-                float y0 = cy + sinf(a) * (r + 2.0f);
-                float x1 = cx + cosf(a) * (r + 2.0f + len);
-                float y1 = cy + sinf(a) * (r + 2.0f + len);
+                /* PARA DENTRO, não para fora. Espetados para fora do aro,
+                   estes traços viravam raios de sol de desenho animado: o
+                   disco deixava de ter silhueta de disco, que é a única
+                   forma que a tela inteira depende de que se leia. Por
+                   dentro, o mesmo dado vira uma coroa no sulco externo —
+                   que é, aliás, onde o som de verdade está. */
+                float len = 3.0f + v * r * 0.16f;
+                float x0 = cx + cosf(a) * (r - 3.0f);
+                float y0 = cy + sinf(a) * (r - 3.0f);
+                float x1 = cx + cosf(a) * (r - 3.0f - len);
+                float y1 = cy + sinf(a) * (r - 3.0f - len);
                 unsigned int c = (COL_AMBER & 0x00FFFFFF) |
-                                 ((unsigned int)(60.0f + v * 150.0f) << 24);
+                                 ((unsigned int)(50.0f + v * 165.0f) << 24);
                 vita2d_draw_line(x0, y0, x1, y1, c);
             }
         }
@@ -587,11 +597,24 @@ static void draw_disc(float cx, float cy, float r, float progress,
     alpha_fill(cx, cy, 3.0f, 0.85f, COL_AMBER);
 }
 
-/* O braço é o FACHO, não um tubo de alumínio: quase toda a luz mora na ponta,
-   o corpo começa a 38% do caminho, e levantado ele apaga.
+/* O braço.
+
+   O QUE ESTAVA ERRADO: era um "facho" — um gradiente radial curtinho e um
+   ponto de luz, nascendo de um ponto que se movia junto com a agulha. No
+   aparelho isso lê como uma fagulha solta sobre o disco. Não havia braço.
+   Num app cuja tela inteira é um toca-discos, a peça que dá nome ao
+   programa não aparecia.
+
+   O que muda: o PIVÔ agora é FIXO, fora do prato, em cima e à direita — como
+   num toca-discos de verdade. O braço é uma reta do pivô até a agulha, e a
+   agulha anda para dentro conforme o lado avança. Isso dá duas coisas de
+   graça: a peça vira reconhecível, e a posição dela passa a INFORMAR — dá
+   para ver de longe quanto falta do lado, sem ler número nenhum.
 
    `cue` é 0 no descanso (fora do disco) e 1 no sulco; `down` é 0 suspenso e
-   1 encostado. A cerimônia move os dois; fora dela valem 1 e 1. */
+   1 encostado. A cerimônia move os dois; fora dela valem 1 e 1. Suspenso, o
+   braço clareia menos e a agulha paira alguns pixels acima do sulco — é o
+   que distingue "pousado" de "esperando". */
 static void draw_needle(float cx, float cy, float r, float phase, float progress,
                         bool live, float cue, float down)
 {
@@ -605,29 +628,55 @@ static void draw_needle(float cx, float cy, float r, float phase, float progress
 
     float px = cx + cosf(ang) * read_r;
     float py = cy + sinf(ang) * read_r;
-    /* suspenso, a agulha paira um pouco acima do sulco */
-    py -= (1.0f - down) * 9.0f;
+    py -= (1.0f - down) * 9.0f;               /* suspenso, paira */
 
-    float ox = cx + cosf(ang) * (r * 1.55f);
-    float oy = cy + sinf(ang) * (r * 1.55f);
+    /* O pivô é FIXO: é o que separa um braço de um raio.
 
-    float a = (live || cue > 0.01f) ? (0.30f + 0.70f * down) : 0.25f;
-    for (int i = 4; i <= 10; i++) {
-        float t0 = 0.38f + (float)(i - 4) * 0.062f;
-        float t1 = t0 + 0.062f;
-        float x0 = ox + (px - ox) * t0, y0 = oy + (py - oy) * t0;
-        float x1 = ox + (px - ox) * t1, y1 = oy + (py - oy) * t1;
-        float k = powf(t1, 2.2f);
-        unsigned int c = (COL_AMBER & 0x00FFFFFF) |
-                         ((unsigned int)(k * 150.0f * a) << 24);
-        vita2d_draw_line(x0, y0, x1, y1, c);
+       Ele fica DENTRO da metade esquerda da tela de propósito. A 1,16 r ele
+       caía em cima do nome do álbum, na coluna de texto à direita — um braço
+       de toca-discos atravessando o título não é composição, é acidente. */
+    float pvx = cx + r * 0.97f;
+    float pvy = cy - r * 1.03f;
+
+    float a = (live || cue > 0.01f) ? (0.42f + 0.58f * down) : 0.30f;
+    unsigned int esc = RGBA8(4, 6, 10, (unsigned)(210 * a));
+    unsigned int tubo = (COL_AMBER & 0x00FFFFFF) | ((unsigned)(150 * a) << 24);
+    unsigned int luz  = (COL_AMBER_BRIGHT & 0x00FFFFFF) | ((unsigned)(210 * a) << 24);
+
+    /* A quebra perto da ponta: um braço reto do pivô até a agulha lê como
+       vareta. A dobra é o que dá a ele a silhueta de braço em S. */
+    float bx = pvx + (px - pvx) * 0.80f;
+    float by = pvy + (py - pvy) * 0.80f;
+
+    thick_line(pvx, pvy, bx, by, 7.0f, esc);
+    thick_line(bx, by, px, py, 6.0f, esc);
+    thick_line(pvx, pvy, bx, by, 3.0f, tubo);
+    thick_line(bx, by, px, py, 4.0f, luz);
+
+    /* a concha, no fim do braço */
+    alpha_fill(px, py, 5.0f, 0.9f * a, RGBA8(10, 13, 20, 255));
+    alpha_ring(px, py, 5.0f, 1.4f, 0.85f * a, COL_AMBER);
+
+    /* o pivô e o contrapeso */
+    alpha_fill(pvx, pvy, 8.0f, 0.95f, RGBA8(10, 13, 20, 255));
+    alpha_ring(pvx, pvy, 8.0f, 2.2f, 0.70f, COL_AMBER);
+    alpha_fill(pvx, pvy, 2.2f, 0.8f, COL_AMBER_BRIGHT);
+    {
+        float dx = pvx - px, dy = pvy - py;
+        float l = sqrtf(dx * dx + dy * dy);
+        if (l > 1.0f) {
+            float wx = pvx + dx / l * 15.0f, wy = pvy + dy / l * 15.0f;
+            thick_line(pvx, pvy, wx, wy, 5.0f, esc);
+            alpha_fill(wx, wy, 5.0f, 0.85f, RGBA8(10, 13, 20, 255));
+            alpha_ring(wx, wy, 5.0f, 1.6f, 0.55f, COL_AMBER);
+        }
     }
+
+    /* a agulha em si: o ponto quente, e só quando está tocando */
     if (down > 0.5f && live) {
-        vita2d_draw_line(px - 4, py, px + 4, py, COL_AMBER_BRIGHT);
-        vita2d_draw_line(px, py - 4, px, py + 4, COL_AMBER_BRIGHT);
+        alpha_fill(px, py, 2.4f, 0.95f, COL_AMBER_BRIGHT);
+        alpha_fill(px, py, 9.0f, 0.16f, COL_AMBER);
     }
-    alpha_fill(px, py, 3.5f, 0.85f * a, COL_AMBER_BRIGHT);
-    alpha_fill(px, py, 11.0f, 0.16f * a, COL_AMBER);
 }
 
 static void draw_halo(float cx, float cy, float base_r, float phase)
@@ -770,56 +819,70 @@ static void header_hints(Ui *u, const char *title, const Dica *d)
 #define SHELF_ROWS UI_SHELF_ROWS
 #define SHELF_PAGE UI_SHELF_PAGE
 
+/* A estante vazia.
+
+   Esta tela mudou de assunto. Enquanto o app ADIVINHAVA nomes de pasta, ela
+   precisava listar os palpites e mandar a pessoa escrever um roots.txt — era
+   a única saída que existia. Agora ele PROCURA (ver library_discover), então
+   "ux0:music não existe" deixou de ser informação útil: a pasta pode ter
+   qualquer nome, e o app teria achado.
+
+   O que sobrou de acionável é bem menos e bem melhor: copie a música para o
+   cartão, em qualquer pasta. O resto é diagnóstico, e diagnóstico fica
+   embaixo e apagado — quem precisa dele sabe que precisa.
+
+   A capa vazia à esquerda existe porque uma tela de erro cheia de códigos
+   hexadecimais parece um app quebrado. Ela é o mesmo objeto da estante, só
+   que sem disco dentro: diz "não há discos aqui" na mesma língua que o
+   resto do app fala. */
 static void shelf_empty(Ui *u, Library *lib)
 {
     char st[512];
     library_status(lib, st, sizeof(st));
 
-    text(u, (int)PAD_X, 120, COL_AMBER, 0.90f, "a estante está vazia");
-    text_elided(u, (int)PAD_X, 152, COL_TEXT, 0.62f, SCRW - 2 * PAD_X, st);
-
-    /* Dizer ONDE se olhou é o que transforma "não acha as músicas" num
-       conserto de trinta segundos. Antes a tela mostrava "0 discos" e a
-       pessoa não tinha como saber sequer em que pasta o app tinha ido. */
-    text(u, (int)PAD_X, 196, COL_TEXT_DIM, 0.55f,
-         lib->roots_from_config ? "pastas do seu roots.txt:" : "procurei em:");
-    int y = 218;
-    for (int i = 0; i < lib->nroots && i < 6; i++) {
-        char line[MAX_PATH_LEN + 32];
-        /* NÃO diz "não existe" sem saber: "não existe" e "sem permissão"
-           pedem consertos opostos, e a tela mandava procurar a pasta que já
-           estava lá. Agora mostra o que o sistema respondeu, com o código —
-           que é o que dá para me repassar quando nada mais explica. */
-        if (lib->roots[i].opened)
-            snprintf(line, sizeof(line), "%s   (abriu)", lib->roots[i].path);
-        else
-            snprintf(line, sizeof(line), "%s   %s  [0x%08X]",
-                     lib->roots[i].path, scan_err_str(lib->roots[i].err),
-                     (unsigned)lib->roots[i].err);
-        text_elided(u, (int)PAD_X + 12, y, lib->roots[i].opened ? COL_TEXT : COL_TEXT_FAINT,
-                    0.54f, SCRW - 2 * PAD_X - 12, line);
-        y += 22;
+    /* a capa vazia, à esquerda */
+    {
+        float l = 168.0f, x = PAD_X + 8, y = 138.0f;
+        vita2d_draw_rectangle(x + 4, y + 4, l, l, RGBA8(3, 5, 10, 160));
+        vita2d_draw_rectangle(x, y, l, l, RGBA8(14, 19, 29, 255));
+        vita2d_draw_rectangle(x, y, l, 2, RGBA8(255, 170, 40, 45));
+        alpha_ring(x + l * 0.5f, y + l * 0.5f, l * 0.30f, 1.0f, 0.13f, COL_AMBER);
+        alpha_ring(x + l * 0.5f, y + l * 0.5f, l * 0.20f, 1.0f, 0.10f, COL_AMBER);
+        /* a boca da capa, aberta e sem nada dentro */
+        vita2d_draw_rectangle(x + 10, y + l - 34, l - 20, 2, RGBA8(255, 170, 40, 55));
+        vita2d_draw_rectangle(x + 10, y + l - 26, l * 0.42f, 1, RGBA8(138, 147, 163, 90));
     }
-    /* A PERGUNTA DECISIVA, respondida na tela: o DISPOSITIVO abre?
 
-       Se `ux0:` abre e `ux0:music` não, a pasta é que não está lá. Se nem
-       `ux0:` abre, o problema não tem nada a ver com música — é o caminho
-       inteiro, e nenhuma mudança de pasta conserta. As duas coisas se
-       parecem na tela ("não achou nada") e pedem consertos que não têm
-       relação, então a tela passa a separá-las.
+    float tx = PAD_X + 200;
+    float tw = SCRW - tx - PAD_X;
 
-       E LISTA o que viu ali: se o app enxerga "app", "data", "music" na
-       raiz, a pasta existe e o problema é outro. */
-    y += 12;
+    text(u, (int)tx, 150, COL_AMBER, 0.90f, "a estante está vazia");
+    text_elided(u, (int)tx, 182, COL_TEXT, 0.60f, tw, st);
+
+    /* O QUE FAZER. Uma linha, e é a verdade nova: não há nome de pasta a
+       acertar. */
+    text_elided(u, (int)tx, 224, COL_TEXT, 0.56f, tw,
+                "o app procura a música sozinho, em qualquer pasta do cartão.");
+    text_elided(u, (int)tx, 246, COL_TEXT, 0.56f, tw,
+                "copie os discos para ux0:music — ou para onde preferir — e volte aqui.");
+
+    /* Daqui para baixo é diagnóstico: apagado, e só para quando o de cima
+       não bastar. */
+    float y = 288;
+    text(u, (int)tx, (int)y, COL_TEXT_FAINT, 0.52f, "o que eu vi:");
+    y += 22;
     {
         int e = 0;
         DirIter *dev = dir_open_err("ux0:", &e);
         if (!dev) {
+            /* A PERGUNTA DECISIVA: se nem o dispositivo abre, o problema não
+               tem nada a ver com música, e nenhuma mudança de pasta conserta.
+               As duas falhas se parecem na tela e pedem consertos opostos. */
             char l[160];
-            snprintf(l, sizeof(l), "ux0: (o cartão) também NÃO abre: %s  [0x%08X]",
+            snprintf(l, sizeof(l), "ux0: (o cartão) não abre: %s  [0x%08X]",
                      scan_err_str(e), (unsigned)e);
-            text_elided(u, (int)PAD_X, y, COL_ALARM, 0.55f, SCRW - 2 * PAD_X, l);
-            y += 22;
+            text_elided(u, (int)tx + 10, (int)y, COL_ALARM, 0.53f, tw - 10, l);
+            y += 20;
         } else {
             char l[420];
             size_t n = (size_t)snprintf(l, sizeof(l), "ux0: abre, e tem: ");
@@ -834,19 +897,131 @@ static void shelf_empty(Ui *u, Library *lib)
             }
             if (!vistos) snprintf(l, sizeof(l), "ux0: abre, mas está VAZIO");
             dir_close(dev);
-            text_elided(u, (int)PAD_X, y, COL_TEXT, 0.55f, SCRW - 2 * PAD_X, l);
-            y += 22;
+            text_elided(u, (int)tx + 10, (int)y, COL_TEXT_DIM, 0.53f, tw - 10, l);
+            y += 20;
         }
     }
+    /* As raízes que falharam, com o CÓDIGO do sistema. "não existe" e "sem
+       permissão" pedem consertos opostos, e a tela já mandou procurar pasta
+       que estava lá o tempo todo. */
+    for (int i = 0; i < lib->nroots && i < 4; i++) {
+        if (lib->roots[i].opened) continue;
+        char line[MAX_PATH_LEN + 32];
+        snprintf(line, sizeof(line), "%s   %s  [0x%08X]",
+                 lib->roots[i].path, scan_err_str(lib->roots[i].err),
+                 (unsigned)lib->roots[i].err);
+        text_elided(u, (int)tx + 10, (int)y, COL_TEXT_FAINT, 0.52f, tw - 10, line);
+        y += 20;
+    }
 
-    y += 8;
-    text(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f,
-         "ponha a música em ux0:music/Artista/Album/*.mp3 — ou escreva as suas");
-    /* o caminho vem do paths.h: é ESTA linha que a pessoa vai digitar quando
-       o app não achar a coleção dela, e ela não pode divergir do que o
-       scanner realmente lê */
-    text(u, (int)PAD_X, y + 20, COL_TEXT_DIM, 0.54f,
-         "pastas, uma por linha, em " STYLUS_ROOTS_TXT);
+    /* A saída manual continua existindo, e continua sendo a última linha:
+       o caminho vem do paths.h porque é ESTA linha que a pessoa vai digitar,
+       e ela não pode divergir do que o scanner realmente lê. */
+    text_elided(u, (int)tx, (int)(y + 10), COL_TEXT_FAINT, 0.50f, tw,
+                "ainda vazia? escreva as pastas, uma por linha, em "
+                STYLUS_ROOTS_TXT);
+}
+
+
+/* ---------- a miniatura da estante ----------
+
+   O PROBLEMA que isto resolve: a estante desenhava DUAS COISAS DIFERENTES.
+   Álbum com arte virava um quadrado; álbum sem arte virava um círculo. Lado
+   a lado na mesma grade, e num acervo onde 48 discos não têm arte nenhuma, o
+   resultado era uma parede em que metade dos itens não se parecia com a
+   outra metade — e nada disso queria dizer coisa alguma sobre a música.
+
+   A forma passa a ser uma só, para todo mundo: a CAPA, com o disco saindo
+   por trás. É como um disco fica numa prateleira de verdade, é a mesma
+   linguagem do ícone e da LiveArea, e resolve a inconsistência sem esconder
+   quem não tem arte — quem não tem ganha uma capa gerada, com a inicial, em
+   vez de virar outro tipo de objeto.
+
+   O disco é desenhado ANTES e a capa POR CIMA: é a ordem que dá a leitura de
+   "dentro da capa". */
+static void shelf_record(float cx, float cy, float r, float angle)
+{
+    if (r < 6) return;
+    alpha_fill(cx, cy, r, 1.0f, RGBA8(7, 10, 16, 255));
+    /* Poucos sulcos e fracos: nesta escala (uns 40 px de raio) muitos anéis
+       de contraste alto viram moiré, e o que precisa sobreviver é a silhueta. */
+    alpha_ring(cx, cy, r * 0.86f, 1.0f, 0.14f, COL_AMBER);
+    alpha_ring(cx, cy, r * 0.70f, 1.0f, 0.12f, COL_AMBER);
+    alpha_ring(cx, cy, r * 0.54f, 1.0f, 0.10f, COL_AMBER);
+    alpha_ring(cx, cy, r, 1.6f, 0.55f, COL_AMBER);
+    alpha_fill(cx, cy, r * 0.30f, 0.85f, RGBA8(201, 138, 30, 255));
+    alpha_fill(cx, cy, r * 0.075f, 1.0f, RGBA8(3, 5, 10, 255));
+    /* Um respingo de luz que gira com o prato: sem ele o disco parado e o
+       disco tocando são o mesmo desenho. */
+    float lx = cx + cosf(angle) * r * 0.62f, ly = cy + sinf(angle) * r * 0.62f;
+    alpha_fill(lx, ly, r * 0.05f, 0.5f, COL_AMBER_BRIGHT);
+}
+
+/* A inicial do álbum, pulando o prefixo de data que quase todo disco ao vivo
+   deste acervo tem — senão a inicial de todos seria "1". Devolve 0 se não
+   achou letra nenhuma. */
+static int album_inicial(const Album *a, char *out, size_t cap)
+{
+    const char *nome = a->album[0] ? a->album : a->artist;
+    while (*nome && !((*nome >= 'A' && *nome <= 'Z') ||
+                      (*nome >= 'a' && *nome <= 'z') ||
+                      (unsigned char)*nome >= 0xC0))
+        nome++;
+    if (!*nome) return 0;
+    int nb = 1;
+    if ((unsigned char)nome[0] >= 0xC0)
+        while (nb < 4 && ((unsigned char)nome[nb] & 0xC0) == 0x80) nb++;
+    if ((size_t)nb + 1 > cap) return 0;
+    memcpy(out, nome, (size_t)nb);
+    out[nb] = '\0';
+    if (out[0] >= 'a' && out[0] <= 'z') out[0] = (char)(out[0] - 32);
+    return 1;
+}
+
+static void shelf_thumb(Ui *u, Album *a, vita2d_texture *tex,
+                        float ix, float iy, float side, float angle)
+{
+    /* 0,74 e não 0,80: com a capa mais larga o disco aparecia como um fio de
+       uns 20 px e não se lia como disco nenhum. Um quarto do lado é o mínimo
+       para o crescente ter forma. */
+    float cap_l = side * 0.74f;                 /* a capa */
+    float cy    = iy + side * 0.5f;
+    float cap_y = cy - cap_l * 0.5f;
+    float dr    = side * 0.43f;                 /* o disco atrás */
+    float dcx   = ix + side - dr;
+
+    shelf_record(dcx, cy, dr, angle);
+
+    if (tex) {
+        draw_cover_fit(tex, ix, cap_y, cap_l);
+    } else {
+        /* A capa gerada. Não é um aviso de falta: é uma capa sóbria, com a
+           inicial, que ocupa o mesmo lugar e o mesmo peso de uma de verdade. */
+        vita2d_draw_rectangle(ix, cap_y, cap_l, cap_l, RGBA8(16, 22, 33, 255));
+        /* A faixa embaixo e o filete em cima são o que separa "capa gerada"
+           de "retângulo vazio": dão a ela a estrutura de um objeto impresso.
+           Uma capa sem arte ainda é uma CAPA. */
+        vita2d_draw_rectangle(ix, cap_y, cap_l, 2, RGBA8(255, 170, 40, 70));
+        vita2d_draw_rectangle(ix, cap_y + cap_l * 0.80f, cap_l, cap_l * 0.20f,
+                              RGBA8(10, 14, 21, 200));
+        vita2d_draw_rectangle(ix + cap_l * 0.10f, cap_y + cap_l * 0.86f,
+                              cap_l * 0.52f, 2, RGBA8(255, 170, 40, 90));
+        vita2d_draw_rectangle(ix + cap_l * 0.10f, cap_y + cap_l * 0.92f,
+                              cap_l * 0.32f, 1, RGBA8(138, 147, 163, 110));
+        alpha_ring(ix + cap_l * 0.5f, cap_y + cap_l * 0.38f, cap_l * 0.32f,
+                   1.0f, 0.22f, COL_AMBER);
+        char ini[5];
+        if (album_inicial(a, ini, sizeof(ini))) {
+            float sc = cap_l / 52.0f;
+            int lw = text_w(u, sc, ini);
+            text(u, (int)(ix + cap_l * 0.5f - lw / 2.0f),
+                 (int)(cap_y + cap_l * 0.50f), COL_AMBER, sc, ini);
+        }
+    }
+    /* a borda da capa, que a separa do disco e do fundo */
+    vita2d_draw_rectangle(ix, cap_y, cap_l, 1, RGBA8(255, 227, 174, 46));
+    vita2d_draw_rectangle(ix, cap_y, 1, cap_l, RGBA8(255, 227, 174, 46));
+    vita2d_draw_rectangle(ix, cap_y + cap_l - 1, cap_l, 1, RGBA8(0, 0, 0, 140));
 }
 
 static void draw_shelf(Ui *u, Library *lib, Player *p)
@@ -895,43 +1070,12 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
 
             vita2d_draw_rectangle(x, y, cw, ch, is_sel ? TINT_SEL : COL_CARD);
 
+            /* A capa não é mais centrada: ela ocupa a esquerda e o disco
+               sai pela direita, então o conjunto é que fica centrado. */
             float ix = x + (cw - side) / 2, iy = y + pad;
             vita2d_texture *tex = cover_tex(u, a);
-            if (tex) {
-                draw_cover_fit(tex, ix, iy, side);
-            } else if (a->cover_loaded) {
-                /* sem capa: o disco É o desenho, não um aviso de falta */
-                float dcx = ix + side / 2, dcy = iy + side / 2, dr = side / 2.2f;
-                draw_disc(dcx, dcy, dr, 0.18f, a->ntracks, -1, u->disc_angle,
-                          NULL, 0.0f);
-                /* A INICIAL no rótulo. Sem capa, um disco fica igual ao
-                   vizinho e a estante vira uma parede sem alvo — e neste
-                   acervo 48 álbuns não têm arte em lugar nenhum. A letra
-                   devolve o que a capa daria: algo diferente por card para
-                   o olho mirar. Pula o prefixo de data que quase todo disco
-                   ao vivo daqui tem, senão a inicial de todos seria "1". */
-                {
-                    const char *nome = a->album[0] ? a->album : a->artist;
-                    while (*nome && !((*nome >= 'A' && *nome <= 'Z') ||
-                                      (*nome >= 'a' && *nome <= 'z') ||
-                                      (unsigned char)*nome >= 0xC0))
-                        nome++;
-                    if (*nome) {
-                        char ini[5] = {0};
-                        int nb = 1;
-                        if ((unsigned char)nome[0] >= 0xC0)
-                            while (nb < 4 && ((unsigned char)nome[nb] & 0xC0) == 0x80) nb++;
-                        memcpy(ini, nome, (size_t)nb);
-                        if (ini[0] >= 'a' && ini[0] <= 'z') ini[0] = (char)(ini[0] - 32);
-                        /* chão para a letra: solta sobre os anéis ela some */
-                        alpha_fill(dcx, dcy, dr * 0.46f, 0.95f, RGBA8(14, 18, 25, 255));
-                        alpha_ring(dcx, dcy, dr * 0.46f, 1.2f, 0.40f, COL_AMBER);
-                        float sc = 1.05f;
-                        int lw = text_w(u, sc, ini);
-                        text(u, (int)(dcx - lw / 2.0f), (int)(dcy + dr * 0.17f),
-                             COL_AMBER_BRIGHT, sc, ini);
-                    }
-                }
+            if (tex || a->cover_loaded) {
+                shelf_thumb(u, a, tex, ix, iy, side, u->disc_angle);
             } else {
                 /* ainda carregando: um aro, e nenhuma afirmação */
                 alpha_ring(ix + side / 2, iy + side / 2, side / 2.4f, 1.0f, 0.10f, COL_COLD);
