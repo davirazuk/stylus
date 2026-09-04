@@ -216,6 +216,65 @@ static void test_lossy(void)
     }
 }
 
+/* O TETO DE TAXA — o que decide o áudio em segundo plano.
+
+   Quem escolhe o TIPO da porta de saída do Vita é o SDL2, e ele decide pela
+   taxa: <=47999 Hz abre a porta BGM, acima abre MAIN. Só a BGM segura o som
+   dentro de um jogo. Numa varredura do cartão, 996 de 3728 arquivos eram de
+   48 kHz — 27% da coleção perdia o segundo plano em silêncio.
+
+   Isto NÃO é um teste de qualidade de reamostragem: é um teste de que o teto
+   é obedecido, e de que a taxa NATIVA continua sendo dita (a tela promete não
+   mentir sobre o caminho do sinal, então precisa das duas). */
+static void test_teto_bgm(void)
+{
+    printf("\n\033[1mo teto de taxa (áudio em segundo plano)\033[0m\n");
+    const long TETO = 47999;
+
+    /* sem teto: sai na taxa do arquivo */
+    dec_set_max_rate(0);
+    Decoder *d = dec_open(fx("tone48k.mp3"));
+    if (!d) { okf(0, "o MP3 de 48 kHz abre", "não abriu"); return; }
+    DecFormat f;
+    dec_format(d, &f);
+    okf(f.rate == 48000 && f.rate_native == 48000,
+        "sem teto, o MP3 de 48 kHz sai em 48 kHz",
+        "saída %ld, arquivo %ld", f.rate, f.rate_native);
+    dec_close(d);
+
+    /* com teto: a SAÍDA desce, o NATIVO não muda */
+    dec_set_max_rate(TETO);
+    d = dec_open(fx("tone48k.mp3"));
+    if (!d) { okf(0, "com teto, o MP3 de 48 kHz ainda abre", "não abriu"); return; }
+    dec_format(d, &f);
+    okf(f.rate > 0 && f.rate <= TETO, "com teto, a saída cabe na porta BGM",
+        "saída %ld, teto %ld", f.rate, TETO);
+    okf(f.rate_native == 48000,
+        "e a taxa do ARQUIVO continua sendo dita (a tela não mente)",
+        "nativo %ld", f.rate_native);
+    /* e continua entregando áudio: um teto que muda a taxa e para de
+       decodificar seria pior que não ter teto */
+    {
+        unsigned char buf[8192];
+        long got = dec_read(d, buf, sizeof(buf));
+        okf(got > 0, "e continua entregando PCM depois de reamostrar",
+            "dec_read devolveu %ld", got);
+    }
+    dec_close(d);
+
+    /* quem JÁ cabe não é tocado: reamostrar 44,1k à toa é perda de qualidade
+       e de CPU do aparelho por nada */
+    d = dec_open(fx("tone.mp3"));
+    if (d) {
+        dec_format(d, &f);
+        okf(f.rate == 44100 && f.rate_native == 44100,
+            "quem já cabe no teto passa intacto",
+            "saída %ld, arquivo %ld", f.rate, f.rate_native);
+        dec_close(d);
+    }
+    dec_set_max_rate(0);
+}
+
 static void test_seek(void)
 {
     printf("\n\033[1mprocurar cai onde disse que caiu\033[0m\n");
@@ -359,6 +418,7 @@ int main(int argc, char **argv)
     test_wav();
     test_lossless();
     test_lossy();
+    test_teto_bgm();
     test_seek();
     test_tags();
     free(REF);

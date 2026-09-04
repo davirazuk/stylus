@@ -44,14 +44,27 @@ if ! command -v gcc >/dev/null 2>&1 || ! command -v pkg-config >/dev/null 2>&1; 
     skip "PULA: sem gcc/pkg-config"
 elif ! pkg-config --exists $DEC_PKGS 2>/dev/null; then
     skip "PULA: faltam as bibliotecas ($DEC_PKGS)"
-elif ! command -v flac >/dev/null 2>&1 || ! command -v oggenc >/dev/null 2>&1 \
-   || ! command -v opusenc >/dev/null 2>&1 || ! command -v lame >/dev/null 2>&1; then
-    skip "PULA: faltam os codificadores (flac, oggenc, opusenc, lame)"
+elif ! command -v flac >/dev/null 2>&1 \
+   || { ! command -v ffmpeg >/dev/null 2>&1 \
+        && { ! command -v oggenc >/dev/null 2>&1 \
+             || ! command -v opusenc >/dev/null 2>&1 \
+             || ! command -v lame >/dev/null 2>&1; }; }; then
+    # o ffmpeg cobre ogg/opus/mp3 sozinho; os dedicados são só o caminho
+    # preferido. Exigir os três fazia esta máquina PULAR o teste inteiro por
+    # falta do vorbis-tools — e um teste que pula em silêncio é o mesmo que
+    # não existir.
+    skip "PULA: faltam os codificadores (flac, e ffmpeg ou oggenc+opusenc+lame)"
 else
     FX=/tmp/vitastylus_fixtures
-    if [ ! -f "$FX/tone.flac" ]; then
-        python3 tools/make_fixtures.py "$FX" >/dev/null 2>&1 || true
-    fi
+    # Regerar quando FALTA QUALQUER UMA. Antes olhava só o tone.flac: uma
+    # fixture nova (o mp3 de 48 kHz do teste do teto) nunca era criada porque
+    # o flac já estava lá, e o teto passava sem ser exercitado.
+    for _fx in tone.flac tone.ogg tone.opus tone.mp3 tone48k.mp3 tone24.flac; do
+        if [ ! -f "$FX/$_fx" ]; then
+            python3 tools/make_fixtures.py "$FX" >/dev/null 2>&1 || true
+            break
+        fi
+    done
     if [ ! -f "$FX/tone.flac" ]; then
         fail "não consegui gerar as fixtures de áudio"
     else

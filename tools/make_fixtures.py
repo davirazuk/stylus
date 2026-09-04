@@ -78,16 +78,50 @@ run('flac', '-8', '-f', '-s', '-o', j('tone.flac'),
     '--picture=3||||' + j('cover.png'), j('tone16.wav'))
 # um FLAC de 24 bits: o caminho que DESCE para 16 no Vita
 run('flac', '-8', '-f', '-s', '-o', j('tone24.flac'), j('tone24.wav'))
-run('oggenc', '-Q', '-q', '6', '-o', j('tone.ogg'),
-    '-t', 'Faixa de Teste', '-a', 'Artista Teste', '-l', 'Album Teste',
-    '-N', '7', j('tone16.wav'))
-run('opusenc', '--quiet', '--bitrate', '128',
-    '--title', 'Faixa de Teste', '--artist', 'Artista Teste',
-    '--album', 'Album Teste', '--comment', 'TRACKNUMBER=7',
-    '--picture', j('cover.png'), j('tone16.wav'), j('tone.opus'))
-run('lame', '--quiet', '-b', '192',
-    '--tt', 'Faixa de Teste', '--ta', 'Artista Teste',
-    '--tl', 'Album Teste', '--tn', '7', '--ti', j('cover.png'),
-    j('tone16.wav'), j('tone.mp3'))
+# oggenc e opusenc vêm em pacotes separados (vorbis-tools, opus-tools) que
+# nem toda máquina tem. Antes, faltar UM deles derrubava o gerador no meio e
+# as fixtures ficavam pela metade — o teste do decodificador então "passava"
+# sem exercitar nada, que é pior que reprovar. O ffmpeg faz os dois e já é
+# exigido aqui, então serve de reserva.
+def tem(prog):
+    from shutil import which
+    return which(prog) is not None
+
+if tem('oggenc'):
+    run('oggenc', '-Q', '-q', '6', '-o', j('tone.ogg'),
+        '-t', 'Faixa de Teste', '-a', 'Artista Teste', '-l', 'Album Teste',
+        '-N', '7', j('tone16.wav'))
+else:
+    run('ffmpeg', '-v', 'error', '-y', '-i', j('tone16.wav'),
+        '-c:a', 'libvorbis', '-q:a', '6',
+        '-metadata', 'title=Faixa de Teste', '-metadata', 'artist=Artista Teste',
+        '-metadata', 'album=Album Teste', '-metadata', 'track=7', j('tone.ogg'))
+
+if tem('opusenc'):
+    run('opusenc', '--quiet', '--bitrate', '128',
+        '--title', 'Faixa de Teste', '--artist', 'Artista Teste',
+        '--album', 'Album Teste', '--comment', 'TRACKNUMBER=7',
+        '--picture', j('cover.png'), j('tone16.wav'), j('tone.opus'))
+else:
+    run('ffmpeg', '-v', 'error', '-y', '-i', j('tone16.wav'),
+        '-c:a', 'libopus', '-b:a', '128k',
+        '-metadata', 'title=Faixa de Teste', '-metadata', 'artist=Artista Teste',
+        '-metadata', 'album=Album Teste', '-metadata', 'track=7', j('tone.opus'))
+if tem('lame'):
+    run('lame', '--quiet', '-b', '192',
+        '--tt', 'Faixa de Teste', '--ta', 'Artista Teste',
+        '--tl', 'Album Teste', '--tn', '7', '--ti', j('cover.png'),
+        j('tone16.wav'), j('tone.mp3'))
+else:
+    run('ffmpeg', '-v', 'error', '-y', '-i', j('tone16.wav'),
+        '-c:a', 'libmp3lame', '-b:a', '192k',
+        '-metadata', 'title=Faixa de Teste', '-metadata', 'artist=Artista Teste',
+        '-metadata', 'album=Album Teste', '-metadata', 'track=7', j('tone.mp3'))
+
+# Um MP3 de 48 kHz — ACIMA do teto que faz o SDL2 do Vita abrir a porta BGM
+# (47999 Hz). É o caso que decide o áudio em segundo plano em 27% do acervo
+# do cartão, e sem uma fixture nessa taxa o teto não teria como ser testado.
+run('ffmpeg', '-v', 'error', '-y', '-i', j('tone16.wav'),
+    '-ar', '48000', '-c:a', 'libmp3lame', '-b:a', '192k', j('tone48k.mp3'))
 
 print("fixtures em", out)
