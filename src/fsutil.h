@@ -22,4 +22,35 @@ int mkdir_p(const char *path);
 /* 1 se o caminho abre como diretório. */
 int dir_exists(const char *path);
 
+/* ---- percorrer uma pasta ----
+
+   POR QUE ISTO NÃO USA opendir() NO VITA
+
+   O app rodou no aparelho e deixou um diagnóstico no cartão:
+
+       root=ux0:music
+       opendir(ux0:music)=NULL
+       opendir(ux0:music/)=NULL
+       opendir(ux0:/music)=NULL
+       opendir(data)=OK
+       nalbums=0 ntracks=0
+
+   As TRÊS formas com prefixo de dispositivo falharam; a relativa abriu. E
+   no mesmo arranque o `mkdir("ux0:data/vitastylus")` e o `fopen` daquele
+   próprio arquivo funcionaram — ou seja, o prefixo `ux0:` não é o problema
+   para o resto da libc, só para o opendir. Seja qual for a causa exata na
+   tradução de caminho do newlib, ela é evitável: o `sceIoDopen` é a API do
+   sistema, aceita `ux0:music` sem ambiguidade, e o `sceIoDread` já devolve
+   o stat de cada entrada — o que de quebra dispensa a chamada de `stat`
+   separada, que era onde a barra dupla mordia.
+
+   No PC continua sendo opendir/readdir, que é o que existe lá. */
+typedef struct DirIter DirIter;
+
+DirIter *dir_open(const char *path);
+/* Próxima entrada. Devolve 0 quando acaba. `*isdir` diz o que é.
+   `name` aponta para memória do iterador: vale até a próxima chamada. */
+int      dir_next(DirIter *it, const char **name, int *isdir);
+void     dir_close(DirIter *it);
+
 #endif

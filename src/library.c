@@ -292,29 +292,23 @@ static int add_track(Album *a, const char *full, const char *base)
 static void scan_dir(Library *lib, int root_idx, const char *abs, const char *rel, int depth)
 {
     if (depth > SCAN_MAX_DEPTH) return;
-    DIR *d = opendir(abs);
+    /* dir_open, não opendir: no aparelho o opendir devolveu NULL para
+       "ux0:music" nas três formas, e a API do sistema não tem essa dúvida.
+       Ver a nota grande no fsutil.h. */
+    DirIter *d = dir_open(abs);
     if (!d) return;
     lib->dirs_seen++;
     if (lib->progress && (lib->dirs_seen % 8) == 0)
         lib->progress(lib->progress_ud, abs, lib->files_seen);
 
-    struct dirent *e;
-    while ((e = readdir(d)) != NULL) {
-        if (e->d_name[0] == '.') continue;
+    const char *nome;
+    int isdir;
+    while (dir_next(d, &nome, &isdir)) {
+        if (nome[0] == '.') continue;
         char child_abs[MAX_PATH_LEN], child_rel[MAX_PATH_LEN];
-        path_join(child_abs, sizeof(child_abs), abs, e->d_name);
-        path_join(child_rel, sizeof(child_rel), rel, e->d_name);
+        path_join(child_abs, sizeof(child_abs), abs, nome);
+        path_join(child_rel, sizeof(child_rel), rel, nome);
 
-        int isdir = -1;
-#ifdef DT_DIR
-        if (e->d_type == DT_DIR) isdir = 1;
-        else if (e->d_type == DT_REG) isdir = 0;
-#endif
-        if (isdir < 0) {
-            struct stat st;
-            if (stat(child_abs, &st) != 0) continue;
-            isdir = S_ISDIR(st.st_mode) ? 1 : (S_ISREG(st.st_mode) ? 0 : -1);
-        }
         if (isdir == 1) {
             scan_dir(lib, root_idx, child_abs, child_rel, depth + 1);
             continue;
@@ -322,21 +316,21 @@ static void scan_dir(Library *lib, int root_idx, const char *abs, const char *re
         if (isdir != 0) continue;
 
         lib->files_seen++;
-        if (!audio_ext(e->d_name)) { lib->roots[root_idx].other++; continue; }
+        if (!audio_ext(nome)) { lib->roots[root_idx].other++; continue; }
         lib->audio_found++;
         lib->roots[root_idx].audio++;
 
         Album *a = find_album(lib, root_idx, rel);
         if (!a) {
             a = ensure_album(lib);
-            if (!a) { closedir(d); return; }
+            if (!a) { dir_close(d); return; }
             a->root_idx = root_idx;
             snprintf(a->key, MAX_PATH_LEN, "%s", rel);
             set_artist_album(rel, a->artist, MAX_NAME_LEN, a->album, MAX_NAME_LEN);
         }
-        add_track(a, child_abs, e->d_name);
+        add_track(a, child_abs, nome);
     }
-    closedir(d);
+    dir_close(d);
 }
 
 /* ---------------- ordenação ---------------- */
