@@ -293,13 +293,28 @@ palavras no código do desenho e confere a paleta em números.
 
 ## O que ainda não existe
 
-- [ ] Teste em aparelho de verdade (este VPK foi construído e conferido no
-      host; o hardware não passou por ele)
+- [ ] Teste em aparelho de verdade. O VPK é construído e conferido no host —
+      cor, geometria, decodificação amostra a amostra, atalhos, formato dos
+      ícones. **Nada disso foi visto num Vita**, e a fonte do sistema não é a
+      que o preview usa.
 - [ ] M4A/AAC e WMA — aparecem na estante, marcados, sem decodificador
-- [ ] Qobuz/streaming (precisa de rede real no Vita para valer)
-- [ ] Áudio em segundo plano DESTE app: **limite de plataforma, não de
-      código** — ver "Ouvir enquanto joga" acima. Faria falta um plugin de
-      kernel, que é outro programa.
+- [ ] Qobuz **no aparelho**. O PC baixa (ver "Qobuz"); transmitir do Vita
+      exigiria HTTPS no aparelho, que o `net.c` nunca validou em hardware.
+- [ ] Reamostrar FLAC/Vorbis/WAV acima de 47999 Hz. Só o MP3 é reamostrado
+      (o mpg123 faz por nós); nos outros a taxa nativa passa e o áudio de
+      segundo plano não segura. Faria falta um reamostrador aqui.
+- [ ] Fila do last.fm — existiu numa linha paralela deste projeto e não veio
+      na fusão: depende de rede no Vita, que segue sem validação.
+
+Uma coisa que ESTE arquivo afirmava e não se sustenta: que o áudio em segundo
+plano deste app é "limite de plataforma, não de código". Isso foi escrito
+quando o app **não pedia a porta BGM** — e sem pedir, nenhum plugin de kernel
+teria como manter processo nenhum vivo. Hoje ele pede, mantém a taxa dentro
+do teto, e o autor do MusicPremium anuncia "background music play for **any**
+game or application", citando VitaShell e ElevenMPV, que são homebrew.
+Não está provado que funciona; está provado que a conclusão anterior vinha
+de um teste que não podia dar outro resultado. A tela "ouvir enquanto joga"
+mostra as duas condições medidas e manda experimentar.
 
 ## Áudio em segundo plano (ouvir dentro de um jogo)
 
