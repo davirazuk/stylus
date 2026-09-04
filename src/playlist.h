@@ -29,7 +29,6 @@ void playlist_free(Playlist *pl, int count);
 
 /* add / remove por índice. Devolve 0 ok, -1 erro. */
 int playlist_add(Playlist *pl, const char *path);
-int playlist_remove(Playlist *pl, int idx);
 
 /* cria uma nova playlist com nome único (prefixo + N) a partir de uma lista
    de tracks e a anexa ao array (o caller é dono do array expandido).
@@ -37,8 +36,6 @@ int playlist_remove(Playlist *pl, int idx);
 int playlist_new(Playlist **array, int *count, const char *name_prefix,
                  const Track *const *tracks, int n);
 
-/* sanitiza um nome para uso como nome de arquivo (sem '/' etc.). Mutável. */
-void playlist_sanitize_name(char *name);
 
 /* apaga a playlist no índice `idx`: libera a entrada, desloca o resto do
    array e remove o .m3u em `dir`. Devolve 0 ok, -1 erro (sem/nada). */

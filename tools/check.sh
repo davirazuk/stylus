@@ -178,22 +178,22 @@ done
 
 printf '\n\033[1mfunção órfã\033[0m\n'
 # Um helper que ninguém chama costuma ser um recurso INTEIRO faltando: foi
-# assim que album_load_cover existia e nenhuma capa era carregada.
-orphans=""
-for fn in album_load_cover album_load_meta library_status library_roots_from \
-          mkdir_p path_join ui_draw_scanning player_last_error player_track_duration \
-          ui_rec_idx drain_done dec_open dec_probe dec_seek dec_kind_of \
-          player_signal player_spectrum player_set_sleep sides_build \
-          sides_gesture sides_of_track lyrics_load lyrics_at \
-          ui_begin_ritual ui_skip_ritual ui_resting ui_scrub ui_jump_letter; do
-    n=$(grep -how "$fn" "$SRC"/*.c "$SRC"/*.h tools/*.c 2>/dev/null | wc -l)
-    # 1 = só a definição; 2 = definição + protótipo. Chamada de verdade é >2.
-    [ "$n" -le 2 ] && orphans="$orphans $fn"
-done
-if [ -n "$orphans" ]; then
-    fail "escrita e nunca chamada:$orphans"
+# assim que album_load_cover existia e nenhuma capa era carregada, e assim que
+# album_free_cover existia e os bytes crus de toda capa vista ficavam na
+# memória para sempre.
+#
+# Isto já foi uma lista de nomes escrita à mão aqui. Ela só pega o que alguém
+# lembrou de escrever nela — e NENHUM dos dois defeitos acima estava na lista;
+# os dois foram achados a olho. Agora a lista sai dos próprios headers.
+if command -v python3 >/dev/null 2>&1; then
+    out=$(python3 tools/orfas.py "$SRC" tools tests 2>&1) || true
+    if [ -z "$out" ]; then
+        pass "toda função declarada nos headers tem quem a chame"
+    else
+        fail "declarada e nunca chamada" "$out"
+    fi
 else
-    pass "toda peça do núcleo tem alguém que a chama"
+    skip "PULA: sem python3"
 fi
 
 printf '\n\033[1muma lista, um dono\033[0m\n'

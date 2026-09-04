@@ -371,6 +371,14 @@ static vita2d_texture *cover_tex(Ui *u, Album *a)
 
     vita2d_texture *tex = decode_cover(a);
     u->loaded_this_frame++;
+    /* Os BYTES CRUS já cumpriram o papel — quem fica é a textura, e o cache
+       dela tem teto. Sem soltá-los, cada capa vista ficava na memória para
+       sempre: 17,6 MB nesta coleção, e num acervo com capas de 500 KB seriam
+       200 MB, que é o mesmo estouro de heap que deixa a estante vazia.
+       O album_free_cover também zera o `cover_loaded`, então voltar ao disco
+       depois de ele sair do cache relê do arquivo — que é justamente o que
+       carregar sob demanda quer dizer. */
+    if (a->cover) album_free_cover(a);
     if (!tex) return NULL;
 
     /* despeja o mais velho */
@@ -589,7 +597,6 @@ void ui_begin_ritual(Ui *u)
     for (int i = 0; i < SPARKS; i++) u->sparks[i].life = 0.0f;
 }
 
-bool ui_in_ritual(const Ui *u) { return u && u->rit != RIT_OFF; }
 
 /* Sem cerimônia (o app abriu com música já tocando), o prato já está a plena
    rotação — não há nada a encenar. */
@@ -1750,7 +1757,6 @@ int ui_playlist_idx(const Ui *u)  { return u ? u->pl_sel : 0; }
 int ui_rec_idx(const Ui *u)       { return u ? u->rec_sel : 0; }
 int ui_jump_letter(const Ui *u)   { return u ? u->jump_letter : 0; }
 void ui_set_sel(Ui *u, int i)     { if (u) u->sel = i < 0 ? 0 : i; }
-int ui_view(const Ui *u)          { return u ? (int)u->view : (int)VIEW_SHELF; }
 
 
 void ui_set_bgm(Ui *u, bool ok) { if (u) u->bgm_port_ok = ok; }
@@ -1767,10 +1773,3 @@ void ui_set_data(Ui *u, Playlist *plists, int nplists,
     if (u->rec_sel >= u->nrecs) u->rec_sel = u->nrecs > 0 ? u->nrecs - 1 : 0;
 }
 
-void ui_set_recs(Ui *u, const Track **recs, int nrecs)
-{
-    if (!u) return;
-    u->recs = recs;
-    u->nrecs = nrecs;
-    if (u->rec_sel >= u->nrecs) u->rec_sel = u->nrecs > 0 ? u->nrecs - 1 : 0;
-}

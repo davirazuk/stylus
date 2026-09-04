@@ -13,7 +13,6 @@ typedef struct Ui Ui;
 void ui_set_bgm(Ui *u, bool ok);
 
 void ui_set_data(Ui *u, Playlist *plists, int nplists, const Track **recs, int nrecs);
-void ui_set_recs(Ui *u, const Track **recs, int nrecs);
 
 Ui *ui_create(void);
 void ui_destroy(Ui *u);
@@ -33,7 +32,6 @@ int ui_rec_idx(const Ui *u);
    encenar a descida da agulha seria mentira sobre o que aconteceu. */
 void ui_begin_ritual(Ui *u);
 void ui_skip_ritual(Ui *u);
-bool ui_in_ritual(const Ui *u);
 
 /* Repouso: a tela apaga e a música segue. É o mais perto de "ouvir enquanto
    faz outra coisa" que um app comum de Vita chega — o aparelho suspende
@@ -58,6 +56,5 @@ int ui_handle_input(Ui *u);
 /* acessores de estado */
 int ui_selected(const Ui *u);          /* álbum marcado na estante */
 int ui_playlist_idx(const Ui *u);      /* playlist marcada na lista */
-int ui_view(const Ui *u);              /* View atual */
 
 #endif

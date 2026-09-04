@@ -48,26 +48,7 @@ int playlist_add(Playlist *pl, const char *path)
     return 0;
 }
 
-int playlist_remove(Playlist *pl, int idx)
-{
-    if (!pl || idx < 0 || idx >= pl->n) return -1;
-    free(pl->files[idx]);
-    for (int i = idx; i + 1 < pl->n; i++)
-        pl->files[i] = pl->files[i + 1];
-    pl->n--;
-    return 0;
-}
 
-void playlist_sanitize_name(char *name)
-{
-    if (!name) return;
-    for (char *p = name; *p; p++) {
-        unsigned char c = (unsigned char)*p;
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
-            c == '"' || c == '<' || c == '>' || c == '|' || c < 0x20)
-            *p = '_';
-    }
-}
 
 int playlist_new(Playlist **array, int *count, const char *name_prefix,
                  const Track *const *tracks, int n)
