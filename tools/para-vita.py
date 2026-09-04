@@ -58,6 +58,17 @@ CAPAS = ("cover.jpg", "folder.jpg", "front.jpg", "cover.png", "folder.png",
 DESTINO_PADRAO = "/run/media/davirazuk/VITASD/music"
 
 
+# SAÍDA LINHA A LINHA. O Python só descarrega o buffer quando a saída é um
+# terminal; num cano (`| tail`, um log, uma tarefa em segundo plano) ele
+# guarda tudo e solta no fim. Numa varredura de 400 álbuns que leva vinte
+# minutos, isso é indistinguível de travado — e foi exatamente o que
+# pareceu na primeira vez que rodou de verdade.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except AttributeError:
+    pass
+
+
 def erro(msg):
     print(f"  !! {msg}", file=sys.stderr)
 
@@ -226,7 +237,9 @@ def transplanta_capas(referencia, destino, dry_run):
     print(f"destino:    {len(alvos)} álbuns em {destino}")
 
     postas = ja_tinham = sem_ref = sem_arte = 0
-    for d in sorted(alvos):
+    # A contagem: numa varredura de vinte minutos, "álbum 12 de 335" é a
+    # diferença entre esperar e achar que travou.
+    for i, d in enumerate(sorted(alvos), 1):
         nome = os.path.basename(d.rstrip("/"))
         faixas = faixas_de(d)
         if not faixas:
@@ -248,8 +261,8 @@ def transplanta_capas(referencia, destino, dry_run):
             postas += 1
             continue
         n = sum(1 for f in faixas if poe_arte(os.path.join(d, f), dados))
-        print(f"  ✓ {nome}: capa em {n}/{len(faixas)} faixas")
         postas += 1
+        print(f"  [{i}/{len(alvos)}] {nome}: capa em {n}/{len(faixas)} faixas")
 
     print(f"\n═══ {postas} álbuns ganharam capa · {ja_tinham} já tinham · "
           f"{sem_ref} sem par na referência · {sem_arte} sem capa na referência ═══")

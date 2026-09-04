@@ -69,6 +69,14 @@ FORMATOS = {
 }
 
 
+# saída linha a linha: baixar um disco leva minutos e um cano guardaria
+# tudo até o fim (ver a nota igual no para-vita.py)
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except AttributeError:
+    pass
+
+
 def erro(m):
     print(f"  !! {m}", file=sys.stderr)
 
