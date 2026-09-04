@@ -37,6 +37,21 @@ static void load_modules(void)
     sceSysmoduleLoadModule(SCE_SYSMODULE_SSL);
 }
 
+/* ÁUDIO EM SEGUNDO PLANO — as DUAS coisas que precisam valer.
+
+   1. O app tem que PEDIR a porta BGM ao sistema. Com o plugin de CFW
+      MusicPremium instalado, o Vita então não suspende este processo enquanto
+      há som nela, e a música continua dentro de um jogo. Sem o plugin o
+      pedido é inofensivo: a porta não vem e seguimos tocando normal.
+   2. O SDL2 só ABRE a saída como BGM com taxa <= 47999 Hz (ver a nota grande
+      no decoder.c). Sem o teto, um MP3 de 48 kHz cai na porta MAIN e perde o
+      segundo plano em silêncio — numa varredura do cartão do usuário, 996 de
+      3728 arquivos eram 48 kHz: 27% da coleção.
+
+   Uma sem a outra não funciona, e é por isso que a tela mostra as duas. */
+#define BGM_MAX_RATE  47999L
+static bool bgm_port_ok;
+
 /* O Vita dá ao homebrew um heap pequeno por padrão, e uma coleção grande não
    cabe: cada Track são ~1,5 KB e um cartão com 5000 faixas já pede 8 MB só de
    estrutura, mais as capas decodificadas. Sem isto o malloc começa a devolver
@@ -192,6 +207,8 @@ int main(int argc, char *argv[])
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
     load_modules();
     dec_global_init();
+    dec_set_max_rate(BGM_MAX_RATE);
+    bgm_port_ok = (sceAppMgrAcquireBgmPort() >= 0);
 
     if (vita2d_init() < 0) {
         sceAppMgrLoadExec("app0:eboot.bin", NULL, NULL);
@@ -235,6 +252,7 @@ int main(int argc, char *argv[])
     player_set_complete_cb(player, on_track_done, &ses);
 
     ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
+    ui_set_bgm(ui, bgm_port_ok);
 
     /* Abrir com música já tocando NÃO encena a cerimônia: o disco não foi
        posto agora, foi encontrado no meio. */
@@ -393,6 +411,9 @@ int main(int argc, char *argv[])
     ui_destroy(ui);
     session_free(&ses);
     library_free(&lib);
+    /* devolve a porta BGM: presa, a próxima abertura leva
+       SCE_APPMGR_ERROR_BGM_PORT_BUSY e o áudio de fundo some sem explicação */
+    if (bgm_port_ok) sceAppMgrReleaseBgmPort();
     vita2d_fini();
     sceKernelExitProcess(0);
     return 0;

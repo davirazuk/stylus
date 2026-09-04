@@ -50,7 +50,12 @@ void ui_deck_geom(int scrw, int scrh, UiDeckGeom *g)
     g->bar_y = 262.0f;
     g->bar_h = 4.0f;
     if (g->bar_y > f.foot_y - 120.0f) g->bar_y = f.foot_y - 120.0f;
-    g->list_y = g->bar_y + 34.0f;
+    g->sig_y  = g->bar_y + 20.0f;
+    g->note_y = g->bar_y + 44.0f;
+    /* A lista começa ABAIXO das duas: com +34 (o valor antigo) a primeira
+       faixa caía exatamente entre elas e as letras se sobrepunham. Ler o
+       código não pega isso — só medir. */
+    g->list_y = g->note_y + 18.0f;
     g->list_step = 22.0f;
     g->list_rows = (int)((f.foot_y - 26.0f - g->list_y) / g->list_step);
     if (g->list_rows > 6) g->list_rows = 6;

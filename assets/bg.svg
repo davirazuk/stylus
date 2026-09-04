@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fundo da LiveArea (840x500). Discreto de propósito: os quadros do
+     template.xml ficam por cima, e um fundo que compete com eles só faz o
+     texto sumir. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="500" viewBox="0 0 840 500">
+  <defs>
+    <linearGradient id="chao" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#161C29"/>
+      <stop offset="1" stop-color="#05070C"/>
+    </linearGradient>
+    <radialGradient id="brilho" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFAA28" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#FFAA28" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rotulo" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#FFD08A" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#C97F14" stop-opacity="0.45"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="840" height="500" fill="url(#chao)"/>
+  <circle cx="700" cy="300" r="330" fill="url(#brilho)"/>
+
+  <g transform="translate(700,300)">
+    <circle r="250" fill="#080B11" fill-opacity="0.9"/>
+    <circle r="250" fill="none" stroke="#FFAA28" stroke-opacity="0.26" stroke-width="2.5"/>
+    <g fill="none" stroke="#FFAA28" stroke-opacity="0.10" stroke-width="1.6">
+      <circle r="228"/><circle r="204"/><circle r="180"/><circle r="156"/>
+      <circle r="132"/><circle r="108"/>
+    </g>
+    <circle r="82" fill="url(#rotulo)"/>
+    <circle r="82" fill="none" stroke="#FFC56B" stroke-opacity="0.4" stroke-width="1.6"/>
+    <circle r="11" fill="#05070C"/>
+  </g>
+
+  <rect x="0" y="0" width="840" height="3" fill="#FFAA28" fill-opacity="0.45"/>
+</svg>

@@ -7,6 +7,11 @@
 
 typedef struct Ui Ui;
 
+/* O app conseguiu a porta BGM no arranque? Só isso não garante áudio em 2º
+   plano: a taxa da faixa também precisa caber no teto (ver decoder.c). A tela
+   cruza os dois — um sozinho seria promessa, não medida. */
+void ui_set_bgm(Ui *u, bool ok);
+
 void ui_set_data(Ui *u, Playlist *plists, int nplists, const Track **recs, int nrecs);
 void ui_set_recs(Ui *u, const Track **recs, int nrecs);
 

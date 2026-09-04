@@ -20,6 +20,31 @@ static bool ext_is(const char *path, const char *ext)
     return strcasecmp(path + (n - e), ext) == 0;
 }
 
+/* TETO DE TAXA DA SAÍDA — e por que ele existe.
+
+   Quem escolhe o TIPO da porta de áudio do Vita não é este app: é o SDL2, e
+   ele decide pela taxa de amostragem. Desmontando o SDL_vitaaudio.c.obj do
+   vdpm (SDL 2.32.8):
+
+       movw r0, #47999 ; ldr r2,[r4,#4] ; cmp r2,r0
+       ite gt ; movgt r0,#0 (MAIN) ; movle r0,#1 (BGM)
+
+   Acima de 47999 Hz ele abre SCE_AUDIO_OUT_PORT_TYPE_MAIN, e porta MAIN o
+   plugin de CFW não mantém viva — a música morre ao sair do app. Só a porta
+   BGM segura o som dentro de um jogo.
+
+   Isto NÃO é sobre qualidade, é sobre qual porta abre. E como é uma
+   propriedade do APARELHO e não do arquivo, mora aqui e vale para todos.
+
+   Só o MP3 é reamostrado (o mpg123 faz por nós, com qualidade). FLAC, Vorbis
+   e WAV acima do teto tocam na taxa nativa e PERDEM o áudio de fundo; Opus é
+   sempre 48000 e nunca cabe. A tela diz isso em vez de fingir — a tese aqui é
+   não mentir sobre o caminho do sinal. */
+static long g_max_rate;   /* 0 = sem teto */
+
+void dec_set_max_rate(long hz) { g_max_rate = hz > 0 ? hz : 0; }
+long dec_max_rate(void)        { return g_max_rate; }
+
 DecKind dec_kind_of(const char *path)
 {
     if (!path) return DEC_NONE;
@@ -282,9 +307,27 @@ Decoder *dec_open(const char *path)
         if (mpg123_getformat(d->mh, &rate, &ch, &enc) != MPG123_OK || rate <= 0) goto fail;
         /* trava o formato: sem isto uma faixa VBR com mudança de layout
            reabre o device no meio e o áudio some */
+        long saida = rate;
+        /* acima do teto, pede a reamostragem ao mpg123 e reabre: é preciso
+           reabrir porque o FORCE_RATE só vale a partir da próxima abertura */
+        if (g_max_rate > 0 && rate > g_max_rate) {
+            mpg123_close(d->mh);
+            if (mpg123_param(d->mh, MPG123_FORCE_RATE, g_max_rate, 0.0) == MPG123_OK &&
+                mpg123_open(d->mh, path) == MPG123_OK &&
+                mpg123_getformat(d->mh, &saida, &ch, &enc) == MPG123_OK &&
+                saida > 0) {
+                /* reamostrado: `rate` continua sendo a do ARQUIVO */
+            } else {
+                /* não deu: melhor tocar sem BGM do que não tocar */
+                mpg123_close(d->mh);
+                if (mpg123_open(d->mh, path) != MPG123_OK) goto fail;
+                if (mpg123_getformat(d->mh, &saida, &ch, &enc) != MPG123_OK) goto fail;
+            }
+        }
         mpg123_format_none(d->mh);
-        mpg123_format(d->mh, rate, ch, MPG123_ENC_SIGNED_16);
-        d->fmt.rate = d->fmt.rate_native = rate;
+        mpg123_format(d->mh, saida, ch, MPG123_ENC_SIGNED_16);
+        d->fmt.rate = saida;
+        d->fmt.rate_native = rate;
         d->fmt.channels = ch > 2 ? 2 : ch;
         d->fmt.bits_native = 16;
         {

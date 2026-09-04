@@ -69,6 +69,12 @@ long long dec_seek(Decoder *d, long long frame);  /* devolve onde parou, -1 erro
 int  dec_probe(const char *path, DecTags *tags, int want_cover);
 void dec_tags_free(DecTags *tags);
 
+/* Teto da taxa de SAÍDA, em Hz (0 = sem teto). É propriedade do aparelho, não
+   do arquivo: o SDL2 do Vita só abre a porta BGM — a que segura o som dentro
+   de um jogo — com taxa <= 47999. Ver a nota grande no decoder.c. */
+void dec_set_max_rate(long hz);
+long dec_max_rate(void);
+
 void dec_global_init(void);
 void dec_global_exit(void);
 

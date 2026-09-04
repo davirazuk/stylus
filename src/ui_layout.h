@@ -33,6 +33,12 @@ typedef struct {
     float text_x, text_w;    /* a coluna à direita dele */
     float bar_y, bar_h;      /* a barra de progresso — o toque a usa para
                                 buscar, então a geometria dela é pública */
+    /* As duas linhas que moram SOB a barra. Estavam escritas à mão no ui.c
+       como `bar_y + 20` e `bar_y + 44`, enquanto o list_y era calculado aqui:
+       duas metades decidindo a mesma coisa, e elas discordaram — a primeira
+       faixa da lista caía em cima do aviso. Um dono só. */
+    float sig_y;             /* o caminho do sinal */
+    float note_y;            /* "vira em X min" / o gesto do lado */
     float list_y, list_step;
     int   list_rows;
 } UiDeckGeom;

@@ -457,6 +457,16 @@ static void test_layout(void)
             what, "texto em %.0f larg %.0f; disco acaba em %.0f; tela %d",
             d.text_x, d.text_w, d.cx + d.r, W);
 
+        /* As TRÊS coisas sob a barra têm que caber uma abaixo da outra. Elas
+           já se sobrepuseram: o sinal e o aviso eram offsets escritos à mão
+           no ui.c, a lista era calculada no ui_layout.c, e a primeira faixa
+           era desenhada EM CIMA do aviso. Medir é o que pega. */
+        snprintf(what, sizeof(what), "%s: sinal, aviso e lista não se sobrepõem", telas[s].nome);
+        okf(d.sig_y > d.bar_y && d.note_y >= d.sig_y + 16.0f &&
+            d.list_y >= d.note_y + 16.0f,
+            what, "barra %.0f, sinal %.0f, aviso %.0f, lista %.0f",
+            d.bar_y, d.sig_y, d.note_y, d.list_y);
+
         snprintf(what, sizeof(what), "%s: a ordem do lado para antes do rodapé", telas[s].nome);
         okf(d.list_rows >= 1 &&
             d.list_y + (d.list_rows - 1) * d.list_step <= f.foot_y - 26.0f + 0.5f,

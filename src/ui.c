@@ -87,6 +87,7 @@ typedef enum { RIT_OFF = 0, RIT_SPINUP, RIT_CUE, RIT_DROP } RitualPhase;
 typedef struct { float x, y, vx, vy, life; } Spark;
 
 struct Ui {
+    bool bgm_port_ok;    /* o main conseguiu a porta BGM no arranque */
     vita2d_pvf *font;
     View view;
     int sel;
@@ -190,6 +191,18 @@ static void alpha_ring(float cx, float cy, float r, float th, float a, unsigned 
 
 /* ---------- texto ---------- */
 
+/* linha grossa (o vita2d só tem linha de 1px) */
+static void thick_line(float x0, float y0, float x1, float y1, float w,
+                       unsigned int color)
+{
+    float dx = x1 - x0, dy = y1 - y0;
+    float len = sqrtf(dx * dx + dy * dy);
+    if (len < 0.001f) return;
+    float nx = -dy / len, ny = dx / len;
+    for (float o = -w / 2; o <= w / 2; o += 0.5f)
+        vita2d_draw_line(x0 + nx * o, y0 + ny * o, x1 + nx * o, y1 + ny * o, color);
+}
+
 static float text_w(Ui *u, float scale, const char *s)
 {
     return (float)vita2d_pvf_text_width(u->font, scale, s);
@@ -217,6 +230,99 @@ static void elide(Ui *u, char *dst, size_t cap, float scale, float maxw, const c
             return;
         }
     }
+}
+
+static void text(Ui *u, int x, int y, unsigned int col, float scale, const char *s);
+
+/* ---------- glifos dos botões ----------
+   O rodapé dizia "[tri] estante  [L1] recs  [R1+quad] soneca  [toque] no
+   disco pausa" — uma parede de colchetes que obriga a pessoa a traduzir o
+   NOME do botão de volta para o desenho que está na mão dela. Aqui os botões
+   são DESENHADOS: ✕ ○ △ □ como forma dentro de um anel, ombros e sistema
+   como pastilha com a sigla, e as combinações com um "+" entre as duas. */
+typedef enum {
+    BTN_CROSS = 0, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE,
+    BTN_L1, BTN_R1, BTN_L2R2, BTN_SEL, BTN_START,
+    BTN_DPAD, BTN_UPDOWN, BTN_TOUCH
+} Btn;
+
+#define GLIFO_R 8.5f
+
+static float pill(Ui *u, float x, float cy, const char *txt)
+{
+    float tw2 = text_w(u, 0.45f, txt);
+    float w = tw2 + 10.0f, h = 15.0f, y = cy - h / 2.0f;
+    vita2d_draw_rectangle(x, y, w, 1, COL_AMBER);
+    vita2d_draw_rectangle(x, y + h - 1, w, 1, COL_AMBER);
+    vita2d_draw_rectangle(x, y, 1, h, COL_AMBER);
+    vita2d_draw_rectangle(x + w - 1, y, 1, h, COL_AMBER);
+    text(u, (int)(x + 5), (int)(cy + 4), COL_AMBER, 0.45f, txt);
+    return w;
+}
+
+static float glyph(Ui *u, float x, float cy, Btn b)
+{
+    float r = GLIFO_R, cx = x + r, d = r * 0.44f;
+    switch (b) {
+    case BTN_CROSS:
+        alpha_ring(cx, cy, r, 1.0f, 0.45f, COL_AMBER);
+        thick_line(cx - d, cy - d, cx + d, cy + d, 1.8f, COL_AMBER);
+        thick_line(cx - d, cy + d, cx + d, cy - d, 1.8f, COL_AMBER);
+        return 2 * r;
+    case BTN_CIRCLE:
+        alpha_ring(cx, cy, r, 1.0f, 0.45f, COL_AMBER);
+        alpha_ring(cx, cy, d * 1.15f, 1.4f, 0.95f, COL_AMBER);
+        return 2 * r;
+    case BTN_TRIANGLE:
+        alpha_ring(cx, cy, r, 1.0f, 0.45f, COL_AMBER);
+        thick_line(cx, cy - d * 1.2f, cx + d, cy + d * 0.8f, 1.6f, COL_AMBER);
+        thick_line(cx + d, cy + d * 0.8f, cx - d, cy + d * 0.8f, 1.6f, COL_AMBER);
+        thick_line(cx - d, cy + d * 0.8f, cx, cy - d * 1.2f, 1.6f, COL_AMBER);
+        return 2 * r;
+    case BTN_SQUARE:
+        alpha_ring(cx, cy, r, 1.0f, 0.45f, COL_AMBER);
+        vita2d_draw_rectangle(cx - d, cy - d, 2 * d, 1.6f, COL_AMBER);
+        vita2d_draw_rectangle(cx - d, cy + d, 2 * d, 1.6f, COL_AMBER);
+        vita2d_draw_rectangle(cx - d, cy - d, 1.6f, 2 * d, COL_AMBER);
+        vita2d_draw_rectangle(cx + d, cy - d, 1.6f, 2 * d + 1.6f, COL_AMBER);
+        return 2 * r;
+    case BTN_DPAD:
+        vita2d_draw_rectangle(cx - 2, cy - r * 0.8f, 4, r * 1.6f, COL_AMBER);
+        vita2d_draw_rectangle(cx - r * 0.8f, cy - 2, r * 1.6f, 4, COL_AMBER);
+        return 2 * r;
+    case BTN_UPDOWN:
+        vita2d_draw_rectangle(cx - 2, cy - r * 0.8f, 4, r * 1.6f, COL_AMBER);
+        thick_line(cx - 4, cy - r * 0.4f, cx, cy - r * 0.85f, 1.6f, COL_AMBER);
+        thick_line(cx + 4, cy - r * 0.4f, cx, cy - r * 0.85f, 1.6f, COL_AMBER);
+        thick_line(cx - 4, cy + r * 0.4f, cx, cy + r * 0.85f, 1.6f, COL_AMBER);
+        thick_line(cx + 4, cy + r * 0.4f, cx, cy + r * 0.85f, 1.6f, COL_AMBER);
+        return 2 * r;
+    case BTN_TOUCH:   /* um dedo tocando: o arco é a ponta, os traços o toque */
+        alpha_ring(cx, cy + 2, r * 0.62f, 1.3f, 0.85f, COL_AMBER);
+        thick_line(cx - r * 0.75f, cy - r * 0.75f, cx - r * 0.35f, cy - r * 0.3f, 1.4f, COL_AMBER);
+        thick_line(cx + r * 0.75f, cy - r * 0.75f, cx + r * 0.35f, cy - r * 0.3f, 1.4f, COL_AMBER);
+        return 2 * r;
+    case BTN_L1:    return pill(u, x, cy, "L1");
+    case BTN_R1:    return pill(u, x, cy, "R1");
+    case BTN_L2R2:  return pill(u, x, cy, "L2/R2");
+    case BTN_SEL:   return pill(u, x, cy, "SELECT");
+    case BTN_START: return pill(u, x, cy, "START");
+    }
+    return 0;
+}
+
+/* uma dica: glifo (ou dois com "+") e o rótulo. Devolve onde a próxima começa. */
+static float hint2(Ui *u, float x, float cy, Btn a, Btn b, const char *txt)
+{
+    x += glyph(u, x, cy, a) + 3.0f;
+    if (b != (Btn)-1) {
+        text(u, (int)x, (int)(cy + 4), COL_AMBER, 0.45f, "+");
+        x += text_w(u, 0.45f, "+") + 3.0f;
+        x += glyph(u, x, cy, b) + 3.0f;
+    }
+    x += 2.0f;
+    text(u, (int)x, (int)(cy + 5), COL_TEXT_DIM, 0.50f, txt);
+    return x + text_w(u, 0.50f, txt) + 14.0f;
 }
 
 static void text(Ui *u, int x, int y, unsigned int col, float scale, const char *s)
@@ -299,6 +405,35 @@ static void draw_cover_fit(vita2d_texture *tex, float x, float y, float side)
     vita2d_draw_texture_scale(tex, x + (side - dw) / 2, y + (side - dh) / 2, s, s);
 }
 
+/* A capa como RÓTULO REDONDO. Um quadrado no meio de um disco redondo lê como
+   adesivo colado; rótulo de vinil é redondo, e é essa forma que faz o desenho
+   inteiro ler como disco.
+
+   O vita2d não tem recorte nem máscara. Mas tem draw_texture_part_scale, e um
+   círculo é uma pilha de cordas: uma tira de 1px por linha da tela, cada uma
+   com a largura da corda naquela altura — a mesma ideia do fill_circle. A
+   capa é escalada para PREENCHER (pelo lado menor), senão uma capa não
+   quadrada deixaria buraco dentro do círculo. */
+static void draw_cover_round(vita2d_texture *tex, float cx, float cy, float r)
+{
+    float tw = (float)vita2d_texture_get_width(tex);
+    float th = (float)vita2d_texture_get_height(tex);
+    if (tw < 1 || th < 1 || r < 2) return;
+    float s = (2.0f * r) / (tw < th ? tw : th);
+    float dx0 = cx - tw * s * 0.5f, dy0 = cy - th * s * 0.5f;
+    int y0 = (int)(cy - r), y1 = (int)(cy + r);
+    for (int y = y0; y <= y1; y++) {
+        float dy = (float)y - cy;
+        float d2 = r * r - dy * dy;
+        if (d2 <= 0) continue;
+        float half = sqrtf(d2);
+        float sx = cx - half;
+        vita2d_draw_texture_part_scale(tex, sx, (float)y,
+                                       (sx - dx0) / s, ((float)y - dy0) / s,
+                                       (2.0f * half) / s, 1.0f / s, s, s);
+    }
+}
+
 /* ---------- o fundo do deck: a capa, esborratada ---------- */
 
 /* Não é um blur de verdade — não há shader aqui. São seis cópias deslocadas e
@@ -344,7 +479,12 @@ static void draw_disc(float cx, float cy, float r, float progress,
                       const float *spect, float spin)
 {
     if (r < 6) { alpha_fill(cx, cy, r, 0.5f, COL_AMBER); return; }
-    alpha_fill(cx, cy, r, 0.10f, COL_AMBER);
+    /* O corpo é quase PRETO. Com um preenchimento âmbar a 10% o prato saía
+       marrom leitoso e a capa no rótulo afundava dentro dele; num disco de
+       verdade a luz pega no ARO e nos sulcos, não na massa. */
+    alpha_fill(cx, cy, r, 0.92f, RGBA8(11, 14, 20, 255));
+    alpha_ring(cx, cy, r,          1.6f, 0.42f, COL_AMBER);
+    alpha_ring(cx, cy, r * 0.975f, 1.0f, 0.16f, COL_AMBER);
 
     int n = ntracks > 0 ? ntracks : 1;
     if (n > 24) n = 24;             /* mais que isso vira ruído, não contagem */
@@ -550,6 +690,22 @@ static void header(Ui *u, const char *title, const char *hint)
                           SCRW - 2 * PAD_X, hint);
 }
 
+/* Cabeçalho com as dicas DESENHADAS. A lista termina num rótulo NULL.
+   `b2` diferente de -1 vira "a + b" (as combinações com R1 segurado). */
+typedef struct { Btn b, b2; const char *txt; } Dica;
+
+static void header_hints(Ui *u, const char *title, const Dica *d)
+{
+    text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, title);
+    float x = PAD_X, y = (float)HINT_Y - 4.0f;
+    for (; d && d->txt; d++) {
+        /* não deixa a fila vazar pela direita: melhor faltar dica que
+           desenhar meia palavra na borda */
+        if (x > SCRW - PAD_X - 90.0f) break;
+        x = hint2(u, x, y, d->b, d->b2, d->txt);
+    }
+}
+
 /* ---------- a estante ---------- */
 
 #define SHELF_COLS UI_SHELF_COLS
@@ -592,7 +748,20 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
 {
     int n = lib->nalbums;
     header(u, "ESTANTE",
-           "[X] toca  [tri] o que toca  [quad] ir para  [sel] sorteio  [L1] recs  [R1] playlists");
+           NULL);
+    {
+        static const Dica d[] = {
+            { BTN_CROSS,    (Btn)-1, "tocar" },
+            { BTN_DPAD,     (Btn)-1, "navegar" },
+            { BTN_SQUARE,   (Btn)-1, "ir para" },
+            { BTN_TRIANGLE, (Btn)-1, "o que toca" },
+            { BTN_SEL,      (Btn)-1, "sorteio" },
+            { BTN_L1,       (Btn)-1, "recs" },
+            { BTN_R1,       (Btn)-1, "playlists" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "", d);
+    }
 
     if (n <= 0) { shelf_empty(u, lib); return; }
 
@@ -767,20 +936,41 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
        ser ESTE disco e não um disco. */
     {
         vita2d_texture *tex = cover_tex(u, (Album *)a);
+        float lab = base_r * 0.33f;
+        /* sombra um pouco maior por baixo: assenta o rótulo no prato em vez
+           de deixá-lo parecendo colado por cima */
+        alpha_fill(cx, cy, lab + 3.0f, 0.55f, RGBA8(5, 7, 11, 255));
         if (tex) {
-            float side = base_r * 0.30f;
-            draw_cover_fit(tex, cx - side, cy - side, side * 2);
-            alpha_ring(cx, cy, side * 1.02f, 1.5f, 0.35f, COL_AMBER);
-            alpha_fill(cx, cy, 3.0f, 0.9f, COL_AMBER_BRIGHT);
+            draw_cover_round(tex, cx, cy, lab);
+        } else {
+            /* sem capa, um rótulo liso — ainda lê como rótulo */
+            alpha_fill(cx, cy, lab, 0.16f, COL_AMBER);
+            alpha_ring(cx, cy, lab * 0.62f, 1.0f, 0.20f, COL_AMBER);
         }
+        alpha_ring(cx, cy, lab, 1.5f, 0.55f, COL_AMBER);
+        /* o furo do eixo é o que fecha a leitura de vinil */
+        alpha_fill(cx, cy, 6.0f, 1.0f, RGBA8(5, 7, 11, 255));
+        alpha_ring(cx, cy, 6.0f, 1.0f, 0.60f, COL_AMBER_BRIGHT);
     }
 
     float tx = g.text_x;
     float tw = g.text_w;
 
     header(u, live ? "AGORA  ·  TOCANDO" : "AGORA  ·  PAUSADO",
-           "[tri] estante  [L1] recs  [R1] playlists  [R1+L1] apaga a tela  "
-           "[R1+quad] soneca  [R1+tri] ouvir jogando  [toque] no disco pausa");
+           NULL);
+    {
+        static const Dica d[] = {
+            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_L1,       (Btn)-1, "recs" },
+            { BTN_R1,       (Btn)-1, "playlists" },
+            { BTN_R1, BTN_L1,       "apaga a tela" },
+            { BTN_R1, BTN_SQUARE,   "soneca" },
+            { BTN_R1, BTN_TRIANGLE, "jogando" },
+            { BTN_TOUCH,    (Btn)-1, "no disco pausa" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "", d);
+    }
 
     text_elided(u, (int)tx, 126, COL_AMBER, 0.72f, tw, a->artist[0] ? a->artist : "—");
     text_elided(u, (int)tx, 168, COL_TEXT, 1.00f, tw, a->album);
@@ -827,14 +1017,20 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
             if (sig.resampled || sig.requantized)
                 snprintf(extra, sizeof(extra), "  →  %ld Hz / 16 bits",
                          sig.rate_out);
-            snprintf(sl, sizeof(sl), "%s  ·  %ld Hz / %d bits%s",
-                     sig.kind, sig.rate_file, sig.bits_file, extra);
+            /* O 2º plano é a mesma família de verdade que esta linha conta:
+               não a qualidade prometida, mas o que o caminho de fato faz. E
+               só vale com as DUAS coisas — a porta veio no arranque E a taxa
+               deixa o SDL2 abrir a saída como BGM. */
+            const char *bgm = (u->bgm_port_ok && sig.bgm_port)
+                            ? "  ·  2º plano: sim" : "  ·  2º plano: não";
+            snprintf(sl, sizeof(sl), "%s  ·  %ld Hz / %d bits%s%s",
+                     sig.kind, sig.rate_file, sig.bits_file, extra, bgm);
         } else {
             /* sem medida, travessão: acusação tirada da ausência de dado é
                a doença que a tela SINAL do desktop pegou */
             snprintf(sl, sizeof(sl), "%s  ·  —", sig.kind);
         }
-        text_elided(u, (int)tx, (int)(g.bar_y + 20), 
+        text_elided(u, (int)tx, (int)g.sig_y, 
                     (sig.resampled || sig.requantized) ? COL_TEXT_DIM : COL_AMBER,
                     0.48f, tw, sl);
     }
@@ -846,7 +1042,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
         const char *frase = u->rit == RIT_SPINUP ? "o prato ganha rotação"
                           : u->rit == RIT_CUE    ? "a agulha vai ao sulco"
                                                  : "encostou";
-        text(u, (int)tx, (int)(g.bar_y + 44), COL_AMBER, 0.56f, frase);
+        text(u, (int)tx, (int)g.note_y, COL_AMBER, 0.56f, frase);
     } else if (lado >= 0 && dur > 0) {
         /* "vira em X min": quanto falta para o FIM DO LADO, não da faixa. É a
            única coisa que este sistema diz e nenhum outro tocador diz. */
@@ -860,12 +1056,12 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
             /* o lado ACABOU: o gesto que o objeto pede — virar o disco não é
                o mesmo que trocar de disco, e num duplo isso importa */
             sides_gesture(&a->lados, lado + 1, aviso, sizeof(aviso));
-            text_elided(u, (int)tx, (int)(g.bar_y + 44), COL_ALARM, 0.60f, tw, aviso);
+            text_elided(u, (int)tx, (int)g.note_y, COL_ALARM, 0.60f, tw, aviso);
         } else if (falta > 20) {
             snprintf(aviso, sizeof(aviso), "%s em %d min",
                      (lado + 1 < a->lados.n) ? "vira" : "acaba",
                      (falta + 59) / 60);
-            text(u, (int)tx, (int)(g.bar_y + 44), COL_TEXT_DIM, 0.52f, aviso);
+            text(u, (int)tx, (int)g.note_y, COL_TEXT_DIM, 0.52f, aviso);
         }
     }
 
@@ -962,7 +1158,15 @@ static void row_thumb(Ui *u, Album *a, float x, float y, float side, int ntracks
 static void draw_recs(Ui *u, Library *lib, Player *p)
 {
     (void)lib; (void)p;
-    header(u, "RECOMENDADO", "[tri] estante   [O] toca daqui   [cima/baixo] navega");
+    {
+        static const Dica d[] = {
+            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_CIRCLE,   (Btn)-1, "toca daqui" },
+            { BTN_UPDOWN,   (Btn)-1, "navegar" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "RECOMENDADO", d);
+    }
 
     if (!u->recs || u->nrecs <= 0) {
         text(u, (int)PAD_X, 130, COL_TEXT, 0.72f, "ainda não há o que sugerir");
@@ -1009,7 +1213,18 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
 {
     (void)lib; (void)p;
     header(u, "PLAYLISTS",
-           "[tri] estante   [O] toca   [quad] salva o que toca   [sel] apaga (2x)");
+           NULL);
+    {
+        static const Dica d[] = {
+            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_CIRCLE,   (Btn)-1, "toca" },
+            { BTN_UPDOWN,   (Btn)-1, "navegar" },
+            { BTN_SQUARE,   (Btn)-1, "salva o que toca" },
+            { BTN_SEL,      (Btn)-1, "apaga (2x)" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "", d);
+    }
 
     if (!u->plists || u->nplists <= 0) {
         text(u, (int)PAD_X, 130, COL_TEXT, 0.72f, "nenhuma lista guardada");
@@ -1082,7 +1297,13 @@ static bool plugin_instalado(void)
 static void draw_handoff(Ui *u, Library *lib, Player *p)
 {
     (void)lib;
-    header(u, "OUVIR ENQUANTO JOGA", "[tri] volta");
+    {
+        static const Dica d[] = {
+            { BTN_TRIANGLE, (Btn)-1, "volta" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "OUVIR ENQUANTO JOGA", d);
+    }
 
     const Album *a = player_current_album(p);
     bool tem = plugin_instalado();
@@ -1526,6 +1747,9 @@ int ui_rec_idx(const Ui *u)       { return u ? u->rec_sel : 0; }
 int ui_jump_letter(const Ui *u)   { return u ? u->jump_letter : 0; }
 void ui_set_sel(Ui *u, int i)     { if (u) u->sel = i < 0 ? 0 : i; }
 int ui_view(const Ui *u)          { return u ? (int)u->view : (int)VIEW_SHELF; }
+
+
+void ui_set_bgm(Ui *u, bool ok) { if (u) u->bgm_port_ok = ok; }
 
 void ui_set_data(Ui *u, Playlist *plists, int nplists,
                  const Track **recs, int nrecs)

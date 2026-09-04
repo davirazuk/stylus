@@ -688,6 +688,11 @@ void player_signal(const Player *p, PlayerSignal *out)
     out->resampled = (p->hw_rate > 0 && p->dfmt.rate_native > 0 &&
                       p->hw_rate != p->dfmt.rate_native);
     out->requantized = (p->dfmt.bits_native > 16);
+    /* A porta que o SDL2 abriu decorre da TAXA: <=47999 vai para a porta BGM,
+       a única que segura o som dentro de um jogo. Acima disso é MAIN, e o
+       plugin de CFW não a mantém viva. Ver a nota no decoder.c. */
+    long teto = dec_max_rate();
+    out->bgm_port = (teto > 0 && p->hw_rate > 0 && p->hw_rate <= teto);
 }
 int player_track_count(const Player *p) { return p ? p->nslots : 0; }
 const Track *player_current_track(const Player *p)

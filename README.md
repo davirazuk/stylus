@@ -283,3 +283,71 @@ palavras no código do desenho e confere a paleta em números.
 - [ ] Áudio em segundo plano DESTE app: **limite de plataforma, não de
       código** — ver "Ouvir enquanto joga" acima. Faria falta um plugin de
       kernel, que é outro programa.
+
+## Áudio em segundo plano (ouvir dentro de um jogo)
+
+Duas coisas precisam valer, e uma sem a outra não funciona:
+
+1. **O app pede a porta BGM** no arranque (`sceAppMgrAcquireBgmPort`) e a
+   devolve na saída — presa, a próxima abertura leva `BGM_PORT_BUSY`.
+2. **A taxa de saída cabe em 47999 Hz.** Quem escolhe o TIPO da porta é o
+   SDL2, e ele decide pela taxa — lido do binário do vdpm (SDL 2.32.8):
+   `cmp freq,#47999 ; movgt r0,#0 (MAIN) ; movle r0,#1 (BGM)`. Acima disso a
+   porta é MAIN, e MAIN o plugin de CFW não mantém viva.
+
+   Numa varredura do cartão, **996 de 3728 arquivos eram 48 kHz** — 27% da
+   coleção perdia o segundo plano em silêncio. O MP3 acima do teto é
+   reamostrado na abertura (`dec_set_max_rate`); FLAC/Vorbis/WAV tocam na
+   taxa nativa e perdem o 2º plano, e Opus é sempre 48 kHz.
+
+O deck mostra o resultado **cruzando as duas** — "2º plano: sim/não" na linha
+do sinal —, porque uma sozinha seria promessa e não medida.
+
+Falta o plugin de CFW, que só ele impede a suspensão do processo:
+
+```sh
+./tools/musicpremium.sh [/caminho/do/cartao]
+```
+
+Baixa do host do autor, confere o sha256, confere que é um módulo do Vita e
+põe em `ux0:tai/`. O último passo é no aparelho (a config do taiHEN mora em
+`ur0:`, memória interna) — o script imprime como.
+
+## Qobuz
+
+O Vita não fala com o Qobuz; o PC fala, e a ponte é o download.
+`track/getFileUrl` devolve uma URL HTTPS comum, assinada, válida ~1h — o
+`private_key` assina o PEDIDO, ele não criptografa o áudio.
+
+```sh
+./tools/qobuz-vita.py buscar radiohead in rainbows
+./tools/qobuz-vita.py baixar ID                     # MP3 320 -> cartão
+./tools/qobuz-vita.py baixar ID --formato flac      # FLAC 16/44,1
+./tools/qobuz-vita.py espaco                        # quanto o cartão já usa
+```
+
+Padrão MP3, com teto de 1 GB por download (`--limite-gb`, `--forcar`): estima
+o tamanho antes, confere o espaço livre e, em FLAC, diz quantas vezes menor
+seria em MP3. **`--formato flac` (fmt 6) é o melhor caso: lossless E segura o
+2º plano.** Hi-res toca, mas perde o segundo plano.
+
+Para preparar música que já é sua, `./tools/para-vita.py PASTA`.
+
+## Ver a UI sem o Vita
+
+```sh
+./tools/preview.sh [raiz-de-musica] [dir-de-saida]
+```
+
+Compila o `ui.c` de verdade contra um shim das primitivas do vita2d
+(`tests/hostgfx/`) e grava as telas em PNG. É aproximação, não emulação: a
+cor e a geometria são fiéis, a fonte é Noto Sans e não a PVF do sistema —
+as ressalvas estão no topo de `tests/hostgfx/vita2d_host.c`.
+
+## Ícones da LiveArea
+
+`./tools/icons.sh` gera `sce_sys/` a partir de `assets/*.svg`. **Atenção ao
+formato**: o instalador recusa com `0x8010113D`/`0x9010113d` PNG que não seja
+de PALETA de 8 bits. A doc de referência manda passar por `ffmpeg -pix_fmt
+ya8` — mas `ya8` é CINZA, e seguir isso ao pé da letra instala um ícone sem
+cor nenhuma. `pngquant` sozinho indexa E preserva a cor; é o que fazemos.

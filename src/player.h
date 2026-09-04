@@ -64,6 +64,7 @@ typedef struct {
     int  channels;
     bool resampled;      /* a taxa mudou no caminho */
     bool requantized;    /* a profundidade desceu */
+    bool bgm_port;       /* a taxa deixa o SDL2 abrir a porta BGM (2º plano) */
 } PlayerSignal;
 void player_signal(const Player *p, PlayerSignal *out);
 

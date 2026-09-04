@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone do app, 128x128.
+
+     A 128 px, e mostrado dentro de um círculo pelo sistema, quase tudo que se
+     desenha vira sujeira: a versão anterior tinha sulcos finos demais, um
+     rótulo QUADRADO num disco redondo e um braço fino que sumia. Aqui a
+     leitura é feita por poucas formas grandes — disco escuro, aro âmbar
+     forte, quatro sulcos bem espaçados, rótulo redondo cheio e um braço com
+     cápsula visível. Nada com menos de ~2 px de traço.
+
+     Sem canal alfa de propósito: o Vita não aceita alfa no icon0 (ver
+     tools/icons.sh), então o fundo é pintado. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="chao" cx="34%" cy="26%" r="86%">
+      <stop offset="0" stop-color="#141A26"/>
+      <stop offset="1" stop-color="#05070C"/>
+    </radialGradient>
+    <linearGradient id="rotulo" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#FFD08A"/>
+      <stop offset="0.55" stop-color="#FFAA28"/>
+      <stop offset="1" stop-color="#C97F14"/>
+    </linearGradient>
+    <linearGradient id="aro" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0"   stop-color="#FFE0A8"/>
+      <stop offset="0.45" stop-color="#FFAA28"/>
+      <stop offset="1"   stop-color="#8A5C12"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" fill="url(#chao)"/>
+
+  <g transform="translate(64,64)">
+    <!-- corpo: vinil é quase preto -->
+    <circle r="55" fill="#0A0D14"/>
+    <!-- aro: a luz pega aqui, e é o que dá o volume do disco -->
+    <circle r="55" fill="none" stroke="url(#aro)" stroke-width="3"/>
+    <circle r="50.5" fill="none" stroke="#FFAA28" stroke-opacity="0.18" stroke-width="1.5"/>
+
+    <!-- sulcos: quatro, bem separados. Mais que isso, a 128 px, é ruído -->
+    <g fill="none" stroke="#FFAA28" stroke-opacity="0.30" stroke-width="1.6">
+      <circle r="45"/><circle r="39"/><circle r="33"/><circle r="27"/>
+    </g>
+
+    <!-- rótulo redondo, cheio: é o que distingue este ícone de um CD -->
+    <circle r="21" fill="url(#rotulo)"/>
+    <circle r="21" fill="none" stroke="#FFE9C4" stroke-opacity="0.55" stroke-width="1.5"/>
+    <circle r="4"  fill="#05070C"/>
+  </g>
+
+  <!-- braço: pivô fora do prato, cápsula grossa na ponta pousada no sulco.
+       O degrau de espessura é o que faz ler como braço e não como risco. -->
+  <g stroke-linecap="round">
+    <line x1="112" y1="17" x2="86" y2="47" stroke="#05070C" stroke-width="8"/>
+    <line x1="112" y1="17" x2="90" y2="42" stroke="#FFC56B" stroke-width="3.4"/>
+    <line x1="90"  y1="42" x2="84" y2="49" stroke="#FFAA28" stroke-width="7"/>
+    <circle cx="112" cy="17" r="7"   fill="#12161F" stroke="#FFAA28" stroke-width="2.4"/>
+    <circle cx="112" cy="17" r="2.6" fill="#FFE0A8"/>
+    <circle cx="83"  cy="50" r="2.6" fill="#FFF2D8"/>
+  </g>
+</svg>
