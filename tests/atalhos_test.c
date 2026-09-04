@@ -42,14 +42,19 @@ static void toca(Ui *u, unsigned int b)
     hostctrl_press(0);  ui_handle_input(u);
 }
 
-/* segura `mod`, toca `b`, solta tudo — a combinação de verdade */
-static void toca_com(Ui *u, unsigned int mod, unsigned int b)
+/* segura `mod`, toca `b`, solta tudo — a combinação de verdade.
+   Devolve a AÇÃO do momento da combinação: nem todo atalho troca de tela
+   (a soneca e o apagar a tela não trocam), e para esses a ação é a única
+   prova de que o combo chegou a acontecer. */
+static int toca_com(Ui *u, unsigned int mod, unsigned int b)
 {
     hostctrl_press(0);        ui_handle_input(u);
     hostctrl_press(mod);      ui_handle_input(u);
-    hostctrl_press(mod | b);  ui_handle_input(u);
+    hostctrl_press(mod | b);
+    int acao = ui_handle_input(u);
     hostctrl_press(mod);      ui_handle_input(u);
     hostctrl_press(0);        ui_handle_input(u);
+    return acao;
 }
 
 /* leva ao deck a partir de onde estiver */
@@ -85,6 +90,26 @@ int main(void)
     hostctrl_press(0);            ui_handle_input(u);
     ok(ui_view_dbg(u) == V_PLAYLISTS, "deck: e soltar [R1] sem combinar abre playlists",
        ui_view_dbg(u), V_PLAYLISTS);
+
+    /* Os outros dois combos com [R1] não trocam de tela, então a prova é a
+       ação — e eram tão inalcançáveis quanto o primeiro. */
+    ao_deck(u);
+    {
+        int a = toca_com(u, SCE_CTRL_R1, SCE_CTRL_SQUARE);
+        ok(a == 20, "deck: [R1]+quadrado cicla a soneca", ui_view_dbg(u), V_DECK);
+        if (a != 20) printf("      ação %d, esperava 20\n", a);
+    }
+
+    ao_deck(u);
+    {
+        int antes = ui_resting(u) ? 1 : 0;
+        toca_com(u, SCE_CTRL_R1, SCE_CTRL_L1);
+        int depois = ui_resting(u) ? 1 : 0;
+        ok(!antes && depois, "deck: [R1]+[L1] apaga a tela e segue no deck",
+           ui_view_dbg(u), V_DECK);
+    }
+    /* e sai do repouso sem virar outra coisa */
+    toca(u, SCE_CTRL_CIRCLE);
 
     ao_deck(u);
     toca(u, SCE_CTRL_L1);
