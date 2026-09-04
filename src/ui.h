@@ -64,6 +64,7 @@ void ui_set_sel(Ui *u, int i);
      16  avançar 10 s              18  buscar na fração tocada (ui_scrub)
      19  pular para a letra (ui_jump_letter)
      20  ciclar a soneca
+     21  revarrer a estante (depois de um download do Qobuz)
 
    Estas o main IGNORA de propósito — a UI já fez o que havia para fazer
    (trocou de tela, moveu o cursor) e não há nada do lado do tocador:

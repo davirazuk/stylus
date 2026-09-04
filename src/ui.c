@@ -1733,9 +1733,11 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
                      job.bytes / 1048576, job.bytes_total / 1048576);
             text(u, (int)PAD_X, 226, COL_TEXT_DIM, 0.52f, kb);
         }
-        if (job.ok || job.falhou)
+        if (job.ok)
             text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f,
-                 "o disco entra na estante na próxima varredura — [O] volta");
+                 "[O] revarre a estante e volta — pare a música antes, se houver");
+        else if (job.falhou)
+            text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f, "[O] volta");
         return;
     }
 
@@ -2494,9 +2496,12 @@ int ui_handle_input(Ui *u)
             /* Terminou: [O] limpa o resumo e volta à busca. Um novo download
                zera o estado, então basta começar outro. */
             if (edge & (SCE_CTRL_CIRCLE | SCE_CTRL_CROSS)) {
+                bool valeu = job.ok;
                 qobuz_job_limpa();
                 u->qb_lida = false;     /* relê a config, que pode ter mudado */
-                action = 1;
+                /* Deu certo? revarre, para o disco aparecer AGORA. "Baixei e
+                   não está lá" é indistinguível de "o download falhou". */
+                action = valeu ? 21 : 1;
             }
         } else if (!qc->configured) {
             if (edge & SCE_CTRL_UP)   { if (--u->qb_sel < 0) u->qb_sel = QC_N - 1; action = 1; }

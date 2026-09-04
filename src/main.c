@@ -360,6 +360,32 @@ int main(int argc, char *argv[])
             }
             break;
         }
+        case 21: {
+            /* Revarrer, sem sair do app.
+
+               Existe por causa do download do Qobuz: um disco que acabou de
+               cair no cartão não aparecia na estante até a próxima abertura
+               do app. "Baixei e não está lá" é indistinguível de "o download
+               falhou", e as duas coisas pedem reações opostas.
+
+               O que TOCA não é interrompido: o player segura ponteiros para
+               dentro da biblioteca antiga, então a varredura só substitui a
+               estante quando não há nada tocando. Com música no ar, a tela
+               diz para voltar depois — mentir que revarreu seria pior. */
+            if (player_state(player) != PLAYER_STOPPED) {
+                break;
+            }
+            ui_set_data(ui, NULL, 0, NULL, 0);   /* solta as recomendações */
+            library_free(&lib);
+            library_init(&lib);
+            library_roots_from(&lib, UX0_DATA_DIR);
+            library_set_progress(&lib, scan_progress, ui);
+            library_scan(&lib);
+            library_report(&lib, STYLUS_DATA_DIR "/varredura.txt");
+            recs_rebuild(&ses, &lib);
+            ui_set_sel(ui, 0);
+            break;
+        }
         case 20: { /* a soneca: desligada → esmaece → fim do lado → desligada */
             int m2 = (player_sleep_mode(player) + 1) % 3;
             int last = -1;
