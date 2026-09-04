@@ -300,9 +300,6 @@ palavras no código do desenho e confere a paleta em números.
 - [ ] M4A/AAC e WMA — aparecem na estante, marcados, sem decodificador
 - [ ] Qobuz **no aparelho**. O PC baixa (ver "Qobuz"); transmitir do Vita
       exigiria HTTPS no aparelho, que o `net.c` nunca validou em hardware.
-- [ ] Reamostrar FLAC/Vorbis/WAV acima de 47999 Hz. Só o MP3 é reamostrado
-      (o mpg123 faz por nós); nos outros a taxa nativa passa e o áudio de
-      segundo plano não segura. Faria falta um reamostrador aqui.
 - [ ] Fila do last.fm — existiu numa linha paralela deste projeto e não veio
       na fusão: depende de rede no Vita, que segue sem validação.
 
@@ -328,9 +325,14 @@ Duas coisas precisam valer, e uma sem a outra não funciona:
    porta é MAIN, e MAIN o plugin de CFW não mantém viva.
 
    Numa varredura do cartão, **996 de 3728 arquivos eram 48 kHz** — 27% da
-   coleção perdia o segundo plano em silêncio. O MP3 acima do teto é
-   reamostrado na abertura (`dec_set_max_rate`); FLAC/Vorbis/WAV tocam na
-   taxa nativa e perdem o 2º plano, e Opus é sempre 48 kHz.
+   coleção perdia o segundo plano em silêncio.
+
+   Hoje **todo formato** cabe: o MP3 pede a reamostragem ao mpg123 na
+   abertura, e FLAC, Vorbis, Opus e WAV passam por um sinc janelado no
+   `decoder.c`. A saída é sempre uma taxa que o `sceAudioOut` aceita (96 kHz
+   não é uma delas), e é por isso que o `rate_out` da tela voltou a ser
+   verdade: antes ele repetia o que **pedimos** ao SDL, não o que o aparelho
+   recebeu.
 
 O deck mostra o resultado **cruzando as duas** — "2º plano: sim/não" na linha
 do sinal —, porque uma sozinha seria promessa e não medida.

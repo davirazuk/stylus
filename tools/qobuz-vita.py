@@ -24,14 +24,15 @@ O que ainda LIMITA é outra coisa, e não é o formato: o SDL2 do Vita só abre 
 porta de áudio como BGM — a que segura a música dentro de um jogo — com taxa
 **<= 47999 Hz**. Acima disso a porta é MAIN e o som morre ao sair do app.
 
-    fmt  5  MP3 320       44,1 kHz  -> toca e segura o 2º plano
-    fmt  6  FLAC 16/44,1  44,1 kHz  -> toca e segura o 2º plano  <- o melhor
-    fmt  7  FLAC 24/<=96  96 kHz    -> toca, mas PERDE o 2º plano
-    fmt 27  FLAC 24/<=192 96 kHz    -> toca, mas PERDE o 2º plano
+    fmt  5  MP3 320       44,1 kHz  -> intacto
+    fmt  6  FLAC 16/44,1  44,1 kHz  -> intacto, e lossless   <- o melhor
+    fmt  7  FLAC 24/<=96  96 kHz    -> reamostrado para 44,1 no aparelho
+    fmt 27  FLAC 24/<=192 96 kHz    -> reamostrado para 44,1 no aparelho
 
-O MP3 acima do teto é reamostrado na abertura (o mpg123 faz por nós); o FLAC
-não, porque não há reamostrador aqui. O deck mostra "2º plano: sim/não" para
-não ser preciso adivinhar.
+Os quatro tocam E seguram o 2º plano: o decoder reamostra o que passa do
+teto. Mas 24/96 chega ao aparelho como 44,1/16 de qualquer jeito — o
+sceAudioOut não faz 96 kHz nem 24 bits —, então o hi-res custa 8x o espaço
+para entregar o mesmo som. O deck mostra o caminho medido, sem enfeite.
 
 POR ISSO O PADRÃO É MP3, E O FLAC RECOMENDADO É O fmt 6
 -------------------------------------------------------
@@ -64,8 +65,8 @@ TAXA_MAX_BGM = 47999
 FORMATOS = {
     "mp3":        (5,  "MP3 320 kbps, 44,1 kHz — toca e segura o 2º plano"),
     "flac":       (6,  "FLAC 16 bits / 44,1 kHz — lossless E segura o 2º plano"),
-    "flac-hires": (7,  "FLAC 24 bits / até 96 kHz — perde o 2º plano"),
-    "flac-max":   (27, "FLAC 24 bits / até 192 kHz — perde o 2º plano"),
+    "flac-hires": (7,  "FLAC 24 bits / até 96 kHz — o Vita reduz para 44,1/16"),
+    "flac-max":   (27, "FLAC 24 bits / até 192 kHz — o Vita reduz para 44,1/16"),
 }
 
 
@@ -289,10 +290,10 @@ def cmd_baixar(cl, album_id, formato, destino, limite_faixas, dry_run,
     no_cartao = os.path.abspath(destino).startswith(
         os.path.abspath(DESTINO_PADRAO).rsplit("/music", 1)[0])
     if fmt_id in (7, 27):
-        print(f"  ATENÇÃO: acima de {TAXA_MAX_BGM} Hz o SDL2 abre a porta MAIN e o")
-        print("           áudio em segundo plano NÃO segura. Toca normal, mas sai")
-        print("           do jogo. Para 2º plano com lossless, use --formato flac")
-        print("           (fmt 6: 16 bits / 44,1 kHz).")
+        print("  NOTA: o Vita sai em 44,1 kHz / 16 bits — o sceAudioOut não faz")
+        print("        96 kHz nem 24 bits. Isto toca e segura o 2º plano (o")
+        print("        decoder reamostra), mas o som que sai é o mesmo do fmt 6")
+        print("        por 8x o espaço. Use --formato flac se o espaço importa.")
 
     # capa do álbum, uma vez pro disco inteiro
     capa = None
@@ -336,7 +337,7 @@ def cmd_baixar(cl, album_id, formato, destino, limite_faixas, dry_run,
     print(f"\n  {ok}/{len(faixas)} faixas")
     if ok:
         print("  pronto pro Vita." + ("" if fmt_id in (5, 6)
-              else "  (2º plano não segura nesta taxa — ver acima.)"))
+              else "  (o aparelho vai reduzir para 44,1/16 — ver acima.)"))
     return 0 if ok else 1
 
 

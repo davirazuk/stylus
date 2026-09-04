@@ -127,9 +127,10 @@ int main(int argc, char **argv)
                        alb->ntracks, REPEAT_ALL, true, "FLAC", 44100, 16, 44100);
     shot(ui, &lib, p, "3-deck-tocando");
 
-    /* deck pausado, hi-res reamostrado: o caso que PERDE o 2º plano */
+    /* deck pausado, hi-res: 96k/24 no arquivo, 44,1k/16 no aparelho — o
+       caso que a linha do sinal existe para contar sem enfeite */
     preview_player_set(p, alb, tr, PLAYER_PAUSED, dur * 72 / 100, dur, 2,
-                       alb->ntracks, REPEAT_ONE, false, "FLAC", 96000, 24, 96000);
+                       alb->ntracks, REPEAT_ONE, false, "FLAC", 96000, 24, 44100);
     shot(ui, &lib, p, "4-deck-pausado-hires");
     preview_player_set(p, alb, tr, PLAYER_PLAYING, dur * 38 / 100, dur, 0,
                        alb->ntracks, REPEAT_ALL, true, "FLAC", 44100, 16, 44100);
