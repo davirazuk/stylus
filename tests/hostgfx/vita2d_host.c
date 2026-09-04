@@ -48,6 +48,15 @@
 
 static unsigned char fb[SCRH][SCRW][3];   /* RGB, já composto */
 
+/* CONTADOR DE CHAMADAS DE DESENHO.
+   No Vita cada vita2d_draw_rectangle vira um sceGxmDraw — uma chamada de
+   desenho de verdade, não um pixel. O custo lá é o NÚMERO delas, e o tempo
+   que este shim leva (que rasteriza em C) não diz nada sobre isso. Contar
+   diz. */
+static long g_draws;
+long hostgfx_draws(void) { return g_draws; }
+void hostgfx_draws_reset(void) { g_draws = 0; }
+
 /* ---------- cor ---------- */
 /* vita2d: RGBA8 = a<<24 | b<<16 | g<<8 | r  (ABGR) */
 static void unpack(unsigned int c, int *r, int *g, int *b, int *a)
@@ -79,12 +88,14 @@ void vita2d_clear_screen(void) { memset(fb, 0, sizeof(fb)); }
 /* ---------- primitivas ---------- */
 void vita2d_draw_pixel(float x, float y, unsigned int color)
 {
+    g_draws++;
     int r, g, b, a; unpack(color, &r, &g, &b, &a);
     blend_px((int)x, (int)y, r, g, b, a);
 }
 
 void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int color)
 {
+    g_draws++;
     int r, g, b, a; unpack(color, &r, &g, &b, &a);
     int x0 = (int)floorf(x), y0 = (int)floorf(y);
     int x1 = (int)floorf(x + w), y1 = (int)floorf(y + h);
@@ -93,8 +104,26 @@ void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int colo
             blend_px(xx, yy, r, g, b, a);
 }
 
+/* o vita2d faz isto na GPU em UMA chamada; aqui rasterizamos, mas contamos
+   como uma só — é o número de chamadas que importa para o aparelho */
+void vita2d_draw_fill_circle(float cx, float cy, float r, unsigned int color)
+{
+    g_draws++;
+    int cr, cg, cb, ca; unpack(color, &cr, &cg, &cb, &ca);
+    int y0 = (int)(cy - r), y1 = (int)(cy + r);
+    for (int y = y0; y <= y1; y++) {
+        float dy = (float)y - cy;
+        float d2 = r * r - dy * dy;
+        if (d2 < 0) continue;
+        float half = sqrtf(d2);
+        for (int x = (int)(cx - half); x <= (int)(cx + half); x++)
+            blend_px(x, y, cr, cg, cb, ca);
+    }
+}
+
 void vita2d_draw_line(float x0, float y0, float x1, float y1, unsigned int color)
 {
+    g_draws++;
     int r, g, b, a; unpack(color, &r, &g, &b, &a);
     float dx = x1 - x0, dy = y1 - y0;
     int steps = (int)(fabsf(dx) > fabsf(dy) ? fabsf(dx) : fabsf(dy));

@@ -27,6 +27,7 @@ void vita2d_end_drawing(void);
 
 void vita2d_draw_pixel(float x, float y, unsigned int color);
 void vita2d_draw_line(float x0, float y0, float x1, float y1, unsigned int color);
+void vita2d_draw_fill_circle(float x, float y, float radius, unsigned int color);
 void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int color);
 
 vita2d_texture *vita2d_load_PNG_buffer(const void *buffer);
@@ -50,6 +51,10 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text);
 
 /* --- extras SÓ do host (não existem no vita2d de verdade) --- */
 int  hostgfx_save_png(const char *path);
+/* Quantas chamadas de desenho o último quadro emitiu. No Vita cada uma é um
+   sceGxmDraw, e é esse número que custa lá — não o tempo deste shim. */
+long hostgfx_draws(void);
+void hostgfx_draws_reset(void);
 void hostgfx_set_font_path(const char *ttf);
 
 #endif

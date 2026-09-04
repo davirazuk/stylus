@@ -140,23 +140,52 @@ struct Ui {
 
 /* ---------- primitivas ---------- */
 
+/* Um disco cheio é UMA chamada de desenho, não uma por linha de tela.
+
+   O vita2d TEM primitiva de círculo (vita2d_draw_fill_circle), e cada
+   vita2d_draw_rectangle vira um sceGxmDraw próprio — não há agrupamento,
+   conferido desmontando o libvita2d.a. Desenhar um disco de raio 166 linha
+   a linha eram ~330 chamadas de GPU para uma forma que a biblioteca faz em
+   uma. */
 static void fill_circle(float cx, float cy, float r, unsigned int color)
 {
     if (r <= 0) return;
-    int y0 = (int)(cy - r), y1 = (int)(cy + r);
-    for (int y = y0; y <= y1; y++) {
-        float dy = (float)y - cy;
-        float d2 = r * r - dy * dy;
-        if (d2 < 0) continue;
-        float half = sqrtf(d2);
-        int hx0 = (int)(cx - half), hx1 = (int)(cx + half);
-        if (hx1 > hx0) vita2d_draw_rectangle(hx0, y, (float)(hx1 - hx0 + 1), 1, color);
+    vita2d_draw_fill_circle(cx, cy, r, color);
+}
+
+/* Um anel FINO é uma circunferência, e uma circunferência desenha com
+   segmentos de reta.
+
+   O laço linha a linha emite DOIS retângulos por linha de tela que o anel
+   cruza — num anel de raio 36 são ~144 chamadas de desenho, e cada
+   vita2d_draw_rectangle é um sceGxmDraw próprio (não há agrupamento;
+   conferido no libvita2d.a). Com 14 sulcos por card e 8 cards, a estante
+   passava de vinte mil chamadas por quadro.
+
+   Em segmentos, o mesmo anel custa uma chamada por segmento. O número sai
+   do raio: o erro de corda de um polígono de n lados é r*(1-cos(pi/n)), e
+   manter isso abaixo de meio pixel é o que decide — abaixo disso o olho não
+   separa do círculo. */
+static void ring_segmentos(float cx, float cy, float r, unsigned int color)
+{
+    int n = (int)(6.0f * sqrtf(r));        /* erro de corda < 0,5 px */
+    if (n < 12) n = 12;
+    if (n > 96) n = 96;
+    float passo = 6.2831853f / (float)n;
+    float px = cx + r, py = cy;
+    for (int i = 1; i <= n; i++) {
+        float a = passo * (float)i;
+        float qx = cx + cosf(a) * r, qy = cy + sinf(a) * r;
+        vita2d_draw_line(px, py, qx, qy, color);
+        px = qx; py = qy;
     }
 }
 
 static void ring_circle(float cx, float cy, float r, float th, unsigned int color)
 {
     if (r <= 0 || th <= 0) return;
+    /* fino = circunferência; grosso continua no laço, que sabe fazer largura */
+    if (th <= 1.6f) { ring_segmentos(cx, cy, r, color); return; }
     int ymin = (int)(cy - r - th), ymax = (int)(cy + r + th);
     for (int y = ymin; y <= ymax; y++) {
         float dy = (float)y - cy;
@@ -494,8 +523,17 @@ static void draw_disc(float cx, float cy, float r, float progress,
     alpha_ring(cx, cy, r,          1.6f, 0.42f, COL_AMBER);
     alpha_ring(cx, cy, r * 0.975f, 1.0f, 0.16f, COL_AMBER);
 
+    /* Quantos sulcos cabem sem virar ruído — e sem torrar a GPU. Um anel
+       custa ~2 chamadas de desenho por linha de tela que ele cruza, e não
+       há primitiva de anel: num card de raio 73 os 24 anéis fixos eram
+       ~3500 chamadas por CARD, oito cards por tela. O limite passa a sair do
+       RAIO: um sulco a cada ~5 px, que é o que o olho separa de qualquer
+       forma — abaixo disso já era moiré, não contagem. */
+    int cabem = (int)(r / 5.0f);
+    if (cabem < 3) cabem = 3;
+    if (cabem > 24) cabem = 24;
     int n = ntracks > 0 ? ntracks : 1;
-    if (n > 24) n = 24;             /* mais que isso vira ruído, não contagem */
+    if (n > cabem) n = cabem;
     for (int i = 0; i < n; i++) {
         float rr = r * (1.0f - (float)(i + 1) / (float)(n + 2));
         bool here = (track_idx >= 0 && ntracks > 0 &&
