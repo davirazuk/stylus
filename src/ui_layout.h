@@ -41,6 +41,14 @@ typedef struct {
     float note_y;            /* "vira em X min" / o gesto do lado */
     float list_y, list_step;
     int   list_rows;
+    /* Os TRÊS BOTÕES embaixo do disco: anterior, tocar/pausar, próxima.
+       Existem porque o aparelho tem tela sensível ao toque e o deck só
+       respondia a GESTO — tocar no disco pausa, arrastar de lado troca de
+       faixa —, e gesto não se descobre olhando. Um botão desenhado é a única
+       forma de a tela dizer que ela responde ao dedo.
+       `tr_toque` é maior que `tr_r` de propósito: o alvo do dedo não é o
+       tamanho do desenho, é o tamanho da ponta do dedo. */
+    float tr_y, tr_gap, tr_r, tr_toque;
 } UiDeckGeom;
 
 typedef struct {

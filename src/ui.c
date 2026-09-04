@@ -147,6 +147,11 @@ struct Ui {
        o recebe —, e o cue relativo precisa de um ponto de partida. */
     float prog;
     int   dur;
+    /* qual botão de transporte acabou de ser tocado, e por quantos quadros
+       ele fica aceso. Sem esse retorno, o dedo não sabe se o toque pegou —
+       e a diferença entre "não pegou" e "pegou e a faixa demorou" é o que
+       faz alguém tocar duas vezes. */
+    int   tr_aceso, tr_pisca;
 
     Lyrics lrc;
     bool  show_lyrics;
@@ -1348,6 +1353,75 @@ static void fmt_time(char *b, size_t cap, int sec)
     snprintf(b, cap, "%02d:%02d", sec / 60, sec % 60);
 }
 
+/* ---------- os botões de transporte ----------
+
+   O deck só respondia a GESTO: toque no disco pausa, arrasto de lado troca de
+   faixa. Gesto funciona e não se descobre olhando — quem pega o aparelho não
+   tem como saber que a tela responde ao dedo. Três botões desenhados dizem
+   isso sem uma linha de texto.
+
+   Eles são desenhados no vocabulário da §5.5: luz sobre o quase-preto, âmbar,
+   nada de relevo nem de botão de plástico. O triângulo é preenchido por
+   fatias horizontais porque o vita2d não desenha polígono — e são poucas
+   fatias, contadas no orçamento de desenho. */
+
+/* triângulo cheio apontando para a direita (dir=+1) ou esquerda (dir=-1),
+   com a PONTA em (px,py) e a base a `w` dali */
+static void tri_cheio(float px, float py, float w, float h, int dir,
+                      unsigned int col)
+{
+    int n = (int)(h + 0.5f);
+    if (n < 1) n = 1;
+    for (int i = 0; i <= n; i++) {
+        float y = py - h / 2.0f + (float)i * h / (float)n;
+        float d = fabsf(y - py);
+        float lw = w * (1.0f - 2.0f * d / h);   /* largura desta fatia */
+        if (lw < 0.6f) continue;
+        float x = (dir > 0) ? px + (w - lw) : px - w;
+        vita2d_draw_rectangle(x, y, lw, 1.3f, col);
+    }
+}
+
+/* um botão: o anel e o que ele mostra. `qual`: 0 anterior, 1 tocar/pausar,
+   2 próxima. */
+static void botao_transporte(float cx, float cy, float r, int qual, bool live,
+                             bool aceso)
+{
+    unsigned int col = aceso ? COL_AMBER_BRIGHT : COL_AMBER;
+    float a = aceso ? 0.95f : 0.62f;
+    unsigned int c = (col & 0x00FFFFFF) | ((unsigned)(a * 255.0f) << 24);
+
+    alpha_fill(cx, cy, r, aceso ? 0.16f : 0.07f, COL_AMBER);
+    alpha_ring(cx, cy, r, 1.4f, a * 0.75f, col);
+
+    float h = r * 0.86f, w = r * 0.52f;
+    if (qual == 1) {
+        if (live) {                    /* tocando: as duas barras da pausa */
+            vita2d_draw_rectangle(cx - w * 0.62f, cy - h / 2, 3.0f, h, c);
+            vita2d_draw_rectangle(cx + w * 0.22f, cy - h / 2, 3.0f, h, c);
+        } else {                       /* parado: o triângulo de tocar */
+            tri_cheio(cx - w * 0.45f, cy, w * 1.25f, h, +1, c);
+        }
+        return;
+    }
+    /* anterior e próxima: dois triângulos e a barra do batente */
+    int dir = (qual == 2) ? +1 : -1;
+    float x0 = cx - dir * w * 0.75f;
+    tri_cheio(x0, cy, w * 0.8f, h * 0.82f, dir, c);
+    tri_cheio(x0 + dir * w * 0.85f, cy, w * 0.8f, h * 0.82f, dir, c);
+    vita2d_draw_rectangle(cx + dir * (w * 0.95f), cy - h * 0.41f, 2.0f,
+                          h * 0.82f, c);
+}
+
+static void draw_transporte(Ui *u, const UiDeckGeom *g, bool live)
+{
+    for (int i = 0; i < 3; i++) {
+        float bx = g->cx + (float)(i - 1) * g->tr_gap;
+        botao_transporte(bx, g->tr_y, g->tr_r, i, live, u->tr_aceso == i);
+    }
+    if (u->tr_aceso >= 0 && --u->tr_pisca <= 0) u->tr_aceso = -1;
+}
+
 static void draw_deck(Ui *u, Library *lib, Player *p)
 {
     const Album *a = player_current_album(p);
@@ -1496,6 +1570,8 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     snprintf(info, sizeof(info), "%s / %s   ·   faixa %d de %d",
              cur, tot, player_track_idx(p) + 1, player_track_count(p));
     text_elided(u, (int)tx, 240, COL_TEXT_DIM, 0.56f, tw, info);
+
+    draw_transporte(u, &g, live);
 
     vita2d_draw_rectangle(tx, g.bar_y, tw, g.bar_h, COL_BAR_BED);
     if (dur > 0) {
@@ -3017,8 +3093,23 @@ int ui_handle_input(Ui *u)
             u->scrub_pend = u->scrub_to;
             action = 18;                     /* confirma a busca */
         } else if (tap_released(u)) {
-            float dx = (float)u->frente.x - g.cx, dy = (float)u->frente.y - g.cy;
-            if (dx * dx + dy * dy < g.r * g.r) action = 4;   /* o disco: pausa */
+            /* os três botões primeiro: eles ficam POR CIMA da faixa do disco
+               em telas baixas, e quem desenha por cima recebe o toque */
+            int botao = -1;
+            for (int i = 0; i < 3; i++) {
+                float bx = g.cx + (float)(i - 1) * g.tr_gap;
+                float dbx = (float)u->frente.x - bx;
+                float dby = (float)u->frente.y - g.tr_y;
+                if (dbx * dbx + dby * dby < g.tr_toque * g.tr_toque) botao = i;
+            }
+            if (botao >= 0) {
+                u->tr_aceso = botao;
+                u->tr_pisca = 8;         /* o dedo precisa VER que pegou */
+                action = (botao == 0) ? 6 : (botao == 1) ? 4 : 5;
+            } else {
+                float dx = (float)u->frente.x - g.cx, dy = (float)u->frente.y - g.cy;
+                if (dx * dx + dy * dy < g.r * g.r) action = 4;  /* o disco: pausa */
+            }
         } else if (u->frente.was_down && !u->frente.down && u->frente.moved &&
                    !u->scrubbing) {
             int dx = u->frente.x - u->frente.start_x;
@@ -3078,6 +3169,7 @@ Ui *ui_create(void)
     u->conta_campo = -1;
     u->qb_campo = -1;
     u->scrub_pend = -1.0f;
+    u->tr_aceso = -1;
     touch_setup();
     return u;
 }

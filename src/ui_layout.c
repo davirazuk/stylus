@@ -63,6 +63,15 @@ void ui_deck_geom(int scrw, int scrh, UiDeckGeom *g)
     g->list_rows = (int)((f.foot_y - 26.0f - g->list_y) / g->list_step);
     if (g->list_rows > 6) g->list_rows = 6;
     if (g->list_rows < 0) g->list_rows = 0;
+
+    /* Os botões vão SOB O DISCO, não sob a coluna de texto: ali sobra a faixa
+       entre a borda do prato e o rodapé, e é onde a mão já está — a mesma
+       metade da tela em que se toca no disco para pausar. */
+    g->tr_r = 16.0f;
+    g->tr_gap = 54.0f;
+    g->tr_toque = 26.0f;
+    g->tr_y = g->cy + g->r + 30.0f;
+    if (g->tr_y > f.foot_y - 24.0f) g->tr_y = f.foot_y - 24.0f;
 }
 
 void ui_list_geom(int scrw, int scrh, UiListGeom *g)
