@@ -47,7 +47,10 @@ int sceTouchEnableTouchForce(uint32_t port);
 int sceTouchGetPanelInfo(uint32_t port, SceTouchPanelInfo *info);
 int sceTouchPeek(uint32_t port, SceTouchData *data, uint32_t nBufs);
 
-/* extra só do host: o preview injeta um toque na tela (coords de TELA) */
+/* extra só do host: o teste injeta um toque em cada painel (coords de TELA;
+   -1 = ninguém encostou). O shim converte para a grade do painel, que é o
+   que o aparelho entrega — assim o mapeamento é exercitado de verdade. */
 void hosttouch_tap(int x, int y);
+void hosttouch_back(int x, int y);
 
 #endif

@@ -249,6 +249,34 @@ else
     skip "PULA: sem gcc ou sem as bibliotecas"
 fi
 
+printf '\n\033[1mo toque, nos dois painéis\033[0m\n'
+# Duas coisas que só o DEDO pega:
+#   - arrastar a barra do deck não buscava nada. A barra se movia sob o dedo,
+#     porque o desenho usa o mesmo valor, e ao soltar a música seguia de onde
+#     estava: o ui_scrub devolvia -1 justamente no quadro em que o main
+#     perguntava.
+#   - a almofada de trás não se resolve com o "divide por 2" da frente: a área
+#     ativa dela é menor que a tela e não começa em zero. Com a conversão
+#     errada o gesto vertical fica meio morto, e nada acusa.
+if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_PKGS 2>/dev/null; then
+    out=$(gcc -std=gnu11 -I"$SRC" -Itests/hostgfx/include -o /tmp/vitastylus_toque \
+          tests/toque_test.c tests/hostgfx/vita2d_host.c tests/hostgfx/player_stub.c \
+          "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
+          "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
+          "$SRC"/playlist.c "$SRC"/scrobble.c \
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
+          $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
+    if [ ! -x /tmp/vitastylus_toque ]; then
+        fail "o teste do toque não compila" "$out"
+    elif /tmp/vitastylus_toque >/tmp/vitastylus_toque.out 2>&1; then
+        pass "a barra busca, e a almofada de trás anda na medida certa"
+    else
+        fail "o toque não faz o que a tela promete" "$(cat /tmp/vitastylus_toque.out)"
+    fi
+else
+    skip "PULA: sem gcc ou sem as bibliotecas"
+fi
+
 printf '\n\033[1mfunção órfã\033[0m\n'
 # Um helper que ninguém chama costuma ser um recurso INTEIRO faltando: foi
 # assim que album_load_cover existia e nenhuma capa era carregada, e assim que
@@ -317,11 +345,22 @@ if grep -q 'DISABLE_OLED' "$SRC"/main.c; then
 else
     pass "a tela continua livre para apagar"
 fi
-# O painel de toque é 1920x1088, o dobro da tela.
-if grep -q 'report\[0\].x / 2' "$SRC"/ui.c; then
-    pass "o toque é convertido da resolução do painel para a da tela"
+# Os DOIS painéis de toque, cada um com a sua área ativa. O da frente reporta
+# numa grade 2x a da tela; o de trás é MENOR que a tela e não começa em zero.
+# Um número escrito à mão serve para um e estraga o outro — a área tem de vir
+# do próprio painel.
+if grep -q 'sceTouchGetPanelInfo' "$SRC"/ui.c && \
+   ! grep -q 'report\[0\].x / 2' "$SRC"/ui.c; then
+    pass "a área de cada painel vem do painel, não de um número escrito à mão"
 else
-    fail "o toque usa coordenadas cruas (todo toque cai no canto)"
+    fail "o toque converte com um número fixo (serve a um painel e estraga o outro)"
+fi
+# Sem ligar a amostragem, a almofada de trás devolve zero toques para sempre —
+# e o sintoma é idêntico ao de "ninguém encostou".
+if grep -q 'sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK' "$SRC"/ui.c; then
+    pass "a amostragem da almofada de trás é ligada"
+else
+    fail "a almofada de trás nunca é ligada (ela devolve zero toques calada)"
 fi
 
 printf '\n\033[1ma cerimônia (§5.5)\033[0m\n'

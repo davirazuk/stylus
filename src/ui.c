@@ -86,10 +86,34 @@ typedef enum { RIT_OFF = 0, RIT_SPINUP, RIT_CUE, RIT_DROP } RitualPhase;
 #define RIT_CUE_S    0.65f
 #define RIT_DROP_S   0.38f
 
+/* Uma tela inteira de arrasto na almofada de trás vale isto em segundos.
+   Fino o bastante para achar o começo de um verso — que é o que a barra da
+   frente, com o lado inteiro em 400 px, não dá. */
+#define CUE_SEGUNDOS 90.0f
+
+/* Quanto o dedo tem de andar na almofada, em pixels de TELA, para virar uma
+   página ou andar uma fileira. Em pixels de tela e não de painel: a área
+   ativa de trás tem outra escala, e um limiar escrito na grade do painel
+   pediria 40% mais dedo na vertical do que na horizontal — o gesto ficaria
+   "meio morto" sem nada acusando. Ver painel_medir. */
+#define TRAS_PAGINA  60
+#define TRAS_FILEIRA 50
+
 #define SPECT_BANDS 16
 #define SPARKS 14
 
 typedef struct { float x, y, vx, vy, life; } Spark;
+
+/* O estado de UM painel de toque, já em coordenadas de TELA. Existe em dois
+   exemplares porque o aparelho tem dois painéis e eles se leem igual — o que
+   muda é o que cada um comanda, não como se lê um arrasto. */
+typedef struct {
+    int   x, y;
+    bool  down, was_down;
+    int   start_x, start_y;
+    int   frames;
+    bool  moved;
+} Toque;
 
 struct Ui {
     bool bgm_port_ok;    /* o main conseguiu a porta BGM no arranque */
@@ -108,14 +132,21 @@ struct Ui {
     float spect[SPECT_BANDS];
     Spark sparks[SPARKS];
 
-    /* toque */
+    /* toque: DOIS painéis. O Vita tem a tela sensível na frente e uma
+       almofada atrás, onde os dedos já estão segurando o aparelho — e o app
+       ignorava a de trás por inteiro. Os dois estados têm a mesma forma, e
+       por isso a mesma estrutura. */
     float scrub_to;
-    int   touch_x, touch_y;
-    bool  touch_down, touch_was_down;
-    int   touch_start_x, touch_start_y;
-    int   touch_frames;
-    bool  touch_moved;
+    float scrub_pend;    /* para onde o dedo apontou, no quadro em que soltou */
+    Toque frente, tras;
     bool  scrubbing;
+    bool  cue_tras;      /* o dedo de trás está girando o disco */
+    float cue_base;      /* de que ponto do lado ele partiu */
+    /* o que o ÚLTIMO quadro do deck desenhou. A entrada é lida antes de
+       saber a duração da faixa — ela mora no Player, e o ui_handle_input não
+       o recebe —, e o cue relativo precisa de um ponto de partida. */
+    float prog;
+    int   dur;
 
     Lyrics lrc;
     bool  show_lyrics;
@@ -298,7 +329,7 @@ static void text(Ui *u, int x, int y, unsigned int col, float scale, const char 
 typedef enum {
     BTN_CROSS = 0, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE,
     BTN_L1, BTN_R1, BTN_L2R2, BTN_SEL, BTN_START,
-    BTN_DPAD, BTN_UPDOWN, BTN_TOUCH
+    BTN_DPAD, BTN_UPDOWN, BTN_TOUCH, BTN_TRAS
 } Btn;
 
 #define GLIFO_R 8.5f
@@ -356,6 +387,13 @@ static float glyph(Ui *u, float x, float cy, Btn b)
         alpha_ring(cx, cy + 2, r * 0.62f, 1.3f, 0.85f, COL_AMBER);
         thick_line(cx - r * 0.75f, cy - r * 0.75f, cx - r * 0.35f, cy - r * 0.3f, 1.4f, COL_AMBER);
         thick_line(cx + r * 0.75f, cy - r * 0.75f, cx + r * 0.35f, cy - r * 0.3f, 1.4f, COL_AMBER);
+        return 2 * r;
+    case BTN_TRAS:  /* o aparelho de perfil e o dedo POR BAIXO dele */
+        vita2d_draw_rectangle(cx - r * 0.85f, cy - r * 0.55f, r * 1.7f, 1.3f, COL_AMBER);
+        vita2d_draw_rectangle(cx - r * 0.85f, cy + r * 0.30f, r * 1.7f, 1.3f, COL_AMBER);
+        vita2d_draw_rectangle(cx - r * 0.85f, cy - r * 0.55f, 1.3f, r * 0.85f, COL_AMBER);
+        vita2d_draw_rectangle(cx + r * 0.85f, cy - r * 0.55f, 1.3f, r * 0.85f, COL_AMBER);
+        alpha_fill(cx, cy + r * 0.80f, r * 0.30f, 0.95f, COL_AMBER);
         return 2 * r;
     case BTN_L1:    return pill(u, x, cy, "L1");
     case BTN_R1:    return pill(u, x, cy, "R1");
@@ -1051,6 +1089,7 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
             { BTN_SEL,      (Btn)-1, "sorteio" },
             { BTN_L1,       (Btn)-1, "recs" },
             { BTN_R1,       (Btn)-1, "playlists" },
+            { BTN_TRAS,     (Btn)-1, "atrás: página" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
@@ -1189,6 +1228,8 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     float progress = (dur > 0) ? (float)pos / (float)dur : 0.0f;
     if (progress < 0) progress = 0;
     if (progress > 1) progress = 1;
+    u->prog = progress;
+    u->dur = dur;
 
     u->halo_phase += 0.05f;
     ritual_step(u, live);
@@ -1258,6 +1299,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
             { BTN_R1, BTN_SQUARE,   "soneca" },
             { BTN_R1, BTN_TRIANGLE, "jogando" },
             { BTN_TOUCH,    (Btn)-1, "no disco pausa" },
+            { BTN_TRAS,     (Btn)-1, "atrás: cue" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
@@ -1484,6 +1526,7 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
             { BTN_TRIANGLE, (Btn)-1, "estante" },
             { BTN_CIRCLE,   (Btn)-1, "toca daqui" },
             { BTN_UPDOWN,   (Btn)-1, "navegar" },
+            { BTN_TRAS,     (Btn)-1, "atrás: navega" },
             { 0, 0, NULL }
         };
         header_hints(u, "RECOMENDADO", d);
@@ -2299,39 +2342,115 @@ int ui_frame(Ui *u, Library *lib, Player *p)
 #define REPEAT_EVERY 4    /* e um passo a cada tantos depois */
 #define DPAD (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT)
 
-/* O painel de toque devolve 0..1919 x 0..1087 — o DOBRO da tela, porque ele
+/* CONVERTER A COORDENADA DO PAINEL PARA A DA TELA.
+
+   O painel da frente devolve 0..1919 x 0..1087 — o DOBRO da tela, porque ele
    tem resolução maior que ela. Usar as coordenadas cruas põe todo toque no
-   canto superior esquerdo, e é o erro que se comete uma vez. */
-static void touch_read(Ui *u)
+   canto superior esquerdo, e é o erro que se comete uma vez.
+
+   O de TRÁS não se resolve com o mesmo "divide por 2". A almofada traseira é
+   MENOR que a tela: ela não alcança as bordas de cima e de baixo, e o painel
+   reporta isso deslocando a área ativa (o y começa perto de 108, não de 0).
+   Dividir por 2 ali deixaria todo arrasto no terço de cima e o rodapé
+   inalcançável — um defeito que não aparece lendo o código, só com o dedo.
+
+   Por isso a conversão vem do sceTouchGetPanelInfo, que é o painel dizendo a
+   sua própria área ativa, e não de um número escrito à mão. Os valores de
+   emergência abaixo só entram se a chamada falhar. */
+typedef struct { float ox, oy, sx, sy; } Painel;
+static Painel g_painel[SCE_TOUCH_PORT_MAX_NUM];
+
+static void painel_medir(int porta, float fx0, float fy0, float fx1, float fy1)
+{
+    SceTouchPanelInfo pi;
+    float x0 = fx0, y0 = fy0, x1 = fx1, y1 = fy1;
+    memset(&pi, 0, sizeof(pi));
+    if (sceTouchGetPanelInfo((uint32_t)porta, &pi) >= 0 &&
+        pi.maxAaX > pi.minAaX && pi.maxAaY > pi.minAaY) {
+        x0 = pi.minAaX; y0 = pi.minAaY;
+        x1 = pi.maxAaX; y1 = pi.maxAaY;
+    }
+    g_painel[porta].ox = x0;
+    g_painel[porta].oy = y0;
+    g_painel[porta].sx = (float)SCRW / (x1 - x0);
+    g_painel[porta].sy = (float)SCRH / (y1 - y0);
+}
+
+static void touch_setup(void)
+{
+    /* Sem ligar a amostragem, o painel de trás devolve reportNum 0 para
+       sempre — e o sintoma é idêntico ao de "ninguém encostou". */
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK,  SCE_TOUCH_SAMPLING_STATE_START);
+    painel_medir(SCE_TOUCH_PORT_FRONT, 0.0f,   0.0f, 1919.0f, 1087.0f);
+    painel_medir(SCE_TOUCH_PORT_BACK,  0.0f, 108.0f, 1919.0f,  889.0f);
+}
+
+/* um painel, um quadro: onde o dedo está, se andou, há quanto tempo */
+static void toque_ler(Toque *t, int porta)
 {
     SceTouchData td;
     memset(&td, 0, sizeof(td));
-    u->touch_was_down = u->touch_down;
-    u->touch_down = false;
-    if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &td, 1) >= 0 && td.reportNum > 0) {
-        u->touch_down = true;
-        u->touch_x = td.report[0].x / 2;
-        u->touch_y = td.report[0].y / 2;
+    t->was_down = t->down;
+    t->down = false;
+    if (sceTouchPeek((uint32_t)porta, &td, 1) >= 0 && td.reportNum > 0) {
+        const Painel *pn = &g_painel[porta];
+        float x = ((float)td.report[0].x - pn->ox) * pn->sx;
+        float y = ((float)td.report[0].y - pn->oy) * pn->sy;
+        /* a área ativa do painel de trás é menor que a tela: o dedo na borda
+           dele cai FORA da tela depois da conta, e um índice negativo em
+           in_rect é um item errado marcado */
+        if (x < 0) x = 0; else if (x > SCRW - 1) x = SCRW - 1;
+        if (y < 0) y = 0; else if (y > SCRH - 1) y = SCRH - 1;
+        t->down = true;
+        t->x = (int)x;
+        t->y = (int)y;
     }
-    if (u->touch_down && !u->touch_was_down) {
-        u->touch_start_x = u->touch_x;
-        u->touch_start_y = u->touch_y;
-        u->touch_frames = 0;
-        u->touch_moved = false;
-    } else if (u->touch_down) {
-        u->touch_frames++;
-        int dx = u->touch_x - u->touch_start_x;
-        int dy = u->touch_y - u->touch_start_y;
-        if (dx * dx + dy * dy > 18 * 18) u->touch_moved = true;
+    if (t->down && !t->was_down) {
+        t->start_x = t->x;
+        t->start_y = t->y;
+        t->frames = 0;
+        t->moved = false;
+    } else if (t->down) {
+        t->frames++;
+        int dx = t->x - t->start_x;
+        int dy = t->y - t->start_y;
+        if (dx * dx + dy * dy > 18 * 18) t->moved = true;
     }
+}
+
+static void touch_read(Ui *u)
+{
+    toque_ler(&u->frente, SCE_TOUCH_PORT_FRONT);
+    toque_ler(&u->tras,   SCE_TOUCH_PORT_BACK);
 }
 
 static bool tap_released(const Ui *u)
 {
     /* Um toque é curto e parado. Sem exigir as duas coisas, todo arrasto
-       termina disparando o item onde o dedo largou. */
-    return u->touch_was_down && !u->touch_down && !u->touch_moved &&
-           u->touch_frames < 30;
+       termina disparando o item onde o dedo largou.
+
+       Só o painel da FRENTE dispara toque. Atrás os dedos estão segurando o
+       aparelho: um "toque" ali não é uma intenção, é a mão. Por isso o de
+       trás só entende ARRASTO — ver arrasto_tras(). */
+    return u->frente.was_down && !u->frente.down && !u->frente.moved &&
+           u->frente.frames < 30;
+}
+
+/* Um arrasto que ACABOU no painel de trás, em pixels de TELA. Devolve o eixo
+   dominante: 1 se foi horizontal, 2 se vertical, 0 se não houve arrasto.
+
+   O eixo dominante, e não os dois: atrás ninguém vê o dedo, e uma diagonal
+   sem querer disparando as duas coisas de uma vez é indistinguível de um
+   defeito. */
+static int arrasto_tras(const Ui *u, int *dx, int *dy)
+{
+    *dx = 0; *dy = 0;
+    if (!(u->tras.was_down && !u->tras.down && u->tras.moved)) return 0;
+    int ax = u->tras.x - u->tras.start_x;
+    int ay = u->tras.y - u->tras.start_y;
+    if (abs(ax) >= abs(ay)) { *dx = ax; return 1; }
+    *dy = ay; return 2;
 }
 
 static bool in_rect(int x, int y, float rx, float ry, float rw, float rh)
@@ -2340,7 +2459,17 @@ static bool in_rect(int x, int y, float rx, float ry, float rw, float rh)
 }
 
 bool ui_resting(const Ui *u) { return u && u->resting; }
-float ui_scrub(const Ui *u) { return (u && u->scrubbing) ? u->scrub_to : -1.0f; }
+/* ARRASTAR A BARRA NÃO BUSCAVA NADA. O deck marcava `scrubbing = false` no
+   mesmo quadro em que emitia a ação 18, e esta função devolvia -1 justamente
+   quando o main perguntava: `f >= 0` falhava e o player nunca era mandado.
+   Na mão isso lê como "a barra é enfeite" — ela se movia sob o dedo, porque
+   o desenho usa o scrub_to, e a música seguia de onde estava.
+   Agora o valor SOBREVIVE à soltura, em scrub_pend, que é o que o main lê. */
+float ui_scrub(const Ui *u)
+{
+    if (!u) return -1.0f;
+    return u->scrubbing ? u->scrub_to : u->scrub_pend;
+}
 
 int ui_handle_input(Ui *u)
 {
@@ -2397,10 +2526,10 @@ int ui_handle_input(Ui *u)
     /* No repouso, QUALQUER coisa acorda e nada mais acontece: senão a tecla
        que acorda também troca de disco no escuro. */
     if (u->resting) {
-        if (edge || u->touch_down) { u->resting = false; u->rest_idle = 0; }
+        if (edge || u->frente.down) { u->resting = false; u->rest_idle = 0; }
         return 0;
     }
-    if (edge || u->touch_down) u->rest_idle = 0;
+    if (edge || u->frente.down) u->rest_idle = 0;
 
     uint32_t dir_now = cur & DPAD;
     if (dir_now != held_dir) { held_dir = dir_now; held_frames = 0; }
@@ -2622,15 +2751,39 @@ int ui_handle_input(Ui *u)
        O Vita tem uma tela sensível ao toque e o app inteiro a ignorava: pôr
        um disco era navegar uma grade com o direcional, item por item, com a
        coisa desenhada bem ali. */
+    /* A ALMOFADA DE TRÁS. Ela fica exatamente onde os dedos já estão para
+       segurar o aparelho, e é por isso que ela só entende ARRASTO: um toque
+       ali não é uma intenção, é a mão. E é por isso também que ela nunca
+       ACIONA nada — só NAVEGA. O pior resultado possível de um encosto sem
+       querer é virar uma página; nunca pôr um disco ou apagar uma lista. */
+    int tras_dx = 0, tras_dy = 0;
+    arrasto_tras(u, &tras_dx, &tras_dy);
+
     if (u->view == VIEW_SHELF) {
         UiShelfGeom g;
         ui_shelf_geom(SCRW, SCRH, &g);
+        /* de lado vira a página, para cima e para baixo anda uma fileira —
+           tudo isso SEM cobrir a arte com o polegar, que é o ponto de uma
+           estante de capas */
+        if (tras_dx < -TRAS_PAGINA) { u->sel += UI_SHELF_PAGE; action = 1; }
+        else if (tras_dx > TRAS_PAGINA) {
+            u->sel -= UI_SHELF_PAGE;
+            if (u->sel < 0) u->sel = 0;
+            action = 1;
+        } else if (tras_dy < -TRAS_FILEIRA) {
+            u->sel -= UI_SHELF_COLS;
+            if (u->sel < 0) u->sel = 0;
+            action = 1;
+        } else if (tras_dy > TRAS_FILEIRA) {
+            u->sel += UI_SHELF_COLS;
+            action = 1;
+        }
         if (tap_released(u)) {
             for (int r = 0; r < UI_SHELF_ROWS; r++)
                 for (int cix = 0; cix < UI_SHELF_COLS; cix++) {
                     float x = g.x0 + cix * (g.card_w + g.gap);
                     float y = g.y0 + r * (g.card_h + g.gap);
-                    if (!in_rect(u->touch_x, u->touch_y, x, y, g.card_w, g.card_h))
+                    if (!in_rect(u->frente.x, u->frente.y, x, y, g.card_w, g.card_h))
                         continue;
                     int idx = (u->sel / UI_SHELF_PAGE) * UI_SHELF_PAGE
                               + r * UI_SHELF_COLS + cix;
@@ -2638,9 +2791,9 @@ int ui_handle_input(Ui *u)
                     u->view = VIEW_DECK;
                     action = 2;
                 }
-        } else if (u->touch_was_down && !u->touch_down && u->touch_moved) {
+        } else if (u->frente.was_down && !u->frente.down && u->frente.moved) {
             /* arrastar de lado vira página; a grade é paginada, não rolada */
-            int dx = u->touch_x - u->touch_start_x;
+            int dx = u->frente.x - u->frente.start_x;
             if (dx < -60) { u->sel += UI_SHELF_PAGE; action = 1; }
             else if (dx > 60) { u->sel -= UI_SHELF_PAGE; if (u->sel < 0) u->sel = 0; action = 1; }
         }
@@ -2651,32 +2804,80 @@ int ui_handle_input(Ui *u)
            ui_scrub() e manda o player. Soltar confirma. */
         float bx = g.text_x, bw = g.text_w;
         float band_y = g.bar_y - 14, band_h = g.bar_h + 28;
-        if (u->touch_down && (u->scrubbing ||
-            in_rect(u->touch_start_x, u->touch_start_y, bx, band_y, bw, band_h))) {
+
+        /* O CUE PELA ALMOFADA DE TRÁS.
+
+           Atrás do prato é onde a mão de quem toca disco encosta para
+           empurrar o vinil, e aqui é literalmente atrás: a almofada fica nas
+           costas do aparelho, embaixo do desenho do disco. Arrastar ali anda
+           na faixa.
+
+           O deslocamento é RELATIVO ao ponto onde o dedo pousou, não
+           absoluto como na barra: atrás não há nada para ver, e uma busca
+           absoluta seria pedir para adivinhar onde o dedo caiu. A tela
+           inteira de arrasto vale CUE_SEGUNDOS — fino o bastante para achar
+           o começo de um verso, que é o que a barra não dá.
+
+           Quem manda continua sendo a barra: se o dedo da frente já está
+           arrastando, o de trás não entra. Dois donos do mesmo valor seriam
+           dois seeks brigando por quadro. */
+        if (u->tras.down && u->tras.moved && u->dur > 0 &&
+            (u->cue_tras || !u->scrubbing)) {
+            if (!u->cue_tras) { u->cue_tras = true; u->cue_base = u->prog; }
+            float dx = (float)(u->tras.x - u->tras.start_x);
+            float f = u->cue_base +
+                      (dx / (float)SCRW) * (CUE_SEGUNDOS / (float)u->dur);
+            if (f < 0) f = 0;
+            if (f > 1) f = 1;
             u->scrubbing = true;
-            float f = ((float)u->touch_x - bx) / (bw > 1 ? bw : 1);
+            u->scrub_to = f;
+        } else if (u->cue_tras && !u->tras.down) {
+            u->cue_tras = false;
+            u->scrubbing = false;
+            u->scrub_pend = u->scrub_to;
+            action = 18;
+        } else if (u->frente.down && (u->scrubbing ||
+            in_rect(u->frente.start_x, u->frente.start_y, bx, band_y, bw, band_h))) {
+            u->scrubbing = true;
+            float f = ((float)u->frente.x - bx) / (bw > 1 ? bw : 1);
             if (f < 0) f = 0;
             if (f > 1) f = 1;
             u->scrub_to = f;
-        } else if (u->scrubbing && !u->touch_down) {
+        } else if (u->scrubbing && !u->frente.down) {
             u->scrubbing = false;
+            /* o valor precisa SOBREVIVER a este quadro: é agora que o main
+               vai perguntar, e o ui_scrub já não pode dizer "ninguém está
+               arrastando" (ver ui_scrub) */
+            u->scrub_pend = u->scrub_to;
             action = 18;                     /* confirma a busca */
         } else if (tap_released(u)) {
-            float dx = (float)u->touch_x - g.cx, dy = (float)u->touch_y - g.cy;
+            float dx = (float)u->frente.x - g.cx, dy = (float)u->frente.y - g.cy;
             if (dx * dx + dy * dy < g.r * g.r) action = 4;   /* o disco: pausa */
-        } else if (u->touch_was_down && !u->touch_down && u->touch_moved &&
+        } else if (u->frente.was_down && !u->frente.down && u->frente.moved &&
                    !u->scrubbing) {
-            int dx = u->touch_x - u->touch_start_x;
+            int dx = u->frente.x - u->frente.start_x;
             if (dx < -70) action = 5;
             else if (dx > 70) action = 6;
         }
     } else {
         UiListGeom lg;
         ui_list_geom(SCRW, SCRH, &lg);
+        /* nas listas a almofada anda também: é a mesma mão, o mesmo gesto —
+           de lado uma página, para cima e para baixo uma linha */
+        int passo = 0;
+        if (tras_dx < -TRAS_PAGINA)      passo =  lg.rows;
+        else if (tras_dx > TRAS_PAGINA)  passo = -lg.rows;
+        else if (tras_dy < -TRAS_FILEIRA) passo = -1;
+        else if (tras_dy > TRAS_FILEIRA)  passo =  1;
+        if (passo) {
+            if (u->view == VIEW_RECS) u->rec_sel += passo;
+            else                      u->pl_sel  += passo;
+            action = 1;
+        }
         if (tap_released(u)) {
             for (int r = 0; r < lg.rows; r++) {
                 float y = lg.y0 + r * lg.row_h;
-                if (!in_rect(u->touch_x, u->touch_y, lg.x, y, lg.w, lg.row_h)) continue;
+                if (!in_rect(u->frente.x, u->frente.y, lg.x, y, lg.w, lg.row_h)) continue;
                 if (u->view == VIEW_RECS) {
                     u->rec_sel = (u->rec_sel / lg.rows) * lg.rows + r;
                     u->view = VIEW_DECK;
@@ -2710,6 +2911,8 @@ Ui *ui_create(void)
        digitado em qualquer tela cairia na primeira linha da outra. */
     u->conta_campo = -1;
     u->qb_campo = -1;
+    u->scrub_pend = -1.0f;
+    touch_setup();
     return u;
 }
 

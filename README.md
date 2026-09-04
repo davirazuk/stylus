@@ -91,16 +91,38 @@ nada" para quem tem a coleção inteira num formato só.
 | **R1 + L1** | — | **apaga a tela e continua tocando** | — | — |
 | **R1 + □** | — | **soneca** (esmaece 20 s → fim do lado → off) | — | — |
 | **R1 + △** | — | **ouvir enquanto joga** | — | — |
+| **atrás** (arrasto) | ◄► página · ▲▼ fileira | ◄► **cue** (90 s por tela) | ◄► página · ▲▼ linha | ↔ |
 | Start | sai | sai | sai | sai |
 
-### Toque
+### Toque — os DOIS painéis
 
-A tela é sensível ao toque e o app inteiro a ignorava.
+O Vita tem a tela sensível na frente **e uma almofada atrás**, onde os dedos
+já estão para segurar o aparelho. O app ignorava as duas.
+
+**Na frente**, o dedo aciona:
 
 - **estante**: toque num disco para pôr; arraste de lado para virar a página
 - **deck**: toque no disco pausa; arraste a barra para buscar; arraste de
   lado para trocar de faixa
 - **recs / playlists**: toque numa linha para tocar dali
+
+**Atrás**, o dedo só NAVEGA — nunca aciona. Atrás ninguém vê a mão, e um
+encosto sem querer é a regra e não a exceção: o pior que pode acontecer é
+virar uma página. Por isso ela também só entende ARRASTO; um toque parado ali
+é a mão segurando o aparelho, e não faz nada.
+
+- **estante**: de lado vira a página, para cima e para baixo anda uma
+  fileira — **sem o polegar cobrindo a arte**, que é o ponto de uma estante
+  de capas
+- **deck**: de lado é o **cue** — a tela inteira de arrasto vale 90 s, fino o
+  bastante para achar o começo de um verso, que é o que a barra da frente,
+  com o lado inteiro em 400 px, não dá
+- **recs / playlists**: de lado uma página, para cima e para baixo uma linha
+
+A conversão da coordenada **vem do painel** (`sceTouchGetPanelInfo`), não de
+um número escrito à mão: a área ativa de trás é menor que a tela e não começa
+em zero. Copiar o "divide por 2" da frente deixaria o gesto vertical pedindo
+40% mais dedo — meio morto, sem erro nenhum para acusar.
 
 ## O disco tem LADOS
 

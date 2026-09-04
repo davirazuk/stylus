@@ -422,12 +422,26 @@ uint32_t sceKernelGetProcessTimeLow(void)
 }
 void sceKernelExitProcess(int res) { exit(res); }
 
-/* ---------- toque ---------- */
-/* O painel frontal do Vita reporta numa grade ~2x a da tela. O shim finge o
-   mesmo para o mapeamento da UI ser exercitado igual. */
-static int g_tap_x = -1, g_tap_y = -1;
+/* ---------- toque ----------
+   Os DOIS painéis, e de propósito com áreas ativas diferentes: o da frente
+   reporta numa grade 2x a da tela; o de TRÁS é menor que a tela e a área
+   ativa dele não começa em zero. Fingir os dois iguais aqui deixaria passar
+   justamente o defeito que o mapeamento existe para evitar — um arrasto de
+   trás preso no terço de cima. */
+#define AA_FRENTE_X0 0
+#define AA_FRENTE_Y0 0
+#define AA_FRENTE_X1 (SCRW * 2 - 1)
+#define AA_FRENTE_Y1 (SCRH * 2 - 1)
+#define AA_TRAS_X0   0
+#define AA_TRAS_Y0   108
+#define AA_TRAS_X1   (SCRW * 2 - 1)
+#define AA_TRAS_Y1   889
 
-void hosttouch_tap(int x, int y) { g_tap_x = x; g_tap_y = y; }
+static int g_tap_x = -1,  g_tap_y = -1;    /* frente, em coordenadas de TELA */
+static int g_back_x = -1, g_back_y = -1;   /* trás, idem */
+
+void hosttouch_tap(int x, int y)  { g_tap_x = x;  g_tap_y = y; }
+void hosttouch_back(int x, int y) { g_back_x = x; g_back_y = y; }
 
 int sceTouchSetSamplingState(uint32_t port, uint32_t state)
 { (void)port; (void)state; return 0; }
@@ -435,24 +449,35 @@ int sceTouchEnableTouchForce(uint32_t port) { (void)port; return 0; }
 
 int sceTouchGetPanelInfo(uint32_t port, SceTouchPanelInfo *info)
 {
-    (void)port;
     if (!info) return -1;
     memset(info, 0, sizeof(*info));
-    info->minAaX = 0; info->minAaY = 0;
-    info->maxAaX = SCRW * 2 - 1;
-    info->maxAaY = SCRH * 2 - 1;
+    if (port == SCE_TOUCH_PORT_BACK) {
+        info->minAaX = AA_TRAS_X0; info->minAaY = AA_TRAS_Y0;
+        info->maxAaX = AA_TRAS_X1; info->maxAaY = AA_TRAS_Y1;
+    } else {
+        info->minAaX = AA_FRENTE_X0; info->minAaY = AA_FRENTE_Y0;
+        info->maxAaX = AA_FRENTE_X1; info->maxAaY = AA_FRENTE_Y1;
+    }
     return 0;
 }
 
 int sceTouchPeek(uint32_t port, SceTouchData *data, uint32_t nBufs)
 {
-    (void)port; (void)nBufs;
+    (void)nBufs;
     if (!data) return 0;
     memset(data, 0, sizeof(*data));
-    if (g_tap_x >= 0) {
+    int sx = (port == SCE_TOUCH_PORT_BACK) ? g_back_x : g_tap_x;
+    int sy = (port == SCE_TOUCH_PORT_BACK) ? g_back_y : g_tap_y;
+    if (sx >= 0) {
+        /* o teste fala em coordenadas de TELA; aqui elas voltam para a grade
+           do painel, que é o que o aparelho entrega */
+        int x0 = (port == SCE_TOUCH_PORT_BACK) ? AA_TRAS_X0 : AA_FRENTE_X0;
+        int y0 = (port == SCE_TOUCH_PORT_BACK) ? AA_TRAS_Y0 : AA_FRENTE_Y0;
+        int x1 = (port == SCE_TOUCH_PORT_BACK) ? AA_TRAS_X1 : AA_FRENTE_X1;
+        int y1 = (port == SCE_TOUCH_PORT_BACK) ? AA_TRAS_Y1 : AA_FRENTE_Y1;
         data->reportNum = 1;
-        data->report[0].x = (int16_t)(g_tap_x * 2);
-        data->report[0].y = (int16_t)(g_tap_y * 2);
+        data->report[0].x = (int16_t)(x0 + (sx * (x1 - x0)) / SCRW);
+        data->report[0].y = (int16_t)(y0 + (sy * (y1 - y0)) / SCRH);
         data->report[0].force = 100;
     }
     return 1;
