@@ -803,8 +803,37 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
                 draw_cover_fit(tex, ix, iy, side);
             } else if (a->cover_loaded) {
                 /* sem capa: o disco É o desenho, não um aviso de falta */
-                draw_disc(ix + side / 2, iy + side / 2, side / 2.2f,
-                          0.18f, a->ntracks, -1, u->disc_angle, NULL, 0.0f);
+                float dcx = ix + side / 2, dcy = iy + side / 2, dr = side / 2.2f;
+                draw_disc(dcx, dcy, dr, 0.18f, a->ntracks, -1, u->disc_angle,
+                          NULL, 0.0f);
+                /* A INICIAL no rótulo. Sem capa, um disco fica igual ao
+                   vizinho e a estante vira uma parede sem alvo — e neste
+                   acervo 48 álbuns não têm arte em lugar nenhum. A letra
+                   devolve o que a capa daria: algo diferente por card para
+                   o olho mirar. Pula o prefixo de data que quase todo disco
+                   ao vivo daqui tem, senão a inicial de todos seria "1". */
+                {
+                    const char *nome = a->album[0] ? a->album : a->artist;
+                    while (*nome && !((*nome >= 'A' && *nome <= 'Z') ||
+                                      (*nome >= 'a' && *nome <= 'z') ||
+                                      (unsigned char)*nome >= 0xC0))
+                        nome++;
+                    if (*nome) {
+                        char ini[5] = {0};
+                        int nb = 1;
+                        if ((unsigned char)nome[0] >= 0xC0)
+                            while (nb < 4 && ((unsigned char)nome[nb] & 0xC0) == 0x80) nb++;
+                        memcpy(ini, nome, (size_t)nb);
+                        if (ini[0] >= 'a' && ini[0] <= 'z') ini[0] = (char)(ini[0] - 32);
+                        /* chão para a letra: solta sobre os anéis ela some */
+                        alpha_fill(dcx, dcy, dr * 0.46f, 0.95f, RGBA8(14, 18, 25, 255));
+                        alpha_ring(dcx, dcy, dr * 0.46f, 1.2f, 0.40f, COL_AMBER);
+                        float sc = 1.05f;
+                        int lw = text_w(u, sc, ini);
+                        text(u, (int)(dcx - lw / 2.0f), (int)(dcy + dr * 0.17f),
+                             COL_AMBER_BRIGHT, sc, ini);
+                    }
+                }
             } else {
                 /* ainda carregando: um aro, e nenhuma afirmação */
                 alpha_ring(ix + side / 2, iy + side / 2, side / 2.4f, 1.0f, 0.10f, COL_COLD);
