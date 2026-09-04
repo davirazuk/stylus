@@ -400,14 +400,177 @@ void library_init(Library *lib)
     memset(lib, 0, sizeof(*lib));
 }
 
+/* ---------------- descoberta ----------------
+
+   Por que isto existe: os palpites acima são NOMES DE PASTA. Eles acertam
+   quem guardou a música em `ux0:music` e erram todo o resto — quem escreveu
+   "Music", quem pôs em `ux0:MP3`, quem deixou dentro de `ux0:media/audio`.
+   O aparelho reportava, com toda a razão, "as raízes não existem", e a
+   pessoa não tinha o que fazer a respeito sem um PC e um editor de texto.
+   Adivinhar mais nomes só empurra o problema: a lista nunca fica completa.
+
+   Então em vez de adivinhar, PROCURA. Abre cada dispositivo, olha as pastas
+   de primeiro nível e pergunta a cada uma "tem áudio aí dentro?". A que
+   tiver vira raiz. Custa uma varredura rasa e resolve o caso inteiro, com
+   qualquer nome de pasta, sem a pessoa configurar nada.
+
+   Duas coisas seguram o custo. A lista de pastas do SISTEMA é pulada — sem
+   ela, `ux0:app` (centenas de pastas) e `ux0:pspemu` (um cartão de PSP
+   inteiro) seriam vasculhados atrás de um MP3 que não está lá. E a sonda
+   tem ORÇAMENTO: para na primeira faixa que achar, e desiste depois de
+   algumas centenas de entradas. Uma pasta gigante de fotos atrasa a busca
+   por um instante, não por um minuto. */
+
+static const char *DEVICES[] = { "ux0:", "uma0:", "imc0:", "xmc0:", "ur0:", NULL };
+
+/* A lista de dispositivos a sondar. No aparelho é a de cima e ponto.
+
+   No PC ela vem de STYLUS_DEVICES (caminhos separados por vírgula), porque
+   `ux0:` não existe aqui e sem isso a única forma de provar que a busca
+   funciona seria instalar no Vita e olhar. Com o gancho, o teste monta uma
+   árvore falsa e mede o comportamento de verdade — inclusive o orçamento e
+   a lista de pastas puladas. O aparelho nunca lê variável de ambiente. */
+static const char **devices_list(void)
+{
+#ifdef __vita__
+    return DEVICES;
+#else
+    static char buf[1024];
+    static const char *lista[MAX_ROOTS + 1];
+    const char *env = getenv("STYLUS_DEVICES");
+    if (!env || !*env) return DEVICES;
+    snprintf(buf, sizeof(buf), "%s", env);
+    int n = 0;
+    char *save = NULL;
+    for (char *p = strtok_r(buf, ",", &save); p && n < MAX_ROOTS;
+         p = strtok_r(NULL, ",", &save))
+        lista[n++] = p;
+    lista[n] = NULL;
+    return lista;
+#endif
+}
+
+/* Pastas que o sistema usa e onde música do usuário não mora. Comparadas
+   sem diferenciar maiúsculas, porque o cartão é FAT e o Vita não é
+   consistente sobre isso. */
+static const char *PULAR[] = {
+    "app", "appmeta", "bgdl", "cache", "calendar", "license", "message",
+    "near", "patch", "pspemu", "psm", "shell", "tai", "temp", "theme",
+    "user", "system", "vitastylus", "iconlayout.xml", "id.dat",
+    NULL
+};
+
+static bool eh_sistema(const char *nome)
+{
+    for (int i = 0; PULAR[i]; i++)
+        if (strcasecmp(nome, PULAR[i]) == 0) return true;
+    /* Tudo que a Sony prefixa com "sce_" ou "PS" também não é do usuário. */
+    if (strncasecmp(nome, "sce_", 4) == 0) return true;
+    return false;
+}
+
+/* Tem algum arquivo de áudio aqui dentro? Para no primeiro. `orcamento`
+   conta entradas visitadas e é decrementado através da recursão — é o que
+   impede uma pasta enorme de segurar o arranque. */
+static bool tem_audio(const char *dir, int prof, int *orcamento)
+{
+    if (prof < 0 || *orcamento <= 0) return false;
+    DirIter *d = dir_open(dir);
+    if (!d) return false;
+
+    bool achou = false;
+    const char *nome;
+    int isdir;
+    /* Os subdiretórios são deixados para uma segunda passada: um álbum tem
+       dezenas de faixas e nenhuma subpasta, então olhar os ARQUIVOS antes
+       acerta na primeira volta e nem chega a descer. */
+    char subs[16][MAX_NAME_LEN];
+    int nsubs = 0;
+
+    while (!achou && dir_next(d, &nome, &isdir)) {
+        if (nome[0] == '.') continue;
+        if ((*orcamento)-- <= 0) break;
+        if (isdir == 1) {
+            if (nsubs < 16 && !eh_sistema(nome))
+                snprintf(subs[nsubs++], MAX_NAME_LEN, "%s", nome);
+        } else if (isdir == 0 && audio_ext(nome)) {
+            achou = true;
+        }
+    }
+    dir_close(d);
+
+    for (int i = 0; !achou && i < nsubs; i++) {
+        char filho[MAX_PATH_LEN];
+        path_join(filho, sizeof(filho), dir, subs[i]);
+        achou = tem_audio(filho, prof - 1, orcamento);
+    }
+    return achou;
+}
+
+int library_discover(Library *lib)
+{
+    if (!lib) return 0;
+    int achadas = 0;
+
+    const char **devs = devices_list();
+    for (int i = 0; devs[i] && lib->nroots < MAX_ROOTS; i++) {
+        DirIter *dev = dir_open(devs[i]);
+        if (!dev) continue;
+
+        /* Os nomes são copiados ANTES de sondar: o `nome` do dir_next vale
+           só até a próxima chamada, e sondar uma pasta abre outro iterador. */
+        char cands[32][MAX_NAME_LEN];
+        int nc = 0;
+        const char *nome;
+        int isdir;
+        while (nc < 32 && dir_next(dev, &nome, &isdir)) {
+            if (isdir != 1 || nome[0] == '.') continue;
+            if (eh_sistema(nome)) continue;
+            snprintf(cands[nc++], MAX_NAME_LEN, "%s", nome);
+        }
+        dir_close(dev);
+
+        for (int j = 0; j < nc && lib->nroots < MAX_ROOTS; j++) {
+            char cam[MAX_PATH_LEN];
+            path_join(cam, sizeof(cam), devs[i], cands[j]);
+            if (lib->progress)
+                lib->progress(lib->progress_ud, cam, lib->files_seen);
+            int orcamento = 400;
+            if (!tem_audio(cam, 3, &orcamento)) continue;
+            /* >= 0, não > 0: a função devolve o ÍNDICE da raiz, e o da
+               primeira é zero — com `> 0` a primeira pasta achada não era
+               contada, e o número que a tela mostra saía errado. */
+            if (library_add_root(lib, cam) >= 0) achadas++;
+        }
+    }
+
+    if (achadas > 0) lib->roots_discovered = true;
+    return achadas;
+}
+
 int library_scan(Library *lib)
 {
     if (!lib) return -1;
+    int primeira = lib->nroots;
     for (int i = 0; i < lib->nroots; i++) {
         ScanRoot *r = &lib->roots[i];
         r->opened = dir_exists(r->path);
         if (!r->opened) continue;
         scan_dir(lib, i, r->path, "", 0);
+    }
+
+    /* Nenhum palpite vingou. Antes de mostrar uma estante vazia e mandar a
+       pessoa editar um arquivo de texto, PROCURA — ver a nota acima. Só
+       neste caso: quem já tem música achada não paga a busca, e um
+       roots.txt escrito à mão continua sendo a palavra final. */
+    if (lib->audio_found == 0 && !lib->roots_from_config) {
+        library_discover(lib);
+        for (int i = primeira; i < lib->nroots; i++) {
+            ScanRoot *r = &lib->roots[i];
+            r->opened = dir_exists(r->path);
+            if (!r->opened) continue;
+            scan_dir(lib, i, r->path, "", 0);
+        }
     }
     /* A ordem da faixa dentro do disco sai do NOME do arquivo. A insertion
        sort que morava aqui comparava o número já normalizado para 0 contra o
@@ -538,13 +701,15 @@ void library_status(const Library *lib, char *out, size_t cap)
     for (int i = 0; i < lib->nroots; i++) if (lib->roots[i].opened) opened++;
 
     if (opened == 0) {
-        /* o caso mais comum de "não acha nada": a música não está onde o app
-           olhou. Dizer QUAIS pastas foram tentadas transforma um mistério num
-           conserto de trinta segundos. */
-        size_t n = (size_t)snprintf(out, cap, "nenhuma destas pastas abriu: ");
-        for (int i = 0; i < lib->nroots && n + 2 < cap; i++)
-            n += (size_t)snprintf(out + n, cap - n, "%s%s",
-                                  i ? ", " : "", lib->roots[i].path);
+        /* Nem os palpites nem a BUSCA acharam pasta que abrisse. Antes esta
+           frase listava os palpites — "ux0:music não abriu" — e mandava a
+           pessoa consertar um nome de pasta que o app agora nem precisa
+           acertar. O que sobrou de verdade é mais simples e mais útil: não
+           há música alcançável em nenhum dispositivo montado. */
+        int cartao = dir_exists("ux0:");
+        snprintf(out, cap,
+                 cartao ? "procurei em todos os dispositivos e não achei áudio"
+                        : "o cartão (ux0:) não abre — está no aparelho?");
         return;
     }
     if (lib->audio_found == 0) {
@@ -559,9 +724,15 @@ void library_status(const Library *lib, char *out, size_t cap)
                      lib->files_seen, lib->files_seen == 1 ? "" : "s", other);
         return;
     }
-    snprintf(out, cap, "%d faixa%s em %d pasta%s",
-             lib->audio_found, lib->audio_found == 1 ? "" : "s",
-             lib->dirs_seen, lib->dirs_seen == 1 ? "" : "s");
+    size_t n = (size_t)snprintf(out, cap, "%d faixa%s em %d pasta%s",
+                                lib->audio_found, lib->audio_found == 1 ? "" : "s",
+                                lib->dirs_seen, lib->dirs_seen == 1 ? "" : "s");
+    /* Quando as raízes foram DESCOBERTAS, dizer onde: a pessoa não escolheu
+       essa pasta e merece saber de onde veio o que está vendo. */
+    if (lib->roots_discovered && lib->nroots > 0 && n + 8 < cap)
+        snprintf(out + n, cap - n, " — achadas em %s%s",
+                 lib->roots[lib->nroots - 1].path,
+                 lib->nroots > 1 ? " e outras" : "");
 }
 
 void library_free(Library *lib)

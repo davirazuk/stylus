@@ -370,7 +370,13 @@ static void test_scan(void)
 static void test_scan_empty(void)
 {
     printf("\n\033[1mquando não acha nada\033[0m\n");
-    /* nenhuma raiz abre: a tela precisa DIZER onde olhou */
+    /* Nenhuma raiz abre. Este teste JÁ exigiu que a frase nomeasse as pastas
+       tentadas — o que fazia sentido enquanto o app adivinhava nomes e a
+       pessoa tinha de corrigir o palpite à mão. Não faz mais: agora ele
+       procura em todos os dispositivos, e listar "ux0:music, uma0:music"
+       nomearia palpites que já não importam. O que a frase precisa dizer é o
+       que a pessoa pode agir: se o cartão em si abre. Um cartão fora do
+       aparelho é um conserto; um cartão dentro e sem áudio é outro. */
     Library l;
     library_init(&l);
     library_add_root(&l, "ux0:music");
@@ -378,8 +384,9 @@ static void test_scan_empty(void)
     library_scan(&l);
     char st[512];
     library_status(&l, st, sizeof(st));
-    okf(strstr(st, "ux0:music") && strstr(st, "uma0:music"),
-        "a estante vazia NOMEIA as pastas em que olhou", "disse \"%s\"", st);
+    okf(strstr(st, "ux0:") != NULL && strstr(st, "não") != NULL,
+        "a estante vazia diz se o CARTÃO abre, não que palpite falhou",
+        "disse \"%s\"", st);
     library_free(&l);
 
     /* a pasta abre e só tem arquivo que não é música */

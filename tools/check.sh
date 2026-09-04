@@ -187,7 +187,8 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
-          $(pkg-config --cflags --libs freetype2 libpng $DEC_PKGS) -ljpeg -lm 2>&1) || true
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c \
+          $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_desenho ]; then
         fail "o teste de desenho não compila" "$out"
     elif /tmp/vitastylus_desenho "${STYLUS_MUSICA:-$HOME/staging-vita/vita-mp3}" \
@@ -198,6 +199,29 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
     fi
 else
     skip "PULA: sem gcc ou sem as bibliotecas"
+fi
+
+printf '\n\033[1ma busca acha musica com qualquer nome de pasta\033[0m\n'
+# O aparelho dizia "as raizes nao existem" e estava CERTO: a musica estava
+# numa pasta que a lista de palpites nao previa. Adivinhar mais nomes nao
+# fecha esse buraco — a lista nunca fica completa. O app procura, e o que se
+# confere aqui e' se ele procura direito: acha nome imprevisto, desce alguns
+# niveis, e NAO adota ux0:app (que tem audio de jogo dentro).
+# So precisa de gcc: os codecs entram como tocos.
+if command -v gcc >/dev/null 2>&1; then
+    out=$(gcc -std=gnu11 -Wall -Wextra -I"$SRC" -D_GNU_SOURCE \
+          -o /tmp/vitastylus_busca \
+          tests/busca_test.c tests/dec_stub.c \
+          "$SRC"/library.c "$SRC"/fsutil.c "$SRC"/sides.c -lm 2>&1) || true
+    if [ ! -x /tmp/vitastylus_busca ]; then
+        fail "o teste de busca não compila" "$out"
+    elif /tmp/vitastylus_busca >/tmp/vitastylus_busca.out 2>&1; then
+        pass "$(grep -o 'raizes achadas: [0-9]*' /tmp/vitastylus_busca.out) — e nenhuma pasta de sistema"
+    else
+        fail "a busca não acha a música" "$(cat /tmp/vitastylus_busca.out)"
+    fi
+else
+    skip "PULA: sem gcc"
 fi
 
 printf '\n\033[1mos atalhos levam aonde prometem\033[0m\n'
@@ -212,7 +236,8 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
-          $(pkg-config --cflags --libs freetype2 libpng $DEC_PKGS) -ljpeg -lm 2>&1) || true
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c \
+          $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_atalhos ]; then
         fail "o teste de atalhos não compila" "$out"
     elif /tmp/vitastylus_atalhos >/tmp/vitastylus_atalhos.out 2>&1; then
@@ -313,6 +338,38 @@ if grep -q 'ui_begin_ritual' "$SRC"/main.c; then
     pass "pôr um disco encena a cerimônia"
 else
     fail "nada encena a cerimônia — ela existe e nunca roda"
+fi
+
+printf '\n\033[1ma area SCE ainda cabe\033[0m\n'
+# O vita-elf-create grava module info + tabelas de import na folga entre o fim
+# do segmento de codigo e o inicio do de dados. Quando nao cabe, o build morre
+# com "Cannot allocate N bytes for SCE data" e o app nem chega a existir — um
+# erro que aparece "do nada" ao acrescentar codigo, e que ja custou tempo duas
+# vezes. Aqui a folga e MEDIDA, e a queda avisada ANTES de virar quebra.
+# Ver src/segpad.c para o conserto.
+ELF=build/vitastylus
+RE="${VITASDK:-$HOME/vitasdk}/bin/arm-vita-eabi-readelf"
+if [ -f "$ELF" ] && [ -x "$RE" ]; then
+    # LOAD off vaddr paddr filesz memsz R E align
+    set -- $("$RE" -l "$ELF" 2>/dev/null | grep 'R E' | head -1)
+    if [ $# -ge 9 ]; then
+        fim_txt=$(( $3 + $5 ))
+        alin=$(( $9 ))
+        resto=$(( fim_txt % alin ))
+        if [ "$resto" -eq 0 ]; then folga=$alin; else folga=$(( alin - resto )); fi
+        if [ "$folga" -ge 5500 ]; then
+            pass "folga de $folga bytes para a area SCE (alinhamento $alin)"
+        elif [ "$folga" -ge 5000 ]; then
+            skip "folga de so $folga bytes — regule SEGPAD_BYTES antes que quebre"
+        else
+            fail "folga de $folga bytes: a area SCE nao vai caber" \
+                 "ajuste SEGPAD_BYTES em src/segpad.c (ver o comentario la)"
+        fi
+    else
+        skip "PULA: nao deu para ler o cabecalho de programa"
+    fi
+else
+    skip "PULA: sem build/vitastylus (rode ./build.sh antes)"
 fi
 
 printf '\n\033[1mmemória\033[0m\n'

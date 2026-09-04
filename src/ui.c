@@ -1,4 +1,6 @@
 #include "ui.h"
+#include "ime.h"
+#include "lastfm.h"
 #include "fsutil.h"
 #include "paths.h"
 #include "ui_layout.h"
@@ -53,7 +55,8 @@
 #define FOOT_Y   (SCRH - 34)
 #define HINT_Y   (SCRH - 14)
 
-typedef enum { VIEW_SHELF = 0, VIEW_DECK, VIEW_RECS, VIEW_PLAYLISTS, VIEW_HANDOFF } View;
+typedef enum { VIEW_SHELF = 0, VIEW_DECK, VIEW_RECS, VIEW_PLAYLISTS,
+               VIEW_HANDOFF, VIEW_CONTA } View;
 
 /* ---------- cache de capas ----------
    O desenho antigo chamava vita2d_load_JPEG_buffer e vita2d_free_texture DENTRO
@@ -131,6 +134,15 @@ struct Ui {
     /* orçamento de carga: no máximo um álbum por quadro ganha tags e capa,
        senão rolar a estante trava a cada disco novo */
     int loaded_this_frame;
+
+    /* a tela da conta: ver draw_conta */
+    int  conta_sel;
+    int  conta_campo;         /* que campo o teclado está editando, -1 nenhum */
+    char conta_msg[96];
+    unsigned conta_msg_ate;   /* o recado some sozinho; erro que fica é ruído */
+    LastfmConfig conta_cfg;
+    bool conta_lida;
+    char conta_senha[64];     /* só até o login; nunca vai para o cartão */
 
     Playlist *plists;
     int nplists;
@@ -1335,6 +1347,171 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
     text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt);
 }
 
+/* ---------- a conta ----------
+
+   Por que esta tela existe: o last.fm estava implementado inteiro e era
+   INALCANÇÁVEL. A fila enchia no cartão e nunca subia, porque configurar a
+   conta pedia editar um arquivo de texto num PC — num app que roda num
+   aparelho de mão, com teclado de sistema disponível, isso é o mesmo que o
+   recurso não existir.
+
+   As chaves de API são da PESSOA, não deste app: o last.fm dá uma de graça
+   em last.fm/api/account/create, e uma chave embutida no VPK seria de todos
+   os usuários ao mesmo tempo, com a mesma cota. São duas colagens, uma vez
+   na vida. A senha é digitada, usada na hora e esquecida — o que fica no
+   cartão é a chave de sessão, revogável no site. */
+
+enum { CC_KEY = 0, CC_SECRET, CC_USER, CC_ENTRAR, CC_SAIR, CC_N };
+
+/* Mostra o começo e o fim e come o meio: dá para conferir que a colagem foi
+   a certa sem estampar a credencial inteira na tela de quem estiver ao lado. */
+static void mascara(const char *v, char *out, size_t cap)
+{
+    size_t n = v ? strlen(v) : 0;
+    if (n == 0) { snprintf(out, cap, "(vazio)"); return; }
+    if (n <= 10) { snprintf(out, cap, "%.*s...", (int)(n / 2), v); return; }
+    snprintf(out, cap, "%.4s…%.4s  (%d)", v, v + n - 4, (int)n);
+}
+
+static void conta_diz(Ui *u, const char *msg)
+{
+    snprintf(u->conta_msg, sizeof(u->conta_msg), "%s", msg);
+    u->conta_msg_ate = u->clock + 60 * 8;      /* uns oito segundos */
+}
+
+static void draw_conta(Ui *u, Library *lib, Player *p)
+{
+    (void)lib; (void)p;
+    if (!u->conta_lida) {
+        lastfm_config_load(&u->conta_cfg, STYLUS_DATA_DIR);
+        u->conta_lida = true;
+    }
+    header(u, "CONTA", NULL);
+    {
+        static const Dica d[] = {
+            { BTN_CROSS,    (Btn)-1, "editar" },
+            { BTN_CIRCLE,   (Btn)-1, "confirmar" },
+            { BTN_UPDOWN,   (Btn)-1, "navegar" },
+            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "", d);
+    }
+
+    const LastfmConfig *c = &u->conta_cfg;
+    int fila = lastfm_queue_size(STYLUS_DATA_DIR);
+
+    /* O estado, primeiro e em âmbar: é a pergunta que a pessoa veio fazer. */
+    char est[160];
+    if (c->configured)
+        snprintf(est, sizeof(est), "ligado como %s", c->username);
+    else if (!c->api_key[0] || !c->api_secret[0])
+        snprintf(est, sizeof(est), "falta a chave de API (last.fm/api/account/create)");
+    else
+        snprintf(est, sizeof(est), "chaves prontas — falta entrar");
+    text(u, (int)PAD_X, 118, c->configured ? COL_AMBER : COL_TEXT, 0.66f, est);
+
+    char fl[96];
+    if (fila > 0)
+        snprintf(fl, sizeof(fl), "%d escuta%s guardada%s no cartão%s",
+                 fila, fila == 1 ? "" : "s", fila == 1 ? "" : "s",
+                 c->configured ? " — sobem sozinhas" : " — esperando uma conta");
+    else
+        snprintf(fl, sizeof(fl), "nenhuma escuta esperando");
+    text(u, (int)PAD_X, 140, COL_TEXT_DIM, 0.54f, fl);
+
+    static const char *ROT[CC_N] = {
+        "chave de API", "segredo da API", "usuário", "entrar", "sair da conta"
+    };
+    float y0 = 176.0f, rh = 40.0f;
+    for (int i = 0; i < CC_N; i++) {
+        float y = y0 + i * rh;
+        bool sel = (i == u->conta_sel);
+        if (sel)
+            vita2d_draw_rectangle(PAD_X, y - 4, SCRW - 2 * PAD_X, rh - 8, TINT_SEL_ROW);
+        text(u, (int)PAD_X + 6, (int)(y + 14), sel ? COL_AMBER : COL_TEXT, 0.58f, ROT[i]);
+
+        char val[128];
+        unsigned cor = COL_TEXT_DIM;
+        if (i == CC_KEY)         mascara(c->api_key, val, sizeof(val));
+        else if (i == CC_SECRET) mascara(c->api_secret, val, sizeof(val));
+        else if (i == CC_USER)   snprintf(val, sizeof(val), "%s",
+                                          c->username[0] ? c->username : "(vazio)");
+        else if (i == CC_ENTRAR) {
+            snprintf(val, sizeof(val), "%s",
+                     c->configured ? "já está ligado" : "pede a senha e liga");
+            cor = c->configured ? COL_TEXT_FAINT : COL_AMBER_BRIGHT;
+        } else {
+            snprintf(val, sizeof(val), "%s",
+                     c->configured ? "esquece a chave deste aparelho" : "—");
+            cor = c->configured ? COL_ALARM : COL_TEXT_FAINT;
+        }
+        text_elided(u, (int)(SCRW / 2), (int)(y + 14), cor, 0.54f,
+                    SCRW / 2 - PAD_X, val);
+    }
+
+    if (u->conta_msg[0] && u->clock < u->conta_msg_ate)
+        text(u, (int)PAD_X, FOOT_Y, COL_AMBER, 0.56f, u->conta_msg);
+    else
+        text(u, (int)PAD_X, FOOT_Y, COL_TEXT_FAINT, 0.52f,
+             "a escuta é guardada mesmo sem conta — nada se perde aqui");
+}
+
+/* O teclado devolveu texto: guarda onde for e, se for o caso, entra.
+
+   Roda no laço de desenho porque é ali que o resultado aparece — mas o
+   LOGIN fala com a internet, e por isso ele não é chamado daqui: quem chama
+   é a linha de baixo, depois de a tela já ter dito "entrando...". Sem isso a
+   pessoa aperta e o aparelho fica alguns segundos parecendo travado. */
+static void conta_recebeu(Ui *u, int campo, const char *txt)
+{
+    LastfmConfig *c = &u->conta_cfg;
+    /* O `%.*s` com a precisão do destino não é enfeite: sem ele o compilador
+       acusa truncamento, e ele tem razão — o teclado aceita mais caracteres
+       do que qualquer destes campos guarda. Cortar é o comportamento certo
+       (uma chave de API tem 32 caracteres), mas cortar EM SILÊNCIO no meio
+       de um snprintf genérico é como se perde um conserto. */
+    if (campo == CC_KEY) {
+        snprintf(c->api_key, sizeof(c->api_key), "%.*s",
+                 (int)sizeof(c->api_key) - 1, txt);
+        lastfm_config_save(c, STYLUS_DATA_DIR);
+        conta_diz(u, "chave de API guardada");
+    } else if (campo == CC_SECRET) {
+        snprintf(c->api_secret, sizeof(c->api_secret), "%.*s",
+                 (int)sizeof(c->api_secret) - 1, txt);
+        lastfm_config_save(c, STYLUS_DATA_DIR);
+        conta_diz(u, "segredo guardado");
+    } else if (campo == CC_USER) {
+        snprintf(c->username, sizeof(c->username), "%.*s",
+                 (int)sizeof(c->username) - 1, txt);
+        lastfm_config_save(c, STYLUS_DATA_DIR);
+        conta_diz(u, "usuário guardado");
+    } else if (campo == CC_ENTRAR) {
+        snprintf(u->conta_senha, sizeof(u->conta_senha), "%.*s",
+                 (int)sizeof(u->conta_senha) - 1, txt);
+        conta_diz(u, "entrando…");
+    }
+}
+
+/* A tentativa de login de verdade. Separada para acontecer um quadro DEPOIS
+   de o "entrando…" já ter sido pintado. */
+static void conta_tenta_entrar(Ui *u)
+{
+    LastfmConfig *c = &u->conta_cfg;
+    int r = lastfm_login(c, c->username, u->conta_senha);
+    /* A senha sai da memória assim que a chamada volta, dando certo ou não. */
+    memset(u->conta_senha, 0, sizeof(u->conta_senha));
+
+    if (r == 0) {
+        lastfm_config_save(c, STYLUS_DATA_DIR);
+        conta_diz(u, "entrou — a fila sobe sozinha daqui em diante");
+        lastfm_sync_async(STYLUS_DATA_DIR);
+    } else if (r == -2) conta_diz(u, "ponha a chave e o segredo da API antes");
+    else if (r == -3)   conta_diz(u, "sem rede: ligue o Wi-Fi e tente de novo");
+    else if (r == -4)   conta_diz(u, "o last.fm recusou o usuário ou a senha");
+    else                conta_diz(u, "faltou o usuário");
+}
+
 static void draw_playlists(Ui *u, Library *lib, Player *p)
 {
     (void)lib; (void)p;
@@ -1347,6 +1524,7 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
             { BTN_UPDOWN,   (Btn)-1, "navegar" },
             { BTN_SQUARE,   (Btn)-1, "salva o que toca" },
             { BTN_SEL,      (Btn)-1, "apaga (2x)" },
+            { BTN_R1,       (Btn)-1, "conta" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
@@ -1609,8 +1787,12 @@ int ui_frame(Ui *u, Library *lib, Player *p)
     else if (u->view == VIEW_DECK)  draw_deck(u, lib, p);
     else if (u->view == VIEW_RECS)  draw_recs(u, lib, p);
     else if (u->view == VIEW_HANDOFF) draw_handoff(u, lib, p);
+    else if (u->view == VIEW_CONTA) draw_conta(u, lib, p);
     else                            draw_playlists(u, lib, p);
 
+    /* O teclado do sistema pinta DEPOIS de tudo, senão fica atrás da tela.
+       Chamada em todo quadro, tenha ou não caixa aberta. */
+    ime_desenhar();
     vita2d_end_drawing();
     vita2d_swap_buffers();
     return 0;
@@ -1694,6 +1876,25 @@ int ui_handle_input(Ui *u)
     static int r1_usado = 0;
     if (edge & SCE_CTRL_R1) r1_usado = 0;
 
+    /* Com o teclado do sistema na frente, ele é o dono da entrada. Sem esta
+       porta, o [X] que confirma o texto ALSO confirmava a faixa marcada
+       atrás, e o [O] que cancela saía da tela junto — a pessoa digitava uma
+       chave de API e voltava para a estante com um disco tocando.
+
+       O `prev` já foi atualizado lá em cima, então nada fica "preso": ao
+       fechar o teclado, o próximo quadro vê os botões no estado real. */
+    if (ime_aberto()) {
+        char txt[256];
+        int r = ime_poll(txt, sizeof(txt));
+        if (r == 1 && u->conta_campo >= 0) conta_recebeu(u, u->conta_campo, txt);
+        if (r != 0) u->conta_campo = -1;
+        memset(txt, 0, sizeof(txt));   /* pode ter sido uma senha */
+        return 0;
+    }
+    /* O login foi pedido no quadro passado e o "entrando…" já apareceu: é
+       agora que se fala com a internet. Ver conta_tenta_entrar. */
+    if (u->conta_senha[0]) { conta_tenta_entrar(u); return 0; }
+
     touch_read(u);
 
     /* No repouso, QUALQUER coisa acorda e nada mais acontece: senão a tecla
@@ -1760,7 +1961,7 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_CIRCLE)   { u->view = VIEW_DECK; action = 12; }
         if (edge & SCE_CTRL_SQUARE)   action = 13;
         if (edge & SCE_CTRL_L1) { u->view = VIEW_RECS; action = 8; }
-        if (edge & SCE_CTRL_R1) { u->view = VIEW_SHELF; action = 10; }
+        if (edge & SCE_CTRL_R1) { u->view = VIEW_CONTA; action = 0; }
         /* Apagar era [R2]. O Vita NÃO TEM R2 — nem L2: o hardware tem quatro
            gatilhos de menos, e o sceCtrlPeekBufferPositive nunca põe esse bit.
            A tecla estava escrita no rodapé e não existia em aparelho nenhum. */
@@ -1770,6 +1971,43 @@ int ui_handle_input(Ui *u)
         }
         /* qualquer outra tecla desarma: confirmar tem que exigir a MESMA */
         if (armed_before && action && action != 17) u->pl_armed = false;
+    } else if (u->view == VIEW_CONTA) {
+        if (edge & SCE_CTRL_UP)   { if (--u->conta_sel < 0) u->conta_sel = CC_N - 1; action = 1; }
+        if (edge & SCE_CTRL_DOWN) { if (++u->conta_sel >= CC_N) u->conta_sel = 0; action = 1; }
+        if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
+        if (edge & SCE_CTRL_L1) { u->view = VIEW_PLAYLISTS; action = 9; }
+        if (edge & SCE_CTRL_R1) { u->view = VIEW_SHELF; action = 10; }
+        if (edge & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE)) {
+            LastfmConfig *cf = &u->conta_cfg;
+            int i = u->conta_sel;
+            if (i == CC_ENTRAR) {
+                if (!cf->api_key[0] || !cf->api_secret[0])
+                    conta_diz(u, "ponha a chave e o segredo da API antes");
+                else if (!cf->username[0])
+                    conta_diz(u, "ponha o usuário antes");
+                else if (ime_abrir("senha do last.fm", "", 63, true) == 0)
+                    u->conta_campo = CC_ENTRAR;
+            } else if (i == CC_SAIR) {
+                if (cf->configured) {
+                    /* Só a chave de sessão vai embora. As chaves de API
+                       ficam: são da pessoa, custaram uma visita ao site, e
+                       apagá-las junto transformaria "sair" em "recomeçar do
+                       zero". A FILA também fica — sair de uma conta não é
+                       motivo para jogar escuta fora. */
+                    cf->sk[0] = '\0';
+                    cf->configured = false;
+                    lastfm_config_save(cf, STYLUS_DATA_DIR);
+                    conta_diz(u, "saiu — a escuta continua sendo guardada");
+                }
+            } else {
+                static const char *TIT[] = { "chave de API do last.fm",
+                                             "segredo da API", "usuário do last.fm" };
+                const char *ini = i == CC_KEY ? cf->api_key
+                                : i == CC_SECRET ? cf->api_secret : cf->username;
+                if (ime_abrir(TIT[i], ini, 100, i == CC_SECRET) == 0)
+                    u->conta_campo = i;
+            }
+        }
     } else if (u->view == VIEW_HANDOFF) {
         if (edge & (SCE_CTRL_TRIANGLE | SCE_CTRL_CIRCLE | SCE_CTRL_CROSS)) {
             u->view = VIEW_DECK;

@@ -69,6 +69,7 @@ typedef struct {
     ScanRoot roots[MAX_ROOTS];
     int nroots;
     bool roots_from_config;   /* vieram do roots.txt, não dos palpites */
+    bool roots_discovered;    /* achadas procurando, porque os palpites falharam */
     int files_seen;
     int dirs_seen;
     int audio_found;
@@ -86,6 +87,16 @@ int  library_default_roots(const char **out, int max);
 /* Lê `<cfg_dir>/roots.txt` se existir; senão põe os palpites. */
 void library_roots_from(Library *lib, const char *cfg_dir);
 void library_set_progress(Library *lib, void (*fn)(void *, const char *, int), void *ud);
+
+/* Procura música nos dispositivos quando os palpites não acharam nada:
+   olha as pastas de 1º nível de ux0:/uma0:/imc0:/xmc0:/ur0: e adota como
+   raiz toda que tenha áudio dentro. Devolve quantas achou.
+
+   É o que faz o app funcionar sem ninguém configurar nada — a pessoa pôs a
+   música em `ux0:Musicas` e o app acha, em vez de dizer "ux0:music não
+   existe" e ficar por isso mesmo. Chamada de dentro do library_scan; é
+   pública para o teste de host poder exercitá-la contra uma árvore falsa. */
+int  library_discover(Library *lib);
 
 int  library_scan(Library *lib);
 void library_free(Library *lib);

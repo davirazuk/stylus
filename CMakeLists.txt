@@ -17,7 +17,14 @@ set(VITA_VERSION  "01.00")
 set(VITA_TITLE  "Stylus")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2 -ffunction-sections -fdata-sections")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
+# max-page-size=8192: a área SCE (module info + tabelas de import) é gravada
+# na folga entre o fim do segmento de código e o início do de dados, e essa
+# folga não passa do alinhamento de segmento. Com 4096 o teto era 4096 — e ao
+# ganhar rede (SceNet, SceNetCtl, SceHttp, SceSsl) e teclado (SceIme) as
+# tabelas passaram a pedir 4948 bytes. Não era questão de regular o
+# enchimento: NÃO CABIA, em nenhum ajuste. Dobrar a página dobra o teto.
+# Custo: no máximo 4 KB a mais de imagem. Ver src/segpad.c.
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections -Wl,-z,max-page-size=8192")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 # o opusfile.h faz #include <opus_multistream.h> sem o prefixo da pasta
@@ -35,9 +42,14 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/playlist.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/rec.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/scrobble.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/lastfm.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/md5.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/net.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/resume.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/fsutil.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ui_layout.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/ime.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/segpad.c
 )
 
 # A ordem importa num link estático: quem usa vem ANTES de quem fornece.
@@ -66,6 +78,7 @@ target_link_libraries(${PROJECT_NAME}
   ScePgf_stub
   ScePvf_stub
   SceSysmodule_stub
+  SceIme_stub
   SceAppUtil_stub
   SceAppMgr_stub
   SceJpeg_stub

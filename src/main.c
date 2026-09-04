@@ -20,6 +20,7 @@
 #include "scrobble.h"
 #include "resume.h"
 #include "decoder.h"
+#include "lastfm.h"
 #include "sides.h"
 
 /* recomendações e playlists moram no cartão, junto do app — os caminhos são
@@ -114,7 +115,15 @@ static void drain_done(Session *s)
         s->done_tail = (s->done_tail + 1) % DONE_Q;
         if (!t) continue;
         rec_play(&s->rec, t->path, REC_HISTORY_BASE);
-        scrobble_log(REC_HISTORY_BASE, t, (long)time(NULL));
+        long agora = (long)time(NULL);
+        scrobble_log(REC_HISTORY_BASE, t, agora);
+        /* Camada last.fm. A ordem importa: ENFILEIRA primeiro, sempre, e só
+           depois tenta subir. A escuta fica no cartão antes de qualquer coisa
+           poder dar errado — sem rede, sem conta, ou com a bateria acabando
+           no meio do envio, ela continua lá e sai na próxima vez. */
+        lastfm_enqueue(REC_HISTORY_BASE, t, agora,
+                       t->seconds > 0 ? t->seconds : 0);
+        lastfm_sync_async(REC_HISTORY_BASE);
         s->dirty_recs = true;
     }
 }
@@ -242,6 +251,10 @@ int main(int argc, char *argv[])
     memset(&ses, 0, sizeof(ses));
     playlist_load_dir(&ses.plists, &ses.nplists, PLAYLIST_DIR);
     rec_load(&ses.rec, REC_HISTORY_BASE);
+
+    /* A fila que sobrou de quando não havia rede sai agora, atrás do
+       arranque. Não trava nada: volta na hora se estiver vazia. */
+    lastfm_sync_async(REC_HISTORY_BASE);
     recs_rebuild(&ses, &lib);
 
     Ui *ui = boot;
