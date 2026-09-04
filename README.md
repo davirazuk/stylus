@@ -12,7 +12,24 @@ vez de imprimir a qualidade do arquivo e deixar você achar que ouviu aquilo.
 
 ## Instalar
 
-1. Copie `vitastylus.vpk` para o cartão.
+Com o SD2VITA plugado no PC, um comando faz tudo:
+
+```sh
+./tools/pro-cartao.sh                 # constrói, confere, copia
+./tools/pro-cartao.sh --capas         # e leva as capas que faltam
+```
+
+Ele **confere que os PNG do `sce_sys` estão em paleta de 8 bits** antes de
+copiar — sem isso o instalador recusa com `0x8010113D` e você só descobre no
+aparelho. Também diz onde o app vai procurar música e quanto há lá. Não
+encosta em `ux0:tai/` nem no plugin.
+
+Depois, no Vita: instale `ux0:vitastylus.vpk` pelo VitaShell. O `TITLE_ID`
+não muda, então instala por cima da versão anterior.
+
+Na mão, se preferir:
+
+1. Copie `build/vitastylus.vpk` para o cartão.
 2. Instale pelo VitaShell.
 3. Ponha a música em `ux0:music/Artista/Álbum/*.mp3`.
 
