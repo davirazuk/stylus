@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "fsutil.h"
 #include "paths.h"
 #include "ui_layout.h"
 #include "sides.h"
@@ -773,13 +774,60 @@ static void shelf_empty(Ui *u, Library *lib)
     int y = 218;
     for (int i = 0; i < lib->nroots && i < 6; i++) {
         char line[MAX_PATH_LEN + 32];
-        snprintf(line, sizeof(line), "%s   %s", lib->roots[i].path,
-                 lib->roots[i].opened ? "(abriu)" : "(não existe)");
+        /* NÃO diz "não existe" sem saber: "não existe" e "sem permissão"
+           pedem consertos opostos, e a tela mandava procurar a pasta que já
+           estava lá. Agora mostra o que o sistema respondeu, com o código —
+           que é o que dá para me repassar quando nada mais explica. */
+        if (lib->roots[i].opened)
+            snprintf(line, sizeof(line), "%s   (abriu)", lib->roots[i].path);
+        else
+            snprintf(line, sizeof(line), "%s   %s  [0x%08X]",
+                     lib->roots[i].path, scan_err_str(lib->roots[i].err),
+                     (unsigned)lib->roots[i].err);
         text_elided(u, (int)PAD_X + 12, y, lib->roots[i].opened ? COL_TEXT : COL_TEXT_FAINT,
                     0.54f, SCRW - 2 * PAD_X - 12, line);
         y += 22;
     }
-    y += 14;
+    /* A PERGUNTA DECISIVA, respondida na tela: o DISPOSITIVO abre?
+
+       Se `ux0:` abre e `ux0:music` não, a pasta é que não está lá. Se nem
+       `ux0:` abre, o problema não tem nada a ver com música — é o caminho
+       inteiro, e nenhuma mudança de pasta conserta. As duas coisas se
+       parecem na tela ("não achou nada") e pedem consertos que não têm
+       relação, então a tela passa a separá-las.
+
+       E LISTA o que viu ali: se o app enxerga "app", "data", "music" na
+       raiz, a pasta existe e o problema é outro. */
+    y += 12;
+    {
+        int e = 0;
+        DirIter *dev = dir_open_err("ux0:", &e);
+        if (!dev) {
+            char l[160];
+            snprintf(l, sizeof(l), "ux0: (o cartão) tambem NAO abre: %s  [0x%08X]",
+                     scan_err_str(e), (unsigned)e);
+            text_elided(u, (int)PAD_X, y, COL_ALARM, 0.55f, SCRW - 2 * PAD_X, l);
+            y += 22;
+        } else {
+            char l[420];
+            size_t n = (size_t)snprintf(l, sizeof(l), "ux0: abre, e tem: ");
+            const char *nome;
+            int isdir, vistos = 0;
+            while (vistos < 8 && dir_next(dev, &nome, &isdir)) {
+                if (nome[0] == '.') continue;
+                n += (size_t)snprintf(l + n, sizeof(l) - n, "%s%s",
+                                      vistos ? ", " : "", nome);
+                vistos++;
+                if (n > sizeof(l) - 40) break;
+            }
+            if (!vistos) snprintf(l, sizeof(l), "ux0: abre, mas esta VAZIO");
+            dir_close(dev);
+            text_elided(u, (int)PAD_X, y, COL_TEXT, 0.55f, SCRW - 2 * PAD_X, l);
+            y += 22;
+        }
+    }
+
+    y += 8;
     text(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f,
          "ponha a música em ux0:music/Artista/Album/*.mp3 — ou escreva as suas");
     /* o caminho vem do paths.h: é ESTA linha que a pessoa vai digitar quando

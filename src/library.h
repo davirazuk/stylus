@@ -57,6 +57,7 @@ struct Album {
 typedef struct {
     char path[MAX_PATH_LEN];
     bool opened;      /* o diretório abriu */
+    int  err;         /* o que o sistema disse quando NÃO abriu (0 = abriu) */
     int  audio;       /* arquivos de áudio achados aqui */
     int  other;       /* arquivos ignorados (extensão desconhecida) */
 } ScanRoot;
@@ -106,6 +107,9 @@ void library_status(const Library *lib, char *out, size_t cap);
 
    É pequeno, roda uma vez por arranque, e nunca falha o arranque. */
 void library_report(const Library *lib, const char *path);
+
+/* O que o sistema disse, em palavra. Devolve "" quando abriu. */
+const char *scan_err_str(int err);
 
 /* Lê as tags (título, número, duração) do álbum. Caro: uma abertura de arquivo
    por faixa. NÃO reordena — a ordem sai do nome do arquivo na varredura, e

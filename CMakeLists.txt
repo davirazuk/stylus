@@ -11,10 +11,10 @@ endif()
 project(vitastylus C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "STYLUS Vinil")
+set(VITA_APP_NAME "Stylus Vinil")
 set(VITA_TITLEID  "STYS00001")
 set(VITA_VERSION  "01.00")
-set(VITA_TITLE  "STYLUS")
+set(VITA_TITLE  "Stylus")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2 -ffunction-sections -fdata-sections")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")

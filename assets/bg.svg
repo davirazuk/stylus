@@ -1,37 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fundo da LiveArea (840x500). Discreto de propósito: os quadros do
-     template.xml ficam por cima, e um fundo que compete com eles só faz o
-     texto sumir. -->
+<!-- Fundo da LiveArea (840x500).
+
+     No estilo `a1` o portão aparece CENTRADO, então o meio tem que ficar
+     calmo — um fundo que compete com o botão só faz o botão sumir. O peso
+     vai para a direita, e a esquerda fica respirando.
+
+     A versão anterior era o disco e mais nada, chapado. Aqui há profundidade:
+     o prato inteiro com braço, um brilho quente atrás, e o vinheteamento nas
+     bordas que empurra o olho para o centro. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="840" height="500" viewBox="0 0 840 500">
   <defs>
-    <linearGradient id="chao" x1="0" y1="0" x2="0.3" y2="1">
-      <stop offset="0" stop-color="#161C29"/>
-      <stop offset="1" stop-color="#05070C"/>
+    <linearGradient id="chao" x1="0.05" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#1B2231"/>
+      <stop offset="0.55" stop-color="#0B0F17"/>
+      <stop offset="1" stop-color="#04060A"/>
     </linearGradient>
     <radialGradient id="brilho" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#FFAA28" stop-opacity="0.10"/>
+      <stop offset="0" stop-color="#FFAA28" stop-opacity="0.16"/>
+      <stop offset="0.6" stop-color="#FFAA28" stop-opacity="0.05"/>
       <stop offset="1" stop-color="#FFAA28" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="rotulo" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="#FFD08A" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#C97F14" stop-opacity="0.45"/>
+    <linearGradient id="aro" x1="0.1" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#FFE3AE" stop-opacity="0.85"/>
+      <stop offset="0.45" stop-color="#FFAA28" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#8A5410" stop-opacity="0.5"/>
     </linearGradient>
+    <radialGradient id="lab" cx="36%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#FFE3AE" stop-opacity="0.75"/>
+      <stop offset="0.6" stop-color="#FFAA28" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#B0700F" stop-opacity="0.5"/>
+    </radialGradient>
+    <radialGradient id="vinheta" cx="50%" cy="50%" r="72%">
+      <stop offset="0.55" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.55"/>
+    </radialGradient>
   </defs>
 
   <rect width="840" height="500" fill="url(#chao)"/>
-  <circle cx="700" cy="300" r="330" fill="url(#brilho)"/>
+  <circle cx="655" cy="270" r="360" fill="url(#brilho)"/>
 
-  <g transform="translate(700,300)">
-    <circle r="250" fill="#080B11" fill-opacity="0.9"/>
-    <circle r="250" fill="none" stroke="#FFAA28" stroke-opacity="0.26" stroke-width="2.5"/>
-    <g fill="none" stroke="#FFAA28" stroke-opacity="0.10" stroke-width="1.6">
-      <circle r="228"/><circle r="204"/><circle r="180"/><circle r="156"/>
-      <circle r="132"/><circle r="108"/>
+  <g transform="translate(655,270)">
+    <circle r="232" fill="#080B11"/>
+    <circle r="232" fill="none" stroke="url(#aro)" stroke-width="4"/>
+    <g fill="none" stroke="#FFAA28" stroke-opacity="0.13" stroke-width="1.8">
+      <circle r="212"/><circle r="190"/><circle r="168"/><circle r="146"/>
+      <circle r="124"/><circle r="102"/>
     </g>
-    <circle r="82" fill="url(#rotulo)"/>
-    <circle r="82" fill="none" stroke="#FFC56B" stroke-opacity="0.4" stroke-width="1.6"/>
-    <circle r="11" fill="#05070C"/>
+    <circle r="76" fill="url(#lab)"/>
+    <circle r="76" fill="none" stroke="#FFE3AE" stroke-opacity="0.35" stroke-width="1.6"/>
+    <circle r="10" fill="#04060A"/>
   </g>
 
-  <rect x="0" y="0" width="840" height="3" fill="#FFAA28" fill-opacity="0.45"/>
+  <!-- o braço, entrando por cima e à direita -->
+  <g stroke-linecap="round" opacity="0.85">
+    <line x1="812" y1="52" x2="742" y2="150" stroke="#04060A" stroke-width="24"/>
+    <line x1="812" y1="52" x2="754" y2="134" stroke="#FFC56B" stroke-opacity="0.85" stroke-width="8"/>
+    <line x1="754" y1="134" x2="722" y2="180" stroke="#FFAA28" stroke-opacity="0.75" stroke-width="19"/>
+    <circle cx="812" cy="52" r="18" fill="#0A0D14" stroke="#FFAA28" stroke-opacity="0.7" stroke-width="6"/>
+  </g>
+
+  <rect width="840" height="500" fill="url(#vinheta)"/>
+  <rect x="0" y="0" width="840" height="3" fill="#FFAA28" fill-opacity="0.5"/>
 </svg>

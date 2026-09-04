@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 size_t path_join(char *out, size_t cap, const char *parent, const char *child)
 {
@@ -81,6 +82,9 @@ int mkdir_p(const char *path)
 
 /* ---- percorrer uma pasta (ver a nota grande no fsutil.h) ---- */
 
+DirIter *dir_open(const char *path) { return dir_open_err(path, NULL); }
+
+
 #ifdef __vita__
 
 #include <psp2/io/dirent.h>
@@ -91,11 +95,12 @@ struct DirIter {
     SceIoDirent ent;
 };
 
-DirIter *dir_open(const char *path)
+DirIter *dir_open_err(const char *path, int *err)
 {
+    if (err) *err = 0;
     if (!path || !*path) return NULL;
     SceUID fd = sceIoDopen(path);
-    if (fd < 0) return NULL;
+    if (fd < 0) { if (err) *err = (int)fd; return NULL; }
     DirIter *it = calloc(1, sizeof(*it));
     if (!it) { sceIoDclose(fd); return NULL; }
     it->fd = fd;
@@ -128,11 +133,12 @@ struct DirIter {
     char base[1024];
 };
 
-DirIter *dir_open(const char *path)
+DirIter *dir_open_err(const char *path, int *err)
 {
+    if (err) *err = 0;
     if (!path || !*path) return NULL;
     DIR *d = opendir(path);
-    if (!d) return NULL;
+    if (!d) { if (err) *err = errno; return NULL; }
     DirIter *it = calloc(1, sizeof(*it));
     if (!it) { closedir(d); return NULL; }
     it->d = d;

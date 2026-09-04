@@ -295,8 +295,16 @@ static void scan_dir(Library *lib, int root_idx, const char *abs, const char *re
     /* dir_open, não opendir: no aparelho o opendir devolveu NULL para
        "ux0:music" nas três formas, e a API do sistema não tem essa dúvida.
        Ver a nota grande no fsutil.h. */
-    DirIter *d = dir_open(abs);
-    if (!d) return;
+    int erro = 0;
+    DirIter *d = dir_open_err(abs, &erro);
+    if (!d) {
+        /* guarda o motivo NA RAIZ, não numa subpasta qualquer: é a raiz que
+           a tela mostra, e uma subpasta que some no meio da varredura não é
+           a mesma história que a raiz não abrir */
+        if (depth == 0 && root_idx >= 0 && root_idx < lib->nroots)
+            lib->roots[root_idx].err = erro;
+        return;
+    }
     lib->dirs_seen++;
     if (lib->progress && (lib->dirs_seen % 8) == 0)
         lib->progress(lib->progress_ud, abs, lib->files_seen);
@@ -445,6 +453,31 @@ int library_scan(Library *lib)
     return 0;
 }
 
+/* Os códigos que o sceIo* devolve, nos casos que importam aqui.
+
+   "não existe" e "sem permissão" pedem consertos OPOSTOS, e a tela dizia
+   "(não existe)" para os dois — mandando a pessoa procurar a pasta que já
+   está lá. Um número que ninguém sabe ler não serve; o nome, sim. */
+const char *scan_err_str(int err)
+{
+    if (err == 0) return "";
+    switch ((unsigned)err) {
+    case 0x80010002u: return "não existe";
+    case 0x8001000Du: return "sem permissão";
+    case 0x80010013u: return "só leitura";
+    case 0x80010014u: return "dispositivo ocupado";
+    case 0x80010016u: return "caminho inválido";
+    case 0x80010018u: return "não é uma pasta";
+    case 0x8001001Cu: return "sem memória";
+    case 0x80010024u: return "arquivos demais abertos";
+    /* no PC os erros são os do errno, pequenos */
+    case 2:  return "não existe";
+    case 13: return "sem permissão";
+    case 20: return "não é uma pasta";
+    default: return "erro desconhecido";
+    }
+}
+
 void library_report(const Library *lib, const char *path)
 {
     if (!lib || !path) return;
@@ -464,8 +497,12 @@ void library_report(const Library *lib, const char *path)
             lib->roots_from_config ? " (de roots.txt)" : " (padrao)");
     for (int i = 0; i < lib->nroots; i++) {
         const ScanRoot *r = &lib->roots[i];
-        fprintf(f, "  [%c] %-28s audio=%d outros=%d\n",
-                r->opened ? 'x' : ' ', r->path, r->audio, r->other);
+        if (r->opened)
+            fprintf(f, "  [x] %-28s audio=%d outros=%d\n",
+                    r->path, r->audio, r->other);
+        else
+            fprintf(f, "  [ ] %-28s NAO ABRIU: 0x%08X (%s)\n",
+                    r->path, (unsigned)r->err, scan_err_str(r->err));
     }
     fprintf(f, "pastas      %d\n", lib->dirs_seen);
     fprintf(f, "arquivos    %d  (audio %d)\n", lib->files_seen, lib->audio_found);

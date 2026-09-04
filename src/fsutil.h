@@ -48,6 +48,15 @@ int dir_exists(const char *path);
 typedef struct DirIter DirIter;
 
 DirIter *dir_open(const char *path);
+
+/* Igual, mas guarda em `*err` o que o sistema disse quando NÃO abriu.
+
+   Sem isto a tela dizia "(não existe)" para toda pasta que não abrisse —
+   afirmando uma causa que ninguém conferiu. No Vita o sceIoDopen devolve um
+   código: 0x80010002 é "não existe", 0x8001000D é "sem permissão",
+   0x80010013 é "só leitura", e há outros. Saber QUAL transforma adivinhação
+   em conserto. */
+DirIter *dir_open_err(const char *path, int *err);
 /* Próxima entrada. Devolve 0 quando acaba. `*isdir` diz o que é.
    `name` aponta para memória do iterador: vale até a próxima chamada. */
 int      dir_next(DirIter *it, const char **name, int *isdir);
