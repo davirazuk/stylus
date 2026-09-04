@@ -340,6 +340,62 @@ else
     fail "nada encena a cerimônia — ela existe e nunca roda"
 fi
 
+printf '\n\033[1ma arte instala\033[0m\n'
+# O instalador do Vita recusa o VPK com 0x9010113D quando os PNG do sce_sys
+# nao sao paleta de 8 bits — e o icon0 ainda por cima nao pode ter alfa. Ja
+# custou uma tarde, e o pior: o "conserto" documentado por ai (ffmpeg
+# -pix_fmt ya8) produz CINZA, entao o app instalava e o icone ficava sem cor.
+# A conferencia mede as duas coisas de uma vez: formato E se sobrou cor.
+if python3 -c "import PIL" 2>/dev/null; then
+    out=$(python3 - <<'PY'
+from PIL import Image
+import sys
+ruim = []
+for p, alfa_ok in (("sce_sys/icon0.png", False),
+                   ("sce_sys/livearea/contents/bg.png", True),
+                   ("sce_sys/livearea/contents/startup.png", True)):
+    try:
+        im = Image.open(p)
+    except OSError as e:
+        ruim.append(f"{p}: {e}")
+        continue
+    if im.mode != "P":
+        ruim.append(f"{p}: modo {im.mode}, o instalador quer paleta de 8 bits")
+    if not alfa_ok and "transparency" in im.info:
+        ruim.append(f"{p}: tem alfa, e o icon0 nao pode ter")
+    # sobrou cor? um icone que virou cinza tem R==G==B em toda a paleta
+    pal = im.getpalette() or []
+    cores = [tuple(pal[i:i+3]) for i in range(0, len(pal), 3)]
+    if cores and all(c[0] == c[1] == c[2] for c in cores):
+        ruim.append(f"{p}: a paleta e toda cinza — a cor se perdeu na conversao")
+print("\n".join(ruim))
+PY
+)
+    if [ -z "$out" ]; then
+        pass "icon0 e a LiveArea em paleta de 8 bits, com cor, sem alfa indevido"
+    else
+        fail "a arte nao instala como esta" "$out"
+    fi
+else
+    skip "PULA: sem Pillow"
+fi
+
+printf '\n\033[1macento em texto de tela\033[0m\n'
+# "there's a spelling issue in the thing" foi relatado tres vezes e sobreviveu
+# a todas: um "tambem NAO abre" no meio de um diagnostico nao salta aos olhos
+# de quem le o CODIGO, e quem le a TELA nao abre o editor. Revisao manual ja
+# provou que nao pega — por isso e conferencia.
+if command -v python3 >/dev/null 2>&1; then
+    out=$(python3 tools/acentos.py "$SRC"/*.c 2>&1)
+    if [ -z "$out" ]; then
+        pass "nenhuma palavra sem acento no texto que a pessoa le"
+    else
+        fail "palavra sem acento em texto de tela" "$out"
+    fi
+else
+    skip "PULA: sem python3"
+fi
+
 printf '\n\033[1ma area SCE ainda cabe\033[0m\n'
 # O vita-elf-create grava module info + tabelas de import na folga entre o fim
 # do segmento de codigo e o inicio do de dados. Quando nao cabe, o build morre

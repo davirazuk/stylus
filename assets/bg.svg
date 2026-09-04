@@ -1,63 +1,162 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Fundo da LiveArea (840x500).
 
-     No estilo `a1` o portão aparece CENTRADO, então o meio tem que ficar
-     calmo — um fundo que compete com o botão só faz o botão sumir. O peso
-     vai para a direita, e a esquerda fica respirando.
+     A REGRA que manda nesta composição: no estilo `a1` o portão aparece
+     CENTRADO, ocupando 280x158 no meio da tela. Tudo que for importante
+     precisa ficar FORA desse retângulo, senão o botão que a pessoa aperta
+     nasce em cima de um borrão.
 
-     A versão anterior era o disco e mais nada, chapado. Aqui há profundidade:
-     o prato inteiro com braço, um brilho quente atrás, e o vinheteamento nas
-     bordas que empurra o olho para o centro. -->
+     A versão anterior errava justamente isso: o disco estava em (655,270) e
+     o rótulo dourado caía bem na borda direita do portão — duas coisas
+     brilhantes disputando o mesmo pedaço de tela, e as duas perdendo. Aqui o
+     disco desceu e foi para a direita, o rótulo inteiro mora além do portão,
+     e o que sobra sob ele são só os sulcos externos, que são escuros.
+
+     A esquerda também era um vazio de 300 pixels sem motivo. Agora é a
+     ESTANTE — as lombadas dos discos, que é a ideia do app inteiro. Fica em
+     opacidade baixa: é cenário, não assunto. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="840" height="500" viewBox="0 0 840 500">
   <defs>
-    <linearGradient id="chao" x1="0.05" y1="0" x2="0.75" y2="1">
-      <stop offset="0" stop-color="#1B2231"/>
-      <stop offset="0.55" stop-color="#0B0F17"/>
-      <stop offset="1" stop-color="#04060A"/>
+    <linearGradient id="chao" x1="0.05" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#1C2434"/>
+      <stop offset="0.5" stop-color="#0A0E16"/>
+      <stop offset="1" stop-color="#03050A"/>
     </linearGradient>
     <radialGradient id="brilho" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#FFAA28" stop-opacity="0.16"/>
-      <stop offset="0.6" stop-color="#FFAA28" stop-opacity="0.05"/>
+      <stop offset="0" stop-color="#FFAA28" stop-opacity="0.20"/>
+      <stop offset="0.55" stop-color="#FFAA28" stop-opacity="0.06"/>
       <stop offset="1" stop-color="#FFAA28" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="aro" x1="0.1" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#FFE3AE" stop-opacity="0.85"/>
+      <stop offset="0" stop-color="#FFE3AE" stop-opacity="0.9"/>
       <stop offset="0.45" stop-color="#FFAA28" stop-opacity="0.7"/>
-      <stop offset="1" stop-color="#8A5410" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#7A4A0E" stop-opacity="0.45"/>
     </linearGradient>
-    <radialGradient id="lab" cx="36%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#FFE3AE" stop-opacity="0.75"/>
-      <stop offset="0.6" stop-color="#FFAA28" stop-opacity="0.6"/>
-      <stop offset="1" stop-color="#B0700F" stop-opacity="0.5"/>
+    <!-- O rótulo é IMPRESSO, não uma bola de metal: a versão anterior usava
+         um gradiente radial forte e lia como um ovo dourado. Aqui é quase
+         chapado, com um anel interno, que é como papel se comporta. -->
+    <linearGradient id="lab" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#F5C266" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#C98A1E" stop-opacity="0.75"/>
+    </linearGradient>
+    <!-- O brilho especular: uma faixa clara atravessando o disco. É ISTO que
+         faz um círculo preto virar vinil aos olhos; sem ele, é um CD. -->
+    <linearGradient id="lustro" x1="0" y1="0" x2="1" y2="0.6">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.38" stop-color="#CFE0FF" stop-opacity="0.10"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.14"/>
+      <stop offset="0.62" stop-color="#CFE0FF" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="vinheta" cx="50%" cy="50%" r="74%">
+      <stop offset="0.5" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.6"/>
     </radialGradient>
-    <radialGradient id="vinheta" cx="50%" cy="50%" r="72%">
-      <stop offset="0.55" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0.55"/>
+    <!-- Escurece por baixo do portão para o botão ter contraste garantido,
+         não importa o que passe ali atrás. -->
+    <radialGradient id="leito" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#03050A" stop-opacity="0.82"/>
+      <stop offset="0.7" stop-color="#03050A" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#03050A" stop-opacity="0"/>
     </radialGradient>
+    <!-- A capa precisa ser mais clara que o chão, senão o contorno flutua e
+         ela lê como wireframe em vez de objeto. -->
+    <linearGradient id="capa" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#1E2839"/>
+      <stop offset="1" stop-color="#0B1119"/>
+    </linearGradient>
+    <clipPath id="disco"><circle cx="700" cy="292" r="264"/></clipPath>
   </defs>
 
   <rect width="840" height="500" fill="url(#chao)"/>
-  <circle cx="655" cy="270" r="360" fill="url(#brilho)"/>
+  <circle cx="700" cy="292" r="380" fill="url(#brilho)"/>
 
-  <g transform="translate(655,270)">
-    <circle r="232" fill="#080B11"/>
-    <circle r="232" fill="none" stroke="url(#aro)" stroke-width="4"/>
-    <g fill="none" stroke="#FFAA28" stroke-opacity="0.13" stroke-width="1.8">
-      <circle r="212"/><circle r="190"/><circle r="168"/><circle r="146"/>
-      <circle r="124"/><circle r="102"/>
+  <!-- A esquerda.
+
+       Já foi um vazio de 300 px sem motivo, e depois sete lombadas de disco
+       que, em opacidade baixa e nesta escala, liam como um gráfico de barras
+       — pior que o vazio, porque um gráfico num app de música é ruído com
+       cara de informação. A lição: aqui cabe UM objeto reconhecível, não
+       muitos objetos pequenos.
+
+       O objeto é o próximo disco, meio fora da capa, encostado. Diz a mesma
+       coisa que a estante dizia ("há mais de onde esse veio") com uma forma
+       que ninguém confunde com outra coisa. -->
+  <g opacity="0.8">
+    <!-- o disco, atrás: só a metade direita aparece -->
+    <g transform="translate(196,258)">
+      <circle r="63" fill="#080B11"/>
+      <g fill="none" stroke="#FFAA28" stroke-opacity="0.13" stroke-width="1.2">
+        <circle r="56"/><circle r="48"/><circle r="40"/><circle r="32"/>
+      </g>
+      <circle r="63" fill="none" stroke="#FFAA28" stroke-opacity="0.30" stroke-width="1.6"/>
+      <circle r="15" fill="#C98A1E" fill-opacity="0.75"/>
+      <circle r="3" fill="#03050A"/>
     </g>
-    <circle r="76" fill="url(#lab)"/>
-    <circle r="76" fill="none" stroke="#FFE3AE" stroke-opacity="0.35" stroke-width="1.6"/>
-    <circle r="10" fill="#04060A"/>
+    <!-- a capa, na frente, levemente tombada -->
+    <g transform="translate(112,262) rotate(-4)">
+      <rect x="-75" y="-79" width="150" height="158" fill="#03050A" fill-opacity="0.55"/>
+      <rect x="-72" y="-76" width="144" height="152" fill="url(#capa)"
+            stroke="#FFAA28" stroke-opacity="0.3" stroke-width="1.6"/>
+      <rect x="-72" y="-76" width="144" height="3" fill="#FFC56B" fill-opacity="0.22"/>
+      <rect x="-72" y="-76" width="3" height="152" fill="#FFC56B" fill-opacity="0.16"/>
+      <!-- a arte da capa: um anel, o mesmo vocabulário do resto -->
+      <circle cx="0" cy="-8" r="34" fill="none" stroke="#FFAA28" stroke-opacity="0.28" stroke-width="2"/>
+      <circle cx="0" cy="-8" r="9" fill="#FFAA28" fill-opacity="0.22"/>
+      <rect x="-42" y="44" width="84" height="2.5" fill="#FFAA28" fill-opacity="0.3"/>
+      <rect x="-42" y="53" width="52" height="2" fill="#8A93A3" fill-opacity="0.35"/>
+    </g>
+    <!-- o chão em que ela se apoia -->
+    <rect x="20" y="336" width="230" height="5" fill="#1A2334"/>
+    <rect x="20" y="336" width="230" height="2" fill="#FFAA28" fill-opacity="0.22"/>
   </g>
 
-  <!-- o braço, entrando por cima e à direita -->
-  <g stroke-linecap="round" opacity="0.85">
-    <line x1="812" y1="52" x2="742" y2="150" stroke="#04060A" stroke-width="24"/>
-    <line x1="812" y1="52" x2="754" y2="134" stroke="#FFC56B" stroke-opacity="0.85" stroke-width="8"/>
-    <line x1="754" y1="134" x2="722" y2="180" stroke="#FFAA28" stroke-opacity="0.75" stroke-width="19"/>
-    <circle cx="812" cy="52" r="18" fill="#0A0D14" stroke="#FFAA28" stroke-opacity="0.7" stroke-width="6"/>
+  <!-- o disco: entra por baixo e pela direita, cortado de propósito -->
+  <g>
+    <circle cx="700" cy="292" r="264" fill="#070A10"/>
+    <g clip-path="url(#disco)">
+      <g fill="none" stroke="#FFAA28" stroke-opacity="0.10" stroke-width="1.4">
+        <circle cx="700" cy="292" r="248"/><circle cx="700" cy="292" r="234"/>
+        <circle cx="700" cy="292" r="220"/><circle cx="700" cy="292" r="206"/>
+        <circle cx="700" cy="292" r="192"/><circle cx="700" cy="292" r="178"/>
+        <circle cx="700" cy="292" r="164"/><circle cx="700" cy="292" r="150"/>
+        <circle cx="700" cy="292" r="136"/><circle cx="700" cy="292" r="122"/>
+      </g>
+      <!-- o sulco de saída, mais fundo: é onde a agulha termina -->
+      <circle cx="700" cy="292" r="112" fill="none"
+              stroke="#FFAA28" stroke-opacity="0.22" stroke-width="2.2"/>
+      <rect x="436" y="28" width="528" height="528" fill="url(#lustro)"/>
+    </g>
+    <circle cx="700" cy="292" r="264" fill="none" stroke="url(#aro)" stroke-width="3.5"/>
+    <circle cx="700" cy="292" r="58" fill="url(#lab)"/>
+    <circle cx="700" cy="292" r="58" fill="none" stroke="#FFE3AE" stroke-opacity="0.35" stroke-width="1.4"/>
+    <circle cx="700" cy="292" r="42" fill="none" stroke="#7A4A0E" stroke-opacity="0.5" stroke-width="1.1"/>
+    <circle cx="700" cy="292" r="11" fill="#03050A"/>
   </g>
+
+  <!-- O braço. A agulha estava pousada EM CIMA DO RÓTULO — o único lugar do
+       disco onde não há som gravado. Agora ela cai no sulco externo, a uns
+       190 px do centro, que é onde um lado começa. Detalhe pequeno; é o tipo
+       de coisa que quem tem toca-discos vê na hora. -->
+  <g stroke-linecap="round">
+    <!-- contrapeso, atrás do pivô -->
+    <line x1="800" y1="74" x2="826" y2="56" stroke="#03050A" stroke-width="14"/>
+    <circle cx="828" cy="55" r="11" fill="#0A0D14" stroke="#FFAA28" stroke-opacity="0.6" stroke-width="3"/>
+    <!-- o braço, com uma leve quebra antes da concha (braço em S) -->
+    <line x1="800" y1="74" x2="626" y2="122" stroke="#03050A" stroke-width="22" opacity="0.8"/>
+    <line x1="800" y1="74" x2="626" y2="122" stroke="#FFD69A" stroke-opacity="0.85" stroke-width="6"/>
+    <line x1="626" y1="122" x2="592" y2="138" stroke="#FFAA28" stroke-opacity="0.9" stroke-width="14"/>
+    <g transform="translate(588,141) rotate(26)">
+      <rect x="-14" y="-10" width="28" height="21" rx="3"
+            fill="#0A0D14" stroke="#FFAA28" stroke-opacity="0.85" stroke-width="2.2"/>
+      <line x1="0" y1="11" x2="0" y2="20" stroke="#FFE3AE" stroke-opacity="0.95" stroke-width="2.4"/>
+    </g>
+    <circle cx="800" cy="74" r="19" fill="#0A0D14" stroke="#FFAA28" stroke-opacity="0.75" stroke-width="6"/>
+    <circle cx="800" cy="74" r="4" fill="#FFE3AE" fill-opacity="0.7"/>
+  </g>
+
+  <!-- o leito do portão, por último: garante contraste para o botão -->
+  <ellipse cx="420" cy="250" rx="250" ry="150" fill="url(#leito)"/>
 
   <rect width="840" height="500" fill="url(#vinheta)"/>
   <rect x="0" y="0" width="840" height="3" fill="#FFAA28" fill-opacity="0.5"/>

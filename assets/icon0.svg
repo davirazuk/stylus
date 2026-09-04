@@ -1,50 +1,76 @@
-<!-- Ícone do app, 128x128.
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O ícone (128x128).
 
-     O SISTEMA MASCARA EM CÍRCULO, e é isso que manda no desenho: tudo que
-     encosta no canto some. A versão anterior tinha o pivô do braço a 112,17
-     — fora do círculo — e ele era cortado pela metade na bolha.
+     TRÊS COISAS que a versão anterior errava, e que só aparecem quando se
+     olha o ícone no tamanho em que ele é USADO:
 
-     Aqui o disco tem raio 48 (16 px de folga até a borda) e o braço inteiro
-     cabe dentro do raio 60 que a máscara preserva. Conferido gerando o ícone,
-     mascarando em círculo e olhando no tamanho REAL da bolha, ~60 px: a
-     60 px, traço fino e aro fino somem, então o aro é grosso (5,5) e o
-     rótulo é grande.
+     1. Margem morta. O disco tinha raio 48 num quadrado de 128 e o sistema
+        ainda arredonda as bordas por cima — sobrava um anel de nada em volta
+        e o desenho parecia pequeno dentro da própria bolha. Aqui o disco vai
+        a raio 54 e o fundo é pintado até a borda.
 
-     Vinil continua preto — é a identidade do projeto. O que carrega o
-     contraste é o ARO e o rótulo, que é onde a luz pega num disco de
-     verdade. Sem canal alfa: o Vita não aceita alfa no icon0. -->
+     2. Sulcos demais e fortes demais. Seis anéis de alto contraste viram um
+        ALVO DE DARDOS a 40 pixels — e 40 pixels é o tamanho em que este
+        ícone mais aparece. Ficaram três, fracos: o que precisa sobreviver ao
+        tamanho pequeno é a silhueta (círculo escuro + centro dourado +
+        diagonal do braço), não a textura.
+
+     3. O disco estava deslocado para cima e para a esquerda, para abrir
+        espaço ao braço. Num ícone redondo isso lê como erro de alinhamento.
+        Agora o disco é concêntrico e o braço passa POR CIMA dele, que é o
+        que um braço faz de verdade.
+
+     Sem alfa: o instalador exige PNG de paleta 8 bits e o icon0 não pode ter
+     transparência (o tools/icons.sh achata o fundo por isso). -->
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="r" x1="0.1" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#FFE3AE"/><stop offset="0.45" stop-color="#FFAA28"/>
-      <stop offset="1" stop-color="#9A5F0C"/>
+    <linearGradient id="chao" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#1A2231"/>
+      <stop offset="0.6" stop-color="#080C13"/>
+      <stop offset="1" stop-color="#03050A"/>
     </linearGradient>
-    <radialGradient id="bg" cx="32%" cy="24%" r="90%">
-      <stop offset="0" stop-color="#1A2130"/><stop offset="1" stop-color="#05070C"/>
-    </radialGradient>
-    <radialGradient id="lab" cx="36%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#FFE3AE"/><stop offset="0.6" stop-color="#FFAA28"/>
-      <stop offset="1" stop-color="#C07E12"/>
-    </radialGradient>
+    <linearGradient id="aro" x1="0.15" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#FFE3AE"/>
+      <stop offset="0.45" stop-color="#FFAA28"/>
+      <stop offset="1" stop-color="#8A5410"/>
+    </linearGradient>
+    <linearGradient id="lab" x1="0.2" y1="0.1" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#FFE3AE"/>
+      <stop offset="0.55" stop-color="#FFB63F"/>
+      <stop offset="1" stop-color="#C4820F"/>
+    </linearGradient>
+    <linearGradient id="lustro" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.42" stop-color="#DCE8FF" stop-opacity="0.13"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="d"><circle cx="64" cy="64" r="54"/></clipPath>
   </defs>
-  <rect width="128" height="128" fill="url(#bg)"/>
-  <!-- disco centrado; raio 48 deixa 16 px de folga até a borda, então a
-       máscara circular do sistema (que corta os cantos) não encosta nele -->
-  <g transform="translate(64,66)">
-    <circle r="48" fill="#0A0D14" stroke="url(#r)" stroke-width="5.5"/>
-    <g fill="none" stroke="#FFAA28" stroke-opacity="0.40" stroke-width="2.2">
-      <circle r="39"/><circle r="31.5"/><circle r="24"/>
+
+  <rect width="128" height="128" fill="url(#chao)"/>
+
+  <circle cx="64" cy="64" r="54" fill="#070A10"/>
+  <g clip-path="url(#d)">
+    <g fill="none" stroke="#FFAA28" stroke-opacity="0.13" stroke-width="1.5">
+      <circle cx="64" cy="64" r="46"/>
+      <circle cx="64" cy="64" r="37"/>
+      <circle cx="64" cy="64" r="28"/>
     </g>
-    <circle r="15.5" fill="url(#lab)"/>
-    <circle r="3.2" fill="#05070C"/>
+    <rect x="10" y="10" width="108" height="108" fill="url(#lustro)"/>
   </g>
-  <!-- braço INTEIRO dentro do círculo seguro: o pivô a 96,26 fica a 47 px do
-       centro da tela, dentro do raio 60 que a máscara preserva -->
+  <circle cx="64" cy="64" r="54" fill="none" stroke="url(#aro)" stroke-width="5"/>
+  <circle cx="64" cy="64" r="20" fill="url(#lab)"/>
+  <circle cx="64" cy="64" r="20" fill="none" stroke="#FFE3AE" stroke-opacity="0.5" stroke-width="1"/>
+  <circle cx="64" cy="64" r="3.6" fill="#03050A"/>
+
+  <!-- O braço, por cima do disco. O contorno escuro por baixo é o que o
+       mantém legível contra os sulcos a 40 pixels. -->
   <g stroke-linecap="round">
-    <line x1="96" y1="26" x2="80" y2="50" stroke="#05070C" stroke-width="11"/>
-    <line x1="96" y1="26" x2="84" y2="44" stroke="#FFE3AE" stroke-width="4.2"/>
-    <line x1="84" y1="44" x2="77" y2="55" stroke="#FFAA28" stroke-width="9.5"/>
-    <circle cx="96" cy="26" r="8.5" fill="#0A0D14" stroke="#FFAA28" stroke-width="3.2"/>
-    <circle cx="96" cy="26" r="2.6" fill="#FFE3AE"/>
+    <line x1="99" y1="29" x2="72" y2="59" stroke="#03050A" stroke-width="11"/>
+    <line x1="99" y1="29" x2="80" y2="50" stroke="#FFE3AE" stroke-width="4"/>
+    <line x1="80" y1="50" x2="71" y2="60" stroke="#FFAA28" stroke-width="9"/>
+    <circle cx="99" cy="29" r="8.5" fill="#0A0D14" stroke="#FFAA28" stroke-width="3"/>
+    <circle cx="99" cy="29" r="2" fill="#FFE3AE"/>
   </g>
 </svg>

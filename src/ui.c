@@ -816,7 +816,7 @@ static void shelf_empty(Ui *u, Library *lib)
         DirIter *dev = dir_open_err("ux0:", &e);
         if (!dev) {
             char l[160];
-            snprintf(l, sizeof(l), "ux0: (o cartão) tambem NAO abre: %s  [0x%08X]",
+            snprintf(l, sizeof(l), "ux0: (o cartão) também NÃO abre: %s  [0x%08X]",
                      scan_err_str(e), (unsigned)e);
             text_elided(u, (int)PAD_X, y, COL_ALARM, 0.55f, SCRW - 2 * PAD_X, l);
             y += 22;
@@ -832,7 +832,7 @@ static void shelf_empty(Ui *u, Library *lib)
                 vistos++;
                 if (n > sizeof(l) - 40) break;
             }
-            if (!vistos) snprintf(l, sizeof(l), "ux0: abre, mas esta VAZIO");
+            if (!vistos) snprintf(l, sizeof(l), "ux0: abre, mas está VAZIO");
             dir_close(dev);
             text_elided(u, (int)PAD_X, y, COL_TEXT, 0.55f, SCRW - 2 * PAD_X, l);
             y += 22;
