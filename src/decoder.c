@@ -347,6 +347,20 @@ static long wav_read(Decoder *d, void *buf, size_t bytes)
 #define RS_TAPS 32              /* 16 de cada lado */
 #define RS_HALF (RS_TAPS / 2)
 
+/* FASES da tabela polifásica.
+
+   A primeira versão disto avaliava sin() e cos() por amostra e por
+   coeficiente. Numa conta de guardanapo: 44100 saídas x 2 canais x 32
+   coeficientes x 3 transcendentais = 8,4 milhões de chamadas por segundo de
+   áudio. A ~100 ciclos cada, são 847 milhões de ciclos — 1,9x o processador
+   INTEIRO de um Vita de 444 MHz. Tocaria gaguejando, e o teste de host, num
+   PC, jamais acusaria.
+
+   Com a tabela, o caminho quente vira 32 multiplicações-e-soma por canal e
+   nenhuma função transcendental. 256 fases custam 32 KB e deixam o erro de
+   quantização da fase bem abaixo do ruído dos 16 bits — o teste mede. */
+#define RS_PHASES 256
+
 struct Resamp {
     long in_rate, out_rate;
     int channels;
@@ -355,6 +369,7 @@ struct Resamp {
     short *in;                  /* FIFO de entrada, intercalado */
     size_t in_cap, in_len;      /* em QUADROS */
     int eof;
+    float *tab;                 /* RS_PHASES x RS_TAPS, já normalizada */
 };
 
 static double rs_sinc(double x)
@@ -383,6 +398,29 @@ static Resamp *rs_new(long in_rate, long out_rate, int channels)
     r->in_cap = 8192;
     r->in = malloc(r->in_cap * (size_t)channels * sizeof(short));
     if (!r->in) { free(r); return NULL; }
+
+    /* a tabela, uma vez: aqui o sin/cos é caro e não importa */
+    r->tab = malloc((size_t)RS_PHASES * RS_TAPS * sizeof(float));
+    if (!r->tab) { free(r->in); free(r); return NULL; }
+    double corte = out_rate < in_rate ? (double)out_rate / (double)in_rate : 1.0;
+    for (int ph = 0; ph < RS_PHASES; ph++) {
+        double frac = (double)ph / (double)RS_PHASES;
+        float *lin = r->tab + (size_t)ph * RS_TAPS;
+        double soma = 0.0;
+        for (int t = 0; t < RS_TAPS; t++) {
+            int k = t - RS_HALF + 1;
+            double x = (double)k - frac;
+            double w = rs_janela(x / (double)RS_HALF) * rs_sinc(x * corte) * corte;
+            lin[t] = (float)w;
+            soma += w;
+        }
+        /* normaliza a fase: sem isto o ganho oscila com ela e o resultado
+           ganha um zumbido na frequência do passo */
+        if (soma > 1e-9) {
+            float inv = (float)(1.0 / soma);
+            for (int t = 0; t < RS_TAPS; t++) lin[t] *= inv;
+        }
+    }
     /* começa com meia janela de silêncio à esquerda, senão as primeiras
        amostras leem lixo de antes do arquivo */
     memset(r->in, 0, (size_t)RS_HALF * (size_t)channels * sizeof(short));
@@ -395,6 +433,7 @@ static void rs_free(Resamp *r)
 {
     if (!r) return;
     free(r->in);
+    free(r->tab);
     free(r);
 }
 
@@ -431,33 +470,28 @@ static void rs_trim(Resamp *r)
 
 static size_t rs_pull(Resamp *r, short *out, size_t frames)
 {
-    /* corte: no downsample o filtro tem que cortar na saída, senão dobra */
-    double corte = r->out_rate < r->in_rate
-                 ? (double)r->out_rate / (double)r->in_rate : 1.0;
+    const int ch = r->channels;
     size_t feitos = 0;
     while (feitos < frames) {
         double limite = (double)r->in_len - RS_HALF;
         if (r->pos >= limite) break;
         long base = (long)r->pos;
         double frac = r->pos - (double)base;
+        const float *coef = r->tab +
+            (size_t)((int)(frac * RS_PHASES) & (RS_PHASES - 1)) * RS_TAPS;
 
-        for (int c = 0; c < r->channels; c++) {
-            double soma = 0.0, peso = 0.0;
-            for (int k = -RS_HALF + 1; k <= RS_HALF; k++) {
-                long idx = base + k;
+        long i0 = base - RS_HALF + 1;
+        for (int c = 0; c < ch; c++) {
+            float soma = 0.0f;
+            for (int t = 0; t < RS_TAPS; t++) {
+                long idx = i0 + t;
                 if (idx < 0 || (size_t)idx >= r->in_len) continue;
-                double x = (double)k - frac;
-                double w = rs_janela(x / (double)RS_HALF) * rs_sinc(x * corte) * corte;
-                soma += w * (double)r->in[(size_t)idx * (size_t)r->channels + c];
-                peso += w;
+                soma += coef[t] * (float)r->in[(size_t)idx * (size_t)ch + c];
             }
-            /* normaliza pela soma dos pesos: sem isto o ganho oscila com a
-               fase e o resultado ganha um zumbido na frequência do passo */
-            if (peso > 1e-9) soma /= peso;
-            long v = lround(soma);
+            long v = lrintf(soma);
             if (v > 32767) v = 32767;
             if (v < -32768) v = -32768;
-            out[feitos * (size_t)r->channels + c] = (short)v;
+            out[feitos * (size_t)ch + c] = (short)v;
         }
         r->pos += r->step;
         feitos++;
