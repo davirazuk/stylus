@@ -1318,26 +1318,56 @@ static void draw_handoff(Ui *u, Library *lib, Player *p)
 
     const Album *a = player_current_album(p);
     bool tem = plugin_instalado();
+    PlayerSignal sig;
+    player_signal(p, &sig);
+    /* As DUAS condições que decidem, medidas — não prometidas. */
+    bool porta = u->bgm_port_ok;
+    bool taxa  = sig.bgm_port;
 
-    int y = 96;
+    int y = 92;
+    /* Esta tela já afirmou que o Music Premium "destrava o app MÚSICA da
+       Sony, não este VPK". Isso foi escrito quando o app NÃO pedia a porta
+       BGM — e sem pedir, nenhum plugin teria como manter processo nenhum
+       vivo. O autor do plugin anuncia "background music play for ANY game or
+       application", e cita o VitaShell e o ElevenMPV, que são homebrew.
+       Agora que a porta é pedida, a resposta honesta é: não sabemos daqui,
+       dá para saber em dez segundos no aparelho. Então a tela MOSTRA o
+       estado e manda experimentar, em vez de decidir pela pessoa. */
     text(u, (int)PAD_X, y, tem ? COL_AMBER : COL_TEXT_DIM, 0.66f,
          tem ? "Music Premium: instalado"
              : "Music Premium: não achei o plugin");
+    y += 30;
+
+    char lin[160];
+    snprintf(lin, sizeof(lin), "porta BGM pedida no arranque:  %s",
+             porta ? "sim" : "não");
+    text(u, (int)PAD_X, y, porta ? COL_AMBER : COL_ALARM, 0.56f, lin);
+    y += 24;
+    if (sig.rate_out > 0)
+        snprintf(lin, sizeof(lin), "taxa da faixa (<= 47999 Hz):   %s  (%ld Hz)",
+                 taxa ? "sim" : "não", sig.rate_out);
+    else
+        snprintf(lin, sizeof(lin), "taxa da faixa:                  ponha um disco");
+    text(u, (int)PAD_X, y, taxa ? COL_AMBER : COL_TEXT_DIM, 0.56f, lin);
+    y += 32;
+
+    if (tem && porta && taxa) {
+        text_elided(u, (int)PAD_X, y, COL_AMBER, 0.58f, SCRW - 2 * PAD_X,
+            "as duas valem: ENTRE NUM JOGO e veja se o som segue.");
+        y += 24;
+        text_elided(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f, SCRW - 2 * PAD_X,
+            "se seguir, é isto e mais nada. se não, o desvio abaixo funciona sempre.");
+    } else {
+        text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
+            "O Vita suspende qualquer aplicativo que sai da frente. Só a porta");
+        y += 22;
+        text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
+            "BGM, com o plugin de kernel, o impede — e ela pede as duas acima.");
+    }
     y += 34;
 
-    /* A verdade primeiro, e sem rodeio: é limite de plataforma, não de código. */
-    text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
-        "O Vita SUSPENDE qualquer aplicativo que sai da frente — este inclusive.");
-    y += 24;
-    text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
-        "O Music Premium destrava o app MÚSICA da Sony nos jogos, não este VPK.");
-    y += 24;
-    text_elided(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f, SCRW - 2 * PAD_X,
-        "Um homebrew só tocaria por trás sendo ele próprio um plugin de kernel.");
-    y += 38;
-
-    text(u, (int)PAD_X, y, COL_AMBER, 0.60f, "o caminho que funciona hoje:");
-    y += 28;
+    text(u, (int)PAD_X, y, COL_AMBER, 0.60f, "o desvio, que funciona sempre:");
+    y += 26;
     const char *passos[] = {
         "1.  aqui: [start] sai — a faixa e a posição ficam guardadas",
         "2.  abra o app MÚSICA e ponha o mesmo disco (é a MESMA pasta)",
