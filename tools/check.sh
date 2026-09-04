@@ -176,6 +176,30 @@ for k in 'quad' 'tri' 'sel'; do
     fi
 done
 
+printf '\n\033[1mo orçamento de desenho\033[0m\n'
+# No Vita cada vita2d_draw_rectangle vira um sceGxmDraw próprio, e é o NÚMERO
+# de chamadas que custa. Esta máquina não tem como sentir isso — o shim
+# rasteriza em C —, então conta. A estante já emitiu 21 mil por quadro sem
+# nada acusar, porque no PC "funcionava".
+if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_PKGS 2>/dev/null; then
+    out=$(gcc -std=gnu11 -I"$SRC" -Itests/hostgfx/include -o /tmp/vitastylus_desenho \
+          tests/desenho_test.c tests/hostgfx/vita2d_host.c tests/hostgfx/player_stub.c \
+          "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
+          "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
+          "$SRC"/playlist.c "$SRC"/scrobble.c \
+          $(pkg-config --cflags --libs freetype2 libpng $DEC_PKGS) -ljpeg -lm 2>&1) || true
+    if [ ! -x /tmp/vitastylus_desenho ]; then
+        fail "o teste de desenho não compila" "$out"
+    elif /tmp/vitastylus_desenho "${STYLUS_MUSICA:-$HOME/staging-vita/vita-mp3}" \
+         >/tmp/vitastylus_desenho.out 2>&1; then
+        pass "$(grep -c '✓' /tmp/vitastylus_desenho.out) tela(s) dentro do orçamento de desenho"
+    else
+        fail "desenho acima do teto" "$(cat /tmp/vitastylus_desenho.out)"
+    fi
+else
+    skip "PULA: sem gcc ou sem as bibliotecas"
+fi
+
 printf '\n\033[1mos atalhos levam aonde prometem\033[0m\n'
 # Atalho anunciado no rodapé e inalcançável é a pior espécie de defeito: a
 # tela promete e o aparelho não cumpre. Aconteceu com as TRÊS combinações com
