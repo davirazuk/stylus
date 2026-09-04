@@ -1454,31 +1454,48 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
         header_hints(u, "", d);
     }
 
-    text_elided(u, (int)tx, 126, COL_AMBER, 0.72f, tw, a->artist[0] ? a->artist : "—");
-    text_elided(u, (int)tx, 168, COL_TEXT, 1.00f, tw, a->album);
+    /* A HIERARQUIA DA COLUNA. Ela estava invertida: o NOME DA PASTA era a
+       maior coisa da tela (escala 1,00) e o nome da faixa que está tocando
+       AGORA vinha depois, menor (0,66). Numa coleção onde a pasta se chama
+       "1993-04-02 - Radiohead - Tel Aviv, Roxanne", isso é o equivalente a
+       imprimir o número de catálogo em cima da capa.
 
-    /* O LADO. É a tese do sistema e o tocador do Vita não a tinha: um álbum
-       aqui era uma fila de arquivos, como em qualquer outro tocador. */
+       A ordem agora é a de quem está ouvindo: quem toca (o artista) e ONDE
+       no objeto (o lado) na primeira linha, o QUE está soando em seguida e
+       grande, e o disco de onde ele veio embaixo, menor. O lado sobe para a
+       linha do artista porque ele qualifica o mesmo assunto — "Radiohead,
+       disco 1, lado A" é uma frase só — e porque assim sobra altura para o
+       título da faixa ser grande de verdade. */
     int lado = -1;
     if (a->lados.n > 0) lado = sides_of_track(&a->lados, player_track_idx(p));
-    if (lado >= 0) {
-        char rot[12], linha[96];
-        sides_label(&a->lados, lado, rot, sizeof(rot));
-        if (a->lados.discos > 1)
-            snprintf(linha, sizeof(linha), "DISCO %d  ·  %s", lado / 2 + 1, rot);
-        else
-            snprintf(linha, sizeof(linha), "%s", rot);
-        text(u, (int)tx, 194, COL_AMBER, 0.56f, linha);
+    {
+        /* cabe o artista inteiro (MAX_NAME_LEN) mais o rótulo do lado */
+        char topo[MAX_NAME_LEN + 64], rot[12];
+        snprintf(topo, sizeof(topo), "%s", a->artist[0] ? a->artist : "—");
+        if (lado >= 0) {
+            sides_label(&a->lados, lado, rot, sizeof(rot));
+            size_t k = strlen(topo);
+            if (a->lados.discos > 1)
+                snprintf(topo + k, sizeof(topo) - k, "   ·   DISCO %d  ·  %s",
+                         lado / 2 + 1, rot);
+            else
+                snprintf(topo + k, sizeof(topo) - k, "   ·   %s", rot);
+        }
+        text_elided(u, (int)tx, 128, COL_AMBER, 0.58f, tw, topo);
     }
 
-    text_elided(u, (int)tx, 214, COL_TEXT, 0.66f, tw, t ? t->title : "—");
+    /* O QUE ESTÁ SOANDO. A maior coisa da coluna, e a única em branco cheio. */
+    text_elided(u, (int)tx, 176, COL_TEXT, 1.00f, tw, t ? t->title : "—");
+
+    /* e de que disco ele veio */
+    text_elided(u, (int)tx, 208, COL_TEXT_DIM, 0.62f, tw, a->album);
 
     char cur[16], tot[16], info[160];
     fmt_time(cur, sizeof(cur), pos);
     fmt_time(tot, sizeof(tot), dur);
     snprintf(info, sizeof(info), "%s / %s   ·   faixa %d de %d",
              cur, tot, player_track_idx(p) + 1, player_track_count(p));
-    text_elided(u, (int)tx, 244, COL_TEXT_DIM, 0.56f, tw, info);
+    text_elided(u, (int)tx, 240, COL_TEXT_DIM, 0.56f, tw, info);
 
     vita2d_draw_rectangle(tx, g.bar_y, tw, g.bar_h, COL_BAR_BED);
     if (dur > 0) {

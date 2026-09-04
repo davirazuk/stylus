@@ -47,8 +47,11 @@ void ui_deck_geom(int scrw, int scrh, UiDeckGeom *g)
     g->cy = f.body_y + avail_h / 2.0f + 12.0f;
     g->text_x = g->cx + r + 42.0f;
     g->text_w = (float)scrw - f.pad_x - g->text_x;
-    g->bar_y = 262.0f;
-    g->bar_h = 4.0f;
+    /* A barra é onde o dedo busca, e a 4 px ela lia como um sublinhado do
+       tempo em vez de um controle. A 6 px ela vira alvo — e continua fina o
+       bastante para não competir com o disco, que é o assunto da tela. */
+    g->bar_y = 264.0f;
+    g->bar_h = 6.0f;
     if (g->bar_y > f.foot_y - 120.0f) g->bar_y = f.foot_y - 120.0f;
     g->sig_y  = g->bar_y + 20.0f;
     g->note_y = g->bar_y + 44.0f;
