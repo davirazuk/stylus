@@ -176,6 +176,30 @@ for k in 'quad' 'tri' 'sel'; do
     fi
 done
 
+printf '\n\033[1mos atalhos levam aonde prometem\033[0m\n'
+# Atalho anunciado no rodapé e inalcançável é a pior espécie de defeito: a
+# tela promete e o aparelho não cumpre. Aconteceu com as TRÊS combinações com
+# [R1] do deck — ouvir jogando, soneca e apagar a tela —, porque o [R1] agia
+# na apertada e saía do deck antes de a combinação existir. Cada linha,
+# sozinha, estava certa; só apertar pega.
+if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_PKGS 2>/dev/null; then
+    out=$(gcc -std=gnu11 -I"$SRC" -Itests/hostgfx/include -o /tmp/vitastylus_atalhos \
+          tests/atalhos_test.c tests/hostgfx/vita2d_host.c tests/hostgfx/player_stub.c \
+          "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
+          "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
+          "$SRC"/playlist.c "$SRC"/scrobble.c \
+          $(pkg-config --cflags --libs freetype2 libpng $DEC_PKGS) -ljpeg -lm 2>&1) || true
+    if [ ! -x /tmp/vitastylus_atalhos ]; then
+        fail "o teste de atalhos não compila" "$out"
+    elif /tmp/vitastylus_atalhos >/tmp/vitastylus_atalhos.out 2>&1; then
+        pass "todo atalho anunciado leva aonde promete"
+    else
+        fail "atalho anunciado não leva aonde promete" "$(cat /tmp/vitastylus_atalhos.out)"
+    fi
+else
+    skip "PULA: sem gcc ou sem as bibliotecas"
+fi
+
 printf '\n\033[1mfunção órfã\033[0m\n'
 # Um helper que ninguém chama costuma ser um recurso INTEIRO faltando: foi
 # assim que album_load_cover existia e nenhuma capa era carregada, e assim que

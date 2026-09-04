@@ -53,6 +53,11 @@ void ui_set_sel(Ui *u, int i);
    16=seek +10s, 17=apagar playlist */
 int ui_handle_input(Ui *u);
 
+/* A tela atual, como número. Existe para o teste de host poder afirmar em
+   qual tela se está — sem isso, provar que um atalho leva aonde promete
+   depende de olhar uma imagem. */
+int ui_view_dbg(const Ui *u);
+
 /* acessores de estado */
 int ui_selected(const Ui *u);          /* álbum marcado na estante */
 int ui_playlist_idx(const Ui *u);      /* playlist marcada na lista */

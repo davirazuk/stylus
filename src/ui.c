@@ -1535,7 +1535,19 @@ int ui_handle_input(Ui *u)
     sceCtrlPeekBufferPositive(0, &c, 1);
     uint32_t cur = c.buttons;
     uint32_t edge = cur & ~prev;
+    uint32_t solto = prev & ~cur;      /* botões que acabaram de ser LARGADOS */
     prev = cur;
+
+    /* [R1] é MODIFICADOR no deck, e por isso a ação dele é na SOLTURA.
+       Antes ele agia na apertada: no instante em que se segurava R1 a tela
+       já pulava para as playlists, e os três atalhos que o próprio rodapé
+       anuncia — R1+triângulo (ouvir jogando), R1+quadrado (soneca) e
+       R1+L1 (apaga a tela) — eram IMPOSSÍVEIS de alcançar. Três recursos
+       inteiros anunciados e mortos.
+       Agora: segurar não faz nada; se soltar sem ter usado nenhum combo,
+       aí sim vai para as playlists. */
+    static int r1_usado = 0;
+    if (edge & SCE_CTRL_R1) r1_usado = 0;
 
     touch_read(u);
 
@@ -1623,7 +1635,7 @@ int ui_handle_input(Ui *u)
     } else { /* deck */
         if (edge & SCE_CTRL_TRIANGLE) {
             /* com [R1] segurado, a tela do "ouvir enquanto joga" */
-            if (cur & SCE_CTRL_R1) { u->view = VIEW_HANDOFF; action = 0; }
+            if (cur & SCE_CTRL_R1) { u->view = VIEW_HANDOFF; action = 0; r1_usado = 1; }
             else { u->view = VIEW_SHELF; action = 10; }
         }
         if (edge & SCE_CTRL_CIRCLE)   action = 4;
@@ -1638,15 +1650,19 @@ int ui_handle_input(Ui *u)
            soneca. Uma tecla que a tela desenha e não anuncia não existe, e
            as duas estão escritas no rodapé. */
         if (edge & SCE_CTRL_SQUARE) {
-            if (cur & SCE_CTRL_R1) action = 20;
+            if (cur & SCE_CTRL_R1) { action = 20; r1_usado = 1; }
             else u->show_lyrics = !u->show_lyrics;
         }
         if ((edge & SCE_CTRL_L1) && !(cur & SCE_CTRL_R1)) { u->view = VIEW_RECS; action = 8; }
-        if ((edge & SCE_CTRL_R1) && !(cur & SCE_CTRL_L1)) { u->view = VIEW_PLAYLISTS; action = 9; }
+        /* na SOLTURA, e só se nenhum combo tiver consumido o R1 */
+        if ((solto & SCE_CTRL_R1) && !r1_usado && !(cur & SCE_CTRL_L1)) {
+            u->view = VIEW_PLAYLISTS; action = 9;
+        }
         if (edge & SCE_CTRL_SELECT)   action = 14;
         /* [R1] segurado + [L1]: apaga a tela e continua tocando. Duas teclas
            porque uma sozinha se aperta no bolso. */
         if ((edge & SCE_CTRL_L1) && (cur & SCE_CTRL_R1)) {
+            r1_usado = 1;
             u->resting = true;
             u->view = VIEW_DECK;
             action = 0;
@@ -1758,6 +1774,8 @@ int ui_rec_idx(const Ui *u)       { return u ? u->rec_sel : 0; }
 int ui_jump_letter(const Ui *u)   { return u ? u->jump_letter : 0; }
 void ui_set_sel(Ui *u, int i)     { if (u) u->sel = i < 0 ? 0 : i; }
 
+
+int ui_view_dbg(const Ui *u) { return u ? (int)u->view : 0; }
 
 void ui_set_bgm(Ui *u, bool ok) { if (u) u->bgm_port_ok = ok; }
 

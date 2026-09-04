@@ -49,6 +49,18 @@ static void tap(Ui *ui, unsigned int botao)
     hostctrl_press(0);  ui_handle_input(ui);
 }
 
+/* combinação: um botão SEGURADO e outro tocado. A tela de ouvir enquanto
+   joga só se alcança assim (R1 + triângulo), e sem isto ela ficava de fora
+   do preview — justamente a tela que mais importa com o plugin instalado. */
+static void tap_com(Ui *ui, unsigned int segurado, unsigned int botao)
+{
+    hostctrl_press(0);                    ui_handle_input(ui);
+    hostctrl_press(segurado);             ui_handle_input(ui);
+    hostctrl_press(segurado | botao);     ui_handle_input(ui);
+    hostctrl_press(segurado);             ui_handle_input(ui);
+    hostctrl_press(0);                    ui_handle_input(ui);
+}
+
 int main(int argc, char **argv)
 {
     const char *root = argc > 1 ? argv[1] : "/run/media/davirazuk/VITASD/music";
@@ -127,9 +139,14 @@ int main(int argc, char **argv)
     shot(ui, &lib, p, "5-cerimonia");
     ui_skip_ritual(ui);
 
-    tap(ui, SCE_CTRL_L1);  shot(ui, &lib, p, "6-recomendados");
+    /* ouvir enquanto joga: a tela do 2º plano */
+    tap_com(ui, SCE_CTRL_R1, SCE_CTRL_TRIANGLE);
+    shot(ui, &lib, p, "6-ouvir-jogando");
     tap(ui, SCE_CTRL_TRIANGLE);
-    tap(ui, SCE_CTRL_R1);  shot(ui, &lib, p, "7-playlists");
+
+    tap(ui, SCE_CTRL_L1);  shot(ui, &lib, p, "7-recomendados");
+    tap(ui, SCE_CTRL_TRIANGLE);
+    tap(ui, SCE_CTRL_R1);  shot(ui, &lib, p, "8-playlists");
     tap(ui, SCE_CTRL_TRIANGLE);
 
     /* tela de varredura e estante vazia */
@@ -137,7 +154,7 @@ int main(int argc, char **argv)
     hostgfx_save_png("/tmp/vitastylus-preview-scan.png");
     {
         char path[1200];
-        snprintf(path, sizeof(path), "%s/8-varrendo.png", outdir);
+        snprintf(path, sizeof(path), "%s/9-varrendo.png", outdir);
         rename("/tmp/vitastylus-preview-scan.png", path);
         printf("  %s\n", path);
     }
@@ -147,7 +164,7 @@ int main(int argc, char **argv)
         library_init(&vazia);
         preview_player_set(p, NULL, NULL, PLAYER_STOPPED, 0, -1, 0, 0,
                            REPEAT_OFF, false, "—", 0, 0, 0);
-        shot(ui, &vazia, p, "9-estante-vazia");
+        shot(ui, &vazia, p, "10-estante-vazia");
     }
 
     playlist_free(pls, npls);
