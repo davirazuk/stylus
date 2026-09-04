@@ -1442,12 +1442,38 @@ lyrics_done:;
 
 #define ROW_H 38
 
+/* A miniatura das LISTAS (recomendados, playlists).
+
+   Tinha o mesmo defeito da estante, e sobreviveu ao conserto de lá: com arte
+   virava um quadrado, sem arte virava um disco. Numa lista isso é ainda pior
+   que na grade, porque as linhas ficam empilhadas e a coluna da esquerda
+   vira um zigue-zague de formas.
+
+   Aqui é sempre uma CAPA. Sem o disco atrás, ao contrário da estante: a uns
+   28 px de lado, o crescente do disco vira três pixels de ruído e não
+   comunica nada — a mesma decisão de desenho dá resultados opostos nas duas
+   escalas, e insistir na simetria custaria a legibilidade. */
 static void row_thumb(Ui *u, Album *a, float x, float y, float side, int ntracks)
 {
+    (void)ntracks;
     vita2d_texture *tex = a ? cover_tex(u, a) : NULL;
-    if (tex) draw_cover_fit(tex, x, y, side);
-    else draw_disc(x + side / 2, y + side / 2, side / 2.2f, 0.18f, ntracks, -1,
-                   u->disc_angle, NULL, 0.0f);
+    if (tex) {
+        draw_cover_fit(tex, x, y, side);
+    } else {
+        vita2d_draw_rectangle(x, y, side, side, RGBA8(16, 22, 33, 255));
+        vita2d_draw_rectangle(x, y, side, 1, RGBA8(255, 170, 40, 70));
+        alpha_ring(x + side * 0.5f, y + side * 0.5f, side * 0.30f, 1.0f, 0.20f, COL_AMBER);
+        alpha_fill(x + side * 0.5f, y + side * 0.5f, side * 0.07f, 0.55f, COL_AMBER);
+        char ini[5];
+        if (a && album_inicial(a, ini, sizeof(ini))) {
+            float sc = side / 42.0f;
+            int lw = text_w(u, sc, ini);
+            text(u, (int)(x + side * 0.5f - lw / 2.0f),
+                 (int)(y + side * 0.66f), COL_AMBER, sc, ini);
+        }
+    }
+    vita2d_draw_rectangle(x, y, 1, side, RGBA8(255, 227, 174, 40));
+    vita2d_draw_rectangle(x, y + side - 1, side, 1, RGBA8(0, 0, 0, 130));
 }
 
 static void draw_recs(Ui *u, Library *lib, Player *p)
