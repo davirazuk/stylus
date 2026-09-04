@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <strings.h>
 
 /* ---------------- extensão → formato ---------------- */
@@ -88,6 +89,9 @@ const char *dec_kind_name(DecKind k)
 
 /* ---------------- o objeto ---------------- */
 
+/* o reamostrador; o corpo fica lá embaixo, junto do porquê */
+typedef struct Resamp Resamp;
+
 struct Decoder {
     DecKind kind;
     DecFormat fmt;
@@ -109,6 +113,14 @@ struct Decoder {
     FILE *wf;
     long wav_data;          /* offset do primeiro byte de PCM */
     int wav_bits, wav_float;
+
+    /* Reamostragem (ver a nota grande acima). `rs` != NULL quer dizer que
+       fmt.rate É a taxa de SAÍDA e o decodificador por baixo entrega
+       rs->in_rate. Posição e duração vivem em quadros NATIVOS e são
+       convertidas na saída — senão o relógio erra na proporção. */
+    Resamp *rs;
+    short *rs_tmp;
+    size_t rs_tmp_frames;
 };
 
 static int mpg_inited;
@@ -302,6 +314,164 @@ static long wav_read(Decoder *d, void *buf, size_t bytes)
 
 /* ---------------- abrir ---------------- */
 
+
+/* ---------------- reamostrador ----------------
+
+   POR QUE ELE EXISTE, e por que num tocador que se orgulha de não mexer no
+   sinal.
+
+   Três coisas, e as três caem no mesmo lugar:
+
+   1. O sceAudioOut do Vita aceita um punhado de taxas — 8k, 11.025k, 12k,
+      16k, 22.05k, 24k, 32k, 44.1k, 48k — e 96k NÃO está entre elas. Um FLAC
+      hi-res não tem para onde ir no aparelho.
+   2. O SDL_OpenAudioDevice é chamado com allowed_changes=0, o que faz o SDL
+      GARANTIR que `have` é igual a `want` — convertendo por dentro se
+      precisar. Então o `rate_out` que a tela mostra como "o que o aparelho
+      recebeu" era o que PEDIMOS, e para um arquivo de 96k a tela afirmava
+      96 kHz num aparelho que não faz 96 kHz. Num projeto cuja tese é não
+      mentir sobre o caminho do sinal, isso é a mentira mais cara possível.
+   3. Só o MP3 sabia se reamostrar (o mpg123 faz), então FLAC, Vorbis e WAV
+      acima de 47999 Hz perdiam o áudio em segundo plano.
+
+   Reamostrando aqui, a saída é sempre uma taxa que o aparelho aceita, o
+   `rate_out` volta a ser verdade, e o segundo plano vale para todo formato.
+   A tela continua dizendo que houve reamostragem — a diferença é que agora
+   ela diz a verdade.
+
+   O filtro é um sinc janelado (Blackman), 32 coeficientes, com o corte na
+   menor das duas taxas. Não é o melhor reamostrador do mundo; é um que não
+   dobra o espectro e cujo erro dá para MEDIR contra o ffmpeg, que é o que o
+   teste faz. */
+
+#define RS_TAPS 32              /* 16 de cada lado */
+#define RS_HALF (RS_TAPS / 2)
+
+struct Resamp {
+    long in_rate, out_rate;
+    int channels;
+    double step;                /* quanto a leitura anda na entrada por saída */
+    double pos;                 /* posição fracionária, dentro de `in` */
+    short *in;                  /* FIFO de entrada, intercalado */
+    size_t in_cap, in_len;      /* em QUADROS */
+    int eof;
+};
+
+static double rs_sinc(double x)
+{
+    if (x > -1e-9 && x < 1e-9) return 1.0;
+    double p = M_PI * x;
+    return sin(p) / p;
+}
+
+/* Blackman: cauda baixa o bastante para 32 coeficientes não chiarem */
+static double rs_janela(double t)      /* t em -1..1 */
+{
+    double a = M_PI * (t + 1.0);
+    return 0.42 - 0.5 * cos(a) + 0.08 * cos(2.0 * a);
+}
+
+static Resamp *rs_new(long in_rate, long out_rate, int channels)
+{
+    if (in_rate <= 0 || out_rate <= 0 || channels <= 0) return NULL;
+    Resamp *r = calloc(1, sizeof(*r));
+    if (!r) return NULL;
+    r->in_rate = in_rate;
+    r->out_rate = out_rate;
+    r->channels = channels;
+    r->step = (double)in_rate / (double)out_rate;
+    r->in_cap = 8192;
+    r->in = malloc(r->in_cap * (size_t)channels * sizeof(short));
+    if (!r->in) { free(r); return NULL; }
+    /* começa com meia janela de silêncio à esquerda, senão as primeiras
+       amostras leem lixo de antes do arquivo */
+    memset(r->in, 0, (size_t)RS_HALF * (size_t)channels * sizeof(short));
+    r->in_len = RS_HALF;
+    r->pos = RS_HALF;
+    return r;
+}
+
+static void rs_free(Resamp *r)
+{
+    if (!r) return;
+    free(r->in);
+    free(r);
+}
+
+/* acrescenta quadros ao FIFO */
+static int rs_push(Resamp *r, const short *pcm, size_t frames)
+{
+    if (r->in_len + frames > r->in_cap) {
+        size_t nc = r->in_cap;
+        while (nc < r->in_len + frames) nc *= 2;
+        short *n = realloc(r->in, nc * (size_t)r->channels * sizeof(short));
+        if (!n) return -1;
+        r->in = n;
+        r->in_cap = nc;
+    }
+    memcpy(r->in + r->in_len * (size_t)r->channels, pcm,
+           frames * (size_t)r->channels * sizeof(short));
+    r->in_len += frames;
+    return 0;
+}
+
+/* joga fora o que já passou, mantendo a meia janela à esquerda */
+static void rs_trim(Resamp *r)
+{
+    size_t manter = (size_t)r->pos;
+    if (manter < RS_HALF) return;
+    manter -= RS_HALF;
+    if (manter == 0) return;
+    if (manter > r->in_len) manter = r->in_len;
+    memmove(r->in, r->in + manter * (size_t)r->channels,
+            (r->in_len - manter) * (size_t)r->channels * sizeof(short));
+    r->in_len -= manter;
+    r->pos -= (double)manter;
+}
+
+static size_t rs_pull(Resamp *r, short *out, size_t frames)
+{
+    /* corte: no downsample o filtro tem que cortar na saída, senão dobra */
+    double corte = r->out_rate < r->in_rate
+                 ? (double)r->out_rate / (double)r->in_rate : 1.0;
+    size_t feitos = 0;
+    while (feitos < frames) {
+        double limite = (double)r->in_len - RS_HALF;
+        if (r->pos >= limite) break;
+        long base = (long)r->pos;
+        double frac = r->pos - (double)base;
+
+        for (int c = 0; c < r->channels; c++) {
+            double soma = 0.0, peso = 0.0;
+            for (int k = -RS_HALF + 1; k <= RS_HALF; k++) {
+                long idx = base + k;
+                if (idx < 0 || (size_t)idx >= r->in_len) continue;
+                double x = (double)k - frac;
+                double w = rs_janela(x / (double)RS_HALF) * rs_sinc(x * corte) * corte;
+                soma += w * (double)r->in[(size_t)idx * (size_t)r->channels + c];
+                peso += w;
+            }
+            /* normaliza pela soma dos pesos: sem isto o ganho oscila com a
+               fase e o resultado ganha um zumbido na frequência do passo */
+            if (peso > 1e-9) soma /= peso;
+            long v = lround(soma);
+            if (v > 32767) v = 32767;
+            if (v < -32768) v = -32768;
+            out[feitos * (size_t)r->channels + c] = (short)v;
+        }
+        r->pos += r->step;
+        feitos++;
+    }
+    rs_trim(r);
+    return feitos;
+}
+
+/* Um ponto de saída só para o dec_open: cada formato termina aqui, e é aqui
+   que o reamostrador entra. Cinco `return d;` espalhados eram cinco chances
+   de esquecer um — e o esquecido seria justamente o formato que ninguém
+   testa. */
+static Decoder *dec_pronto(Decoder *d);
+
 Decoder *dec_open(const char *path)
 {
     DecKind k = dec_kind_of(path);
@@ -355,7 +525,7 @@ Decoder *dec_open(const char *path)
             off_t l = mpg123_length(d->mh);
             d->len = l > 0 ? (long long)l : -1;
         }
-        return d;
+        return dec_pronto(d);
     }
 
     if (k == DEC_FLAC) {
@@ -369,7 +539,7 @@ Decoder *dec_open(const char *path)
            duração ainda não existem quando o player pergunta */
         if (!FLAC__stream_decoder_process_until_end_of_metadata(d->fd)) goto fail;
         if (d->fmt.rate <= 0) goto fail;
-        return d;
+        return dec_pronto(d);
     }
 
     if (k == DEC_VORBIS) {
@@ -389,7 +559,7 @@ Decoder *dec_open(const char *path)
             ogg_int64_t l = ov_pcm_total(&d->vf, -1);
             d->len = l > 0 ? (long long)l : -1;
         }
-        return d;
+        return dec_pronto(d);
     }
 
     if (k == DEC_OPUS) {
@@ -406,12 +576,12 @@ Decoder *dec_open(const char *path)
             ogg_int64_t l = op_pcm_total(d->of, -1);
             d->len = l > 0 ? (long long)l : -1;
         }
-        return d;
+        return dec_pronto(d);
     }
 
     if (k == DEC_WAV) {
         if (wav_open(d, path) != 0) goto fail;
-        return d;
+        return dec_pronto(d);
     }
 
 fail:
@@ -431,6 +601,8 @@ void dec_close(Decoder *d)
     if (d->of) op_free(d->of);
     if (d->wf) fclose(d->wf);
     free(d->fbuf);
+    rs_free(d->rs);
+    free(d->rs_tmp);
     free(d);
 }
 
@@ -442,12 +614,95 @@ void dec_format(const Decoder *d, DecFormat *f)
 }
 
 DecKind dec_kind(const Decoder *d) { return d ? d->kind : DEC_NONE; }
-long long dec_tell(const Decoder *d) { return d ? d->pos : 0; }
-long long dec_length(const Decoder *d) { return d ? d->len : -1; }
+static long dec_read_raw(Decoder *d, void *buf, size_t bytes);
+
+/* Liga o reamostrador se a taxa nativa passar do teto. O MP3 não entra: ele
+   já pediu a reamostragem ao mpg123 na abertura, e reamostrar duas vezes é
+   perder qualidade de graça. Falhar aqui NÃO derruba a faixa — toca na taxa
+   nativa, sem áudio de fundo, que é o que acontecia antes. */
+static Decoder *dec_pronto(Decoder *d);
+
+static void dec_talvez_reamostrar(Decoder *d)
+{
+    if (!d || d->kind == DEC_MP3) return;
+    if (g_max_rate <= 0 || d->fmt.rate <= g_max_rate) return;
+    long alvo = alvo_para(g_max_rate);
+    if (alvo <= 0 || alvo >= d->fmt.rate) return;
+    Resamp *r = rs_new(d->fmt.rate, alvo, d->fmt.channels);
+    if (!r) return;
+    d->rs = r;
+    d->fmt.rate = alvo;          /* rate_native continua sendo a do arquivo */
+}
+
+static Decoder *dec_pronto(Decoder *d)
+{
+    dec_talvez_reamostrar(d);
+    return d;
+}
+
+long dec_read(Decoder *d, void *buf, size_t bytes)
+{
+    if (!d || !buf) return -1;
+    if (!d->rs) return dec_read_raw(d, buf, bytes);
+
+    size_t fb = (size_t)d->fmt.channels * 2;
+    bytes -= bytes % fb;
+    if (!bytes) return 0;
+    size_t querem = bytes / fb;                 /* quadros de SAÍDA pedidos */
+    short *out = (short *)buf;
+    size_t feitos = 0;
+
+    while (feitos < querem) {
+        size_t deu = rs_pull(d->rs, out + feitos * (size_t)d->fmt.channels,
+                             querem - feitos);
+        feitos += deu;
+        if (feitos >= querem) break;
+        if (d->rs->eof) break;
+
+        /* faltou entrada: lê mais do decodificador de baixo. Com folga, para
+           não voltar aqui a cada punhado de amostras. */
+        size_t precisa = (size_t)((double)(querem - feitos) * d->rs->step) + RS_TAPS + 64;
+        if (precisa > d->rs_tmp_frames) {
+            short *n = realloc(d->rs_tmp,
+                               precisa * (size_t)d->fmt.channels * sizeof(short));
+            if (!n) return feitos ? (long)(feitos * fb) : -1;
+            d->rs_tmp = n;
+            d->rs_tmp_frames = precisa;
+        }
+        long r = dec_read_raw(d, d->rs_tmp, precisa * fb);
+        if (r < 0) return feitos ? (long)(feitos * fb) : -1;
+        if (r == 0) {
+            /* fim da entrada: enche com silêncio para a janela do filtro
+               fechar e as últimas amostras de verdade saírem */
+            d->rs->eof = 1;
+            size_t cauda = RS_TAPS;
+            memset(d->rs_tmp, 0, cauda * (size_t)d->fmt.channels * sizeof(short));
+            rs_push(d->rs, d->rs_tmp, cauda);
+            continue;
+        }
+        if (rs_push(d->rs, d->rs_tmp, (size_t)r / fb) != 0)
+            return feitos ? (long)(feitos * fb) : -1;
+    }
+    return (long)(feitos * fb);
+}
+
+/* Posição e duração em quadros de SAÍDA. Por dentro elas vivem em quadros
+   NATIVOS; sem esta conversão, um FLAC de 96k reamostrado para 44,1k
+   mostraria o tempo e a duração 2,18x errados — e a barra, a agulha e o
+   ponto de continuação junto. */
+static long long rs_para_saida(const Decoder *d, long long quadros)
+{
+    if (!d->rs || quadros < 0) return quadros;
+    return (long long)((double)quadros * (double)d->rs->out_rate
+                                       / (double)d->rs->in_rate);
+}
+
+long long dec_tell(const Decoder *d)   { return d ? rs_para_saida(d, d->pos) : 0; }
+long long dec_length(const Decoder *d) { return d ? rs_para_saida(d, d->len) : -1; }
 
 /* ---------------- ler ---------------- */
 
-long dec_read(Decoder *d, void *buf, size_t bytes)
+static long dec_read_raw(Decoder *d, void *buf, size_t bytes)
 {
     if (!d || !buf || bytes < 4) return -1;
     size_t frame_bytes = (size_t)d->fmt.channels * 2;
@@ -490,14 +745,14 @@ long dec_read(Decoder *d, void *buf, size_t bytes)
         /* o ov_read devolve UM pacote por vez e pode devolver menos que o
            pedido sem que isso seja fim de faixa */
         long r = ov_read(&d->vf, buf, (int)bytes, 0, 2, 1, &bs);
-        if (r == OV_HOLE) return dec_read(d, buf, bytes);   /* buraco: segue */
+        if (r == OV_HOLE) return dec_read_raw(d, buf, bytes);   /* buraco: segue */
         if (r <= 0) return r == 0 ? 0 : -1;
         d->pos += (long long)((size_t)r / frame_bytes);
         return r;
     }
     case DEC_OPUS: {
         int n = op_read(d->of, buf, (int)(bytes / 2), NULL);
-        if (n == OP_HOLE) return dec_read(d, buf, bytes);
+        if (n == OP_HOLE) return dec_read_raw(d, buf, bytes);
         if (n < 0) return -1;
         if (n == 0) return 0;
         d->pos += n;
@@ -514,7 +769,21 @@ long long dec_seek(Decoder *d, long long frame)
 {
     if (!d) return -1;
     if (frame < 0) frame = 0;
+    /* Quem chama fala em quadros de SAÍDA (é o que dec_tell devolve); por
+       dentro tudo é nativo. Sem converter, procurar num arquivo reamostrado
+       cairia no lugar errado pela mesma proporção. */
+    if (d->rs && d->rs->in_rate > 0 && d->rs->out_rate > 0)
+        frame = (long long)((double)frame * (double)d->rs->in_rate
+                                          / (double)d->rs->out_rate);
     if (d->len > 0 && frame >= d->len) frame = d->len - 1;
+    /* o filtro guarda amostras de ANTES do salto: sem zerar, o som de lá
+       vaza para cá — o mesmo defeito que o buffer do FLAC já tinha */
+    if (d->rs) {
+        d->rs->in_len = RS_HALF;
+        d->rs->pos = RS_HALF;
+        d->rs->eof = 0;
+        memset(d->rs->in, 0, (size_t)RS_HALF * (size_t)d->rs->channels * sizeof(short));
+    }
 
     switch (d->kind) {
     case DEC_MP3: {

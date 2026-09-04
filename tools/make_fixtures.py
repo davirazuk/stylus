@@ -118,6 +118,16 @@ else:
         '-metadata', 'title=Faixa de Teste', '-metadata', 'artist=Artista Teste',
         '-metadata', 'album=Album Teste', '-metadata', 'track=7', j('tone.mp3'))
 
+# Um FLAC de 96 kHz — o caso que o mpg123 não resolve. FLAC, Vorbis e WAV
+# não se reamostram sozinhos, e 96 kHz nem existe no sceAudioOut do Vita:
+# é a fixture do reamostrador do decoder.c.
+run('ffmpeg', '-v', 'error', '-y', '-f', 'lavfi',
+    '-i', 'sine=frequency=440:duration=3:sample_rate=96000',
+    '-af', 'aeval=val(0)|val(0)*0.6:c=stereo', '-c:a', 'flac', j('tom96.flac'))
+# e a REFERÊNCIA: o mesmo arquivo reamostrado pelo ffmpeg, para comparar
+run('ffmpeg', '-v', 'error', '-y', '-i', j('tom96.flac'), '-ar', '44100',
+    '-f', 's16le', '-acodec', 'pcm_s16le', j('tom96_ref44.raw'))
+
 # Um MP3 de 48 kHz — ACIMA do teto que faz o SDL2 do Vita abrir a porta BGM
 # (47999 Hz). É o caso que decide o áudio em segundo plano em 27% do acervo
 # do cartão, e sem uma fixture nessa taxa o teto não teria como ser testado.

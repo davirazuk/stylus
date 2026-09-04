@@ -284,6 +284,69 @@ static void test_teto_bgm(void)
     }
     dec_close(d);
 
+    /* O REAMOSTRADOR. Só o MP3 sabia se reamostrar (o mpg123 faz); FLAC,
+       Vorbis e WAV acima do teto tocavam na taxa nativa — e 96 kHz nem
+       existe no sceAudioOut do Vita, então a tela afirmava uma taxa que o
+       aparelho não faz. Aqui a saída é comparada com a MESMA reamostragem
+       feita pelo ffmpeg: um filtro errado passa em "tocou alguma coisa" e
+       reprova aqui. */
+    {
+        dec_set_max_rate(TETO);
+        Decoder *r96 = dec_open(fx("tom96.flac"));
+        if (!r96) {
+            okf(0, "flac de 96 kHz abre com teto", "não abriu");
+        } else {
+            DecFormat g;
+            dec_format(r96, &g);
+            okf(g.rate == 44100 && g.rate_native == 96000,
+                "flac 96 kHz: sai em 44,1 kHz e o arquivo continua 96 kHz",
+                "saida %ld, arquivo %ld", g.rate, g.rate_native);
+            double secs = g.rate > 0 ? (double)dec_length(r96) / (double)g.rate : 0;
+            okf(secs > 2.9 && secs < 3.1,
+                "flac 96 kHz: a duração sobrevive à reamostragem",
+                "%.3f s (esperado ~3)", secs);
+
+            /* decodifica tudo e compara com a referência do ffmpeg */
+            size_t cap = 4u << 20, len = 0;
+            short *meu = malloc(cap);
+            if (meu) {
+                for (;;) {
+                    if (len + 65536 > cap) break;
+                    long n = dec_read(r96, (char *)meu + len, 65536);
+                    if (n <= 0) break;
+                    len += (size_t)n;
+                }
+                long refn = 0;
+                short *ref = NULL;
+                FILE *rf = fopen(fx("tom96_ref44.raw"), "rb");
+                if (rf) {
+                    fseek(rf, 0, SEEK_END); refn = ftell(rf); fseek(rf, 0, SEEK_SET);
+                    ref = malloc((size_t)refn);
+                    if (ref && fread(ref, 1, (size_t)refn, rf) != (size_t)refn) {
+                        free(ref); ref = NULL;
+                    }
+                    fclose(rf);
+                }
+                if (ref) {
+                    size_t n = (len < (size_t)refn ? len : (size_t)refn) / 2;
+                    size_t ini = 4096, fim = n > 4096 ? n - 4096 : n;
+                    double sinal = 0, erro = 0;
+                    for (size_t i = ini; i < fim; i++) {
+                        double sg = ref[i], e = (double)meu[i] - (double)ref[i];
+                        sinal += sg * sg; erro += e * e;
+                    }
+                    double snr = 10.0 * log10(sinal / (erro > 0 ? erro : 1e-12));
+                    okf(snr >= 40.0,
+                        "flac 96 kHz: o resultado bate com a reamostragem do ffmpeg",
+                        "SNR %.1f dB (mínimo 40)", snr);
+                    free(ref);
+                }
+                free(meu);
+            }
+            dec_close(r96);
+        }
+    }
+
     /* quem JÁ cabe não é tocado: reamostrar 44,1k à toa é perda de qualidade
        e de CPU do aparelho por nada */
     d = dec_open(fx("tone.mp3"));

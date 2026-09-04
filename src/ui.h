@@ -46,11 +46,30 @@ float ui_scrub(const Ui *u);
 int  ui_jump_letter(const Ui *u);
 void ui_set_sel(Ui *u, int i);
 
-/* controle: reserva para o main ler input
-   0=sem, -1=sair, 2=abrir album, 4=toggle play, 5=next, 6=prev, 7=seek-10,
-   10=voltar à estante, 11=tocar recomendações, 12=tocar playlist,
-   13=criar playlist do atual, 14=ciclar repetição, 15=alternar sorteio,
-   16=seek +10s, 17=apagar playlist */
+/* Lê a entrada e devolve uma AÇÃO para o main executar.
+
+   A lista estava incompleta: 1, 8, 9, 18, 19 e 20 existiam no ui.c e não
+   apareciam aqui. Isso não é detalhe — quem conferir "toda ação tem um
+   `case` no main?" contra uma lista furada não distingue a ação que é
+   INFORMATIVA de propósito da que alguém esqueceu de tratar, e a segunda é
+   um recurso morto. Estão separadas abaixo por isso.
+
+   O main AGE nestas:
+     -1  sair                      11  tocar as recomendações
+      2  abrir o álbum marcado     12  tocar a playlist marcada
+      4  tocar/pausar              13  salvar o que toca como playlist
+      5  próxima faixa             14  ciclar a repetição
+      6  faixa anterior            15  alternar o sorteio
+      7  recuar 10 s               17  apagar a playlist marcada
+     16  avançar 10 s              18  buscar na fração tocada (ui_scrub)
+     19  pular para a letra (ui_jump_letter)
+     20  ciclar a soneca
+
+   Estas o main IGNORA de propósito — a UI já fez o que havia para fazer
+   (trocou de tela, moveu o cursor) e não há nada do lado do tocador:
+      0  nada aconteceu             9  abriu as playlists
+      1  o cursor andou            10  voltou à estante
+      8  abriu as recomendações                                         */
 int ui_handle_input(Ui *u);
 
 /* A tela atual, como número. Existe para o teste de host poder afirmar em
