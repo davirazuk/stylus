@@ -331,7 +331,28 @@ o tamanho antes, confere o espaço livre e, em FLAC, diz quantas vezes menor
 seria em MP3. **`--formato flac` (fmt 6) é o melhor caso: lossless E segura o
 2º plano.** Hi-res toca, mas perde o segundo plano.
 
-Para preparar música que já é sua, `./tools/para-vita.py PASTA`.
+Para preparar música que já é sua, `./tools/para-vita.py PASTA` (converte
+para MP3 44,1k com capa embutida).
+
+### As capas que o cartão perdeu
+
+A cópia da música que está no cartão **perdeu a arte embutida**: a coleção do
+PC tem capa em 339 de 405 álbuns; a do cartão, em 4. Quem copiou descartou os
+quadros APIC. Sem capa a estante vira uma parede de discos iguais, que é o
+oposto do que este tocador é.
+
+Recopiar tudo seriam horas e gigabytes. Mas capa é **metadado** — dá para
+levá-la sem tocar no áudio:
+
+```sh
+./tools/para-vita.py --capas-de ~/staging-vita/vita-mp3 \
+                     --destino  /run/media/davirazuk/VITASD/music
+```
+
+Casa os álbuns pelo nome da pasta, pula os que já têm capa e escreve só o
+APIC. Conferido: depois do transplante o PCM decodificado é **idêntico** ao
+do arquivo original (sha256 igual), e a estante passa a mostrar a arte. Use
+`--dry-run` antes para ver o que ele faria.
 
 ## Ver a UI sem o Vita
 

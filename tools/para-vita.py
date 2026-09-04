@@ -137,6 +137,125 @@ def embute_arte(mp3, jpg):
         return False
 
 
+def arte_de(caminho):
+    """Os bytes da capa embutida num arquivo, ou None."""
+    try:
+        if caminho.lower().endswith(".flac"):
+            from mutagen.flac import FLAC
+            f = FLAC(caminho)
+            return f.pictures[0].data if f.pictures else None
+        from mutagen.id3 import ID3
+        for k, v in ID3(caminho).items():
+            if k.startswith("APIC"):
+                return v.data
+    except Exception:
+        pass
+    return None
+
+
+def capa_do_album(pasta):
+    """A capa deste álbum: a primeira embutida que aparecer nas faixas, ou
+    uma imagem solta na pasta. Procura em ATÉ 8 faixas — num álbum onde só
+    a última tem arte, olhar só a primeira daria 'não tem'."""
+    faixas = faixas_de(pasta)
+    for f in faixas[:8]:
+        dados = arte_de(os.path.join(pasta, f))
+        if dados:
+            return dados
+    jpg = arte_da_pasta(pasta)
+    if jpg:
+        try:
+            with open(jpg, "rb") as fh:
+                return fh.read()
+        except OSError:
+            pass
+    return None
+
+
+def poe_arte(caminho, dados):
+    """Embute a capa SEM recodificar o áudio. É só metadado: o som não é
+    tocado, então não há perda nem espera de conversão."""
+    try:
+        if caminho.lower().endswith(".flac"):
+            from mutagen.flac import FLAC, Picture
+            f = FLAC(caminho)
+            p = Picture()
+            p.type = 3
+            p.mime = "image/png" if dados[:4] == b"\x89PNG" else "image/jpeg"
+            p.data = dados
+            f.clear_pictures()
+            f.add_picture(p)
+            f.save()
+            return True
+        from mutagen.id3 import ID3, APIC, error as ID3Err
+        try:
+            t = ID3(caminho)
+        except ID3Err:
+            t = ID3()
+        t.delall("APIC")
+        t.add(APIC(encoding=3,
+                   mime="image/png" if dados[:4] == b"\x89PNG" else "image/jpeg",
+                   type=3, desc="Cover", data=dados))
+        t.save(caminho, v2_version=3)
+        return True
+    except Exception as e:
+        erro(f"não embuti a capa em {os.path.basename(caminho)}: {e}")
+        return False
+
+
+def transplanta_capas(referencia, destino, dry_run):
+    """Leva a capa de cada álbum da REFERÊNCIA para o álbum de mesmo nome no
+    DESTINO.
+
+    POR QUE ISTO EXISTE: a cópia da música que foi para o cartão perdeu a
+    arte embutida — 339 álbuns com capa na coleção do PC contra 4 na do
+    cartão. Quem copiou descartou os quadros APIC. Sem capa, a estante do
+    Vita vira uma parede de discos iguais, que é o oposto do que este
+    tocador é. Recopiar tudo levaria horas e gigabytes; a capa é METADADO, e
+    escrever metadado não toca no áudio."""
+    ref = {}
+    for d, _sub, arqs in os.walk(referencia):
+        if any(a.lower().endswith(FONTES) for a in arqs):
+            ref[os.path.basename(d.rstrip("/"))] = d
+    print(f"referência: {len(ref)} álbuns em {referencia}")
+
+    alvos = []
+    for d, _sub, arqs in os.walk(destino):
+        if any(a.lower().endswith(FONTES) for a in arqs):
+            alvos.append(d)
+    print(f"destino:    {len(alvos)} álbuns em {destino}")
+
+    postas = ja_tinham = sem_ref = sem_arte = 0
+    for d in sorted(alvos):
+        nome = os.path.basename(d.rstrip("/"))
+        faixas = faixas_de(d)
+        if not faixas:
+            continue
+        if capa_do_album(d):
+            ja_tinham += 1
+            continue
+        origem = ref.get(nome)
+        if not origem:
+            sem_ref += 1
+            continue
+        dados = capa_do_album(origem)
+        if not dados:
+            sem_arte += 1
+            continue
+        if dry_run:
+            print(f"  [dry-run] {nome}: poria capa em {len(faixas)} faixas "
+                  f"({len(dados) // 1024} KB)")
+            postas += 1
+            continue
+        n = sum(1 for f in faixas if poe_arte(os.path.join(d, f), dados))
+        print(f"  ✓ {nome}: capa em {n}/{len(faixas)} faixas")
+        postas += 1
+
+    print(f"\n═══ {postas} álbuns ganharam capa · {ja_tinham} já tinham · "
+          f"{sem_ref} sem par na referência · {sem_arte} sem capa na referência ═══")
+    return 0
+
+
 def ja_serve(caminho):
     """O arquivo já é MP3 44,1k (ou pelo menos <= o teto do BGM) com capa?"""
     if not caminho.lower().endswith(".mp3"):
@@ -258,6 +377,10 @@ def main():
                     help="só diz o que faria")
     ap.add_argument("--conferir", action="store_true",
                     help="confere o destino no fim")
+    ap.add_argument("--capas-de", metavar="REFERENCIA",
+                    help="NÃO converte nada: só leva a capa de cada álbum "
+                         "desta coleção para o álbum de mesmo nome em "
+                         "--destino, sem recodificar o áudio")
     args = ap.parse_args()
 
     for exe in ("ffmpeg", "ffprobe"):
@@ -269,6 +392,15 @@ def main():
     except ImportError:
         erro("falta o módulo python 'mutagen' (pip install mutagen)")
         return 1
+
+    if args.capas_de:
+        if not os.path.isdir(args.capas_de):
+            erro(f"não achei a referência: {args.capas_de}")
+            return 1
+        if not os.path.isdir(args.destino):
+            erro(f"não achei o destino: {args.destino}")
+            return 1
+        return transplanta_capas(args.capas_de, args.destino, args.dry_run)
 
     alvos = list(args.pastas)
     if args.todos:
