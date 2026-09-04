@@ -1015,7 +1015,11 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
         if (sig.rate_file > 0) {
             char extra[96] = "";
             if (sig.resampled || sig.requantized)
-                snprintf(extra, sizeof(extra), "  →  %ld Hz / 16 bits",
+                /* Era uma SETA "→" aqui. Ela não existe na fonte: virava um
+                   quadradinho na tela, e o que a linha inteira promete é
+                   contar o caminho do sinal sem enfeite. "sai em" diz o
+                   mesmo em palavra que a fonte tem. */
+                snprintf(extra, sizeof(extra), "  ·  sai em %ld Hz / 16 bits",
                          sig.rate_out);
             /* O 2º plano é a mesma família de verdade que esta linha conta:
                não a qualidade prometida, mas o que o caminho de fato faz. E

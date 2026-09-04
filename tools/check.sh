@@ -142,6 +142,20 @@ else
     skip "PULA: sem gcc para separar código de comentário"
 fi
 
+printf '\n\033[1mos caracteres que a fonte desenha\033[0m\n'
+# Um caractere que a fonte não tem não some: vira quadradinho na tela, e no
+# editor aparece perfeito. Já aconteceu com uma seta na linha do sinal.
+if command -v python3 >/dev/null 2>&1; then
+    out=$(python3 tools/glifos.py "$SRC"/ui.c 2>&1) || true
+    if [ -z "$out" ]; then
+        pass "a UI só usa caracteres do conjunto seguro"
+    else
+        fail "a UI usa caractere que a fonte pode não ter" "$out"
+    fi
+else
+    skip "PULA: sem python3"
+fi
+
 printf '\n\033[1mo que a tela promete\033[0m\n'
 # Uma tecla escrita no rodapé e não tratada pelo input é a família do
 # stylus-welcome: promessa sem destino. E o Vita NÃO TEM L2/R2.
