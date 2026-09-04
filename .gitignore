@@ -2,3 +2,8 @@ build/
 *.self
 *.velf
 *.vpk
+
+# contas: ficam no cartão, nunca no repositório
+qobuz.config
+lastfm.config
+lastfm-queue.tsv

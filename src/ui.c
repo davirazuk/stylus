@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "ime.h"
 #include "lastfm.h"
+#include "qobuz.h"
 #include "fsutil.h"
 #include "paths.h"
 #include "ui_layout.h"
@@ -56,7 +57,7 @@
 #define HINT_Y   (SCRH - 14)
 
 typedef enum { VIEW_SHELF = 0, VIEW_DECK, VIEW_RECS, VIEW_PLAYLISTS,
-               VIEW_HANDOFF, VIEW_CONTA } View;
+               VIEW_HANDOFF, VIEW_CONTA, VIEW_QOBUZ } View;
 
 /* ---------- cache de capas ----------
    O desenho antigo chamava vita2d_load_JPEG_buffer e vita2d_free_texture DENTRO
@@ -143,6 +144,18 @@ struct Ui {
     LastfmConfig conta_cfg;
     bool conta_lida;
     char conta_senha[64];     /* só até o login; nunca vai para o cartão */
+
+    /* a loja: ver draw_qobuz */
+    QobuzConfig qb_cfg;
+    bool qb_lida;
+    int  qb_sel;
+    int  qb_campo;            /* campo que o teclado edita, -1 nenhum */
+    char qb_termo[96];
+    char qb_senha[64];
+    QobuzAlbum qb_res[12];
+    int  qb_nres;
+    char qb_msg[96];
+    unsigned qb_msg_ate;
 
     Playlist *plists;
     int nplists;
@@ -1537,6 +1550,7 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
             { BTN_CIRCLE,   (Btn)-1, "confirmar" },
             { BTN_UPDOWN,   (Btn)-1, "navegar" },
             { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_R1,       (Btn)-1, "qobuz" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
@@ -1544,36 +1558,68 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
 
     const LastfmConfig *c = &u->conta_cfg;
     int fila = lastfm_queue_size(STYLUS_DATA_DIR);
+    bool ok = c->configured;
 
-    /* O estado, primeiro e em âmbar: é a pergunta que a pessoa veio fazer. */
+    /* O MOSTRADOR, à direita: um disco com o número de escutas guardadas.
+
+       Existe porque a pergunta que traz alguém a esta tela não é "quais são
+       meus campos" — é "as minhas escutas estão indo?". Um número grande
+       responde isso de longe; uma lista de campos não responde nunca. E o
+       anel aceso ao redor dele diz a outra metade: se há conta ligada, elas
+       sobem sozinhas; se não há, ficam esperando (e não se perdem). */
+    {
+        float dcx = SCRW - 132.0f, dcy = 268.0f, dr = 84.0f;
+        alpha_fill(dcx, dcy, dr, 1.0f, RGBA8(9, 12, 18, 255));
+        alpha_ring(dcx, dcy, dr * 0.80f, 1.0f, 0.12f, COL_AMBER);
+        alpha_ring(dcx, dcy, dr * 0.64f, 1.0f, 0.10f, COL_AMBER);
+        alpha_ring(dcx, dcy, dr, 2.0f, ok ? 0.75f : 0.28f,
+                   ok ? COL_AMBER : COL_COLD);
+        alpha_fill(dcx, dcy, dr * 0.42f, 0.14f, COL_AMBER);
+
+        char num[16];
+        snprintf(num, sizeof(num), "%d", fila);
+        float sc = fila > 999 ? 1.10f : 1.55f;
+        int nw = text_w(u, sc, num);
+        text(u, (int)(dcx - nw / 2.0f), (int)(dcy + 8), COL_AMBER_BRIGHT, sc, num);
+        const char *leg = fila == 1 ? "escuta" : "escutas";
+        int lw = text_w(u, 0.50f, leg);
+        text(u, (int)(dcx - lw / 2.0f), (int)(dcy + 32), COL_TEXT_DIM, 0.50f, leg);
+
+        const char *dest = ok ? "sobem sozinhas" : "esperando conta";
+        int dw = text_w(u, 0.52f, dest);
+        text(u, (int)(dcx - dw / 2.0f), (int)(dcy + dr + 26),
+             ok ? COL_AMBER : COL_TEXT_DIM, 0.52f, dest);
+    }
+
+    /* A seção, e o estado em uma frase. */
+    text(u, (int)PAD_X, 116, COL_TEXT_FAINT, 0.52f, "LAST.FM");
     char est[160];
-    if (c->configured)
+    if (ok)
         snprintf(est, sizeof(est), "ligado como %s", c->username);
     else if (!c->api_key[0] || !c->api_secret[0])
-        snprintf(est, sizeof(est), "falta a chave de API (last.fm/api/account/create)");
+        snprintf(est, sizeof(est), "falta a chave de API — pegue em last.fm/api/account/create");
     else
         snprintf(est, sizeof(est), "chaves prontas — falta entrar");
-    text(u, (int)PAD_X, 118, c->configured ? COL_AMBER : COL_TEXT, 0.66f, est);
-
-    char fl[96];
-    if (fila > 0)
-        snprintf(fl, sizeof(fl), "%d escuta%s guardada%s no cartão%s",
-                 fila, fila == 1 ? "" : "s", fila == 1 ? "" : "s",
-                 c->configured ? " — sobem sozinhas" : " — esperando uma conta");
-    else
-        snprintf(fl, sizeof(fl), "nenhuma escuta esperando");
-    text(u, (int)PAD_X, 140, COL_TEXT_DIM, 0.54f, fl);
+    text_elided(u, (int)PAD_X, 140, ok ? COL_AMBER : COL_TEXT, 0.62f,
+                SCRW - PAD_X - 250, est);
 
     static const char *ROT[CC_N] = {
         "chave de API", "segredo da API", "usuário", "entrar", "sair da conta"
     };
-    float y0 = 176.0f, rh = 40.0f;
+    float x0 = PAD_X, w = SCRW - PAD_X - 250.0f;
+    float y0 = 176.0f, rh = 38.0f;
+    /* o painel: dá aos campos a mesma leitura de objeto que o resto do app tem */
+    vita2d_draw_rectangle(x0, y0 - 8, w, CC_N * rh + 12, COL_CARD);
+    vita2d_draw_rectangle(x0, y0 - 8, w, 1, RGBA8(255, 170, 40, 40));
+
     for (int i = 0; i < CC_N; i++) {
         float y = y0 + i * rh;
         bool sel = (i == u->conta_sel);
-        if (sel)
-            vita2d_draw_rectangle(PAD_X, y - 4, SCRW - 2 * PAD_X, rh - 8, TINT_SEL_ROW);
-        text(u, (int)PAD_X + 6, (int)(y + 14), sel ? COL_AMBER : COL_TEXT, 0.58f, ROT[i]);
+        if (sel) {
+            vita2d_draw_rectangle(x0, y - 2, w, rh - 4, TINT_SEL_ROW);
+            vita2d_draw_rectangle(x0, y - 2, 2, rh - 4, COL_AMBER);
+        }
+        text(u, (int)x0 + 12, (int)(y + 16), sel ? COL_AMBER : COL_TEXT, 0.58f, ROT[i]);
 
         char val[128];
         unsigned cor = COL_TEXT_DIM;
@@ -1582,16 +1628,15 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
         else if (i == CC_USER)   snprintf(val, sizeof(val), "%s",
                                           c->username[0] ? c->username : "(vazio)");
         else if (i == CC_ENTRAR) {
-            snprintf(val, sizeof(val), "%s",
-                     c->configured ? "já está ligado" : "pede a senha e liga");
-            cor = c->configured ? COL_TEXT_FAINT : COL_AMBER_BRIGHT;
+            snprintf(val, sizeof(val), "%s", ok ? "já está ligado" : "pede a senha e liga");
+            cor = ok ? COL_TEXT_FAINT : COL_AMBER_BRIGHT;
         } else {
             snprintf(val, sizeof(val), "%s",
-                     c->configured ? "esquece a chave deste aparelho" : "—");
-            cor = c->configured ? COL_ALARM : COL_TEXT_FAINT;
+                     ok ? "esquece a chave deste aparelho" : "—");
+            cor = ok ? COL_ALARM : COL_TEXT_FAINT;
         }
-        text_elided(u, (int)(SCRW / 2), (int)(y + 14), cor, 0.54f,
-                    SCRW / 2 - PAD_X, val);
+        float vx = x0 + w * 0.46f;
+        text_elided(u, (int)vx, (int)(y + 16), cor, 0.54f, w - (vx - x0) - 12, val);
     }
 
     if (u->conta_msg[0] && u->clock < u->conta_msg_ate)
@@ -1599,6 +1644,279 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
     else
         text(u, (int)PAD_X, FOOT_Y, COL_TEXT_FAINT, 0.52f,
              "a escuta é guardada mesmo sem conta — nada se perde aqui");
+}
+
+/* ---------- a loja ----------
+
+   O Qobuz existia como FERRAMENTA DE PC: buscava, baixava, e a pessoa
+   copiava para o cartão. Funcionava, e ainda assim era o contrário do que
+   este app quer ser — quem está com o Vita na mão não deveria ter de
+   levantar e ligar um computador para pôr um disco novo.
+
+   A tela tem duas caras, e qual delas aparece não é uma opção: enquanto
+   faltar credencial só existe o preenchimento, porque buscar sem conta não
+   leva a lugar nenhum. Assim que houver, a tela vira a busca e o
+   preenchimento sai da frente — ninguém quer olhar para uma chave de API
+   depois de ter posto uma. */
+
+enum { QC_APPID = 0, QC_SECRET, QC_EMAIL, QC_ENTRAR, QC_N };
+
+static void qb_diz(Ui *u, const char *msg)
+{
+    snprintf(u->qb_msg, sizeof(u->qb_msg), "%s", msg);
+    u->qb_msg_ate = u->clock + 60 * 8;
+}
+
+static const char *qb_nome_formato(int f)
+{
+    if (f == QB_FLAC)  return "FLAC 16/44,1";
+    if (f == QB_HIRES) return "FLAC 24 bits";
+    return "MP3 320";
+}
+
+static void draw_qobuz(Ui *u, Library *lib, Player *p)
+{
+    (void)lib; (void)p;
+    if (!u->qb_lida) {
+        qobuz_config_load(&u->qb_cfg, STYLUS_DATA_DIR);
+        u->qb_lida = true;
+    }
+    QobuzConfig *c = &u->qb_cfg;
+    bool pronto = c->configured;
+
+    header(u, "QOBUZ", NULL);
+
+    QobuzJob job;
+    qobuz_job_estado(&job);
+
+    /* --- baixando: nada mais importa nesta tela --- */
+    if (job.ativo || job.ok || job.falhou) {
+        {
+            static const Dica d[] = {
+                { BTN_CIRCLE,   (Btn)-1, "parar" },
+                { BTN_TRIANGLE, (Btn)-1, "estante" },
+                { 0, 0, NULL }
+            };
+            header_hints(u, "", d);
+        }
+        text_elided(u, (int)PAD_X, 130, COL_AMBER, 0.78f, SCRW - 2 * PAD_X,
+                    job.album[0] ? job.album : "baixando");
+
+        char sub[200];
+        if (job.ativo)
+            snprintf(sub, sizeof(sub), "faixa %d de %d  ·  %s",
+                     job.faixa, job.total, job.titulo);
+        else if (job.ok)
+            snprintf(sub, sizeof(sub), "pronto — %d faixa%s no cartão%s%s",
+                     job.total, job.total == 1 ? "" : "s",
+                     job.erro[0] ? "  ·  " : "", job.erro);
+        else
+            snprintf(sub, sizeof(sub), "%s", job.erro[0] ? job.erro : "não deu");
+        text_elided(u, (int)PAD_X, 162, job.falhou ? COL_ALARM : COL_TEXT,
+                    0.58f, SCRW - 2 * PAD_X, sub);
+
+        /* A barra mede a FAIXA, não o disco: é o número que se move, e uma
+           barra parada por três minutos não informa nada. O disco vai no
+           texto acima, que é onde ele cabe. */
+        float bw = SCRW - 2 * PAD_X;
+        float fr = 0.0f;
+        if (job.bytes_total > 0) fr = (float)job.bytes / (float)job.bytes_total;
+        else if (job.ok) fr = 1.0f;
+        if (fr < 0) fr = 0;
+        if (fr > 1) fr = 1;
+        vita2d_draw_rectangle(PAD_X, 200, bw, 5, COL_BAR_BED);
+        vita2d_draw_rectangle(PAD_X, 200, bw * fr, 5,
+                              job.falhou ? COL_ALARM : COL_AMBER);
+        if (job.bytes_total > 0) {
+            char kb[64];
+            snprintf(kb, sizeof(kb), "%ld / %ld MB",
+                     job.bytes / 1048576, job.bytes_total / 1048576);
+            text(u, (int)PAD_X, 226, COL_TEXT_DIM, 0.52f, kb);
+        }
+        if (job.ok || job.falhou)
+            text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f,
+                 "o disco entra na estante na próxima varredura — [O] volta");
+        return;
+    }
+
+    /* --- ainda sem credencial: só o preenchimento --- */
+    if (!pronto) {
+        {
+            static const Dica d[] = {
+                { BTN_CROSS,    (Btn)-1, "editar" },
+                { BTN_UPDOWN,   (Btn)-1, "navegar" },
+                { BTN_TRIANGLE, (Btn)-1, "estante" },
+                { 0, 0, NULL }
+            };
+            header_hints(u, "", d);
+        }
+        text(u, (int)PAD_X, 116, COL_TEXT_FAINT, 0.52f, "PARA COMEÇAR");
+        text_elided(u, (int)PAD_X, 140, COL_TEXT, 0.60f, SCRW - 2 * PAD_X,
+                    "as chaves são da sua conta, não deste app — e ficam só no cartão");
+
+        static const char *ROT[QC_N] = {
+            "app_id", "segredo (pode ser mais de um, separados por vírgula)",
+            "e-mail", "entrar"
+        };
+        float y0 = 186.0f, rh = 44.0f;
+        for (int i = 0; i < QC_N; i++) {
+            float y = y0 + i * rh;
+            bool sel = (i == u->qb_sel);
+            if (sel) {
+                vita2d_draw_rectangle(PAD_X, y - 4, SCRW - 2 * PAD_X, rh - 8, TINT_SEL_ROW);
+                vita2d_draw_rectangle(PAD_X, y - 4, 2, rh - 8, COL_AMBER);
+            }
+            text_elided(u, (int)PAD_X + 12, (int)(y + 16),
+                        sel ? COL_AMBER : COL_TEXT, 0.56f, SCRW * 0.55f, ROT[i]);
+            char val[128];
+            unsigned cor = COL_TEXT_DIM;
+            if (i == QC_APPID)       mascara(c->app_id, val, sizeof(val));
+            else if (i == QC_SECRET) mascara(c->app_secret, val, sizeof(val));
+            else if (i == QC_EMAIL)  snprintf(val, sizeof(val), "%s",
+                                              c->email[0] ? c->email : "(vazio)");
+            else {
+                snprintf(val, sizeof(val), "pede a senha e liga");
+                cor = COL_AMBER_BRIGHT;
+            }
+            text_elided(u, (int)(SCRW * 0.62f), (int)(y + 16), cor, 0.54f,
+                        SCRW * 0.38f - PAD_X, val);
+        }
+        if (u->qb_msg[0] && u->clock < u->qb_msg_ate)
+            text(u, (int)PAD_X, FOOT_Y, COL_AMBER, 0.56f, u->qb_msg);
+        else
+            text(u, (int)PAD_X, FOOT_Y, COL_TEXT_FAINT, 0.50f,
+                 "o app_id e o segredo saem da mesma conta que você usa no site");
+        return;
+    }
+
+    /* --- pronto: buscar e baixar --- */
+    {
+        static const Dica d[] = {
+            { BTN_SQUARE,   (Btn)-1, "buscar" },
+            { BTN_CROSS,    (Btn)-1, "baixar" },
+            { BTN_SEL,      (Btn)-1, "formato" },
+            { BTN_UPDOWN,   (Btn)-1, "navegar" },
+            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "", d);
+    }
+
+    bool buscando = false;
+    int nres = 0;
+    qobuz_busca_estado(u->qb_res, (int)(sizeof(u->qb_res) / sizeof(u->qb_res[0])),
+                       &nres, &buscando);
+    u->qb_nres = nres > 0 ? nres : 0;
+
+    /* a linha da busca, com cara de campo */
+    vita2d_draw_rectangle(PAD_X, 112, SCRW - 2 * PAD_X, 34, COL_CARD);
+    vita2d_draw_rectangle(PAD_X, 112, 2, 34, COL_AMBER);
+    text_elided(u, (int)PAD_X + 14, 134, u->qb_termo[0] ? COL_TEXT : COL_TEXT_FAINT,
+                0.60f, SCRW * 0.6f,
+                u->qb_termo[0] ? u->qb_termo : "[quadrado] para buscar um disco");
+
+    /* O formato fica ao lado da busca, com o TAMANHO junto: escolher entre
+       "MP3" e "FLAC" sem saber que um custa quatro vezes o outro não é
+       escolher. Num cartão de Vita isso decide se cabem dez discos ou dois. */
+    {
+        char f[96];
+        snprintf(f, sizeof(f), "%s  ·  ~%d MB/faixa",
+                 qb_nome_formato(c->formato), qobuz_mb_por_faixa(c->formato));
+        int w = text_w(u, 0.54f, f);
+        text(u, (int)(SCRW - PAD_X - w), 134, COL_AMBER, 0.54f, f);
+    }
+
+    if (buscando) {
+        text(u, (int)PAD_X, 190, COL_TEXT_DIM, 0.60f, "procurando…");
+        return;
+    }
+    if (nres < 0) {
+        text(u, (int)PAD_X, 190, COL_ALARM, 0.58f,
+             "não deu para falar com o Qobuz — o Wi-Fi está ligado?");
+        return;
+    }
+    if (nres == 0) {
+        text(u, (int)PAD_X, 190, COL_TEXT_DIM, 0.58f,
+             u->qb_termo[0] ? "nada encontrado" : "busque um artista, um disco, um ano");
+        return;
+    }
+
+    if (u->qb_sel >= nres) u->qb_sel = nres - 1;
+    if (u->qb_sel < 0) u->qb_sel = 0;
+
+    float y = 166.0f, rh = 46.0f;
+    for (int i = 0; i < nres && y + rh < FOOT_Y - 10; i++, y += rh) {
+        const QobuzAlbum *a = &u->qb_res[i];
+        bool sel = (i == u->qb_sel);
+        if (sel) {
+            vita2d_draw_rectangle(PAD_X, y - 2, SCRW - 2 * PAD_X, rh - 6, TINT_SEL_ROW);
+            vita2d_draw_rectangle(PAD_X, y - 2, 2, rh - 6, COL_AMBER);
+        }
+        text_elided(u, (int)PAD_X + 12, (int)(y + 16), sel ? COL_AMBER : COL_TEXT,
+                    0.58f, SCRW - 2 * PAD_X - 190, a->titulo);
+        char sub[200];
+        snprintf(sub, sizeof(sub), "%s%s", a->artista,
+                 a->hires ? "   ·   hi-res" : "");
+        text_elided(u, (int)PAD_X + 12, (int)(y + 33), COL_TEXT_DIM, 0.50f,
+                    SCRW - 2 * PAD_X - 190, sub);
+
+        /* Quanto o disco vai ocupar, em cada linha: é a informação que
+           decide, e ela tem de estar onde a escolha acontece. */
+        char peso[64];
+        int mb = a->faixas > 0 ? a->faixas * qobuz_mb_por_faixa(c->formato) : 0;
+        if (mb > 0) snprintf(peso, sizeof(peso), "%d faixas  ·  ~%d MB", a->faixas, mb);
+        else        snprintf(peso, sizeof(peso), "—");
+        int w = text_w(u, 0.52f, peso);
+        text(u, (int)(SCRW - PAD_X - 12 - w), (int)(y + 24),
+             sel ? COL_AMBER : COL_TEXT_FAINT, 0.52f, peso);
+    }
+
+    if (u->qb_msg[0] && u->clock < u->qb_msg_ate)
+        text(u, (int)PAD_X, FOOT_Y, COL_AMBER, 0.56f, u->qb_msg);
+}
+
+/* O teclado da loja devolveu texto. */
+static void qb_recebeu(Ui *u, int campo, const char *txt)
+{
+    QobuzConfig *c = &u->qb_cfg;
+    if (campo == QC_APPID) {
+        snprintf(c->app_id, sizeof(c->app_id), "%.*s", (int)sizeof(c->app_id) - 1, txt);
+        qobuz_config_save(c, STYLUS_DATA_DIR);
+        qb_diz(u, "app_id guardado");
+    } else if (campo == QC_SECRET) {
+        snprintf(c->app_secret, sizeof(c->app_secret), "%.*s",
+                 (int)sizeof(c->app_secret) - 1, txt);
+        qobuz_config_save(c, STYLUS_DATA_DIR);
+        qb_diz(u, "segredo guardado");
+    } else if (campo == QC_EMAIL) {
+        snprintf(c->email, sizeof(c->email), "%.*s", (int)sizeof(c->email) - 1, txt);
+        qobuz_config_save(c, STYLUS_DATA_DIR);
+        qb_diz(u, "e-mail guardado");
+    } else if (campo == QC_ENTRAR) {
+        snprintf(u->qb_senha, sizeof(u->qb_senha), "%.*s",
+                 (int)sizeof(u->qb_senha) - 1, txt);
+        qb_diz(u, "entrando…");
+    } else if (campo == QC_N) {           /* o termo da busca */
+        snprintf(u->qb_termo, sizeof(u->qb_termo), "%.*s",
+                 (int)sizeof(u->qb_termo) - 1, txt);
+        u->qb_sel = 0;
+        qobuz_busca_async(c, u->qb_termo);
+    }
+}
+
+/* O login, um quadro depois de a tela já ter dito "entrando…". */
+static void qb_tenta_entrar(Ui *u)
+{
+    QobuzConfig *c = &u->qb_cfg;
+    int r = qobuz_login(c, c->email, u->qb_senha);
+    memset(u->qb_senha, 0, sizeof(u->qb_senha));   /* a senha sai da memória */
+    if (r == 0) {
+        qobuz_config_save(c, STYLUS_DATA_DIR);
+        qb_diz(u, "entrou");
+    } else if (r == -2) qb_diz(u, "ponha o app_id e o segredo antes");
+    else if (r == -3)   qb_diz(u, "sem rede: ligue o Wi-Fi e tente de novo");
+    else if (r == -4)   qb_diz(u, "o Qobuz recusou o e-mail ou a senha");
+    else                qb_diz(u, "faltou o e-mail");
 }
 
 /* O teclado devolveu texto: guarda onde for e, se for o caso, entra.
@@ -1932,6 +2250,7 @@ int ui_frame(Ui *u, Library *lib, Player *p)
     else if (u->view == VIEW_RECS)  draw_recs(u, lib, p);
     else if (u->view == VIEW_HANDOFF) draw_handoff(u, lib, p);
     else if (u->view == VIEW_CONTA) draw_conta(u, lib, p);
+    else if (u->view == VIEW_QOBUZ) draw_qobuz(u, lib, p);
     else                            draw_playlists(u, lib, p);
 
     /* O teclado do sistema pinta DEPOIS de tudo, senão fica atrás da tela.
@@ -2030,14 +2349,20 @@ int ui_handle_input(Ui *u)
     if (ime_aberto()) {
         char txt[256];
         int r = ime_poll(txt, sizeof(txt));
-        if (r == 1 && u->conta_campo >= 0) conta_recebeu(u, u->conta_campo, txt);
-        if (r != 0) u->conta_campo = -1;
+        if (r == 1) {
+            /* Qual tela pediu o teclado. Só uma pode estar esperando: o
+               diálogo do sistema é único. */
+            if (u->conta_campo >= 0)   conta_recebeu(u, u->conta_campo, txt);
+            else if (u->qb_campo >= 0) qb_recebeu(u, u->qb_campo, txt);
+        }
+        if (r != 0) { u->conta_campo = -1; u->qb_campo = -1; }
         memset(txt, 0, sizeof(txt));   /* pode ter sido uma senha */
         return 0;
     }
     /* O login foi pedido no quadro passado e o "entrando…" já apareceu: é
-       agora que se fala com a internet. Ver conta_tenta_entrar. */
+       agora que se fala com a internet. */
     if (u->conta_senha[0]) { conta_tenta_entrar(u); return 0; }
+    if (u->qb_senha[0])    { qb_tenta_entrar(u); return 0; }
 
     touch_read(u);
 
@@ -2120,7 +2445,7 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_DOWN) { if (++u->conta_sel >= CC_N) u->conta_sel = 0; action = 1; }
         if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
         if (edge & SCE_CTRL_L1) { u->view = VIEW_PLAYLISTS; action = 9; }
-        if (edge & SCE_CTRL_R1) { u->view = VIEW_SHELF; action = 10; }
+        if (edge & SCE_CTRL_R1) { u->view = VIEW_QOBUZ; action = 0; }
         if (edge & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE)) {
             LastfmConfig *cf = &u->conta_cfg;
             int i = u->conta_sel;
@@ -2150,6 +2475,71 @@ int ui_handle_input(Ui *u)
                                 : i == CC_SECRET ? cf->api_secret : cf->username;
                 if (ime_abrir(TIT[i], ini, 100, i == CC_SECRET) == 0)
                     u->conta_campo = i;
+            }
+        }
+    } else if (u->view == VIEW_QOBUZ) {
+        QobuzJob job;
+        qobuz_job_estado(&job);
+        QobuzConfig *qc = &u->qb_cfg;
+
+        if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
+        if (edge & SCE_CTRL_L1) { u->view = VIEW_CONTA; action = 0; }
+        if (edge & SCE_CTRL_R1) { u->view = VIEW_SHELF; action = 10; }
+
+        if (job.ativo) {
+            /* Baixando, só existe uma ação: parar. Qualquer outra tecla
+               mexeria numa lista que a tela nem está mostrando. */
+            if (edge & SCE_CTRL_CIRCLE) qobuz_job_cancela();
+        } else if (job.ok || job.falhou) {
+            /* Terminou: [O] limpa o resumo e volta à busca. Um novo download
+               zera o estado, então basta começar outro. */
+            if (edge & (SCE_CTRL_CIRCLE | SCE_CTRL_CROSS)) {
+                qobuz_job_limpa();
+                u->qb_lida = false;     /* relê a config, que pode ter mudado */
+                action = 1;
+            }
+        } else if (!qc->configured) {
+            if (edge & SCE_CTRL_UP)   { if (--u->qb_sel < 0) u->qb_sel = QC_N - 1; action = 1; }
+            if (edge & SCE_CTRL_DOWN) { if (++u->qb_sel >= QC_N) u->qb_sel = 0; action = 1; }
+            if (edge & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE)) {
+                int i = u->qb_sel;
+                if (i == QC_ENTRAR) {
+                    if (!qc->app_id[0] || !qc->app_secret[0])
+                        qb_diz(u, "ponha o app_id e o segredo antes");
+                    else if (!qc->email[0])
+                        qb_diz(u, "ponha o e-mail antes");
+                    else if (ime_abrir("senha do Qobuz", "", 63, true) == 0)
+                        u->qb_campo = QC_ENTRAR;
+                } else {
+                    static const char *TIT[] = { "app_id do Qobuz",
+                                                 "segredo (ou segredos, com vírgula)",
+                                                 "e-mail da conta" };
+                    const char *ini = i == QC_APPID ? qc->app_id
+                                    : i == QC_SECRET ? qc->app_secret : qc->email;
+                    if (ime_abrir(TIT[i], ini, 200, i == QC_SECRET) == 0)
+                        u->qb_campo = i;
+                }
+            }
+        } else {
+            if (edge & SCE_CTRL_UP)   { if (u->qb_sel > 0) u->qb_sel--; action = 1; }
+            if (edge & SCE_CTRL_DOWN) { if (u->qb_sel + 1 < u->qb_nres) u->qb_sel++; action = 1; }
+            if (edge & SCE_CTRL_SQUARE) {
+                if (ime_abrir("buscar no Qobuz", u->qb_termo, 90, false) == 0)
+                    u->qb_campo = QC_N;
+            }
+            if (edge & SCE_CTRL_SELECT) {
+                /* Cicla o formato. Fica guardado: quem escolheu MP3 uma vez
+                   porque o cartão é pequeno não quer reescolher a cada disco. */
+                qc->formato = qc->formato == QB_MP3 ? QB_FLAC
+                            : qc->formato == QB_FLAC ? QB_HIRES : QB_MP3;
+                qobuz_config_save(qc, STYLUS_DATA_DIR);
+                action = 1;
+            }
+            if ((edge & SCE_CTRL_CROSS) && u->qb_nres > 0 &&
+                u->qb_sel < u->qb_nres) {
+                if (qobuz_baixa_album(qc, &u->qb_res[u->qb_sel], qc->formato,
+                                      STYLUS_OWN_MUSIC) != 0)
+                    qb_diz(u, "não deu para começar o download");
             }
         }
     } else if (u->view == VIEW_HANDOFF) {
@@ -2284,6 +2674,11 @@ Ui *ui_create(void)
     u->font = vita2d_load_default_pvf();
     if (!u->font) { free(u); return NULL; }
     u->view = VIEW_SHELF;
+    /* -1 = "nenhum campo esperando o teclado". O calloc deixa 0, que é um
+       campo VÁLIDO (a chave de API, o app_id) — sem isto, o primeiro texto
+       digitado em qualquer tela cairia na primeira linha da outra. */
+    u->conta_campo = -1;
+    u->qb_campo = -1;
     return u;
 }
 

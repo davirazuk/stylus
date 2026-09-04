@@ -148,6 +148,11 @@ int main(int argc, char **argv)
     tap(ui, SCE_CTRL_L1);  shot(ui, &lib, p, "7-recomendados");
     tap(ui, SCE_CTRL_TRIANGLE);
     tap(ui, SCE_CTRL_R1);  shot(ui, &lib, p, "8-playlists");
+    /* A conta fica um [R1] adiante das playlists: é a quarta estação do anel
+       de telas, e sem ela aqui a única forma de julgar como ela ficou seria
+       instalar no aparelho. */
+    tap(ui, SCE_CTRL_R1);  shot(ui, &lib, p, "8b-conta");
+    tap(ui, SCE_CTRL_R1);  shot(ui, &lib, p, "8c-qobuz");
     tap(ui, SCE_CTRL_TRIANGLE);
 
     /* tela de varredura e estante vazia */

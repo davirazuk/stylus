@@ -187,7 +187,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
-          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c \
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_desenho ]; then
         fail "o teste de desenho não compila" "$out"
@@ -236,7 +236,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
-          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c \
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_atalhos ]; then
         fail "o teste de atalhos não compila" "$out"
@@ -338,6 +338,50 @@ if grep -q 'ui_begin_ritual' "$SRC"/main.c; then
     pass "pôr um disco encena a cerimônia"
 else
     fail "nada encena a cerimônia — ela existe e nunca roda"
+fi
+
+printf '\n\033[1mnenhuma credencial no repositorio\033[0m\n'
+# As chaves sao DE QUEM USA, e moram no cartao. Uma chave embutida no VPK
+# seria de todos os usuarios ao mesmo tempo, com a mesma cota — e uma chave
+# commitada por engano fica no historico do git para sempre, mesmo apagada
+# depois. Esta conferencia e barata e o erro que ela pega e irreversivel.
+ruim=""
+# hexadecimal longo solto num literal de string (formato de chave de API)
+h=$(grep -rInE '"[0-9a-f]{32,}"' "$SRC" tools 2>/dev/null | grep -viE 'md5|hash|test|assert|esperado|sha|checksum|soma' || true)
+[ -n "$h" ] && ruim="$ruim\n$h"
+# token do qobuz / chave de sessao do last.fm escritos a mao
+t=$(grep -rInE '(user_auth_token|app_secret|api_secret|session_key|sk)[[:space:]]*=[[:space:]]*"[A-Za-z0-9]{8,}"' "$SRC" tools 2>/dev/null || true)
+[ -n "$t" ] && ruim="$ruim\n$t"
+# os arquivos de config do cartao nao podem estar versionados
+for f in qobuz.config lastfm.config lastfm-queue.tsv; do
+    git ls-files --error-unmatch "$f" >/dev/null 2>&1 && ruim="$ruim\n$f esta versionado"
+done
+if [ -z "$ruim" ]; then
+    pass "nenhuma chave, token ou config de conta versionada"
+else
+    fail "credencial (ou coisa parecida) dentro do repositorio" "$(printf "$ruim")"
+fi
+
+printf '\n\033[1mqobuz: assinatura e leitura da resposta\033[0m\n'
+# As duas coisas que falham em SILENCIO: a assinatura do track/getFileUrl
+# (ordem alfabetica dos parametros, colados, segredo por ultimo) e a leitura
+# do JSON. Uma assinatura errada volta "Invalid Request Signature"; um campo
+# lido errado volta vazio. Na tela as duas viram "nao deu para baixar".
+# O fixture usa a ESTRUTURA REAL de propósito — ver o comentario no teste.
+if command -v gcc >/dev/null 2>&1 && pkg-config --exists libcurl 2>/dev/null; then
+    out=$(gcc -std=gnu11 -Wall -Wextra -I"$SRC" -o /tmp/vitastylus_qobuz \
+          tests/qobuz_test.c "$SRC"/qobuz.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/fsutil.c \
+          $(pkg-config --cflags --libs libcurl) 2>&1) || true
+    if [ ! -x /tmp/vitastylus_qobuz ]; then
+        fail "o teste do qobuz não compila" "$out"
+    elif /tmp/vitastylus_qobuz >/tmp/vitastylus_qobuz.out 2>&1; then
+        pass "assinatura e extrator de JSON corretos"
+    else
+        fail "qobuz: assinatura ou leitura da resposta erradas" \
+             "$(cat /tmp/vitastylus_qobuz.out)"
+    fi
+else
+    skip "PULA: sem gcc ou sem libcurl"
 fi
 
 printf '\n\033[1ma arte instala\033[0m\n'

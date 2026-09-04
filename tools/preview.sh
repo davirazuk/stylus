@@ -26,7 +26,7 @@ gcc -std=gnu11 -Wall -Wextra -O1 -o "$BIN" \
 	tests/hostgfx/player_stub.c \
 	src/library.c src/fsutil.c src/rec.c src/playlist.c src/ui.c \
 	src/ui_layout.c src/decoder.c src/sides.c src/lyrics.c src/scrobble.c \
-	src/ime.c src/lastfm.c src/md5.c src/net.c \
+	src/ime.c src/lastfm.c src/md5.c src/net.c src/qobuz.c \
 	-Isrc -Itests/hostgfx/include \
 	$(pkg-config --cflags --libs freetype2 libpng libcurl) \
 	$(pkg-config --cflags --libs libmpg123 flac vorbisfile opusfile) \

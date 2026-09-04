@@ -35,6 +35,7 @@
    a chave de sessão do last.fm — nada de senha, e a chave já está no
    cartão. É uma troca consciente: sem ela, não há scrobble nenhum. */
 
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <psp2/kernel/threadmgr.h>
@@ -107,41 +108,72 @@ static bool tem_link(void)
     return estado == SCE_NETCTL_STATE_CONNECTED;
 }
 
-int net_post(const char *url, const char *body, char *resp, int resplen)
-{
-    if (!url || !body || !resp || resplen <= 0) return -1;
-    resp[0] = '\0';
+/* Monta e envia um pedido. Devolve o id do pedido (>=0) com a resposta já
+   começada, ou -1. Quem chama é dono de fechar tudo pelo `fecha`.
 
+   Está fatorado porque GET e POST diferem em três linhas e mais nada — e as
+   outras trinta (prazos, cabeçalhos, a ordem de destruição) são exatamente
+   o tipo de coisa que diverge entre duas cópias e vira um vazamento de
+   conexão que só aparece depois de vinte pedidos. */
+struct Pedido { int tmpl, conn, req; };
+
+static void fecha(struct Pedido *p)
+{
+    if (p->req  >= 0) sceHttpDeleteRequest(p->req);
+    if (p->conn >= 0) sceHttpDeleteConnection(p->conn);
+    if (p->tmpl >= 0) sceHttpDeleteTemplate(p->tmpl);
+    p->req = p->conn = p->tmpl = -1;
+}
+
+static int abre(struct Pedido *p, const char *url, int metodo,
+                const char *body, const char *const *headers)
+{
+    p->tmpl = p->conn = p->req = -1;
     if (rede_de_pe() != 0) return -1;
     if (!tem_link())       return -1;
 
-    int tmpl = -1, conn = -1, req = -1, ret = -1;
+    p->tmpl = sceHttpCreateTemplate("vitastylus/1.0 (PS Vita)",
+                                    SCE_HTTP_VERSION_1_1, 1);
+    if (p->tmpl < 0) return -1;
+    sceHttpSetConnectTimeOut(p->tmpl, ESPERA_US);
+    sceHttpSetSendTimeOut(p->tmpl, ESPERA_US);
+    sceHttpSetRecvTimeOut(p->tmpl, ESPERA_US);
 
-    tmpl = sceHttpCreateTemplate("vitastylus/1.0 (PS Vita)",
-                                 SCE_HTTP_VERSION_1_1, 1);
-    if (tmpl < 0) goto fim;
-    sceHttpSetConnectTimeOut(tmpl, ESPERA_US);
-    sceHttpSetSendTimeOut(tmpl, ESPERA_US);
-    sceHttpSetRecvTimeOut(tmpl, ESPERA_US);
+    p->conn = sceHttpCreateConnectionWithURL(p->tmpl, url, 0);
+    if (p->conn < 0) { fecha(p); return -1; }
 
-    conn = sceHttpCreateConnectionWithURL(tmpl, url, 0);
-    if (conn < 0) goto fim;
+    unsigned int n = body ? (unsigned int)strlen(body) : 0;
+    p->req = sceHttpCreateRequestWithURL(p->conn, metodo, url, n);
+    if (p->req < 0) { fecha(p); return -1; }
 
-    unsigned int n = (unsigned int)strlen(body);
-    req = sceHttpCreateRequestWithURL(conn, SCE_HTTP_METHOD_POST, url, n);
-    if (req < 0) goto fim;
-    sceHttpAddRequestHeader(req, "Content-Type",
-                            "application/x-www-form-urlencoded",
-                            SCE_HTTP_HEADER_OVERWRITE);
+    if (body)
+        sceHttpAddRequestHeader(p->req, "Content-Type",
+                                "application/x-www-form-urlencoded",
+                                SCE_HTTP_HEADER_OVERWRITE);
+    for (int i = 0; headers && headers[i]; i++) {
+        const char *dp = strchr(headers[i], ':');
+        if (!dp) continue;
+        char nome[64];
+        size_t ln = (size_t)(dp - headers[i]);
+        if (ln >= sizeof(nome)) continue;
+        memcpy(nome, headers[i], ln);
+        nome[ln] = '\0';
+        const char *val = dp + 1;
+        while (*val == ' ') val++;
+        sceHttpAddRequestHeader(p->req, nome, val, SCE_HTTP_HEADER_OVERWRITE);
+    }
 
-    if (sceHttpSendRequest(req, body, n) < 0) goto fim;
+    if (sceHttpSendRequest(p->req, body, n) < 0) { fecha(p); return -1; }
+    return 0;
+}
 
-    int http = 0;
-    if (sceHttpGetStatusCode(req, &http) < 0) goto fim;
+/* Mesmo critério nos dois caminhos: 5xx é falha de servidor (vale insistir
+   depois); 4xx quem chamou examina, porque "recusado" não deve virar um laço
+   de tentativas eternas. */
+static int status_ok(int http) { return http >= 200 && http < 500; }
 
-    /* A resposta importa: o lastfm.c precisa distinguir "aceito" de um erro
-       que veio com 200. Lê até encher o buffer e para — o resto não faz
-       falta, e um servidor teimoso não pode ditar quanto se lê. */
+static int corpo_para_buffer(int req, char *resp, int resplen)
+{
     int usado = 0;
     for (;;) {
         int r = sceHttpReadData(req, resp + usado, (unsigned)(resplen - 1 - usado));
@@ -150,17 +182,85 @@ int net_post(const char *url, const char *body, char *resp, int resplen)
         if (usado >= resplen - 1) break;
     }
     resp[usado] = '\0';
+    return usado;
+}
 
-    /* Mesmo critério do caminho PC: 5xx é falha de servidor (vale insistir
-       depois, a fila fica); 4xx o lastfm.c examina, porque "faixa recusada"
-       não deve prender a fila para sempre. */
-    ret = (http >= 200 && http < 500) ? 0 : -1;
+int net_post(const char *url, const char *body, char *resp, int resplen)
+{
+    if (!url || !body || !resp || resplen <= 0) return -1;
+    resp[0] = '\0';
 
-fim:
-    if (req  >= 0) sceHttpDeleteRequest(req);
-    if (conn >= 0) sceHttpDeleteConnection(conn);
-    if (tmpl >= 0) sceHttpDeleteTemplate(tmpl);
+    struct Pedido p;
+    if (abre(&p, url, SCE_HTTP_METHOD_POST, body, NULL) != 0) return -1;
+
+    int http = 0, ret = -1;
+    if (sceHttpGetStatusCode(p.req, &http) >= 0) {
+        corpo_para_buffer(p.req, resp, resplen);
+        ret = status_ok(http) ? 0 : -1;
+    }
+    fecha(&p);
     return ret;
+}
+
+int net_get(const char *url, const char *const *headers, char *resp, int resplen)
+{
+    if (!url || !resp || resplen <= 0) return -1;
+    resp[0] = '\0';
+
+    struct Pedido p;
+    if (abre(&p, url, SCE_HTTP_METHOD_GET, NULL, headers) != 0) return -1;
+
+    int http = 0, ret = -1;
+    if (sceHttpGetStatusCode(p.req, &http) >= 0) {
+        corpo_para_buffer(p.req, resp, resplen);
+        ret = status_ok(http) ? 0 : -1;
+    }
+    fecha(&p);
+    return ret;
+}
+
+int net_download(const char *url, const char *const *headers, const char *path,
+                 void (*prog)(void *ud, long feitos, long total), void *ud)
+{
+    if (!url || !path) return -1;
+
+    struct Pedido p;
+    if (abre(&p, url, SCE_HTTP_METHOD_GET, NULL, headers) != 0) return -1;
+
+    int http = 0;
+    if (sceHttpGetStatusCode(p.req, &http) < 0 || http < 200 || http >= 300) {
+        fecha(&p);
+        return -1;
+    }
+    unsigned long long total = 0;
+    int tem_total = (sceHttpGetResponseContentLength(p.req, &total) >= 0);
+
+    /* Grava num parcial e só renomeia no fim — ver a nota no net.h. */
+    char tmp[512];
+    snprintf(tmp, sizeof(tmp), "%s.parcial", path);
+    FILE *f = fopen(tmp, "wb");
+    if (!f) { fecha(&p); return -1; }
+
+    static char buf[32 * 1024];
+    long feitos = 0;
+    int ok = 1;
+    for (;;) {
+        int r = sceHttpReadData(p.req, buf, sizeof(buf));
+        if (r < 0) { ok = 0; break; }
+        if (r == 0) break;
+        if (fwrite(buf, 1, (size_t)r, f) != (size_t)r) { ok = 0; break; }
+        feitos += r;
+        if (prog) prog(ud, feitos, tem_total ? (long)total : -1);
+    }
+    fclose(f);
+    fecha(&p);
+
+    /* Um arquivo que chegou curto é um arquivo quebrado, e a estante não pode
+       recebê-lo: melhor não existir do que existir pela metade. */
+    if (ok && tem_total && total > 0 && feitos != (long)total) ok = 0;
+    if (!ok) { remove(tmp); return -1; }
+    remove(path);
+    return rename(tmp, path) == 0 ? 0 : -1;
 }
 
 #else
@@ -174,6 +274,130 @@ static size_t write_cb(char *ptr, size_t n, size_t m, void *ud)
     (void)ud;
     (void)ptr;
     return n * m;
+}
+
+/* Recolhe o corpo num buffer de tamanho fixo, cortando o excesso: o mesmo
+   contrato do caminho do Vita, para que um teste aqui signifique alguma
+   coisa lá. */
+struct Balde { char *p; int cap; int n; };
+
+static size_t balde_cb(char *ptr, size_t n, size_t m, void *ud)
+{
+    struct Balde *b = ud;
+    size_t bytes = n * m;
+    if (b && b->p) {
+        int cabe = b->cap - 1 - b->n;
+        if (cabe > 0) {
+            int q = (int)bytes < cabe ? (int)bytes : cabe;
+            memcpy(b->p + b->n, ptr, (size_t)q);
+            b->n += q;
+            b->p[b->n] = '\0';
+        }
+    }
+    return bytes;      /* sempre "consumiu tudo": abortar aqui vira erro */
+}
+
+static int curl_faz(const char *url, const char *const *headers,
+                    const char *body, char *resp, int resplen)
+{
+    CURL *c = curl_easy_init();
+    if (!c) return -1;
+    struct curl_slist *hdrs = NULL;
+    if (body)
+        hdrs = curl_slist_append(hdrs, "Content-Type: application/x-www-form-urlencoded");
+    for (int i = 0; headers && headers[i]; i++)
+        hdrs = curl_slist_append(hdrs, headers[i]);
+
+    struct Balde b = { resp, resplen, 0 };
+    if (resp && resplen > 0) resp[0] = '\0';
+
+    curl_easy_setopt(c, CURLOPT_URL, url);
+    if (body) {
+        curl_easy_setopt(c, CURLOPT_POST, 1L);
+        curl_easy_setopt(c, CURLOPT_POSTFIELDS, body);
+    }
+    if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, balde_cb);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &b);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 20L);
+
+    CURLcode res = curl_easy_perform(c);
+    long http = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &http);
+    if (hdrs) curl_slist_free_all(hdrs);
+    curl_easy_cleanup(c);
+
+    if (res != CURLE_OK) return -1;
+    return (http >= 200 && http < 500) ? 0 : -1;
+}
+
+int net_get(const char *url, const char *const *headers, char *resp, int resplen)
+{
+    if (!url || !resp || resplen <= 0) return -1;
+    return curl_faz(url, headers, NULL, resp, resplen);
+}
+
+struct Baixa {
+    FILE *f;
+    long feitos;
+    void (*prog)(void *, long, long);
+    void *ud;
+};
+
+static size_t baixa_cb(char *ptr, size_t n, size_t m, void *ud)
+{
+    struct Baixa *d = ud;
+    size_t bytes = n * m;
+    if (fwrite(ptr, 1, bytes, d->f) != bytes) return 0;   /* 0 aborta */
+    d->feitos += (long)bytes;
+    return bytes;
+}
+
+static int baixa_prog(void *ud, curl_off_t dltotal, curl_off_t dlnow,
+                      curl_off_t ul, curl_off_t un)
+{
+    struct Baixa *d = ud;
+    (void)ul; (void)un;
+    if (d->prog) d->prog(d->ud, (long)dlnow, dltotal > 0 ? (long)dltotal : -1);
+    return 0;
+}
+
+int net_download(const char *url, const char *const *headers, const char *path,
+                 void (*prog)(void *ud, long feitos, long total), void *ud)
+{
+    if (!url || !path) return -1;
+    char tmp[512];
+    snprintf(tmp, sizeof(tmp), "%s.parcial", path);
+    FILE *f = fopen(tmp, "wb");
+    if (!f) return -1;
+
+    CURL *c = curl_easy_init();
+    if (!c) { fclose(f); remove(tmp); return -1; }
+    struct curl_slist *hdrs = NULL;
+    for (int i = 0; headers && headers[i]; i++)
+        hdrs = curl_slist_append(hdrs, headers[i]);
+
+    struct Baixa d = { f, 0, prog, ud };
+    curl_easy_setopt(c, CURLOPT_URL, url);
+    if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, baixa_cb);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &d);
+    curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, baixa_prog);
+    curl_easy_setopt(c, CURLOPT_XFERINFODATA, &d);
+    curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+
+    CURLcode res = curl_easy_perform(c);
+    long http = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &http);
+    if (hdrs) curl_slist_free_all(hdrs);
+    curl_easy_cleanup(c);
+    fclose(f);
+
+    if (res != CURLE_OK || http < 200 || http >= 300) { remove(tmp); return -1; }
+    remove(path);
+    return rename(tmp, path) == 0 ? 0 : -1;
 }
 
 int net_post(const char *url, const char *body, char *resp, int resplen)
