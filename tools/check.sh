@@ -464,17 +464,17 @@ else
     skip "PULA: sem Pillow"
 fi
 
-printf '\n\033[1macento em texto de tela\033[0m\n'
+printf '\n\033[1mo idioma da tela\033[0m\n'
 # "there's a spelling issue in the thing" foi relatado tres vezes e sobreviveu
 # a todas: um "tambem NAO abre" no meio de um diagnostico nao salta aos olhos
 # de quem le o CODIGO, e quem le a TELA nao abre o editor. Revisao manual ja
 # provou que nao pega — por isso e conferencia.
 if command -v python3 >/dev/null 2>&1; then
-    out=$(python3 tools/acentos.py "$SRC"/*.c 2>&1)
+    out=$(python3 tools/idioma.py "$SRC"/*.c 2>&1)
     if [ -z "$out" ]; then
-        pass "nenhuma palavra sem acento no texto que a pessoa le"
+        pass "a tela esta em ingles, sem portugues sobrando"
     else
-        fail "palavra sem acento em texto de tela" "$out"
+        fail "portugues sobrando em texto de tela" "$out"
     fi
 else
     skip "PULA: sem python3"

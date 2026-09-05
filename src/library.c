@@ -201,7 +201,7 @@ static void set_artist_album(const char *rel_dir, char *artist, size_t artist_ca
     if (artist && artist_cap) artist[0] = '\0';
     if (album && album_cap) album[0] = '\0';
     if (!rel_dir || !rel_dir[0]) {
-        snprintf(album, album_cap, "%s", "(sem pasta)");
+        snprintf(album, album_cap, "%s", "(no folder)");
         return;
     }
     const char *last = strrchr(rel_dir, '/');
@@ -685,26 +685,26 @@ int library_scan(Library *lib)
 
 /* Os códigos que o sceIo* devolve, nos casos que importam aqui.
 
-   "não existe" e "sem permissão" pedem consertos OPOSTOS, e a tela dizia
+   "does not exist" e "permission denied" pedem consertos OPOSTOS, e a tela dizia
    "(não existe)" para os dois — mandando a pessoa procurar a pasta que já
    está lá. Um número que ninguém sabe ler não serve; o nome, sim. */
 const char *scan_err_str(int err)
 {
     if (err == 0) return "";
     switch ((unsigned)err) {
-    case 0x80010002u: return "não existe";
-    case 0x8001000Du: return "sem permissão";
-    case 0x80010013u: return "só leitura";
-    case 0x80010014u: return "dispositivo ocupado";
-    case 0x80010016u: return "caminho inválido";
-    case 0x80010018u: return "não é uma pasta";
-    case 0x8001001Cu: return "sem memória";
-    case 0x80010024u: return "arquivos demais abertos";
+    case 0x80010002u: return "does not exist";
+    case 0x8001000Du: return "permission denied";
+    case 0x80010013u: return "read only";
+    case 0x80010014u: return "device busy";
+    case 0x80010016u: return "invalid path";
+    case 0x80010018u: return "not a folder";
+    case 0x8001001Cu: return "out of memory";
+    case 0x80010024u: return "too many open files";
     /* no PC os erros são os do errno, pequenos */
-    case 2:  return "não existe";
-    case 13: return "sem permissão";
-    case 20: return "não é uma pasta";
-    default: return "erro desconhecido";
+    case 2:  return "does not exist";
+    case 13: return "permission denied";
+    case 20: return "not a folder";
+    default: return "unknown error";
     }
 }
 
@@ -723,19 +723,19 @@ void library_report(const Library *lib, const char *path)
 #else
     fprintf(f, "dir api     opendir/readdir\n");
 #endif
-    fprintf(f, "raizes      %d%s\n", lib->nroots,
-            lib->roots_from_config ? " (de roots.txt)" : " (padrao)");
+    fprintf(f, "roots       %d%s\n", lib->nroots,
+            lib->roots_from_config ? " (from roots.txt)" : " (default)");
     for (int i = 0; i < lib->nroots; i++) {
         const ScanRoot *r = &lib->roots[i];
         if (r->opened)
             fprintf(f, "  [x] %-28s audio=%d outros=%d\n",
                     r->path, r->audio, r->other);
         else
-            fprintf(f, "  [ ] %-28s NAO ABRIU: 0x%08X (%s)\n",
+            fprintf(f, "  [ ] %-28s DID NOT OPEN: 0x%08X (%s)\n",
                     r->path, (unsigned)r->err, scan_err_str(r->err));
     }
-    fprintf(f, "pastas      %d\n", lib->dirs_seen);
-    fprintf(f, "arquivos    %d  (audio %d)\n", lib->files_seen, lib->audio_found);
+    fprintf(f, "folders     %d\n", lib->dirs_seen);
+    fprintf(f, "files       %d  (audio %d)\n", lib->files_seen, lib->audio_found);
     fprintf(f, "albuns      %d\n", lib->nalbums);
 
     int faixas = 0, maior = 0;
@@ -746,11 +746,11 @@ void library_report(const Library *lib, const char *path)
     /* Nada de contar duração aqui: o ID3 é lido sob demanda, então neste
        instante NENHUMA foi lida, e um "sem duracao: 3728" pareceria defeito
        sendo o funcionamento normal. */
-    fprintf(f, "faixas      %d  (maior album: %d)\n", faixas, maior);
+    fprintf(f, "tracks      %d  (largest album: %d)\n", faixas, maior);
 
     char st[512];
     library_status(lib, st, sizeof(st));
-    fprintf(f, "estado      %s\n", st);
+    fprintf(f, "state       %s\n", st);
     fclose(f);
 }
 
@@ -761,7 +761,7 @@ void library_status(const Library *lib, char *out, size_t cap)
     if (!lib) return;
 
     if (lib->nroots == 0) {
-        snprintf(out, cap, "nenhuma pasta para varrer");
+        snprintf(out, cap, "no folder to scan");
         return;
     }
     int opened = 0;
@@ -775,29 +775,29 @@ void library_status(const Library *lib, char *out, size_t cap)
            há música alcançável em nenhum dispositivo montado. */
         int cartao = dir_exists("ux0:");
         snprintf(out, cap,
-                 cartao ? "procurei em todos os dispositivos e não achei áudio"
-                        : "o cartão (ux0:) não abre — está no aparelho?");
+                 cartao ? "searched every device and found no audio"
+                        : "the card (ux0:) will not open — is it in the device?");
         return;
     }
     if (lib->audio_found == 0) {
         int other = 0;
         for (int i = 0; i < lib->nroots; i++) other += lib->roots[i].other;
         if (lib->files_seen == 0)
-            snprintf(out, cap, "as pastas abriram e estão vazias (%d subpastas)",
+            snprintf(out, cap, "the folders opened and are empty (%d subfolders)",
                      lib->dirs_seen);
         else
             snprintf(out, cap,
-                     "vi %d arquivo%s, nenhum de áudio (%d de outro tipo)",
+                     "saw %d file%s, none of them audio (%d of other kinds)",
                      lib->files_seen, lib->files_seen == 1 ? "" : "s", other);
         return;
     }
-    size_t n = (size_t)snprintf(out, cap, "%d faixa%s em %d pasta%s",
+    size_t n = (size_t)snprintf(out, cap, "%d track%s in %d folder%s",
                                 lib->audio_found, lib->audio_found == 1 ? "" : "s",
                                 lib->dirs_seen, lib->dirs_seen == 1 ? "" : "s");
     /* Quando as raízes foram DESCOBERTAS, dizer onde: a pessoa não escolheu
        essa pasta e merece saber de onde veio o que está vendo. */
     if (lib->roots_discovered && lib->nroots > 0 && n + 8 < cap)
-        snprintf(out + n, cap - n, " — achadas em %s%s",
+        snprintf(out + n, cap - n, " — found in %s%s",
                  lib->roots[lib->nroots - 1].path,
                  lib->nroots > 1 ? " e outras" : "");
 }
@@ -837,7 +837,7 @@ int album_load_meta(Album *alb)
         if (dt.number > 0 && t->number < 0) t->number = dt.number;
         if (dt.seconds > 0) { t->seconds = dt.seconds; total += dt.seconds; known++; }
         if (!alb->artist[0] && dt.artist[0]) snprintf(alb->artist, MAX_NAME_LEN, "%s", dt.artist);
-        if (dt.album[0] && (!alb->album[0] || !strcmp(alb->album, "(sem pasta)")))
+        if (dt.album[0] && (!alb->album[0] || !strcmp(alb->album, "(no folder)")))
             snprintf(alb->album, MAX_NAME_LEN, "%s", dt.album);
         dec_tags_free(&dt);
     }

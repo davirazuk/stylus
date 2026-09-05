@@ -492,7 +492,7 @@ static void job_corpo(void)
                          (int)(sizeof(faixas) / sizeof(faixas[0])));
     if (n <= 0) {
         snprintf(g_job.erro, sizeof(g_job.erro),
-                 n == 0 ? "o disco não trouxe faixas" : "não deu para falar com o Qobuz");
+                 n == 0 ? "the record returned no tracks" : "could not reach Qobuz");
         g_job.falhou = true;
         g_job.ativo = false;
         return;
@@ -507,7 +507,7 @@ static void job_corpo(void)
        meio de um caminho cria a pasta no lugar errado em silêncio. */
     snprintf(pasta, sizeof(pasta), "%.300s/%.100s - %.100s", g_job_dir, art, tit);
     if (mkdir_p(pasta) != 0) {
-        snprintf(g_job.erro, sizeof(g_job.erro), "não deu para criar a pasta");
+        snprintf(g_job.erro, sizeof(g_job.erro), "could not create the folder");
         g_job.falhou = true;
         g_job.ativo = false;
         return;
@@ -535,12 +535,12 @@ static void job_corpo(void)
     }
 
     if (erros >= n) {
-        snprintf(g_job.erro, sizeof(g_job.erro), "nenhuma faixa baixou");
+        snprintf(g_job.erro, sizeof(g_job.erro), "no track downloaded");
         g_job.falhou = true;
     } else {
         if (erros > 0)
             snprintf(g_job.erro, sizeof(g_job.erro),
-                     "%d faixa%s não veio", erros, erros == 1 ? "" : "s");
+                     "%d track%s did not arrive", erros, erros == 1 ? "" : "s");
         g_job.ok = true;
     }
     g_job.ativo = false;      /* por último: ver a nota lá em cima */

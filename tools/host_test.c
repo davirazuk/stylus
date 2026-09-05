@@ -288,7 +288,7 @@ static void test_scan(void)
         ok(0, "Portishead/Dummy com duas faixas", "");
 
     /* faixas soltas na raiz: UM álbum, não três */
-    Album *soltas = album_named(&lib, "", "(sem pasta)");
+    Album *soltas = album_named(&lib, "", "(no folder)");
     okf(soltas && soltas->ntracks == 3,
         "as faixas soltas na raiz viram UM disco, não um por arquivo",
         "%s", soltas ? "contagem errada" : "não existe álbum para elas");
@@ -384,7 +384,7 @@ static void test_scan_empty(void)
     library_scan(&l);
     char st[512];
     library_status(&l, st, sizeof(st));
-    okf(strstr(st, "ux0:") != NULL && strstr(st, "não") != NULL,
+    okf(strstr(st, "ux0:") != NULL && strstr(st, "not") != NULL,
         "a estante vazia diz se o CARTÃO abre, não que palpite falhou",
         "disse \"%s\"", st);
     library_free(&l);
@@ -402,7 +402,7 @@ static void test_scan_empty(void)
     library_add_root(&o, only);
     library_scan(&o);
     library_status(&o, st, sizeof(st));
-    okf(strstr(st, "nenhum de áudio") != NULL,
+    okf(strstr(st, "none of them audio") != NULL,
         "\"achei arquivos, nenhum é música\" é outra frase que \"não achei pasta\"",
         "disse \"%s\"", st);
     library_free(&o);
@@ -548,8 +548,8 @@ static void test_sides(void)
         char g1[160], g2[160];
         sides_gesture(&s, 1, g1, sizeof(g1));
         sides_gesture(&s, 2, g2, sizeof(g2));
-        okf(strstr(g1, "vire o disco") != NULL, "A→B manda VIRAR o disco", "\"%s\"", g1);
-        okf(strstr(g2, "DISCO 2") != NULL,
+        okf(strstr(g1, "flip the record") != NULL, "A→B manda VIRAR o disco", "\"%s\"", g1);
+        okf(strstr(g2, "DISC 2") != NULL,
             "B→C manda TROCAR de disco (você levanta e vai à estante)", "\"%s\"", g2);
     }
 

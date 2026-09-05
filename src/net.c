@@ -290,7 +290,7 @@ NetStream *net_stream_open(const char *url, const char *const *headers,
     NetStream *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
     if (abre(&s->p, url, SCE_HTTP_METHOD_GET, NULL, hs) != 0) {
-        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "sem rede");
+        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "no network");
         free(s);
         return NULL;
     }
@@ -301,7 +301,7 @@ NetStream *net_stream_open(const char *url, const char *const *headers,
        estava corrompido — o que manda consertar a coisa errada. */
     int http = 0;
     if (sceHttpGetStatusCode(s->p.req, &http) < 0) {
-        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "sem resposta");
+        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "no response");
         fecha(&s->p); free(s); return NULL;
     }
     int esperado = (de > 0) ? 206 : 200;
@@ -575,7 +575,7 @@ NetStream *net_stream_open(const char *url, const char *const *headers,
     if (s->erro || (http != esperado && !(de == 0 && http == 206))) {
         if (erro && erolen > 0) {
             if (http) snprintf(erro, (size_t)erolen, "HTTP %ld", http);
-            else      snprintf(erro, (size_t)erolen, "sem rede");
+            else      snprintf(erro, (size_t)erolen, "no network");
         }
         net_stream_close(s);
         return NULL;

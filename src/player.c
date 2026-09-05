@@ -195,18 +195,18 @@ static int open_track(Player *p, const Track *t)
            Só para faixa LOCAL: na rede o formato vem do resolvedor, não do nome. */
         if (dec_kind_of(t->path) == DEC_NONE) {
             snprintf(p->last_error, sizeof(p->last_error),
-                     "%.72s: formato que este app não toca", t->title);
+                     "%.72s: this app cannot play this format", t->title);
             return -1;
         }
         p->dec = dec_open(t->path);
     }
     if (!p->dec) {
-        snprintf(p->last_error, sizeof(p->last_error), "%.90s: não abriu", t->title);
+        snprintf(p->last_error, sizeof(p->last_error), "%.90s: would not open", t->title);
         return -1;
     }
     dec_format(p->dec, &p->dfmt);
     if (p->dfmt.rate <= 0 || p->dfmt.channels <= 0) {
-        snprintf(p->last_error, sizeof(p->last_error), "%.90s: formato ilegível", t->title);
+        snprintf(p->last_error, sizeof(p->last_error), "%.90s: unreadable format", t->title);
         dec_close(p->dec);
         p->dec = NULL;
         return -1;
@@ -227,7 +227,7 @@ static int open_track(Player *p, const Track *t)
     want.userdata = p;
     dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (dev == 0) {
-        snprintf(p->last_error, sizeof(p->last_error), "o áudio não abriu");
+        snprintf(p->last_error, sizeof(p->last_error), "the audio device would not open");
         dec_close(p->dec);
         p->dec = NULL;
         return -1;

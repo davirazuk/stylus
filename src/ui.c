@@ -1082,20 +1082,20 @@ static void shelf_empty(Ui *u, Library *lib)
     float tx = PAD_X + 200;
     float tw = SCRW - tx - PAD_X;
 
-    text(u, (int)tx, 150, COL_AMBER, 0.90f, "a estante está vazia");
+    text(u, (int)tx, 150, COL_AMBER, 0.90f, "the shelf is empty");
     text_elided(u, (int)tx, 182, COL_TEXT, 0.60f, tw, st);
 
     /* O QUE FAZER. Uma linha, e é a verdade nova: não há nome de pasta a
        acertar. */
     text_elided(u, (int)tx, 224, COL_TEXT, 0.56f, tw,
-                "o app procura a música sozinho, em qualquer pasta do cartão.");
+                "the app finds the music on its own, in any folder on the card.");
     text_elided(u, (int)tx, 246, COL_TEXT, 0.56f, tw,
-                "copie os discos para ux0:music — ou para onde preferir — e volte aqui.");
+                "copy your records to ux0:music — or wherever you like — and come back.");
 
     /* Daqui para baixo é diagnóstico: apagado, e só para quando o de cima
        não bastar. */
     float y = 288;
-    text(u, (int)tx, (int)y, COL_TEXT_FAINT, 0.52f, "o que eu vi:");
+    text(u, (int)tx, (int)y, COL_TEXT_FAINT, 0.52f, "what I saw:");
     y += 22;
     {
         int e = 0;
@@ -1105,13 +1105,13 @@ static void shelf_empty(Ui *u, Library *lib)
                tem nada a ver com música, e nenhuma mudança de pasta conserta.
                As duas falhas se parecem na tela e pedem consertos opostos. */
             char l[160];
-            snprintf(l, sizeof(l), "ux0: (o cartão) não abre: %s  [0x%08X]",
+            snprintf(l, sizeof(l), "ux0: (the card) will not open: %s  [0x%08X]",
                      scan_err_str(e), (unsigned)e);
             text_elided(u, (int)tx + 10, (int)y, COL_ALARM, 0.53f, tw - 10, l);
             y += 20;
         } else {
             char l[420];
-            size_t n = (size_t)snprintf(l, sizeof(l), "ux0: abre, e tem: ");
+            size_t n = (size_t)snprintf(l, sizeof(l), "ux0: opens, and holds: ");
             const char *nome;
             int isdir, vistos = 0;
             while (vistos < 8 && dir_next(dev, &nome, &isdir)) {
@@ -1121,7 +1121,7 @@ static void shelf_empty(Ui *u, Library *lib)
                 vistos++;
                 if (n > sizeof(l) - 40) break;
             }
-            if (!vistos) snprintf(l, sizeof(l), "ux0: abre, mas está VAZIO");
+            if (!vistos) snprintf(l, sizeof(l), "ux0: opens, but it is EMPTY");
             dir_close(dev);
             text_elided(u, (int)tx + 10, (int)y, COL_TEXT_DIM, 0.53f, tw - 10, l);
             y += 20;
@@ -1144,7 +1144,7 @@ static void shelf_empty(Ui *u, Library *lib)
        o caminho vem do paths.h porque é ESTA linha que a pessoa vai digitar,
        e ela não pode divergir do que o scanner realmente lê. */
     text_elided(u, (int)tx, (int)(y + 10), COL_TEXT_FAINT, 0.50f, tw,
-                "ainda vazia? escreva as pastas, uma por linha, em "
+                "still empty? list the folders, one per line, in "
                 STYLUS_ROOTS_TXT);
 }
 
@@ -1253,18 +1253,18 @@ static void shelf_thumb(Ui *u, Album *a, vita2d_texture *tex,
 static void draw_shelf(Ui *u, Library *lib, Player *p)
 {
     int n = lib->nalbums;
-    header(u, "ESTANTE",
+    header(u, "SHELF",
            NULL);
     {
         static const Dica d[] = {
-            { BTN_CROSS,    (Btn)-1, "tocar" },
-            { BTN_DPAD,     (Btn)-1, "navegar" },
-            { BTN_SQUARE,   (Btn)-1, "ir para" },
-            { BTN_TRIANGLE, (Btn)-1, "o que toca" },
-            { BTN_SEL,      (Btn)-1, "sorteio" },
+            { BTN_CROSS,    (Btn)-1, "play" },
+            { BTN_DPAD,     (Btn)-1, "navigate" },
+            { BTN_SQUARE,   (Btn)-1, "jump to" },
+            { BTN_TRIANGLE, (Btn)-1, "now playing" },
+            { BTN_SEL,      (Btn)-1, "shuffle" },
             { BTN_L1,       (Btn)-1, "recs" },
             { BTN_R1,       (Btn)-1, "playlists" },
-            { BTN_TRAS,     (Btn)-1, "atrás: página" },
+            { BTN_TRAS,     (Btn)-1, "rear: page" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
@@ -1325,7 +1325,7 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
             text_elided(u, (int)x + 7, (int)(y + g.label_dy), is_sel ? COL_AMBER : COL_TEXT,
                         0.60f, tw, a->album);
             const char *sub = a->artist[0] ? a->artist : "—";
-            if (a->ndecodable == 0) sub = "formato que este app não toca";
+            if (a->ndecodable == 0) sub = "this app cannot play this format";
             text_elided(u, (int)x + 7, (int)(y + g.sub_dy),
                         a->ndecodable == 0 ? COL_ALARM : COL_TEXT_DIM, 0.50f, tw, sub);
         }
@@ -1335,7 +1335,7 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
         /* a régua de letras: A..Z e #, com as que existem acesas. Uma letra
            que não tem disco não pode parecer escolhível. */
         vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(7, 9, 13, 232));
-        text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, "IR PARA");
+        text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, "JUMP TO");
         float bw = (SCRW - 2 * PAD_X) / 9.0f;
         for (int i = 0; i < 27; i++) {
             int col = i % 9, row = i / 9;
@@ -1357,13 +1357,13 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
                                              : COL_TEXT_FAINT, 1.1f, L);
         }
         text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f,
-             "[dir] escolhe   [X] vai   [tri] volta");
+             "[dir] choose   [X] go   [tri] back");
         return;
     }
 
     char cnt[96];
     int pages = (n + SHELF_PAGE - 1) / SHELF_PAGE;
-    snprintf(cnt, sizeof(cnt), "%d disco%s   ·   página %d de %d",
+    snprintf(cnt, sizeof(cnt), "%d record%s   ·   page %d of %d",
              n, n == 1 ? "" : "s", page + 1, pages);
     text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt);
 }
@@ -1454,21 +1454,21 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
            soletrada — as outras já eram glifo. Foi a migração pela metade do
            `header()` para o `header_hints()` que deixou esta sobrar. */
         static const Dica d[] = {
-            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_TRIANGLE, (Btn)-1, "shelf" },
             { BTN_L1,       (Btn)-1, "recs" },
             { BTN_R1,       (Btn)-1, "playlists" },
-            { BTN_L1, BTN_SQUARE,   "rede" },
+            { BTN_L1, BTN_SQUARE,   "network" },
             { 0, 0, NULL }
         };
-        header_hints(u, "AGORA", d);
-        text(u, (int)PAD_X, 130, COL_TEXT, 0.80f, "nada no prato");
+        header_hints(u, "NOW PLAYING", d);
+        text(u, (int)PAD_X, 130, COL_TEXT, 0.80f, "nothing on the platter");
         const char *err = player_last_error(p);
         if (err && err[0]) {
-            text(u, (int)PAD_X, 166, COL_ALARM, 0.62f, "a última tentativa parou aqui:");
+            text(u, (int)PAD_X, 166, COL_ALARM, 0.62f, "the last attempt stopped here:");
             text_elided(u, (int)PAD_X, 190, COL_TEXT, 0.60f, SCRW - 2 * PAD_X, err);
         } else {
             text(u, (int)PAD_X, 166, COL_TEXT_DIM, 0.60f,
-                 "escolha um disco na estante — [tri]");
+                 "pick a record from the shelf — [tri]");
         }
         (void)lib;
         return;
@@ -1548,19 +1548,19 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     float tx = g.text_x;
     float tw = g.text_w;
 
-    header(u, live ? "AGORA  ·  TOCANDO" : "AGORA  ·  PAUSADO",
+    header(u, live ? "NOW PLAYING  ·  PLAYING" : "NOW PLAYING  ·  PAUSED",
            NULL);
     {
         static const Dica d[] = {
-            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_TRIANGLE, (Btn)-1, "shelf" },
             { BTN_L1,       (Btn)-1, "recs" },
             { BTN_R1,       (Btn)-1, "playlists" },
-            { BTN_L1, BTN_SQUARE,   "rede" },
-            { BTN_R1, BTN_L1,       "apaga a tela" },
-            { BTN_R1, BTN_SQUARE,   "soneca" },
-            { BTN_R1, BTN_TRIANGLE, "jogando" },
-            { BTN_TOUCH,    (Btn)-1, "no disco pausa" },
-            { BTN_TRAS,     (Btn)-1, "atrás: cue" },
+            { BTN_L1, BTN_SQUARE,   "network" },
+            { BTN_R1, BTN_L1,       "screen off" },
+            { BTN_R1, BTN_SQUARE,   "sleep" },
+            { BTN_R1, BTN_TRIANGLE, "gaming" },
+            { BTN_TOUCH,    (Btn)-1, "tap disc to pause" },
+            { BTN_TRAS,     (Btn)-1, "rear: cue" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
@@ -1588,7 +1588,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
             sides_label(&a->lados, lado, rot, sizeof(rot));
             size_t k = strlen(topo);
             if (a->lados.discos > 1)
-                snprintf(topo + k, sizeof(topo) - k, "   ·   DISCO %d  ·  %s",
+                snprintf(topo + k, sizeof(topo) - k, "   ·   DISC %d  ·  %s",
                          lado / 2 + 1, rot);
             else
                 snprintf(topo + k, sizeof(topo) - k, "   ·   %s", rot);
@@ -1605,7 +1605,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     char cur[16], tot[16], info[160];
     fmt_time(cur, sizeof(cur), pos);
     fmt_time(tot, sizeof(tot), dur);
-    snprintf(info, sizeof(info), "%s / %s   ·   faixa %d de %d",
+    snprintf(info, sizeof(info), "%s / %s   ·   track %d of %d",
              cur, tot, player_track_idx(p) + 1, player_track_count(p));
     text_elided(u, (int)tx, 240, COL_TEXT_DIM, 0.56f, tw, info);
 
@@ -1632,22 +1632,22 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
                    quadradinho na tela, e o que a linha inteira promete é
                    contar o caminho do sinal sem enfeite. "sai em" diz o
                    mesmo em palavra que a fonte tem. */
-                snprintf(extra, sizeof(extra), "  ·  sai em %ld Hz / 16 bits",
+                snprintf(extra, sizeof(extra), "  ·  out at %ld Hz / 16 bits",
                          sig.rate_out);
             /* O 2º plano é a mesma família de verdade que esta linha conta:
                não a qualidade prometida, mas o que o caminho de fato faz. E
                só vale com as DUAS coisas — a porta veio no arranque E a taxa
                deixa o SDL2 abrir a saída como BGM. */
             const char *bgm = (u->bgm_port_ok && sig.bgm_port)
-                            ? "  ·  2º plano: sim" : "  ·  2º plano: não";
+                            ? "  ·  background: yes" : "  ·  background: no";
             snprintf(sl, sizeof(sl), "%s  ·  %ld Hz / %d bits%s%s",
                      sig.kind, sig.rate_file, sig.bits_file, extra, bgm);
             /* Faixa da rede: o indicador fica junto do caminho do sinal porque
-               é ali que se lê de onde o som vem. "rede" diz o essencial — que
+               é ali que se lê de onde o som vem. "network" diz o essencial — que
                o Wi-Fi é necessário — sem ocupar uma linha só para isso. */
             if (t && t->remote_id[0]) {
                 size_t len = strlen(sl);
-                snprintf(sl + len, sizeof(sl) - len, "  ·  rede");
+                snprintf(sl + len, sizeof(sl) - len, "  ·  network");
             }
         } else {
             /* sem medida, travessão: acusação tirada da ausência de dado é
@@ -1686,8 +1686,8 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     /* durante a cerimônia a tela DIZ o que está acontecendo: sem isso é uma
        animação bonita que ninguém entende */
     if (u->rit != RIT_OFF) {
-        const char *frase = u->rit == RIT_SPINUP ? "o prato ganha rotação"
-                          : u->rit == RIT_CUE    ? "a agulha vai ao sulco"
+        const char *frase = u->rit == RIT_SPINUP ? "the platter comes up to speed"
+                          : u->rit == RIT_CUE    ? "the needle finds the groove"
                                                  : "encostou";
         text(u, (int)tx, (int)g.note_y, COL_AMBER, 0.56f, frase);
     } else if (lado >= 0 && dur > 0) {
@@ -1705,7 +1705,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
             sides_gesture(&a->lados, lado + 1, aviso, sizeof(aviso));
             text_elided(u, (int)tx, (int)g.note_y, COL_ALARM, 0.60f, tw, aviso);
         } else if (falta > 20) {
-            snprintf(aviso, sizeof(aviso), "%s em %d min",
+            snprintf(aviso, sizeof(aviso), "%s in %d min",
                      (lado + 1 < a->lados.n) ? "vira" : "acaba",
                      (falta + 59) / 60);
             text(u, (int)tx, (int)g.note_y, COL_TEXT_DIM, 0.52f, aviso);
@@ -1758,7 +1758,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     }
 
 lyrics_done:;
-    const char *rep = "rep todas";
+    const char *rep = "rep all";
     switch (player_repeat(p)) {
     case REPEAT_OFF: rep = "rep off"; break;
     case REPEAT_ONE: rep = "rep 1";   break;
@@ -1766,21 +1766,21 @@ lyrics_done:;
     }
     char ctl[240];
     snprintf(ctl, sizeof(ctl), "%s   ·   %s   ·   %s%s",
-             live ? "[O] pausa" : "[O] recomeça",
-             rep, player_shuffle(p) ? "sorteio ligado" : "sorteio desligado",
+             live ? "[O] pause" : "[O] play",
+             rep, player_shuffle(p) ? "shuffle on" : "shuffle off",
              /* uma tecla que a tela desenha e não anuncia não existe */
-             tem_letra ? (u->show_lyrics ? "   ·   [quad] ordem do lado"
-                                         : "   ·   [quad] letra") : "");
+             tem_letra ? (u->show_lyrics ? "   ·   [sq] side order"
+                                         : "   ·   [sq] lyrics") : "");
     /* a soneca tem que APARECER quando está armada: um estado que muda o que
        o aparelho vai fazer e não se vê é o pior tipo de estado */
     {
         int sm = player_sleep_mode(p);
         if (sm == 1)
             text(u, (int)PAD_X, FOOT_Y - 20, COL_ALARM, 0.54f,
-                 "soneca: esmaecendo   ·   [R1+quad] desliga");
+                 "sleep: fading out   ·   [R1+sq] off");
         else if (sm == 2)
             text(u, (int)PAD_X, FOOT_Y - 20, COL_ALARM, 0.54f,
-                 "soneca: para no fim do lado   ·   [R1+quad] desliga");
+                 "sleep: stops at end of side   ·   [R1+sq] off");
     }
     text_elided(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f, SCRW - 2 * PAD_X, ctl);
 
@@ -1833,19 +1833,19 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
     (void)lib; (void)p;
     {
         static const Dica d[] = {
-            { BTN_TRIANGLE, (Btn)-1, "estante" },
-            { BTN_CIRCLE,   (Btn)-1, "toca daqui" },
-            { BTN_UPDOWN,   (Btn)-1, "navegar" },
-            { BTN_TRAS,     (Btn)-1, "atrás: navega" },
+            { BTN_TRIANGLE, (Btn)-1, "shelf" },
+            { BTN_CIRCLE,   (Btn)-1, "play from here" },
+            { BTN_UPDOWN,   (Btn)-1, "navigate" },
+            { BTN_TRAS,     (Btn)-1, "rear: navigate" },
             { 0, 0, NULL }
         };
-        header_hints(u, "RECOMENDADO", d);
+        header_hints(u, "RECOMMENDED", d);
     }
 
     if (!u->recs || u->nrecs <= 0) {
-        text(u, (int)PAD_X, 130, COL_TEXT, 0.72f, "ainda não há o que sugerir");
+        text(u, (int)PAD_X, 130, COL_TEXT, 0.72f, "nothing to suggest yet");
         text(u, (int)PAD_X, 162, COL_TEXT_DIM, 0.58f,
-             "as sugestões saem do que você ouviu até o FIM — ponha um disco e volte");
+             "suggestions come from what you played to the END — put a record on and come back");
         return;
     }
     UiListGeom lg;
@@ -1878,7 +1878,7 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
         text_elided(u, (int)tx, (int)(y + 30), COL_TEXT_DIM, 0.50f, tw, sub);
     }
     char cnt[64];
-    snprintf(cnt, sizeof(cnt), "%d faixa%s   ·   %d de %d",
+    snprintf(cnt, sizeof(cnt), "%d track%s   ·   %d of %d",
              u->nrecs, u->nrecs == 1 ? "" : "s", u->rec_sel + 1, u->nrecs);
     text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt);
 }
@@ -1904,7 +1904,7 @@ enum { CC_KEY = 0, CC_SECRET, CC_USER, CC_ENTRAR, CC_SAIR, CC_N };
 static void mascara(const char *v, char *out, size_t cap)
 {
     size_t n = v ? strlen(v) : 0;
-    if (n == 0) { snprintf(out, cap, "(vazio)"); return; }
+    if (n == 0) { snprintf(out, cap, "(empty)"); return; }
     if (n <= 10) { snprintf(out, cap, "%.*s...", (int)(n / 2), v); return; }
     snprintf(out, cap, "%.4s…%.4s  (%d)", v, v + n - 4, (int)n);
 }
@@ -1922,13 +1922,13 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
         lastfm_config_load(&u->conta_cfg, STYLUS_DATA_DIR);
         u->conta_lida = true;
     }
-    header(u, "CONTA", NULL);
+    header(u, "ACCOUNT", NULL);
     {
         static const Dica d[] = {
             { BTN_CROSS,    (Btn)-1, "editar" },
             { BTN_CIRCLE,   (Btn)-1, "confirmar" },
-            { BTN_UPDOWN,   (Btn)-1, "navegar" },
-            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_UPDOWN,   (Btn)-1, "navigate" },
+            { BTN_TRIANGLE, (Btn)-1, "shelf" },
             { BTN_R1,       (Btn)-1, "qobuz" },
             { 0, 0, NULL }
         };
@@ -1964,7 +1964,7 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
         int lw = text_w(u, 0.50f, leg);
         text(u, (int)(dcx - lw / 2.0f), (int)(dcy + 32), COL_TEXT_DIM, 0.50f, leg);
 
-        const char *dest = ok ? "sobem sozinhas" : "esperando conta";
+        const char *dest = ok ? "upload on their own" : "waiting for an account";
         int dw = text_w(u, 0.52f, dest);
         text(u, (int)(dcx - dw / 2.0f), (int)(dcy + dr + 26),
              ok ? COL_AMBER : COL_TEXT_DIM, 0.52f, dest);
@@ -1974,16 +1974,16 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
     text(u, (int)PAD_X, 116, COL_TEXT_FAINT, 0.52f, "LAST.FM");
     char est[160];
     if (ok)
-        snprintf(est, sizeof(est), "ligado como %s", c->username);
+        snprintf(est, sizeof(est), "signed in as %s", c->username);
     else if (!c->api_key[0] || !c->api_secret[0])
-        snprintf(est, sizeof(est), "falta a chave de API — pegue em last.fm/api/account/create");
+        snprintf(est, sizeof(est), "no API key yet — get one at last.fm/api/account/create");
     else
-        snprintf(est, sizeof(est), "chaves prontas — falta entrar");
+        snprintf(est, sizeof(est), "keys ready — still need to sign in");
     text_elided(u, (int)PAD_X, 140, ok ? COL_AMBER : COL_TEXT, 0.62f,
                 SCRW - PAD_X - 250, est);
 
     static const char *ROT[CC_N] = {
-        "chave de API", "segredo da API", "usuário", "entrar", "sair da conta"
+        "API key", "API secret", "username", "sign in", "sign out"
     };
     float x0 = PAD_X, w = SCRW - PAD_X - 250.0f;
     float y0 = 176.0f, rh = 38.0f;
@@ -2005,13 +2005,13 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
         if (i == CC_KEY)         mascara(c->api_key, val, sizeof(val));
         else if (i == CC_SECRET) mascara(c->api_secret, val, sizeof(val));
         else if (i == CC_USER)   snprintf(val, sizeof(val), "%s",
-                                          c->username[0] ? c->username : "(vazio)");
+                                          c->username[0] ? c->username : "(empty)");
         else if (i == CC_ENTRAR) {
-            snprintf(val, sizeof(val), "%s", ok ? "já está ligado" : "pede a senha e liga");
+            snprintf(val, sizeof(val), "%s", ok ? "already signed in" : "asks for the password and connects");
             cor = ok ? COL_TEXT_FAINT : COL_AMBER_BRIGHT;
         } else {
             snprintf(val, sizeof(val), "%s",
-                     ok ? "esquece a chave deste aparelho" : "—");
+                     ok ? "forget the key on this device" : "—");
             cor = ok ? COL_ALARM : COL_TEXT_FAINT;
         }
         float vx = x0 + w * 0.46f;
@@ -2022,7 +2022,7 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
         text(u, (int)PAD_X, FOOT_Y, COL_AMBER, 0.56f, u->conta_msg);
     else
         text(u, (int)PAD_X, FOOT_Y, COL_TEXT_FAINT, 0.52f,
-             "a escuta é guardada mesmo sem conta — nada se perde aqui");
+             "listening is recorded even without an account — nothing is lost here");
 }
 
 /* ---------- a loja ----------
@@ -2048,8 +2048,8 @@ static void qb_diz(Ui *u, const char *msg)
 
 static const char *qb_nome_formato(int f)
 {
-    if (f == QB_FLAC)  return "FLAC 16/44,1";
-    if (f == QB_HIRES) return "FLAC 24 bits";
+    if (f == QB_FLAC)  return "FLAC 16/44.1";
+    if (f == QB_HIRES) return "FLAC 24-bit";
     return "MP3 320";
 }
 
@@ -2073,7 +2073,7 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
         {
             static const Dica d[] = {
                 { BTN_CIRCLE,   (Btn)-1, "parar" },
-                { BTN_TRIANGLE, (Btn)-1, "estante" },
+                { BTN_TRIANGLE, (Btn)-1, "shelf" },
                 { 0, 0, NULL }
             };
             header_hints(u, "", d);
@@ -2083,14 +2083,14 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
 
         char sub[200];
         if (job.ativo)
-            snprintf(sub, sizeof(sub), "faixa %d de %d  ·  %s",
+            snprintf(sub, sizeof(sub), "track %d of %d  ·  %s",
                      job.faixa, job.total, job.titulo);
         else if (job.ok)
-            snprintf(sub, sizeof(sub), "pronto — %d faixa%s no cartão%s%s",
+            snprintf(sub, sizeof(sub), "done — %d track%s on the card%s%s",
                      job.total, job.total == 1 ? "" : "s",
                      job.erro[0] ? "  ·  " : "", job.erro);
         else
-            snprintf(sub, sizeof(sub), "%s", job.erro[0] ? job.erro : "não deu");
+            snprintf(sub, sizeof(sub), "%s", job.erro[0] ? job.erro : "failed");
         text_elided(u, (int)PAD_X, 162, job.falhou ? COL_ALARM : COL_TEXT,
                     0.58f, SCRW - 2 * PAD_X, sub);
 
@@ -2114,9 +2114,9 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
         }
         if (job.ok)
             text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f,
-                 "[O] revarre a estante e volta — pare a música antes, se houver");
+                 "[O] rescan the shelf and go back — stop the music first, if any");
         else if (job.falhou)
-            text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f, "[O] volta");
+            text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f, "[O] back");
         return;
     }
 
@@ -2125,19 +2125,19 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
         {
             static const Dica d[] = {
                 { BTN_CROSS,    (Btn)-1, "editar" },
-                { BTN_UPDOWN,   (Btn)-1, "navegar" },
-                { BTN_TRIANGLE, (Btn)-1, "estante" },
+                { BTN_UPDOWN,   (Btn)-1, "navigate" },
+                { BTN_TRIANGLE, (Btn)-1, "shelf" },
                 { 0, 0, NULL }
             };
             header_hints(u, "", d);
         }
-        text(u, (int)PAD_X, 116, COL_TEXT_FAINT, 0.52f, "PARA COMEÇAR");
+        text(u, (int)PAD_X, 116, COL_TEXT_FAINT, 0.52f, "GETTING STARTED");
         text_elided(u, (int)PAD_X, 140, COL_TEXT, 0.60f, SCRW - 2 * PAD_X,
-                    "as chaves são da sua conta, não deste app — e ficam só no cartão");
+                    "the keys are your account's, not this app's — and never leave the card");
 
         static const char *ROT[QC_N] = {
-            "app_id", "segredo (pode ser mais de um, separados por vírgula)",
-            "e-mail", "entrar"
+            "app_id", "secret (there may be more than one, comma separated)",
+            "e-mail", "sign in"
         };
         float y0 = 186.0f, rh = 44.0f;
         for (int i = 0; i < QC_N; i++) {
@@ -2154,9 +2154,9 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
             if (i == QC_APPID)       mascara(c->app_id, val, sizeof(val));
             else if (i == QC_SECRET) mascara(c->app_secret, val, sizeof(val));
             else if (i == QC_EMAIL)  snprintf(val, sizeof(val), "%s",
-                                              c->email[0] ? c->email : "(vazio)");
+                                              c->email[0] ? c->email : "(empty)");
             else {
-                snprintf(val, sizeof(val), "pede a senha e liga");
+                snprintf(val, sizeof(val), "asks for the password and connects");
                 cor = COL_AMBER_BRIGHT;
             }
             text_elided(u, (int)(SCRW * 0.62f), (int)(y + 16), cor, 0.54f,
@@ -2166,19 +2166,19 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
             text(u, (int)PAD_X, FOOT_Y, COL_AMBER, 0.56f, u->qb_msg);
         else
             text(u, (int)PAD_X, FOOT_Y, COL_TEXT_FAINT, 0.50f,
-                 "o app_id e o segredo saem da mesma conta que você usa no site");
+                 "the app_id and secret come from the same account you use on the site");
         return;
     }
 
     /* --- pronto: buscar e baixar --- */
     {
         static const Dica d[] = {
-            { BTN_SQUARE,   (Btn)-1, "buscar" },
-            { BTN_CROSS,    (Btn)-1, "baixar" },
-            { BTN_CIRCLE,   (Btn)-1, "tocar" },
-            { BTN_SEL,      (Btn)-1, "formato" },
-            { BTN_UPDOWN,   (Btn)-1, "navegar" },
-            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_SQUARE,   (Btn)-1, "search" },
+            { BTN_CROSS,    (Btn)-1, "download" },
+            { BTN_CIRCLE,   (Btn)-1, "play" },
+            { BTN_SEL,      (Btn)-1, "format" },
+            { BTN_UPDOWN,   (Btn)-1, "navigate" },
+            { BTN_TRIANGLE, (Btn)-1, "shelf" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
@@ -2188,7 +2188,7 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
     if (u->qb_abrindo) {
         text_elided(u, (int)PAD_X, 130, COL_AMBER, 0.78f, SCRW - 2 * PAD_X,
                     u->qb_ab_alb.titulo[0] ? u->qb_ab_alb.titulo : "abrindo");
-        text(u, (int)PAD_X, 162, COL_TEXT_DIM, 0.58f, "buscando faixas na rede…");
+        text(u, (int)PAD_X, 162, COL_TEXT_DIM, 0.58f, "fetching tracks over the network…");
         return;
     }
 
@@ -2203,31 +2203,31 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
     vita2d_draw_rectangle(PAD_X, 112, 2, 34, COL_AMBER);
     text_elided(u, (int)PAD_X + 14, 134, u->qb_termo[0] ? COL_TEXT : COL_TEXT_FAINT,
                 0.60f, SCRW * 0.6f,
-                u->qb_termo[0] ? u->qb_termo : "[quadrado] para buscar um disco");
+                u->qb_termo[0] ? u->qb_termo : "[square] to search for a record");
 
     /* O formato fica ao lado da busca, com o TAMANHO junto: escolher entre
        "MP3" e "FLAC" sem saber que um custa quatro vezes o outro não é
        escolher. Num cartão de Vita isso decide se cabem dez discos ou dois. */
     {
         char f[96];
-        snprintf(f, sizeof(f), "%s  ·  ~%d MB/faixa",
+        snprintf(f, sizeof(f), "%s  ·  ~%d MB/track",
                  qb_nome_formato(c->formato), qobuz_mb_por_faixa(c->formato));
         int w = text_w(u, 0.54f, f);
         text(u, (int)(SCRW - PAD_X - w), 134, COL_AMBER, 0.54f, f);
     }
 
     if (buscando) {
-        text(u, (int)PAD_X, 190, COL_TEXT_DIM, 0.60f, "procurando…");
+        text(u, (int)PAD_X, 190, COL_TEXT_DIM, 0.60f, "looking…");
         return;
     }
     if (nres < 0) {
         text(u, (int)PAD_X, 190, COL_ALARM, 0.58f,
-             "não deu para falar com o Qobuz — o Wi-Fi está ligado?");
+             "could not reach Qobuz — is the Wi-Fi on?");
         return;
     }
     if (nres == 0) {
         text(u, (int)PAD_X, 190, COL_TEXT_DIM, 0.58f,
-             u->qb_termo[0] ? "nada encontrado" : "busque um artista, um disco, um ano");
+             u->qb_termo[0] ? "nothing found" : "search an artist, a record, a year");
         return;
     }
 
@@ -2254,7 +2254,7 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
            decide, e ela tem de estar onde a escolha acontece. */
         char peso[64];
         int mb = a->faixas > 0 ? a->faixas * qobuz_mb_por_faixa(c->formato) : 0;
-        if (mb > 0) snprintf(peso, sizeof(peso), "%d faixas  ·  ~%d MB", a->faixas, mb);
+        if (mb > 0) snprintf(peso, sizeof(peso), "%d tracks  ·  ~%d MB", a->faixas, mb);
         else        snprintf(peso, sizeof(peso), "—");
         int w = text_w(u, 0.52f, peso);
         text(u, (int)(SCRW - PAD_X - 12 - w), (int)(y + 24),
@@ -2272,20 +2272,20 @@ static void qb_recebeu(Ui *u, int campo, const char *txt)
     if (campo == QC_APPID) {
         snprintf(c->app_id, sizeof(c->app_id), "%.*s", (int)sizeof(c->app_id) - 1, txt);
         qobuz_config_save(c, STYLUS_DATA_DIR);
-        qb_diz(u, "app_id guardado");
+        qb_diz(u, "app_id saved");
     } else if (campo == QC_SECRET) {
         snprintf(c->app_secret, sizeof(c->app_secret), "%.*s",
                  (int)sizeof(c->app_secret) - 1, txt);
         qobuz_config_save(c, STYLUS_DATA_DIR);
-        qb_diz(u, "segredo guardado");
+        qb_diz(u, "secret saved");
     } else if (campo == QC_EMAIL) {
         snprintf(c->email, sizeof(c->email), "%.*s", (int)sizeof(c->email) - 1, txt);
         qobuz_config_save(c, STYLUS_DATA_DIR);
-        qb_diz(u, "e-mail guardado");
+        qb_diz(u, "e-mail saved");
     } else if (campo == QC_ENTRAR) {
         snprintf(u->qb_senha, sizeof(u->qb_senha), "%.*s",
                  (int)sizeof(u->qb_senha) - 1, txt);
-        qb_diz(u, "entrando…");
+        qb_diz(u, "signing in…");
     } else if (campo == QC_N) {           /* o termo da busca */
         snprintf(u->qb_termo, sizeof(u->qb_termo), "%.*s",
                  (int)sizeof(u->qb_termo) - 1, txt);
@@ -2294,7 +2294,7 @@ static void qb_recebeu(Ui *u, int campo, const char *txt)
     }
 }
 
-/* O login, um quadro depois de a tela já ter dito "entrando…". */
+/* O login, um quadro depois de a tela já ter dito "signing in…". */
 static void qb_tenta_entrar(Ui *u)
 {
     QobuzConfig *c = &u->qb_cfg;
@@ -2303,10 +2303,10 @@ static void qb_tenta_entrar(Ui *u)
     if (r == 0) {
         qobuz_config_save(c, STYLUS_DATA_DIR);
         qb_diz(u, "entrou");
-    } else if (r == -2) qb_diz(u, "ponha o app_id e o segredo antes");
-    else if (r == -3)   qb_diz(u, "sem rede: ligue o Wi-Fi e tente de novo");
-    else if (r == -4)   qb_diz(u, "o Qobuz recusou o e-mail ou a senha");
-    else                qb_diz(u, "faltou o e-mail");
+    } else if (r == -2) qb_diz(u, "enter the app_id and secret first");
+    else if (r == -3)   qb_diz(u, "no network: turn the Wi-Fi on and try again");
+    else if (r == -4)   qb_diz(u, "Qobuz rejected the e-mail or password");
+    else                qb_diz(u, "e-mail is missing");
 }
 
 /* O teclado devolveu texto: guarda onde for e, se for o caso, entra.
@@ -2327,26 +2327,26 @@ static void conta_recebeu(Ui *u, int campo, const char *txt)
         snprintf(c->api_key, sizeof(c->api_key), "%.*s",
                  (int)sizeof(c->api_key) - 1, txt);
         lastfm_config_save(c, STYLUS_DATA_DIR);
-        conta_diz(u, "chave de API guardada");
+        conta_diz(u, "API key saved");
     } else if (campo == CC_SECRET) {
         snprintf(c->api_secret, sizeof(c->api_secret), "%.*s",
                  (int)sizeof(c->api_secret) - 1, txt);
         lastfm_config_save(c, STYLUS_DATA_DIR);
-        conta_diz(u, "segredo guardado");
+        conta_diz(u, "secret saved");
     } else if (campo == CC_USER) {
         snprintf(c->username, sizeof(c->username), "%.*s",
                  (int)sizeof(c->username) - 1, txt);
         lastfm_config_save(c, STYLUS_DATA_DIR);
-        conta_diz(u, "usuário guardado");
+        conta_diz(u, "username saved");
     } else if (campo == CC_ENTRAR) {
         snprintf(u->conta_senha, sizeof(u->conta_senha), "%.*s",
                  (int)sizeof(u->conta_senha) - 1, txt);
-        conta_diz(u, "entrando…");
+        conta_diz(u, "signing in…");
     }
 }
 
 /* A tentativa de login de verdade. Separada para acontecer um quadro DEPOIS
-   de o "entrando…" já ter sido pintado. */
+   de o "signing in…" já ter sido pintado. */
 static void conta_tenta_entrar(Ui *u)
 {
     LastfmConfig *c = &u->conta_cfg;
@@ -2356,12 +2356,12 @@ static void conta_tenta_entrar(Ui *u)
 
     if (r == 0) {
         lastfm_config_save(c, STYLUS_DATA_DIR);
-        conta_diz(u, "entrou — a fila sobe sozinha daqui em diante");
+        conta_diz(u, "signed in — the queue uploads on its own from here");
         lastfm_sync_async(STYLUS_DATA_DIR);
-    } else if (r == -2) conta_diz(u, "ponha a chave e o segredo da API antes");
-    else if (r == -3)   conta_diz(u, "sem rede: ligue o Wi-Fi e tente de novo");
-    else if (r == -4)   conta_diz(u, "o last.fm recusou o usuário ou a senha");
-    else                conta_diz(u, "faltou o usuário");
+    } else if (r == -2) conta_diz(u, "enter the API key and secret first");
+    else if (r == -3)   conta_diz(u, "no network: turn the Wi-Fi on and try again");
+    else if (r == -4)   conta_diz(u, "last.fm rejected the username or password");
+    else                conta_diz(u, "username is missing");
 }
 
 static void draw_playlists(Ui *u, Library *lib, Player *p)
@@ -2371,11 +2371,11 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
            NULL);
     {
         static const Dica d[] = {
-            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_TRIANGLE, (Btn)-1, "shelf" },
             { BTN_CIRCLE,   (Btn)-1, "toca" },
-            { BTN_UPDOWN,   (Btn)-1, "navegar" },
-            { BTN_SQUARE,   (Btn)-1, "salva o que toca" },
-            { BTN_SEL,      (Btn)-1, "apaga (2x)" },
+            { BTN_UPDOWN,   (Btn)-1, "navigate" },
+            { BTN_SQUARE,   (Btn)-1, "save what is playing" },
+            { BTN_SEL,      (Btn)-1, "delete (2x)" },
             { BTN_R1,       (Btn)-1, "conta" },
             { 0, 0, NULL }
         };
@@ -2383,9 +2383,9 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
     }
 
     if (!u->plists || u->nplists <= 0) {
-        text(u, (int)PAD_X, 130, COL_TEXT, 0.72f, "nenhuma lista guardada");
+        text(u, (int)PAD_X, 130, COL_TEXT, 0.72f, "no lists saved");
         text(u, (int)PAD_X, 162, COL_TEXT_DIM, 0.58f,
-             "ponha um disco e aperte [quadrado] aqui para guardar a noite");
+             "put a record on and press [square] here to save the night");
         return;
     }
     UiListGeom lg;
@@ -2409,17 +2409,17 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
         float tx = PAD_X + ROW_H + 4;
         float tw = SCRW - PAD_X - tx;
         text_elided(u, (int)tx, (int)(y + 15), is_sel ? COL_AMBER : COL_TEXT, 0.58f, tw,
-                    pl->name[0] ? pl->name : "(sem nome)");
+                    pl->name[0] ? pl->name : "(unnamed)");
         char sub[64];
-        snprintf(sub, sizeof(sub), "%d faixa%s", pl->n, pl->n == 1 ? "" : "s");
+        snprintf(sub, sizeof(sub), "%d track%s", pl->n, pl->n == 1 ? "" : "s");
         text(u, (int)tx, (int)(y + 30), COL_TEXT_DIM, 0.50f, sub);
     }
     if (u->pl_armed)
         text(u, (int)PAD_X, FOOT_Y, COL_ALARM, 0.58f,
-             "apagar esta lista? [select] de novo confirma, qualquer outra tecla desiste");
+             "delete this list? [select] again confirms, any other key cancels");
     else {
         char cnt[64];
-        snprintf(cnt, sizeof(cnt), "%d lista%s", u->nplists, u->nplists == 1 ? "" : "s");
+        snprintf(cnt, sizeof(cnt), "%d list%s", u->nplists, u->nplists == 1 ? "" : "s");
         text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt);
     }
 }
@@ -2455,10 +2455,10 @@ static void draw_handoff(Ui *u, Library *lib, Player *p)
     (void)lib;
     {
         static const Dica d[] = {
-            { BTN_TRIANGLE, (Btn)-1, "volta" },
+            { BTN_TRIANGLE, (Btn)-1, "back" },
             { 0, 0, NULL }
         };
-        header_hints(u, "OUVIR ENQUANTO JOGA", d);
+        header_hints(u, "LISTEN WHILE GAMING", d);
     }
 
     const Album *a = player_current_album(p);
@@ -2479,45 +2479,45 @@ static void draw_handoff(Ui *u, Library *lib, Player *p)
        dá para saber em dez segundos no aparelho. Então a tela MOSTRA o
        estado e manda experimentar, em vez de decidir pela pessoa. */
     text(u, (int)PAD_X, y, tem ? COL_AMBER : COL_TEXT_DIM, 0.66f,
-         tem ? "Music Premium: instalado"
-             : "Music Premium: não achei o plugin");
+         tem ? "Music Premium: installed"
+             : "Music Premium: plugin not found");
     y += 30;
 
     char lin[160];
-    snprintf(lin, sizeof(lin), "porta BGM pedida no arranque:  %s",
-             porta ? "sim" : "não");
+    snprintf(lin, sizeof(lin), "BGM port requested at startup:  %s",
+             porta ? "yes" : "no");
     text(u, (int)PAD_X, y, porta ? COL_AMBER : COL_ALARM, 0.56f, lin);
     y += 24;
     if (sig.rate_out > 0)
-        snprintf(lin, sizeof(lin), "taxa da faixa (<= 47999 Hz):   %s  (%ld Hz)",
-                 taxa ? "sim" : "não", sig.rate_out);
+        snprintf(lin, sizeof(lin), "track rate (<= 47999 Hz):   %s  (%ld Hz)",
+                 taxa ? "yes" : "no", sig.rate_out);
     else
-        snprintf(lin, sizeof(lin), "taxa da faixa:                  ponha um disco");
+        snprintf(lin, sizeof(lin), "track rate:                     put a record on");
     text(u, (int)PAD_X, y, taxa ? COL_AMBER : COL_TEXT_DIM, 0.56f, lin);
     y += 32;
 
     if (tem && porta && taxa) {
         text_elided(u, (int)PAD_X, y, COL_AMBER, 0.58f, SCRW - 2 * PAD_X,
-            "as duas valem: ENTRE NUM JOGO e veja se o som segue.");
+            "both hold: GO INTO A GAME and see whether the sound follows.");
         y += 24;
         text_elided(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f, SCRW - 2 * PAD_X,
-            "se seguir, é isto e mais nada. se não, o desvio abaixo funciona sempre.");
+            "if it does, that is all. if not, the workaround below always works.");
     } else {
         text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
-            "O Vita suspende qualquer aplicativo que sai da frente. Só a porta");
+            "The Vita suspends any app that leaves the foreground. Only the BGM");
         y += 22;
         text_elided(u, (int)PAD_X, y, COL_TEXT, 0.56f, SCRW - 2 * PAD_X,
-            "BGM, com o plugin de kernel, o impede — e ela pede as duas acima.");
+            "port, with the kernel plugin, prevents that — and it needs both above.");
     }
     y += 34;
 
     text(u, (int)PAD_X, y, COL_AMBER, 0.60f, "o desvio, que funciona sempre:");
     y += 26;
     const char *passos[] = {
-        "1.  aqui: [start] sai — a faixa e a posição ficam guardadas",
-        "2.  abra o app MÚSICA e ponha o mesmo disco (é a MESMA pasta)",
-        "3.  entre no jogo; o plugin mantém o som",
-        "4.  ao voltar, este app retoma exatamente onde parou, em pausa",
+        "1.  here: [start] exits — the track and position are saved",
+        "2.  open the MUSIC app and play the same record (it is the SAME folder)",
+        "3.  go into the game; the plugin keeps the sound",
+        "4.  on return, this app resumes exactly where it left off, paused",
         NULL
     };
     for (int i = 0; passos[i]; i++, y += 24)
@@ -2529,25 +2529,25 @@ static void draw_handoff(Ui *u, Library *lib, Player *p)
         /* O app Música navega PASTAS. Dizer qual é poupa a busca — é a mesma
            ux0:music que esta estante varreu. */
         char linha[MAX_PATH_LEN + 64];
-        snprintf(linha, sizeof(linha), "no app Música, a pasta é:  %s", a->key);
+        snprintf(linha, sizeof(linha), "in the Music app, the folder is:  %s", a->key);
         text_elided(u, (int)PAD_X, y, COL_AMBER, 0.54f, SCRW - 2 * PAD_X, linha);
         y += 24;
         const Track *t = player_current_track(p);
         if (t) {
-            snprintf(linha, sizeof(linha), "e a faixa:  %s", t->file);
+            snprintf(linha, sizeof(linha), "and the track:  %s", t->file);
             text_elided(u, (int)PAD_X, y, COL_TEXT_DIM, 0.52f, SCRW - 2 * PAD_X, linha);
         }
     } else {
         text(u, (int)PAD_X, y, COL_TEXT_DIM, 0.54f,
-             "ponha um disco e volte aqui para ver a pasta dele");
+             "put a record on and come back to see its folder");
     }
 
     if (!tem)
         text_elided(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.52f, SCRW - 2 * PAD_X,
-            "o plugin vai em ur0:tai/music_premium.skprx, na seção *KERNEL do config.txt");
+            "the plugin goes in ur0:tai/music_premium.skprx, under *KERNEL in config.txt");
     else
         text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.52f,
-             "com a tela apagada ([R1+L1]) este app segue tocando por horas");
+             "with the screen off ([R1+L1]) this app keeps playing for hours");
 }
 
 /* ---------- a varredura ---------- */
@@ -2565,11 +2565,11 @@ void ui_draw_scanning(Ui *u, const char *where, int files)
     draw_halo(cx, cy, 78, u->halo_phase);
     draw_disc(cx, cy, 76, 0.0f, 12, -1, u->halo_phase * 3.0f, NULL, 1.0f);
 
-    const char *t = "procurando os discos";
+    const char *t = "looking for records";
     text(u, (int)(cx - text_w(u, 0.78f, t) / 2), (int)cy + 130, COL_AMBER, 0.78f, t);
 
     char line[160];
-    snprintf(line, sizeof(line), "%d arquivo%s", files, files == 1 ? "" : "s");
+    snprintf(line, sizeof(line), "%d file%s", files, files == 1 ? "" : "s");
     text(u, (int)(cx - text_w(u, 0.58f, line) / 2), (int)cy + 156, COL_TEXT, 0.58f, line);
 
     if (where && where[0]) {
@@ -2835,7 +2835,7 @@ int ui_handle_input(Ui *u)
         memset(txt, 0, sizeof(txt));   /* pode ter sido uma senha */
         return 0;
     }
-    /* O login foi pedido no quadro passado e o "entrando…" já apareceu: é
+    /* O login foi pedido no quadro passado e o "signing in…" já apareceu: é
        agora que se fala com a internet. */
     if (u->conta_senha[0]) { conta_tenta_entrar(u); return 0; }
     if (u->qb_senha[0])    { qb_tenta_entrar(u); return 0; }
@@ -2927,26 +2927,26 @@ int ui_handle_input(Ui *u)
             int i = u->conta_sel;
             if (i == CC_ENTRAR) {
                 if (!cf->api_key[0] || !cf->api_secret[0])
-                    conta_diz(u, "ponha a chave e o segredo da API antes");
+                    conta_diz(u, "enter the API key and secret first");
                 else if (!cf->username[0])
-                    conta_diz(u, "ponha o usuário antes");
-                else if (ime_abrir("senha do last.fm", "", 63, true) == 0)
+                    conta_diz(u, "enter the username first");
+                else if (ime_abrir("last.fm password", "", 63, true) == 0)
                     u->conta_campo = CC_ENTRAR;
             } else if (i == CC_SAIR) {
                 if (cf->configured) {
                     /* Só a chave de sessão vai embora. As chaves de API
                        ficam: são da pessoa, custaram uma visita ao site, e
-                       apagá-las junto transformaria "sair" em "recomeçar do
+                       apagá-las junto transformaria "sign out" em "recomeçar do
                        zero". A FILA também fica — sair de uma conta não é
                        motivo para jogar escuta fora. */
                     cf->sk[0] = '\0';
                     cf->configured = false;
                     lastfm_config_save(cf, STYLUS_DATA_DIR);
-                    conta_diz(u, "saiu — a escuta continua sendo guardada");
+                    conta_diz(u, "signed out — listening is still being recorded");
                 }
             } else {
-                static const char *TIT[] = { "chave de API do last.fm",
-                                             "segredo da API", "usuário do last.fm" };
+                static const char *TIT[] = { "last.fm API key",
+                                             "API secret", "last.fm username" };
                 const char *ini = i == CC_KEY ? cf->api_key
                                 : i == CC_SECRET ? cf->api_secret : cf->username;
                 if (ime_abrir(TIT[i], ini, 100, i == CC_SECRET) == 0)
@@ -2981,12 +2981,12 @@ int ui_handle_input(Ui *u)
                        E devolve AGORA: o resto desta função ainda trata
                        UP/DOWN/SELECT, e qualquer um deles sobrescrevia o
                        `action` no mesmo quadro. O álbum abria, a ação era
-                       trocada por "navegar", e o `qobuz_abre_limpa()` do main
+                       trocada por "navigate", e o `qobuz_abre_limpa()` do main
                        nunca acontecia — o resultado seguinte vinha velho. */
                     u->view = VIEW_DECK;
                     return 22;      /* tocar da rede */
                 }
-                qb_diz(u, "não conseguiu abrir o disco");
+                qb_diz(u, "could not open the record");
             }
         }
 
@@ -3012,15 +3012,15 @@ int ui_handle_input(Ui *u)
                 int i = u->qb_sel;
                 if (i == QC_ENTRAR) {
                     if (!qc->app_id[0] || !qc->app_secret[0])
-                        qb_diz(u, "ponha o app_id e o segredo antes");
+                        qb_diz(u, "enter the app_id and secret first");
                     else if (!qc->email[0])
-                        qb_diz(u, "ponha o e-mail antes");
-                    else if (ime_abrir("senha do Qobuz", "", 63, true) == 0)
+                        qb_diz(u, "enter the e-mail first");
+                    else if (ime_abrir("Qobuz password", "", 63, true) == 0)
                         u->qb_campo = QC_ENTRAR;
                 } else {
-                    static const char *TIT[] = { "app_id do Qobuz",
-                                                 "segredo (ou segredos, com vírgula)",
-                                                 "e-mail da conta" };
+                    static const char *TIT[] = { "Qobuz app_id",
+                                                 "secret (or secrets, comma separated)",
+                                                 "account e-mail" };
                     const char *ini = i == QC_APPID ? qc->app_id
                                     : i == QC_SECRET ? qc->app_secret : qc->email;
                     if (ime_abrir(TIT[i], ini, 200, i == QC_SECRET) == 0)
@@ -3031,7 +3031,7 @@ int ui_handle_input(Ui *u)
             if (edge & SCE_CTRL_UP)   { if (u->qb_sel > 0) u->qb_sel--; action = 1; }
             if (edge & SCE_CTRL_DOWN) { if (u->qb_sel + 1 < u->qb_nres) u->qb_sel++; action = 1; }
             if (edge & SCE_CTRL_SQUARE) {
-                if (ime_abrir("buscar no Qobuz", u->qb_termo, 90, false) == 0)
+                if (ime_abrir("search Qobuz", u->qb_termo, 90, false) == 0)
                     u->qb_campo = QC_N;
             }
             if (edge & SCE_CTRL_SELECT) {
@@ -3046,7 +3046,7 @@ int ui_handle_input(Ui *u)
                 u->qb_sel < u->qb_nres) {
                 if (qobuz_baixa_album(qc, &u->qb_res[u->qb_sel], qc->formato,
                                       STYLUS_OWN_MUSIC) != 0)
-                    qb_diz(u, "não deu para começar o download");
+                    qb_diz(u, "could not start the download");
             }
             /* CIRCLE: tocar direto da rede, sem baixar. O disco experimental
                que talvez não valha 400 MB de cartão — ouvir agora, sem esperar. */
@@ -3056,7 +3056,7 @@ int ui_handle_input(Ui *u)
                     u->qb_abrindo = true;
                     u->qb_ab_alb = u->qb_res[u->qb_sel];
                 } else {
-                    qb_diz(u, "não deu para abrir o disco");
+                    qb_diz(u, "could not open the record");
                 }
             }
         }

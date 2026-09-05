@@ -1,7 +1,7 @@
 # vitastylus — tocador de música para PS Vita
 
 Porte do tocador Stylus (PC/Android) para PS Vita: biblioteca local com capas,
-estante de álbuns, deck vinil em âmbar sobre quase-preto, playlists,
+estante de álbuns, deck vinyl em âmbar sobre quase-preto, playlists,
 recomendações e registro de escuta.
 
 **Áudio: MP3, FLAC, Ogg Vorbis, Opus e WAV.** O FLAC sai idêntico ao
@@ -318,7 +318,7 @@ Corrigido, os nove sabotados ficam vermelhos.
 
 ## A lei do desenho (§5.5)
 
-O vinil existe para tornar ouvir música digital menos chato dando a SENSAÇÃO
+O vinyl existe para tornar ouvir música digital menos chato dando a SENSAÇÃO
 analógica. O desenho é fósforo, não foto: disco de luz no quase-preto, âmbar
 como única cor viva, o braço é o FACHO (o corpo começa a 38% do caminho, quase
 toda a luz na ponta, levantado apaga). **Nada de** madeira, plinto, parafuso,

@@ -148,7 +148,7 @@ void sides_build(const int *durations, int ntracks, Sides *out)
     if (out->discos < 1) out->discos = 1;
     for (int i = 0; i < cnt; i++)
         snprintf(out->sides[i].label, sizeof(out->sides[i].label),
-                 "LADO %c", (char)('A' + (i < 26 ? i : 25)));
+                 "SIDE %c", (char)('A' + (i < 26 ? i : 25)));
 }
 
 int sides_of_track(const Sides *s, int track)
@@ -162,7 +162,7 @@ int sides_of_track(const Sides *s, int track)
 void sides_label(const Sides *s, int i, char *out, size_t cap)
 {
     if (!out || !cap) return;
-    if (!s || i < 0 || i >= s->n) { snprintf(out, cap, "LADO"); return; }
+    if (!s || i < 0 || i >= s->n) { snprintf(out, cap, "SIDE"); return; }
     snprintf(out, cap, "%s", s->sides[i].label);
 }
 
@@ -177,12 +177,12 @@ void sides_gesture(const Sides *s, int i, char *out, size_t cap)
        vai até a estante. As três telas do desktop perguntavam a primeira, que
        acerta por acidente num LP simples e erra em todo duplo. */
     if (i % 2 == 1) {
-        snprintf(out, cap, "vire o disco para o %s", rot);
+        snprintf(out, cap, "flip the record to %s", rot);
         return;
     }
     if (i > 0 && s && s->discos > 1) {
-        snprintf(out, cap, "ponha o DISCO %d, %s", i / 2 + 1, rot);
+        snprintf(out, cap, "put on DISC %d, %s", i / 2 + 1, rot);
         return;
     }
-    snprintf(out, cap, "agora o %s", rot);
+    snprintf(out, cap, "now %s", rot);
 }

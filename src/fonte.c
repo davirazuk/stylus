@@ -87,7 +87,7 @@ static void *buscador(void *arg)
             pthread_mutex_lock(&s->mtx);
             if (!s->parar && !s->refaz) {
                 snprintf(s->erro, sizeof(s->erro), "%s",
-                         erro[0] ? erro : "não abriu");
+                         erro[0] ? erro : "could not open");
                 s->erro_flag = true;
                 pthread_cond_broadcast(&s->cond);
             }
@@ -150,7 +150,7 @@ static void *buscador(void *arg)
                fim faz o player passar para a próxima, o erro faz a tela
                dizer que a rede caiu. Confundir os dois faz um disco
                "terminar" sozinho quando o Wi-Fi pisca. */
-            snprintf(s->erro, sizeof(s->erro), "a rede caiu no meio da faixa");
+            snprintf(s->erro, sizeof(s->erro), "the network dropped mid-track");
             s->erro_flag = true;
         } else if (acabou) {
             s->fim = true;

@@ -11,7 +11,7 @@ endif()
 project(vitastylus C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Stylus Vinil")
+set(VITA_APP_NAME "Stylus Vinyl")
 set(VITA_TITLEID  "STYS00001")
 set(VITA_VERSION  "01.00")
 set(VITA_TITLE  "Stylus")
