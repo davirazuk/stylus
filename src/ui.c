@@ -1417,8 +1417,55 @@ static Album *shelf_album(Ui *u, Library *lib, int i)
     return library_album(lib, u->busca[0] ? u->vis[i] : i);
 }
 
+/* A RÉGUA DE LETRAS, em tela cheia.
+
+   Ela era desenhada POR CIMA da estante já pronta, com um véu a 91% — e os
+   9% que sobravam eram capa de disco colorida, que é justamente o que mais
+   compete com uma letra. Os cartões apareciam atrás dos "A B C" e o rodapé
+   da estante por baixo do rodapé da régua. Uma tela de escolher letra tem de
+   ser uma tela, não um decalque.
+
+   Agora ela é desenhada ANTES de tudo, e o desenho da estante nem acontece:
+   além de legível, sai de graça — oito cartões e oito capas a menos por
+   quadro. */
+static void draw_regua(Ui *u, Library *lib)
+{
+    int n = lib->nalbums;
+    /* a régua de letras: A..Z e #, com as que existem acesas. Uma letra
+       que não tem disco não pode parecer escolhível. */
+    vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(7, 9, 13, 255));
+    text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, "JUMP TO");
+    float bw = (SCRW - 2 * PAD_X) / 9.0f;
+    for (int i = 0; i < 27; i++) {
+        int col = i % 9, row = i / 9;
+        float x = PAD_X + col * bw, y = 140.0f + row * 74.0f;
+        char L[4];
+        snprintf(L, sizeof(L), "%c", i < 26 ? 'A' + i : '#');
+        bool tem = false;
+        for (int k = 0; k < n && !tem; k++) {
+            const char *nm = lib->albums[k].artist[0] ? lib->albums[k].artist
+                                                      : lib->albums[k].album;
+            char c0 = nm[0];
+            if (c0 >= 'a' && c0 <= 'z') c0 -= 32;
+            if (i < 26) tem = (c0 == 'A' + i);
+            else tem = !(c0 >= 'A' && c0 <= 'Z');
+        }
+        bool sel = (i == u->jump_letter);
+        if (sel) vita2d_draw_rectangle(x, y - 30, bw - 8, 46, TINT_SEL);
+        text(u, (int)x + 14, (int)y, tem ? (sel ? COL_AMBER : COL_TEXT)
+                                         : COL_TEXT_FAINT, 1.1f, L);
+    }
+    text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f,
+         u->busca[0]
+           ? "[dir] choose   [X] go   [sq] search   [O] clear filter   [tri] back"
+           : "[dir] choose   [X] go   [sq] type to search   [tri] back");
+}
+
 static void draw_shelf(Ui *u, Library *lib, Player *p)
 {
+    /* A RÉGUA vem ANTES de tudo: ela é uma tela inteira, não uma camada por
+       cima da estante. Ver a nota no draw_regua. */
+    if (u->jump_open) { draw_regua(u, lib); return; }
     filtro_remonta(u, lib);
     int n = shelf_n(u, lib);
     /* Com filtro ligado o título DIZ o filtro: uma estante que mostra 6 de
@@ -1515,38 +1562,6 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
             text_elided(u, (int)x + 7, (int)(y + g.sub_dy),
                         a->ndecodable == 0 ? COL_ALARM : COL_TEXT_DIM, 0.50f, tw, sub);
         }
-    }
-
-    if (u->jump_open) {
-        /* a régua de letras: A..Z e #, com as que existem acesas. Uma letra
-           que não tem disco não pode parecer escolhível. */
-        vita2d_draw_rectangle(0, 0, SCRW, SCRH, RGBA8(7, 9, 13, 232));
-        text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, "JUMP TO");
-        float bw = (SCRW - 2 * PAD_X) / 9.0f;
-        for (int i = 0; i < 27; i++) {
-            int col = i % 9, row = i / 9;
-            float x = PAD_X + col * bw, y = 140.0f + row * 74.0f;
-            char L[4];
-            snprintf(L, sizeof(L), "%c", i < 26 ? 'A' + i : '#');
-            bool tem = false;
-            for (int k = 0; k < n && !tem; k++) {
-                const char *nm = lib->albums[k].artist[0] ? lib->albums[k].artist
-                                                          : lib->albums[k].album;
-                char c0 = nm[0];
-                if (c0 >= 'a' && c0 <= 'z') c0 -= 32;
-                if (i < 26) tem = (c0 == 'A' + i);
-                else tem = !(c0 >= 'A' && c0 <= 'Z');
-            }
-            bool sel = (i == u->jump_letter);
-            if (sel) vita2d_draw_rectangle(x, y - 30, bw - 8, 46, TINT_SEL);
-            text(u, (int)x + 14, (int)y, tem ? (sel ? COL_AMBER : COL_TEXT)
-                                             : COL_TEXT_FAINT, 1.1f, L);
-        }
-        text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f,
-             u->busca[0]
-               ? "[dir] choose   [X] go   [sq] search   [O] clear filter   [tri] back"
-               : "[dir] choose   [X] go   [sq] type to search   [tri] back");
-        return;
     }
 
     char cnt[96];

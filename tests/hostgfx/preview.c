@@ -155,6 +155,29 @@ int main(int argc, char **argv)
     tap(ui, SCE_CTRL_R1);  shot(ui, &lib, p, "8c-qobuz");
     tap(ui, SCE_CTRL_TRIANGLE);
 
+    /* A RÉGUA e a ESTANTE FILTRADA. Elas são a forma de achar um disco entre
+       388, e sem elas aqui a única maneira de julgar como ficaram seria
+       instalar no aparelho — que é justamente o que este arquivo evita. */
+    tap(ui, SCE_CTRL_SQUARE);
+    shot(ui, &lib, p, "1b-regua");
+    tap(ui, SCE_CTRL_TRIANGLE);
+    {
+        /* um termo que exista de fato nesta coleção */
+        char termo[32] = "";
+        for (int i = 0; i < lib.nalbums && !termo[0]; i++) {
+            const char *nm = lib.albums[i].artist[0] ? lib.albums[i].artist
+                                                     : lib.albums[i].album;
+            if (strlen(nm) >= 4) snprintf(termo, sizeof(termo), "%.4s", nm);
+        }
+        if (termo[0]) {
+            ui_set_busca(ui, termo);
+            shot(ui, &lib, p, "1c-estante-filtrada");
+        }
+        ui_set_busca(ui, "zzqqxx");
+        shot(ui, &lib, p, "1d-filtro-sem-resultado");
+        ui_set_busca(ui, "");
+    }
+
     /* tela de varredura e estante vazia */
     ui_draw_scanning(ui, "ux0:music/Radiohead", 1234);
     hostgfx_save_png("/tmp/vitastylus-preview-scan.png");
