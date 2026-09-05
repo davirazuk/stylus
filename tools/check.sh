@@ -464,6 +464,26 @@ else
     skip "PULA: sem Pillow"
 fi
 
+printf '\n\033[1mo indice da estante\033[0m\n'
+# Um cache que MENTE e pior que cache nenhum: mostra disco que nao existe mais
+# e esconde o que acabou de entrar, e a tela nao tem como explicar. O que se
+# mede aqui nao e "carrega" — e que ele RECUSA nos tres jeitos de a colecao
+# mudar, inclusive faixa nova dentro de album que ja existia.
+if command -v gcc >/dev/null 2>&1; then
+    out=$(gcc -std=gnu11 -Wall -Wextra -Werror -I"$SRC" -o /tmp/vitastylus_indice \
+          tests/indice_test.c tools/decoder_stub.c "$SRC"/library.c "$SRC"/fsutil.c \
+          "$SRC"/sides.c -lm 2>&1) || true
+    if [ ! -x /tmp/vitastylus_indice ]; then
+        fail "o teste do indice nao compila" "$out"
+    elif /tmp/vitastylus_indice >/tmp/vitastylus_indice.out 2>&1; then
+        pass "o indice vale quando vale, e recusa quando a colecao mudou"
+    else
+        fail "o teste do indice reprovou" "$(cat /tmp/vitastylus_indice.out)"
+    fi
+else
+    skip "PULA: sem gcc"
+fi
+
 printf '\n\033[1mo idioma da tela\033[0m\n'
 # "there's a spelling issue in the thing" foi relatado tres vezes e sobreviveu
 # a todas: um "tambem NAO abre" no meio de um diagnostico nao salta aos olhos

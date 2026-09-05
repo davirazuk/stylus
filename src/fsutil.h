@@ -35,6 +35,15 @@ int mkdir_p(const char *path);
 /* 1 se o caminho abre como diretório. */
 int dir_exists(const char *path);
 
+/* Data de modificação de uma PASTA, em segundos, ou -1 se não der.
+
+   É o que torna o índice da estante barato de conferir: num sistema de
+   arquivos FAT/exFAT, acrescentar, apagar ou renomear qualquer coisa dentro
+   de uma pasta muda a data DELA. Conferir as ~500 pastas que a varredura
+   visitou custa ~500 stats; refazer a varredura custa abrir cada uma e ler
+   as 3.700 entradas. */
+long long dir_mtime(const char *path);
+
 /* ---- percorrer uma pasta ----
 
    POR QUE ISTO NÃO USA opendir() NO VITA

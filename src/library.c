@@ -294,6 +294,24 @@ static int add_track(Album *a, const char *full, const char *base)
 
 #define SCAN_MAX_DEPTH 12
 
+/* Guarda a pasta e a data que ela tem AGORA. Falhar aqui não é erro: sem o
+   carimbo o índice simplesmente não vai poder ser conferido depois, e a
+   varredura acontece — que é o comportamento de sempre. */
+static void marca_pasta(Library *lib, const char *abs)
+{
+    if (lib->nstamps >= lib->stamps_cap) {
+        int n = lib->stamps_cap ? lib->stamps_cap * 2 : 64;
+        DirStamp *d = realloc(lib->stamps, (size_t)n * sizeof(DirStamp));
+        if (!d) return;
+        lib->stamps = d;
+        lib->stamps_cap = n;
+    }
+    DirStamp *d = &lib->stamps[lib->nstamps];
+    snprintf(d->path, sizeof(d->path), "%s", abs);
+    d->mtime = dir_mtime(abs);
+    lib->nstamps++;
+}
+
 static void scan_dir(Library *lib, int root_idx, const char *abs, const char *rel, int depth)
 {
     if (depth > SCAN_MAX_DEPTH) return;
@@ -311,6 +329,7 @@ static void scan_dir(Library *lib, int root_idx, const char *abs, const char *re
         return;
     }
     lib->dirs_seen++;
+    marca_pasta(lib, abs);
     if (lib->progress && (lib->dirs_seen % 8) == 0)
         lib->progress(lib->progress_ud, abs, lib->files_seen);
 
@@ -812,7 +831,200 @@ void library_free(Library *lib)
     free(lib->albums);
     lib->albums = NULL;
     lib->nalbums = lib->cap = 0;
+    free(lib->stamps);
+    lib->stamps = NULL;
+    lib->nstamps = lib->stamps_cap = 0;
     dec_global_exit();
+}
+
+/* ---------------- o índice da estante (ver library.h) ---------------- */
+
+/* Uma linha por registro, campos separados por TAB, texto puro.
+
+   Podia ser binário e seria menor. Não é, de propósito: quando a estante
+   aparecer errada, quem for consertar vai querer ABRIR este arquivo no
+   VitaShell e ver o que ele diz — e um despejo de struct não diz nada. O
+   arquivo tem ~500 KB numa coleção de 3.700 faixas; ler isso do cartão é
+   muito mais barato do que reabrir 500 pastas.
+
+   A versão na primeira linha é o que impede um índice velho de ser lido com
+   um layout novo: mudou a struct, muda o número, e todo índice antigo passa
+   a ser simplesmente descartado. */
+#define CACHE_MAGIC "vitastylus-estante"
+#define CACHE_VER   1
+
+static void escapa(char *s)
+{
+    /* TAB e quebra de linha são os separadores; um nome de arquivo pode ter
+       os dois. Vira espaço — o nome guardado aqui é só para reconstruir a
+       estante, e o `path` é a chave de verdade. */
+    for (; *s; s++) if (*s == '\t' || *s == '\n' || *s == '\r') *s = ' ';
+}
+
+int library_cache_save(const Library *lib, const char *path)
+{
+    if (!lib || !path) return -1;
+    /* Grava num parcial e renomeia: um índice cortado no meio (bateria
+       acabando, cartão retirado) não pode virar uma estante pela metade. */
+    char tmp[MAX_PATH_LEN];
+    snprintf(tmp, sizeof(tmp), "%s.parcial", path);
+    FILE *f = fopen(tmp, "w");
+    if (!f) return -1;
+
+    fprintf(f, "%s\t%d\n", CACHE_MAGIC, CACHE_VER);
+    fprintf(f, "R\t%d\n", lib->nroots);
+    for (int i = 0; i < lib->nroots; i++)
+        fprintf(f, "r\t%s\n", lib->roots[i].path);
+    fprintf(f, "D\t%d\n", lib->nstamps);
+    for (int i = 0; i < lib->nstamps; i++)
+        fprintf(f, "d\t%lld\t%s\n", lib->stamps[i].mtime, lib->stamps[i].path);
+
+    fprintf(f, "A\t%d\n", lib->nalbums);
+    for (int i = 0; i < lib->nalbums; i++) {
+        const Album *a = &lib->albums[i];
+        char key[MAX_PATH_LEN], art[MAX_NAME_LEN], alb[MAX_NAME_LEN];
+        snprintf(key, sizeof(key), "%s", a->key);
+        snprintf(art, sizeof(art), "%s", a->artist);
+        snprintf(alb, sizeof(alb), "%s", a->album);
+        escapa(key); escapa(art); escapa(alb);
+        fprintf(f, "a\t%d\t%d\t%s\t%s\t%s\n",
+                a->root_idx, a->ntracks, key, art, alb);
+        for (int j = 0; j < a->ntracks; j++) {
+            const Track *t = &a->tracks[j];
+            char tp[MAX_PATH_LEN], ti[MAX_TITLE_LEN], fl[MAX_NAME_LEN];
+            snprintf(tp, sizeof(tp), "%s", t->path);
+            snprintf(ti, sizeof(ti), "%s", t->title);
+            snprintf(fl, sizeof(fl), "%s", t->file);
+            escapa(tp); escapa(ti); escapa(fl);
+            fprintf(f, "t\t%d\t%d\t%s\t%s\t%s\n",
+                    t->number, t->seconds, tp, ti, fl);
+        }
+    }
+    int ok = (fflush(f) == 0);
+    fclose(f);
+    if (!ok) { remove(tmp); return -1; }
+    remove(path);
+    return rename(tmp, path) == 0 ? 0 : -1;
+}
+
+/* Corta a linha em campos por TAB. Devolve quantos. */
+static int campos(char *linha, char **out, int max)
+{
+    int n = 0;
+    char *p = linha;
+    size_t l = strlen(p);
+    while (l && (p[l - 1] == '\n' || p[l - 1] == '\r')) p[--l] = '\0';
+    while (n < max) {
+        out[n++] = p;
+        char *t = strchr(p, '\t');
+        if (!t) break;
+        *t = '\0';
+        p = t + 1;
+    }
+    return n;
+}
+
+int library_cache_load(Library *lib, const char *path)
+{
+    if (!lib || !path) return -1;
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+
+    char linha[MAX_PATH_LEN + 512];
+    char *c[8];
+    int ok = 0;
+
+    if (fgets(linha, sizeof(linha), f) && campos(linha, c, 8) == 2 &&
+        strcmp(c[0], CACHE_MAGIC) == 0 && atoi(c[1]) == CACHE_VER)
+        ok = 1;
+    if (!ok) { fclose(f); return -1; }
+
+    /* Primeiro as raízes e as datas. Se qualquer pasta mudou ou sumiu, nem
+       vale a pena ler o resto: fecha e manda varrer. */
+    int nroots = 0, ndirs = 0;
+    char roots[MAX_ROOTS][MAX_PATH_LEN];
+
+    if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 2 ||
+        c[0][0] != 'R') { fclose(f); return -1; }
+    nroots = atoi(c[1]);
+    if (nroots < 0 || nroots > MAX_ROOTS) { fclose(f); return -1; }
+    for (int i = 0; i < nroots; i++) {
+        if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 2 ||
+            c[0][0] != 'r') { fclose(f); return -1; }
+        snprintf(roots[i], MAX_PATH_LEN, "%s", c[1]);
+    }
+
+    if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 2 ||
+        c[0][0] != 'D') { fclose(f); return -1; }
+    ndirs = atoi(c[1]);
+    if (ndirs < 0) { fclose(f); return -1; }
+    for (int i = 0; i < ndirs; i++) {
+        if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 3 ||
+            c[0][0] != 'd') { fclose(f); return -1; }
+        long long antes = atoll(c[1]);
+        if (dir_mtime(c[2]) != antes) { fclose(f); return -1; }   /* mudou */
+    }
+
+    /* Conferiu. Agora sim monta a estante.
+
+       Daqui para baixo, qualquer falha tem de deixar a `lib` como estava: o
+       contrato desta função é "0 = montada, -1 = NADA mudou". Sem isso, um
+       índice cortado no meio deixaria meia estante montada e o main varreria
+       por cima dela — cada disco apareceria duas vezes. */
+    for (int i = 0; i < nroots; i++) {
+        int idx = library_add_root(lib, roots[i]);
+        if (idx >= 0) lib->roots[idx].opened = true;
+    }
+
+    if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 2 ||
+        c[0][0] != 'A') goto falhou;
+    int nalb = atoi(c[1]);
+
+    for (int i = 0; i < nalb; i++) {
+        if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 6 ||
+            c[0][0] != 'a') goto falhou;
+        Album *a = ensure_album(lib);
+        if (!a) goto falhou;
+        a->root_idx = atoi(c[1]);
+        a->seconds_total = -1;
+        int nt = atoi(c[2]);
+        snprintf(a->key, MAX_PATH_LEN, "%s", c[3]);
+        snprintf(a->artist, MAX_NAME_LEN, "%s", c[4]);
+        snprintf(a->album, MAX_NAME_LEN, "%s", c[5]);
+        for (int j = 0; j < nt; j++) {
+            if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 6 ||
+                c[0][0] != 't') goto falhou;
+            if (add_track(a, c[3], c[5]) != 0) goto falhou;
+            Track *t = &a->tracks[a->ntracks - 1];
+            t->number = atoi(c[1]);
+            t->seconds = atoi(c[2]);
+            snprintf(t->title, MAX_TITLE_LEN, "%s", c[4]);
+            lib->audio_found++;
+            if (a->root_idx >= 0 && a->root_idx < lib->nroots)
+                lib->roots[a->root_idx].audio++;
+        }
+    }
+    fclose(f);
+
+    lib->dirs_seen = ndirs;
+    lib->files_seen = lib->audio_found;
+    /* Os LADOS não são montados aqui: eles saem das DURAÇÕES, que saem das
+       tags, que são lidas sob demanda por álbum (album_load_meta). O índice
+       reproduz o estado logo depois da varredura, e logo depois da varredura
+       nenhuma tag foi lida — montar lados agora seria inventar um corte a
+       partir de durações que ainda são -1. */
+    return 0;
+
+falhou:
+    fclose(f);
+    for (int i = 0; i < lib->nalbums; i++) {
+        free(lib->albums[i].tracks);
+        free(lib->albums[i].cover);
+    }
+    free(lib->albums);
+    free(lib->stamps);
+    memset(lib, 0, sizeof(*lib));
+    return -1;
 }
 
 Album *library_album(Library *lib, int i)

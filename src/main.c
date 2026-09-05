@@ -265,11 +265,18 @@ int main(int argc, char *argv[])
 
     Library lib;
     library_init(&lib);
-    library_roots_from(&lib, UX0_DATA_DIR);
-    /* varrer um cartão cheio leva segundos; sem esta tela é preto e parado,
-       que da poltrona é indistinguível de travado */
-    library_set_progress(&lib, scan_progress, boot);
-    library_scan(&lib);
+    /* O ÍNDICE primeiro, numa estante ainda vazia — ele traz as próprias
+       raízes. Confere sozinho se ainda vale (as datas das ~500 pastas que a
+       varredura visitou) e, se não valer, devolve -1 sem ter mexido em nada.
+       Ou seja: ou economiza a varredura inteira, ou custa ~500 stats. */
+    if (library_cache_load(&lib, STYLUS_ESTANTE) != 0) {
+        library_roots_from(&lib, UX0_DATA_DIR);
+        /* varrer um cartão cheio leva segundos; sem esta tela é preto e
+           parado, que da poltrona é indistinguível de travado */
+        library_set_progress(&lib, scan_progress, boot);
+        library_scan(&lib);
+        library_cache_save(&lib, STYLUS_ESTANTE);
+    }
     /* Deixa o que a varredura viu escrito no cartão. Quem conserta o app
        quase nunca é quem está com o aparelho na mão, e a tela some quando se
        muda de tela — foi um arquivo assim que revelou o opendir devolvendo
@@ -414,6 +421,9 @@ int main(int argc, char *argv[])
             library_roots_from(&lib, UX0_DATA_DIR);
             library_set_progress(&lib, scan_progress, ui);
             library_scan(&lib);
+            /* Revarrer à mão é justamente quando o índice tem de ser
+               refeito: a pessoa está aqui porque mexeu no cartão. */
+            library_cache_save(&lib, STYLUS_ESTANTE);
             library_report(&lib, STYLUS_DATA_DIR "/varredura.txt");
             recs_rebuild(&ses, &lib);
             ui_set_sel(ui, 0);

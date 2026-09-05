@@ -70,10 +70,19 @@ typedef struct {
     int  other;       /* arquivos ignorados (extensão desconhecida) */
 } ScanRoot;
 
+/* Uma pasta visitada pela varredura, com a data que ela tinha na hora.
+   É com isto que o índice se confere sem revarrer — ver library_cache_load. */
+typedef struct {
+    char path[MAX_PATH_LEN];
+    long long mtime;
+} DirStamp;
+
 typedef struct {
     Album *albums;
     int nalbums;
     int cap;
+    DirStamp *stamps;      /* pastas visitadas, para conferir o índice */
+    int nstamps, stamps_cap;
     ScanRoot roots[MAX_ROOTS];
     int nroots;
     bool roots_from_config;   /* vieram do roots.txt, não dos palpites */
@@ -107,6 +116,27 @@ void library_set_progress(Library *lib, void (*fn)(void *, const char *, int), v
 int  library_discover(Library *lib);
 
 int  library_scan(Library *lib);
+
+/* ---------- o índice da estante ----------
+
+   POR QUE EXISTE: são 3.729 faixas em 507 pastas no cartão do dono deste app,
+   e varrer tudo isso é o que a tela de "procurando os discos" mostra a cada
+   arranque. O índice guarda o resultado; o arranque seguinte lê e mostra.
+
+   COMO SE CONFERE, que é a parte que importa: guardando a data de cada pasta
+   VISITADA. Em FAT/exFAT, mexer em qualquer coisa dentro de uma pasta muda a
+   data DELA — então uma faixa nova numa pasta de álbum muda a data do álbum,
+   e um álbum novo muda a data do artista. Conferir são ~500 stats; revarrer é
+   abrir 500 pastas e ler 3.700 entradas. Se qualquer data mudou, ou alguma
+   pasta sumiu, o índice é descartado inteiro e a varredura é feita.
+
+   Nunca é a palavra final: um índice que não abre, que é de outra versão, ou
+   que não confere simplesmente não existe, e a varredura acontece como antes.
+   Cache que mente é pior que cache que não existe. */
+int  library_cache_save(const Library *lib, const char *path);
+
+/* 0 = o índice servia e a estante está montada; -1 = varra. */
+int  library_cache_load(Library *lib, const char *path);
 void library_free(Library *lib);
 Album *library_album(Library *lib, int i);
 void library_sort(Library *lib);

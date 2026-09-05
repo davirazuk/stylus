@@ -14,5 +14,7 @@
 /* a raiz de música que fica ao lado dos dados, para quem não quer usar
    ux0:music (pasta do sistema, e nem todo firmware a mostra) */
 #define STYLUS_OWN_MUSIC  STYLUS_DATA_DIR "/music"
+/* o índice da estante: guarda a varredura para o arranque seguinte */
+#define STYLUS_ESTANTE    STYLUS_DATA_DIR "/estante.idx"
 
 #endif

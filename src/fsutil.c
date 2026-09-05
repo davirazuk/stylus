@@ -7,6 +7,13 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#ifdef __vita__
+/* Aqui em cima, e não junto do DirIter lá embaixo: o dir_mtime também usa o
+   SceIoStat, e ele vem antes no arquivo. */
+#include <psp2/io/dirent.h>
+#include <psp2/io/stat.h>
+#endif
+
 size_t path_join(char *out, size_t cap, const char *parent, const char *child)
 {
     if (!out || cap == 0) return 0;
@@ -98,6 +105,34 @@ int dir_exists(const char *path)
     return 1;
 }
 
+long long dir_mtime(const char *path)
+{
+    if (!path || !path[0]) return -1;
+#ifdef __vita__
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(path, &st) < 0) {
+        /* a mesma dúvida de grafia do dir_open_err vale aqui */
+        char alt[1024];
+        if (!path_outra_forma(alt, sizeof(alt), path)) return -1;
+        if (sceIoGetstat(alt, &st) < 0) return -1;
+    }
+    /* SceDateTime não é epoch; o que importa é COMPARAR com o valor guardado
+       antes, então qualquer codificação estável serve. */
+    return ((long long)st.st_mtime.year   << 40) |
+           ((long long)st.st_mtime.month  << 36) |
+           ((long long)st.st_mtime.day    << 31) |
+           ((long long)st.st_mtime.hour   << 26) |
+           ((long long)st.st_mtime.minute << 20) |
+           ((long long)st.st_mtime.second << 14) |
+           ((long long)st.st_mtime.microsecond / 1000);
+#else
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+    return (long long)st.st_mtime;
+#endif
+}
+
 int mkdir_p(const char *path)
 {
     if (!path || !path[0]) return -1;
@@ -129,9 +164,6 @@ DirIter *dir_open(const char *path) { return dir_open_err(path, NULL); }
 
 
 #ifdef __vita__
-
-#include <psp2/io/dirent.h>
-#include <psp2/io/stat.h>
 
 struct DirIter {
     SceUID fd;
