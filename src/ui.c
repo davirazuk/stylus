@@ -1141,13 +1141,21 @@ static void draw_bg(void)
     }
 }
 
-static void header(Ui *u, const char *title, const char *hint)
+/* Só o título e o fio embaixo dele.
+
+   Ele tinha um terceiro parâmetro, `hint`, que imprimia a fila de atalhos em
+   TEXTO — "[tri] estante   [L1] recs". O header_hints veio substituir isso
+   DESENHANDO os botões, e a migração ficou pela metade: cinco dos seis
+   chamadores já passavam NULL e chamavam o header_hints logo em seguida.
+
+   O sexto, que ainda usava, era o que carregava o "□" — um caractere que a
+   fonte do aparelho não tem e que virava quadradinho na tela. Um parâmetro
+   que só um chamador usa é onde esse tipo de coisa se esconde. */
+static void header(Ui *u, const char *title)
 {
     text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, title);
     vita2d_draw_rectangle(PAD_X, HEAD_Y + 18, SCRW - 2 * PAD_X, 1,
                           RGBA8(255, 170, 40, 35));
-    if (hint) text_elided(u, (int)PAD_X, HINT_Y, COL_TEXT_DIM, 0.52f,
-                          SCRW - 2 * PAD_X, hint);
 }
 
 /* Cabeçalho com as dicas DESENHADAS. A lista termina num rótulo NULL.
@@ -1473,7 +1481,7 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
     char titulo[80];
     if (u->busca[0]) snprintf(titulo, sizeof(titulo), "SHELF  ·  \"%s\"", u->busca);
     else             snprintf(titulo, sizeof(titulo), "%s", "SHELF");
-    header(u, titulo, NULL);
+    header(u, titulo);
     {
         static const Dica d[] = {
             { BTN_CROSS,    (Btn)-1, "play" },
@@ -1793,8 +1801,8 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     float tx = g.text_x;
     float tw = g.text_w;
 
-    header(u, live ? "NOW PLAYING  ·  PLAYING" : "NOW PLAYING  ·  PAUSED",
-           NULL);
+    header(u, live ? "NOW PLAYING  ·  PLAYING"
+                   : "NOW PLAYING  ·  PAUSED");
     {
         static const Dica d[] = {
             { BTN_TRIANGLE, (Btn)-1, "shelf" },
@@ -2058,9 +2066,8 @@ lyrics_done:;
    28 px de lado, o crescente do disco vira três pixels de ruído e não
    comunica nada — a mesma decisão de desenho dá resultados opostos nas duas
    escalas, e insistir na simetria custaria a legibilidade. */
-static void row_thumb(Ui *u, Album *a, float x, float y, float side, int ntracks)
+static void row_thumb(Ui *u, Album *a, float x, float y, float side)
 {
-    (void)ntracks;
     vita2d_texture *tex = a ? cover_tex(u, a) : NULL;
     if (tex) {
         draw_cover_fit(tex, x, y, side);
@@ -2118,7 +2125,7 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
         if (is_sel) vita2d_draw_rectangle(PAD_X, y, SCRW - 2 * PAD_X, ROW_H - 4, TINT_SEL_ROW);
 
         Album *a = t->owner;
-        row_thumb(u, a, PAD_X + 4, y + 3, (float)(ROW_H - 10), a ? a->ntracks : 1);
+        row_thumb(u, a, PAD_X + 4, y + 3, (float)(ROW_H - 10));
 
         float tx = PAD_X + ROW_H + 4;
         float tw = SCRW - PAD_X - tx;
@@ -2223,7 +2230,7 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
 {
     (void)lib; (void)p;
     ui_conta_cfg(u);
-    header(u, "ACCOUNT", NULL);
+    header(u, "ACCOUNT");
     {
         static const Dica d[] = {
             { BTN_CROSS,    (Btn)-1, "edit" },
@@ -2365,7 +2372,7 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
     QobuzConfig *c = &u->qb_cfg;
     bool pronto = c->configured;
 
-    header(u, "QOBUZ", NULL);
+    header(u, "QOBUZ");
 
     QobuzJob job;
     qobuz_job_estado(&job);
@@ -2672,8 +2679,7 @@ static void conta_tenta_entrar(Ui *u)
 static void draw_playlists(Ui *u, Library *lib, Player *p)
 {
     (void)lib; (void)p;
-    header(u, "PLAYLISTS",
-           NULL);
+    header(u, "PLAYLISTS");
     {
         static const Dica d[] = {
             { BTN_TRIANGLE, (Btn)-1, "shelf" },
@@ -2709,7 +2715,7 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
         if (is_sel)
             vita2d_draw_rectangle(PAD_X, y, SCRW - 2 * PAD_X, ROW_H - 4,
                                   u->pl_armed ? TINT_ARMED : TINT_SEL_ROW);
-        row_thumb(u, NULL, PAD_X + 4, y + 3, (float)(ROW_H - 10), pl->n > 0 ? pl->n : 1);
+        row_thumb(u, NULL, PAD_X + 4, y + 3, (float)(ROW_H - 10));
 
         float tx = PAD_X + ROW_H + 4;
         float tw = SCRW - PAD_X - tx;

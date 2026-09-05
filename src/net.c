@@ -517,6 +517,27 @@ struct NetStream {
     int erro;
 };
 
+/* COLHE O RESULTADO assim que a transferência termina, e guarda.
+
+   Aqui morava um defeito meu, e o teste de fluxo o pegou: o resultado só era
+   consultado no instante em que `vivos` virava 0 E o balde estava vazio. Se a
+   última volta trouxe bytes junto com o fim, o leitor entregava esses bytes e,
+   na chamada seguinte, via `vivos == 0` com o balde vazio e devolvia 0 — fim
+   de faixa — sem NUNCA perguntar por que a transferência acabou. Uma conexão
+   derrubada no meio virava "a música acabou", que é exatamente o que a fonte
+   de rede inteira existe para não fazer.
+
+   Passava ou não conforme o tamanho do último pedaço. Um teste que passa por
+   sorte é pior que um que reprova. */
+static void colhe_resultado(NetStream *s)
+{
+    CURLMsg *msg;
+    int rest = 0;
+    while ((msg = curl_multi_info_read(s->m, &rest)))
+        if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK)
+            s->erro = 1;
+}
+
 static size_t fluxo_write(char *ptr, size_t n, size_t m, void *ud)
 {
     NetStream *s = ud;
@@ -566,13 +587,25 @@ NetStream *net_stream_open(const char *url, const char *const *headers,
     while (s->vivos && s->fim == 0 && !s->erro) {
         int n = 0;
         if (curl_multi_perform(s->m, &s->vivos) != CURLM_OK) { s->erro = 1; break; }
-        if (s->vivos && s->fim == 0) curl_multi_poll(s->m, NULL, 0, 200, &n);
+        if (!s->vivos) colhe_resultado(s);
+        else if (s->fim == 0) curl_multi_poll(s->m, NULL, 0, 200, &n);
     }
 
     long http = 0;
     curl_easy_getinfo(s->e, CURLINFO_RESPONSE_CODE, &http);
+    /* ABRIU é sobre o CABEÇALHO, não sobre a transferência inteira.
+
+       Uma conexão que responde 200 e cai no meio ABRIU: os bytes que já
+       chegaram são música boa, e quem lê tem direito a eles antes de saber
+       que a rede caiu — o erro sai da leitura seguinte, quando não houver
+       mais nada para entregar. Recusar a abertura por causa do `erro` jogava
+       fora os ~42 KB que o servidor mandou antes de fechar, e o teste de
+       fluxo reprovava com "chegaram 0 de 128023 bytes".
+
+       O que faz a abertura falhar é o status estar errado — um 404 tem corpo,
+       e o corpo do 404 não é áudio — ou não ter havido resposta nenhuma. */
     int esperado = (de > 0) ? 206 : 200;
-    if (s->erro || (http != esperado && !(de == 0 && http == 206))) {
+    if (http != esperado && !(de == 0 && http == 206)) {
         if (erro && erolen > 0) {
             if (http) snprintf(erro, (size_t)erolen, "HTTP %ld", http);
             else      snprintf(erro, (size_t)erolen, "no network");
@@ -592,6 +625,10 @@ long net_stream_read(NetStream *s, void *buf, size_t n)
 {
     if (!s || !buf || n == 0) return -1;
     for (;;) {
+        /* O QUE JÁ CHEGOU SAI PRIMEIRO, mesmo que a conexão tenha caído: os
+           bytes recebidos antes da queda são música boa, e jogá-los fora
+           perderia o fim do que dava para ouvir. O erro sai na chamada
+           seguinte, quando não houver mais nada para entregar. */
         size_t tem = s->fim - s->ini;
         if (tem > 0) {
             size_t take = tem < n ? tem : n;
@@ -603,18 +640,11 @@ long net_stream_read(NetStream *s, void *buf, size_t n)
         if (s->erro) return -1;
         if (!s->vivos) return 0;                    /* acabou de verdade */
         int nf = 0;
-        if (curl_multi_perform(s->m, &s->vivos) != CURLM_OK) return -1;
-        if (s->vivos && s->fim == 0) curl_multi_poll(s->m, NULL, 0, 200, &nf);
-
-        /* Uma queda no meio não é fim: o curl marca o resultado da
-           transferência, e é isso que separa "acabou" de "caiu". */
-        if (!s->vivos && s->fim == 0) {
-            CURLMsg *msg;
-            int rest = 0;
-            while ((msg = curl_multi_info_read(s->m, &rest)))
-                if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK)
-                    return -1;
-        }
+        if (curl_multi_perform(s->m, &s->vivos) != CURLM_OK) { s->erro = 1; continue; }
+        /* Sempre que a transferência acaba, PERGUNTA por quê — tenha ou não
+           trazido bytes nesta volta. Ver a nota no colhe_resultado. */
+        if (!s->vivos) colhe_resultado(s);
+        else if (s->fim == 0) curl_multi_poll(s->m, NULL, 0, 200, &nf);
     }
 }
 

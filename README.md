@@ -332,10 +332,11 @@ palavras no código do desenho e confere a paleta em números.
       ícones. **Nada disso foi visto num Vita**, e a fonte do sistema não é a
       que o preview usa.
 - [ ] M4A/AAC e WMA — aparecem na estante, marcados, sem decodificador
-- [ ] Qobuz **no aparelho**. O PC baixa (ver "Qobuz"); transmitir do Vita
-      exigiria HTTPS no aparelho, que o `net.c` nunca validou em hardware.
-- [ ] Fila do last.fm — existiu numa linha paralela deste projeto e não veio
-      na fusão: depende de rede no Vita, que segue sem validação.
+- [ ] Rede no APARELHO, conferida em hardware. O Qobuz (buscar, entrar,
+      baixar, tocar direto) e a fila do last.fm estão escritos e testados no
+      host — inclusive o caminho de rede, contra um servidor de mentira que
+      derruba a conexão no meio de propósito. Falta a única coisa que o host
+      não tem: o sceHttp de um Vita de verdade.
 
 Uma coisa que ESTE arquivo afirmava e não se sustenta: que o áudio em segundo
 plano deste app é "limite de plataforma, não de código". Isso foi escrito
@@ -383,9 +384,19 @@ põe em `ux0:tai/`. O último passo é no aparelho (a config do taiHEN mora em
 
 ## Qobuz
 
-O Vita não fala com o Qobuz; o PC fala, e a ponte é o download.
-`track/getFileUrl` devolve uma URL HTTPS comum, assinada, válida ~1h — o
-`private_key` assina o PEDIDO, ele não criptografa o áudio.
+O APARELHO fala com o Qobuz: buscar, entrar na conta, baixar e tocar direto,
+tudo pela tela QOBUZ ([R1] a partir da conta). `track/getFileUrl` devolve uma
+URL HTTPS comum, assinada, válida ~1h — o `private_key` assina o PEDIDO, ele
+não criptografa o áudio. Por valer só uma hora, ela é resolvida na hora de
+TOCAR, e não quando o disco entra na fila.
+
+Tocar direto não baixa: o decodificador lê de uma FONTE, e a fonte é um
+arquivo ou é a rede (`src/fonte.c`). A de rede busca adiante numa thread, para
+dentro de um anel de 4 MiB — sem esse colchão, cada leitura viraria uma espera
+de rede no meio do áudio, e o que não chega a tempo sai como estalo. O deck
+desenha o tamanho do colchão enquanto toca da rede.
+
+O `tools/qobuz-vita.py` continua existindo para quem preferir baixar do PC:
 
 ```sh
 ./tools/qobuz-vita.py buscar radiohead in rainbows

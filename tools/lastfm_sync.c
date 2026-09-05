@@ -1,14 +1,18 @@
 /* Sobe para o last.fm a fila que o Vita deixou no cartão.
  *
- * O aparelho só ENFILEIRA (ver a nota no src/net.c): subir pediria uma
- * cadeia sceNet/sceSsl/sceHttp que não tem como ser conferida sem um Vita na
- * mão, e errá-la trava o arranque — muito pior do que não scrobblar. Aqui há
- * libcurl e há como conferir, então é aqui que se sobe.
+ * ISTO NÃO É MAIS O CAMINHO PRINCIPAL. Quando foi escrito, o aparelho só
+ * ENFILEIRAVA: subir pedia uma cadeia sceNet/sceSsl/sceHttp que ninguém
+ * tinha conferido, e errá-la trava o arranque — muito pior que não
+ * scrobblar. Hoje o próprio Vita entra na conta e sobe a fila sozinho, pela
+ * tela CONTA (ver lastfm.c: lastfm_login e lastfm_sync_async).
+ *
+ * Continua útil para duas coisas: esvaziar uma fila grande de uma vez com o
+ * cartão no PC, e conferir a assinatura da API daqui, onde há como depurar.
  *
  *   ./lastfm_sync /run/media/.../data/vitastylus
  *
- * A credencial fica em <dir>/lastfm.txt, que é do usuário e NUNCA do repo.
- * Sem ela, o programa diz o que falta e não toca na fila.
+ * A credencial fica em <dir>/lastfm.config, que é do usuário e NUNCA do
+ * repo. Sem ela, o programa diz o que falta e não toca na fila.
  */
 #include <stdio.h>
 #include <string.h>
@@ -34,9 +38,13 @@ int main(int argc, char **argv)
     lastfm_config_load(&cfg, dir);
     if (!cfg.configured) {
         printf("\nsem credencial: nada foi enviado, e a fila continua intacta.\n");
-        printf("para configurar, crie %s/lastfm.txt com:\n", dir);
-        printf("  api_key=...\n  api_secret=...\n  session_key=...\n");
-        printf("(a chave de sessão sai de uma autorização feita uma vez no PC)\n");
+        /* O nome do arquivo e o nome das chaves TÊM de ser os que o
+           lastfm_config_load lê de verdade: instruções que não batem com o
+           código mandam a pessoa criar um arquivo que ninguém abre. */
+        printf("para configurar, crie %s/lastfm.config com:\n", dir);
+        printf("  api_key=...\n  api_secret=...\n  sk=...\n  username=...\n");
+        printf("(ou entre na conta pela tela CONTA do próprio aparelho, que\n");
+        printf(" preenche isso sozinho)\n");
         return 1;
     }
 
