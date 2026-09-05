@@ -464,6 +464,32 @@ else
     skip "PULA: sem Pillow"
 fi
 
+printf '\n\033[1mo filtro da estante\033[0m\n'
+# 388 discos em 49 paginas: o filtro e o que torna isso navegavel. O que se
+# mede nao e a tela — e a TRADUCAO do indice filtrado para o indice real da
+# biblioteca. Errar ali nao desenha nada de estranho: so toca o disco errado.
+MUS="${STYLUS_MUSICA:-$HOME/staging-vita/vita-mp3}"
+if ! command -v gcc >/dev/null 2>&1 || ! pkg-config --exists freetype2 libpng $DEC_PKGS 2>/dev/null; then
+    skip "PULA: sem gcc/bibliotecas"
+elif [ ! -d "$MUS" ]; then
+    skip "PULA: sem colecao em $MUS (STYLUS_MUSICA aponta outra)"
+else
+    out=$(gcc -std=gnu11 -I"$SRC" -Itests/hostgfx/include -o /tmp/vitastylus_filtro \
+          tests/filtro_test.c tests/hostgfx/vita2d_host.c tests/hostgfx/player_stub.c \
+          "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
+          "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
+          "$SRC"/playlist.c "$SRC"/scrobble.c "$SRC"/ime.c "$SRC"/lastfm.c \
+          "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
+          $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
+    if [ ! -x /tmp/vitastylus_filtro ]; then
+        fail "o teste do filtro nao compila" "$out"
+    elif /tmp/vitastylus_filtro "$MUS" >/tmp/vitastylus_filtro.out 2>&1; then
+        pass "o filtro corta a estante e o indice continua honesto"
+    else
+        fail "o teste do filtro reprovou" "$(cat /tmp/vitastylus_filtro.out)"
+    fi
+fi
+
 printf '\n\033[1mo indice da estante\033[0m\n'
 # Um cache que MENTE e pior que cache nenhum: mostra disco que nao existe mais
 # e esconde o que acabou de entrar, e a tela nao tem como explicar. O que se

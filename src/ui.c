@@ -161,6 +161,21 @@ struct Ui {
     bool  jump_open;
     int   jump_letter;   /* 0..25 = A..Z, 26 = # */
 
+    /* O FILTRO DA ESTANTE.
+
+       São 388 discos em 49 páginas no cartão do dono deste app. A régua de
+       letras corta isso para uma letra; digitar um pedaço do nome corta para
+       o que ele quer ver. `vis` guarda os índices dos álbuns que passam, e
+       `u->sel` passa a ser a posição DENTRO dessa lista — o ui_selected
+       traduz de volta, para que o main continue recebendo o índice real da
+       biblioteca e nada lá fora precise saber que existe filtro. */
+    char  busca[48];
+    int  *vis;
+    int   nvis, vis_cap;
+    int   vis_para;      /* nalbums para o qual `vis` foi montado */
+    bool  busca_suja;
+    bool  busca_pedida;  /* o teclado foi aberto para o filtro da estante */
+
     /* repouso: a tela apaga e a música segue */
     bool  resting;
     int   rest_idle;
@@ -1348,16 +1363,75 @@ static void shelf_thumb(Ui *u, Album *a, vita2d_texture *tex,
 static const LastfmConfig *ui_conta_cfg(Ui *u);
 static int ui_fila_lastfm(Ui *u);
 
+/* "contém", sem diferenciar maiúsculas. Não usa strcasestr: ela é uma
+   extensão GNU e o newlib do Vita não a tem. */
+static bool contem_ci(const char *palheiro, const char *agulha)
+{
+    if (!agulha || !agulha[0]) return true;
+    if (!palheiro) return false;
+    for (const char *p = palheiro; *p; p++) {
+        const char *a = agulha, *q = p;
+        while (*a && *q) {
+            char ca = *a, cq = *q;
+            if (ca >= 'A' && ca <= 'Z') ca += 32;
+            if (cq >= 'A' && cq <= 'Z') cq += 32;
+            if (ca != cq) break;
+            a++; q++;
+        }
+        if (!*a) return true;
+    }
+    return false;
+}
+
+/* Remonta a lista de visíveis. Só quando o termo muda ou a estante muda —
+   são 388 comparações, baratas, mas não a cada quadro. */
+static void filtro_remonta(Ui *u, Library *lib)
+{
+    if (!u->busca_suja && u->vis_para == lib->nalbums) return;
+    u->busca_suja = false;
+    u->vis_para = lib->nalbums;
+    u->nvis = 0;
+    if (!u->busca[0]) return;                 /* sem termo, sem lista */
+    if (u->vis_cap < lib->nalbums) {
+        int *v = realloc(u->vis, (size_t)lib->nalbums * sizeof(int));
+        if (!v) { u->busca[0] = '\0'; return; }   /* sem memória: sem filtro */
+        u->vis = v;
+        u->vis_cap = lib->nalbums;
+    }
+    for (int i = 0; i < lib->nalbums; i++) {
+        const Album *a = &lib->albums[i];
+        if (contem_ci(a->artist, u->busca) || contem_ci(a->album, u->busca))
+            u->vis[u->nvis++] = i;
+    }
+}
+
+/* Quantos discos a estante mostra, e qual é o i-ésimo. Todo lugar que indexa
+   a estante passa por estes dois — é o que mantém o filtro numa peça só. */
+static int  shelf_n(const Ui *u, const Library *lib)
+{
+    return u->busca[0] ? u->nvis : lib->nalbums;
+}
+static Album *shelf_album(Ui *u, Library *lib, int i)
+{
+    if (i < 0 || i >= shelf_n(u, lib)) return NULL;
+    return library_album(lib, u->busca[0] ? u->vis[i] : i);
+}
+
 static void draw_shelf(Ui *u, Library *lib, Player *p)
 {
-    int n = lib->nalbums;
-    header(u, "SHELF",
-           NULL);
+    filtro_remonta(u, lib);
+    int n = shelf_n(u, lib);
+    /* Com filtro ligado o título DIZ o filtro: uma estante que mostra 6 de
+       388 discos sem explicar por quê parece uma estante quebrada. */
+    char titulo[80];
+    if (u->busca[0]) snprintf(titulo, sizeof(titulo), "SHELF  ·  \"%s\"", u->busca);
+    else             snprintf(titulo, sizeof(titulo), "%s", "SHELF");
+    header(u, titulo, NULL);
     {
         static const Dica d[] = {
             { BTN_CROSS,    (Btn)-1, "play" },
             { BTN_DPAD,     (Btn)-1, "navigate" },
-            { BTN_SQUARE,   (Btn)-1, "jump to" },
+            { BTN_SQUARE,   (Btn)-1, "jump / search" },
             { BTN_TRIANGLE, (Btn)-1, "now playing" },
             { BTN_SEL,      (Btn)-1, "shuffle" },
             { BTN_L1,       (Btn)-1, "recs" },
@@ -1368,6 +1442,20 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
         header_hints(u, "", d);
     }
 
+    if (n <= 0 && u->busca[0]) {
+        /* Uma estante filtrada sem resultado NÃO é uma estante vazia, e a
+           tela de estante vazia manda copiar música para o cartão — conselho
+           errado para quem só digitou um nome que não existe. */
+        char m[128];
+        snprintf(m, sizeof(m), "nothing matches \"%s\"", u->busca);
+        text(u, (int)PAD_X, 170, COL_AMBER, 0.80f, m);
+        text(u, (int)PAD_X, 206, COL_TEXT_DIM, 0.58f,
+             "[square] to search again, or [square] then [O] to clear the filter");
+        char cnt2[96];
+        snprintf(cnt2, sizeof(cnt2), "0 of %d records", lib->nalbums);
+        text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt2);
+        return;
+    }
     if (n <= 0) { shelf_empty(u, lib); return; }
 
     if (u->sel >= n) u->sel = n - 1;
@@ -1386,7 +1474,7 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
         for (int c = 0; c < SHELF_COLS; c++) {
             int idx = scroll + r * SHELF_COLS + c;
             if (idx >= n) continue;
-            Album *a = library_album(lib, idx);
+            Album *a = shelf_album(u, lib, idx);
             if (!a) continue;
             float x = x0 + c * (cw + gap);
             float y = y0 + r * (ch + gap);
@@ -1455,14 +1543,20 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
                                              : COL_TEXT_FAINT, 1.1f, L);
         }
         text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f,
-             "[dir] choose   [X] go   [tri] back");
+             u->busca[0]
+               ? "[dir] choose   [X] go   [sq] search   [O] clear filter   [tri] back"
+               : "[dir] choose   [X] go   [sq] type to search   [tri] back");
         return;
     }
 
     char cnt[96];
     int pages = (n + SHELF_PAGE - 1) / SHELF_PAGE;
-    snprintf(cnt, sizeof(cnt), "%d record%s   ·   page %d of %d",
-             n, n == 1 ? "" : "s", page + 1, pages);
+    if (u->busca[0])
+        snprintf(cnt, sizeof(cnt), "%d of %d record%s   ·   page %d of %d",
+                 n, lib->nalbums, lib->nalbums == 1 ? "" : "s", page + 1, pages);
+    else
+        snprintf(cnt, sizeof(cnt), "%d record%s   ·   page %d of %d",
+                 n, n == 1 ? "" : "s", page + 1, pages);
     text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt);
 
     /* A FILA PRESA, dita onde se vê.
@@ -3024,10 +3118,20 @@ int ui_handle_input(Ui *u)
         if (r == 1) {
             /* Qual tela pediu o teclado. Só uma pode estar esperando: o
                diálogo do sistema é único. */
-            if (u->conta_campo >= 0)   conta_recebeu(u, u->conta_campo, txt);
+            if (u->busca_pedida) {
+                /* a precisão limita a LEITURA: o teclado devolve até 256
+                   bytes e o termo guarda 48; sem ela o compilador avisa, com
+                   razão, que a conta pode passar do buffer */
+                snprintf(u->busca, sizeof(u->busca), "%.*s",
+                         (int)sizeof(u->busca) - 1, txt);
+                u->busca_suja = true;
+                u->sel = 0;
+                u->jump_open = false;   /* o resultado é a estante, não a régua */
+            }
+            else if (u->conta_campo >= 0)   conta_recebeu(u, u->conta_campo, txt);
             else if (u->qb_campo >= 0) qb_recebeu(u, u->qb_campo, txt);
         }
-        if (r != 0) { u->conta_campo = -1; u->qb_campo = -1; }
+        if (r != 0) { u->conta_campo = -1; u->qb_campo = -1; u->busca_pedida = false; }
         memset(txt, 0, sizeof(txt));   /* pode ter sido uma senha */
         return 0;
     }
@@ -3063,8 +3167,23 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_UP)    u->jump_letter -= 9;
         if (u->jump_letter < 0) u->jump_letter = 0;
         if (u->jump_letter > 26) u->jump_letter = 26;
-        if (edge & (SCE_CTRL_TRIANGLE | SCE_CTRL_CIRCLE)) u->jump_open = false;
+        if (edge & SCE_CTRL_TRIANGLE) u->jump_open = false;
+        /* Limpar tem de ser UMA tecla. Sem isto, desfazer uma busca custava
+           abrir a régua, abrir o teclado, apagar o que estava lá e confirmar
+           — quatro passos para voltar ao estado normal do app, e um filtro
+           do qual não se sai é uma estante quebrada. */
+        if (edge & SCE_CTRL_CIRCLE) {
+            if (u->busca[0]) { u->busca[0] = '\0'; u->busca_suja = true; u->sel = 0; }
+            u->jump_open = false;
+        }
         if (edge & SCE_CTRL_CROSS) { u->jump_open = false; action = 19; }
+        /* A LETRA e o TERMO são a mesma pergunta em duas resoluções: "onde
+           está isso na estante?". Por isso o teclado abre daqui, e não de um
+           atalho novo na estante — a régua já é a tela de procurar. */
+        if (edge & SCE_CTRL_SQUARE) {
+            if (ime_abrir("search the shelf", u->busca, sizeof(u->busca) - 1, false) == 0)
+                u->busca_pedida = true;
+        }
         if (edge & SCE_CTRL_START) return -1;
 
         /* A RÉGUA ACEITA O DEDO.
@@ -3552,17 +3671,40 @@ void ui_destroy(Ui *u)
 {
     if (!u) return;
     cache_clear(u);
+    free(u->vis);
     if (u->font) vita2d_free_pvf(u->font);
     free(u);
 }
 
-int ui_selected(const Ui *u)      { return u ? u->sel : 0; }
+int ui_selected(const Ui *u)
+{
+    /* O índice REAL da biblioteca. Fora daqui ninguém sabe que existe filtro,
+       e é por isso que o main não precisou mudar uma linha. */
+    if (!u) return 0;
+    if (u->busca[0] && u->vis && u->sel >= 0 && u->sel < u->nvis)
+        return u->vis[u->sel];
+    return u->sel;
+}
 int ui_playlist_idx(const Ui *u)  { return u ? u->pl_sel : 0; }
 int ui_rec_idx(const Ui *u)       { return u ? u->rec_sel : 0; }
 int ui_jump_letter(const Ui *u)   { return u ? u->jump_letter : 0; }
 void ui_set_sel(Ui *u, int i)     { if (u) u->sel = i < 0 ? 0 : i; }
 QobuzConfig *ui_qobuz_cfg(Ui *u)  { return u ? &u->qb_cfg : NULL; }
 
+
+void ui_set_busca(Ui *u, const char *termo)
+{
+    if (!u) return;
+    snprintf(u->busca, sizeof(u->busca), "%s", termo ? termo : "");
+    u->busca_suja = true;
+    u->sel = 0;
+}
+
+int ui_shelf_count_dbg(const Ui *u)
+{
+    if (!u) return 0;
+    return u->busca[0] ? u->nvis : u->vis_para;
+}
 
 int ui_view_dbg(const Ui *u) { return u ? (int)u->view : 0; }
 

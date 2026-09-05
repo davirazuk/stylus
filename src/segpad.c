@@ -30,7 +30,7 @@
    4948 virar 8200, e' esse numero que se dobra de novo, nao este pad. */
 
 #ifndef SEGPAD_BYTES
-#define SEGPAD_BYTES 3368
+#define SEGPAD_BYTES 1712
 #endif
 
 #if SEGPAD_BYTES > 0

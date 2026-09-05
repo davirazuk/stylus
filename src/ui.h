@@ -82,6 +82,13 @@ int ui_handle_input(Ui *u);
    depende de olhar uma imagem. */
 int ui_view_dbg(const Ui *u);
 
+/* O FILTRO DA ESTANTE, para o teste. Expostos pelo mesmo motivo do
+   ui_view_dbg: o que precisa ser medido é a TRADUÇÃO do índice filtrado para
+   o índice real da biblioteca, e ela não aparece na tela — um filtro que
+   traduz errado não desenha nada de estranho, só toca o disco errado. */
+void ui_set_busca(Ui *u, const char *termo);
+int  ui_shelf_count_dbg(const Ui *u);
+
 /* O saneamento do texto que vem DE FORA (nome de arquivo, tag, título do
    Qobuz), como o desenho o aplica. Exposto pelo mesmo motivo do ui_view_dbg:
    sem isto, provar que a aspa curva de um nome de arquivo não vira
