@@ -2707,7 +2707,7 @@ static void draw_handoff(Ui *u, Library *lib, Player *p)
     }
     y += 34;
 
-    text(u, (int)PAD_X, y, COL_AMBER, 0.60f, "o desvio, que funciona sempre:");
+    text(u, (int)PAD_X, y, COL_AMBER, 0.60f, "the workaround, which always works:");
     y += 26;
     const char *passos[] = {
         "1.  here: [start] exits — the track and position are saved",

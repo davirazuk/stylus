@@ -53,6 +53,18 @@ PT = {
     "escolher", "navegar", "voltar", "abrir", "fechar", "salvar",
     "procurar", "mostrar", "seguir", "aplicar",
     "toca", "tocar", "conta", "contas", "lista", "listas", "letra",
+    # As FUNCIONAIS. As listas de cima são de substantivos e verbos do
+    # domínio, e por isso continuavam deixando frases inteiras passarem —
+    # "o desvio, que funciona sempre" não tem nenhuma palavra de disco nem
+    # um acento. Estas aqui aparecem em quase toda frase em português e não
+    # existem em inglês, que é o que faz delas a rede mais larga.
+    "que", "não", "com", "para", "uma", "mas", "como", "mais", "muito",
+    "quando", "porque", "sempre", "ainda", "então", "onde", "quem", "isso",
+    "este", "esta", "esse", "essa", "aqui", "ali", "seu", "sua", "dos",
+    "das", "nos", "nas", "pelo", "pela", "até", "ser", "são", "foi",
+    "tem", "vai", "faz", "diz", "pode", "deve", "cada", "todo", "toda",
+    "sobre", "entre", "depois", "antes", "agora", "nunca", "desvio",
+    "funciona", "coisa", "coisas", "jeito", "vez", "vezes",
 }
 
 # Literais que são DADO, e não texto de tela: nomes de pasta que a descoberta
