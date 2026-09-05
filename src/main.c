@@ -22,6 +22,8 @@
 #include "decoder.h"
 #include "lastfm.h"
 #include "sides.h"
+#include "qobuz.h"
+#include "fonte.h"
 
 /* recomendações e playlists moram no cartão, junto do app — os caminhos são
    do paths.h, que é o único dono deles */
@@ -67,6 +69,29 @@ unsigned int _newlib_heap_size_user = 128 * 1024 * 1024;
    ENFILEIRA (um produtor, um consumidor, sem trava) e quem escreve em disco é
    o laço principal, que é também quem lê. */
 #define DONE_Q 16
+
+/* O resolvedor de faixas remotas: transforma um id do Qobuz numa URL tocável.
+   O player não conhece o Qobuz — este é o único fio entre os dois. */
+static int resolve_remote(void *ud, const char *remote_id,
+                          char *url, int cap, int *kind)
+{
+    QobuzConfig *cfg = ud;
+    int formato = cfg->formato;
+    int r = qobuz_url(cfg, remote_id, formato, url, cap);
+    if (r != 0) return -1;
+    *kind = qobuz_deckind(formato);
+    return 0;
+}
+
+/* Faixas da rede: armazenamento temporário para álbuns abertos pelo Qobuz.
+   O player mantém PONTEIROS para Track durante toda a reprodução — estes
+   têm que sobreviver ao escopo de quem chamou player_load_list. Um Album
+   fictício serve de encaixe: o deck lê artista, álbum e lado de lá, e sem
+   ele a tela diz "nada no prato" upa um disco que está tocando. */
+#define REMOTE_MAX 64
+static Track  g_remote_tracks[REMOTE_MAX];
+static int    g_remote_n;
+static Album  g_remote_alb;
 
 /* estado persistente que sobrevive o loop e alimenta a UI a cada frame */
 typedef struct {
@@ -114,7 +139,11 @@ static void drain_done(Session *s)
         const Track *t = s->done_q[s->done_tail];
         s->done_tail = (s->done_tail + 1) % DONE_Q;
         if (!t) continue;
-        rec_play(&s->rec, t->path, REC_HISTORY_BASE);
+        /* Faixa da rede não tem caminho local — o remote_id serve como chave
+           no histórico e no scrobble. Não é um caminho de arquivo, mas é
+           ÚNICO, e é isso que rec_play e scrobble_log precisam. */
+        const char *key = t->path[0] ? t->path : t->remote_id;
+        rec_play(&s->rec, key, REC_HISTORY_BASE);
         long agora = (long)time(NULL);
         scrobble_log(REC_HISTORY_BASE, t, agora);
         /* Camada last.fm. A ordem importa: ENFILEIRA primeiro, sempre, e só
@@ -268,6 +297,10 @@ int main(int argc, char *argv[])
         sceKernelExitProcess(1);
     }
     player_set_complete_cb(player, on_track_done, &ses);
+    /* O resolvedor de faixas remotas: quando o player abrir uma faixa da rede,
+       ele pergunta ao main como transformar o id numa URL. O QobuzConfig
+       precisa ficar vivo — e fica, porque é um campo da Ui. */
+    player_set_resolver(resolve_remote, ui_qobuz_cfg(ui));
 
     ui_set_data(ui, ses.plists, ses.nplists, ses.recs, ses.nrecs);
     ui_set_bgm(ui, bgm_port_ok);
@@ -411,6 +444,52 @@ int main(int argc, char *argv[])
             int pi = ui_playlist_idx(ui);
             if (ses.plists && pi >= 0 && pi < ses.nplists)
                 playlist_remove_file(ses.plists, &ses.nplists, pi, PLAYLIST_DIR);
+            break;
+        }
+        case 22: { /* tocar da rede: o disco foi aberto, as faixas estão prontas */
+            QobuzFaixa fx[REMOTE_MAX];
+            int nfx = 0;
+            bool ativo = false;
+            QobuzAlbum alb;
+            qobuz_abre_estado(fx, REMOTE_MAX, &nfx, &ativo, &alb);
+            if (nfx <= 0 || nfx > REMOTE_MAX) break;
+            /* Album fictício: o deck lê artista e álbum de lá. Sem ele a tela
+               diz "nada no prato" — que é o estado de quem não tem disco,
+               não o de quem está ouvindo pela rede. */
+            memset(&g_remote_alb, 0, sizeof(g_remote_alb));
+            snprintf(g_remote_alb.artist, sizeof(g_remote_alb.artist),
+                     "%s", alb.artista);
+            snprintf(g_remote_alb.album, sizeof(g_remote_alb.album),
+                     "%s", alb.titulo);
+            g_remote_n = 0;
+            for (int i = 0; i < nfx; i++) {
+                Track *t = &g_remote_tracks[g_remote_n];
+                memset(t, 0, sizeof(*t));
+                /* A precisão limita a LEITURA, e não só a escrita: o `id` é um
+                   vetor de tamanho fixo que pode chegar sem terminador, e aí
+                   o "%s" sairia lendo pelos campos seguintes — e pelas faixas
+                   seguintes, que é o que o compilador avisava com "up to
+                   12799 bytes" (64 faixas de struct, uma atrás da outra). */
+                snprintf(t->remote_id, sizeof(t->remote_id), "%.*s",
+                         (int)sizeof(t->remote_id) - 1, fx[i].id);
+                snprintf(t->title, sizeof(t->title), "%s", fx[i].titulo);
+                t->number = fx[i].numero;
+                t->seconds = fx[i].segundos;
+                t->decodable = true;
+                t->owner = &g_remote_alb;
+                g_remote_n++;
+            }
+            g_remote_alb.ntracks = g_remote_n;
+            g_remote_alb.seconds_total = 0;
+            for (int i = 0; i < g_remote_n; i++)
+                if (g_remote_tracks[i].seconds > 0)
+                    g_remote_alb.seconds_total += g_remote_tracks[i].seconds;
+            g_remote_alb.tracks = g_remote_tracks;
+            const Track *ptrs[REMOTE_MAX];
+            for (int i = 0; i < g_remote_n; i++) ptrs[i] = &g_remote_tracks[i];
+            if (player_load_list(player, &lib, ptrs, g_remote_n, 0) == 0)
+                ui_begin_ritual(ui);
+            qobuz_abre_limpa();
             break;
         }
         default:

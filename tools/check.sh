@@ -69,8 +69,9 @@ else
         fail "não consegui gerar as fixtures de áudio"
     else
         out=$(gcc -std=gnu11 -Wall -Wextra -Werror -I"$SRC" -o /tmp/vitastylus_dectest \
-              tools/decoder_test.c "$SRC"/decoder.c \
-              $(pkg-config --cflags $DEC_PKGS) $(pkg-config --libs $DEC_PKGS) -lm 2>&1) || true
+              tools/decoder_test.c "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/net.c \
+              $(pkg-config --cflags $DEC_PKGS) $(pkg-config --libs $DEC_PKGS) \
+              $(pkg-config --cflags --libs libcurl) -lm 2>&1) || true
         if [ ! -x /tmp/vitastylus_dectest ]; then
             fail "o teste do decodificador não compila" "$out"
         elif /tmp/vitastylus_dectest "$FX"; then
@@ -185,7 +186,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
     out=$(gcc -std=gnu11 -I"$SRC" -Itests/hostgfx/include -o /tmp/vitastylus_desenho \
           tests/desenho_test.c tests/hostgfx/vita2d_host.c tests/hostgfx/player_stub.c \
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
-          "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
+          "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
           "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
@@ -234,7 +235,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
     out=$(gcc -std=gnu11 -I"$SRC" -Itests/hostgfx/include -o /tmp/vitastylus_atalhos \
           tests/atalhos_test.c tests/hostgfx/vita2d_host.c tests/hostgfx/player_stub.c \
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
-          "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
+          "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
           "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
@@ -262,7 +263,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
     out=$(gcc -std=gnu11 -I"$SRC" -Itests/hostgfx/include -o /tmp/vitastylus_toque \
           tests/toque_test.c tests/hostgfx/vita2d_host.c tests/hostgfx/player_stub.c \
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
-          "$SRC"/decoder.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
+          "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
           "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true

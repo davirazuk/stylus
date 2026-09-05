@@ -24,6 +24,13 @@ typedef struct Player Player;
 typedef void (*PlayerCompleteFn)(const Track *t, void *ud);
 void player_set_complete_cb(Player *p, PlayerCompleteFn fn, void *ud);
 
+/* Resolve o id de uma faixa REMOTA numa URL tocável. Devolve 0 em sucesso e
+   preenche `url` e `kind` (um DecKind). Injetado pelo main: o player não
+   conhece o Qobuz, e este é o único fio entre os dois. */
+typedef int (*PlayerResolve)(void *ud, const char *remote_id,
+                             char *url, int cap, int *kind);
+void player_set_resolver(PlayerResolve fn, void *ud);
+
 Player *player_create(void);
 void player_destroy(Player *p);
 
@@ -65,6 +72,17 @@ typedef struct {
     bool resampled;      /* a taxa mudou no caminho */
     bool requantized;    /* a profundidade desceu */
     bool bgm_port;       /* a taxa deixa o SDL2 abrir a porta BGM (2º plano) */
+
+    /* O COLCHÃO, quando a faixa vem pela rede.
+
+       Fica AQUI, e não num acessório à parte, porque é a mesma pergunta que o
+       resto desta struct responde: o que o caminho do sinal está de fato
+       fazendo. E porque um colchão que encolhe é a única coisa que explica um
+       estalo ANTES de ele acontecer — sem isto a tela só teria como dizer que
+       a rede caiu depois de já ter falhado. */
+    bool remoto;         /* a faixa vem da rede, e não do cartão */
+    long colchao;        /* bytes já esperando à frente; 0 quando local */
+    long colchao_max;    /* o tamanho do anel, para desenhar a proporção */
 } PlayerSignal;
 void player_signal(const Player *p, PlayerSignal *out);
 

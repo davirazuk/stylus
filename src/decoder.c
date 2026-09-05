@@ -1,4 +1,5 @@
 #include "decoder.h"
+#include "fonte.h"
 
 #include <mpg123.h>
 #include <FLAC/stream_decoder.h>
@@ -110,9 +111,13 @@ struct Decoder {
     size_t fbuf_cap, fbuf_len, fbuf_pos;
     int f_eof, f_err;
 
-    FILE *wf;
     long wav_data;          /* offset do primeiro byte de PCM */
     int wav_bits, wav_float;
+
+    /* De onde os bytes vêm: arquivo ou rede. Antes cada formato abria o
+       caminho por conta própria, e por isso o app só sabia tocar arquivo. */
+    Fonte *src;
+    bool  remoto;
 
     /* Reamostragem (ver a nota grande acima). `rs` != NULL quer dizer que
        fmt.rate É a taxa de SAÍDA e o decodificador por baixo entrega
@@ -134,6 +139,60 @@ void dec_global_exit(void)
 {
     if (mpg_inited) { mpg123_exit(); mpg_inited = 0; }
 }
+
+/* ---------------- as costas de cada biblioteca sobre a Fonte ----------------
+
+   Cinco bibliotecas, cinco jeitos de pedir bytes. Todas aceitam callbacks, e
+   e por eles que a rede entra sem que nenhum dos cinco decodificadores saiba
+   que ela existe.
+
+   Numa fonte de REDE elas sao apresentadas como NAO-PROCURAVEIS de proposito.
+   O ov_open do Vorbis, num fluxo procuravel, salta para o fim e faz bissecao
+   para achar o ultimo granulepos — no Wi-Fi de um Vita isso sao varias
+   reaberturas de conexao com Range antes de a primeira nota sair. A duracao
+   nos ja temos: vem da API do Qobuz junto com o titulo. Usar o que ja se sabe
+   e melhor do que fazer a rede descobrir de novo. */
+
+static ssize_t f_read_mpg(void *h, void *buf, size_t n)
+{
+    long r = fonte_le((Fonte *)h, buf, n);
+    return r < 0 ? -1 : (ssize_t)r;
+}
+
+static off_t f_lseek_mpg(void *h, off_t off, int whence)
+{
+    long long r = fonte_procura((Fonte *)h, (long long)off, whence);
+    return r < 0 ? (off_t)-1 : (off_t)r;
+}
+
+static size_t f_read_ov(void *ptr, size_t sz, size_t nm, void *ds)
+{
+    if (sz == 0 || nm == 0) return 0;
+    long r = fonte_le((Fonte *)ds, ptr, sz * nm);
+    return r <= 0 ? 0 : (size_t)r / sz;
+}
+
+static int f_seek_ov(void *ds, ogg_int64_t off, int whence)
+{
+    return fonte_procura((Fonte *)ds, (long long)off, whence) < 0 ? -1 : 0;
+}
+
+static long f_tell_ov(void *ds) { return (long)fonte_posicao((Fonte *)ds); }
+static int  f_close_ov(void *ds) { (void)ds; return 0; }   /* a Fonte e nossa */
+
+static int f_read_op(void *ds, unsigned char *ptr, int n)
+{
+    long r = fonte_le((Fonte *)ds, ptr, (size_t)n);
+    return r < 0 ? -1 : (int)r;
+}
+
+static int f_seek_op(void *ds, opus_int64 off, int whence)
+{
+    return fonte_procura((Fonte *)ds, (long long)off, whence) < 0 ? -1 : 0;
+}
+
+static opus_int64 f_tell_op(void *ds) { return fonte_posicao((Fonte *)ds); }
+static int f_close_op(void *ds) { (void)ds; return 0; }
 
 /* ---------------- FLAC ---------------- */
 
@@ -209,6 +268,57 @@ static void flac_err(const FLAC__StreamDecoder *dec,
     (void)client;
 }
 
+static FLAC__StreamDecoderReadStatus f_read_fl(const FLAC__StreamDecoder *dec,
+        FLAC__byte buffer[], size_t *bytes, void *client)
+{
+    (void)dec;
+    Decoder *d = client;
+    long r = fonte_le(d->src, buffer, *bytes);
+    if (r < 0) { *bytes = 0; return FLAC__STREAM_DECODER_READ_STATUS_ABORT; }
+    *bytes = (size_t)r;
+    if (r == 0) return FLAC__STREAM_DECODER_READ_STATUS_END_OF_STREAM;
+    return FLAC__STREAM_DECODER_READ_STATUS_CONTINUE;
+}
+
+static FLAC__StreamDecoderSeekStatus f_seek_fl(const FLAC__StreamDecoder *dec,
+        FLAC__uint64 off, void *client)
+{
+    (void)dec;
+    Decoder *d = client;
+    if (fonte_procura(d->src, (long long)off, SEEK_SET) < 0)
+        return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
+    return FLAC__STREAM_DECODER_SEEK_STATUS_OK;
+}
+
+static FLAC__StreamDecoderTellStatus f_tell_fl(const FLAC__StreamDecoder *dec,
+        FLAC__uint64 *off, void *client)
+{
+    (void)dec;
+    Decoder *d = client;
+    long long p = fonte_posicao(d->src);
+    if (p < 0) return FLAC__STREAM_DECODER_TELL_STATUS_ERROR;
+    *off = (FLAC__uint64)p;
+    return FLAC__STREAM_DECODER_TELL_STATUS_OK;
+}
+
+static FLAC__StreamDecoderLengthStatus f_len_fl(const FLAC__StreamDecoder *dec,
+        FLAC__uint64 *len, void *client)
+{
+    (void)dec;
+    Decoder *d = client;
+    long long t = fonte_tamanho(d->src);
+    if (t < 0) return FLAC__STREAM_DECODER_LENGTH_STATUS_UNSUPPORTED;
+    *len = (FLAC__uint64)t;
+    return FLAC__STREAM_DECODER_LENGTH_STATUS_OK;
+}
+
+static FLAC__bool f_eof_fl(const FLAC__StreamDecoder *dec, void *client)
+{
+    (void)dec;
+    Decoder *d = client;
+    return fonte_fim(d->src);
+}
+
 /* ---------------- WAV ---------------- */
 
 static unsigned rd32(const unsigned char *p)
@@ -221,23 +331,21 @@ static unsigned rd16(const unsigned char *p)
     return (unsigned)p[0] | ((unsigned)p[1] << 8);
 }
 
-static int wav_open(Decoder *d, const char *path)
+static int wav_open(Decoder *d)
 {
-    d->wf = fopen(path, "rb");
-    if (!d->wf) return -1;
     unsigned char h[12];
-    if (fread(h, 1, 12, d->wf) != 12 ||
+    if (fonte_le(d->src, h, 12) != 12 ||
         memcmp(h, "RIFF", 4) || memcmp(h + 8, "WAVE", 4)) return -1;
 
     int have_fmt = 0;
     for (;;) {
         unsigned char ck[8];
-        if (fread(ck, 1, 8, d->wf) != 8) break;
+        if (fonte_le(d->src, ck, 8) != 8) break;
         unsigned size = rd32(ck + 4);
         if (!memcmp(ck, "fmt ", 4)) {
             unsigned char f[40];
             unsigned want = size < sizeof(f) ? size : sizeof(f);
-            if (fread(f, 1, want, d->wf) != want) return -1;
+            if (fonte_le(d->src, f, want) != (long)want) return -1;
             unsigned tag = rd16(f);
             d->fmt.channels = (int)rd16(f + 2);
             d->fmt.rate = (long)rd32(f + 4);
@@ -251,11 +359,11 @@ static int wav_open(Decoder *d, const char *path)
                 if (d->fmt.channels < 1) return -1;
                 d->fmt.channels = 2;
             }
-            if (size > want) fseek(d->wf, (long)(size - want), SEEK_CUR);
+            if (size > want) fonte_procura(d->src, (long long)(size - want), SEEK_CUR);
             have_fmt = 1;
         } else if (!memcmp(ck, "data", 4)) {
             if (!have_fmt) return -1;
-            d->wav_data = ftell(d->wf);
+            d->wav_data = (long)fonte_posicao(d->src);
             int bytes_per = d->wav_bits / 8 * d->fmt.channels;
             d->len = bytes_per > 0 ? (long long)size / bytes_per : -1;
             d->fmt.bits_native = d->wav_bits;
@@ -264,7 +372,7 @@ static int wav_open(Decoder *d, const char *path)
         } else {
             /* pedaço ímpar leva um byte de enchimento — pular sem ele
                desalinha tudo que vem depois */
-            fseek(d->wf, (long)(size + (size & 1)), SEEK_CUR);
+            fonte_procura(d->src, (long long)(size + (size & 1)), SEEK_CUR);
         }
     }
     return -1;
@@ -281,7 +389,8 @@ static long wav_read(Decoder *d, void *buf, size_t bytes)
     size_t max_frames = sizeof(raw) / (size_t)(ch * bps);
     if (want_frames > max_frames) want_frames = max_frames;
 
-    size_t got = fread(raw, (size_t)(ch * bps), want_frames, d->wf);
+    long lidos = fonte_le(d->src, raw, (size_t)(ch * bps) * want_frames);
+    size_t got = lidos <= 0 ? 0 : (size_t)lidos / (size_t)(ch * bps);
     if (got == 0) return 0;
 
     short *out = buf;
@@ -506,16 +615,19 @@ static size_t rs_pull(Resamp *r, short *out, size_t frames)
    testa. */
 static Decoder *dec_pronto(Decoder *d);
 
-Decoder *dec_open(const char *path)
+/* O abridor de verdade. `src` e de quem chama: em caso de erro ela e fechada
+   aqui, em caso de sucesso o Decoder passa a ser o dono. */
+static Decoder *abre_fonte(Fonte *src, DecKind k)
 {
-    DecKind k = dec_kind_of(path);
-    if (k == DEC_NONE) return NULL;
+    if (k == DEC_NONE || !src) { fonte_fecha(src); return NULL; }
     Decoder *d = calloc(1, sizeof(*d));
-    if (!d) return NULL;
+    if (!d) { fonte_fecha(src); return NULL; }
     d->kind = k;
     d->len = -1;
     d->fmt.channels = 2;
     d->fmt.rate = 44100;
+    d->src = src;
+    d->remoto = fonte_e_rede(src);
 
     if (k == DEC_MP3) {
         dec_global_init();
@@ -523,7 +635,18 @@ Decoder *dec_open(const char *path)
         d->mh = mpg123_new(NULL, &e);
         if (!d->mh) goto fail;
         mpg123_param(d->mh, MPG123_ADD_FLAGS, MPG123_QUIET, 0.0);
-        if (mpg123_open(d->mh, path) != MPG123_OK) goto fail;
+        /* Pelo HANDLE, nao pelo caminho: e assim que a rede entra sem o
+           mpg123 saber que ela existe.
+
+           O lseek vai SEMPRE, inclusive na rede. Medido: com lseek NULL o
+           mpg123_open_handle devolve erro generico e a faixa nao abre — ao
+           contrario do FLAC, do Vorbis e do Opus, que aceitam um fluxo sem
+           procura. Na rede quem paga a conta e a Fonte, que resolve um salto
+           dentro do colchao de graca e so reabre a conexao com Range quando
+           o salto sai dele. */
+        if (mpg123_replace_reader_handle(d->mh, f_read_mpg, f_lseek_mpg,
+                                         NULL) != MPG123_OK) goto fail;
+        if (mpg123_open_handle(d->mh, d->src) != MPG123_OK) goto fail;
         long rate = 0; int ch = 0, enc = 0;
         if (mpg123_getformat(d->mh, &rate, &ch, &enc) != MPG123_OK || rate <= 0) goto fail;
         /* trava o formato: sem isto uma faixa VBR com mudança de layout
@@ -534,8 +657,11 @@ Decoder *dec_open(const char *path)
         if (g_max_rate > 0 && rate > g_max_rate) {
             long alvo = alvo_para(g_max_rate);
             mpg123_close(d->mh);
+            /* rebobina a FONTE: reabrir por caminho nao serve mais, e numa
+               fonte de rede rebobinar e uma reconexao com Range */
+            fonte_procura(d->src, 0, SEEK_SET);
             if (mpg123_param(d->mh, MPG123_FORCE_RATE, alvo, 0.0) == MPG123_OK &&
-                mpg123_open(d->mh, path) == MPG123_OK &&
+                mpg123_open_handle(d->mh, d->src) == MPG123_OK &&
                 mpg123_getformat(d->mh, &saida, &ch, &enc) == MPG123_OK &&
                 saida > 0) {
                 /* reamostrado: `rate` continua sendo a do ARQUIVO */
@@ -545,7 +671,8 @@ Decoder *dec_open(const char *path)
                    e o comentário acima seria mentira. */
                 mpg123_close(d->mh);
                 mpg123_param(d->mh, MPG123_FORCE_RATE, 0, 0.0);
-                if (mpg123_open(d->mh, path) != MPG123_OK) goto fail;
+                fonte_procura(d->src, 0, SEEK_SET);
+                if (mpg123_open_handle(d->mh, d->src) != MPG123_OK) goto fail;
                 if (mpg123_getformat(d->mh, &saida, &ch, &enc) != MPG123_OK) goto fail;
             }
         }
@@ -566,8 +693,11 @@ Decoder *dec_open(const char *path)
         d->fd = FLAC__stream_decoder_new();
         if (!d->fd) goto fail;
         FLAC__stream_decoder_set_md5_checking(d->fd, false);
-        if (FLAC__stream_decoder_init_file(d->fd, path, flac_write, flac_meta,
-                                           flac_err, d) != FLAC__STREAM_DECODER_INIT_STATUS_OK)
+        if (FLAC__stream_decoder_init_stream(d->fd, f_read_fl,
+                d->remoto ? NULL : f_seek_fl, d->remoto ? NULL : f_tell_fl,
+                d->remoto ? NULL : f_len_fl, d->remoto ? NULL : f_eof_fl,
+                flac_write, flac_meta, flac_err, d)
+            != FLAC__STREAM_DECODER_INIT_STATUS_OK)
             goto fail;
         /* o STREAMINFO vem antes do primeiro áudio: sem isto a taxa e a
            duração ainda não existem quando o player pergunta */
@@ -577,12 +707,12 @@ Decoder *dec_open(const char *path)
     }
 
     if (k == DEC_VORBIS) {
-        FILE *f = fopen(path, "rb");
-        if (!f) goto fail;
-        if (ov_open_callbacks(f, &d->vf, NULL, 0, OV_CALLBACKS_DEFAULT) < 0) {
-            fclose(f);
-            goto fail;
-        }
+        ov_callbacks cb;
+        cb.read_func  = f_read_ov;
+        cb.seek_func  = d->remoto ? NULL : f_seek_ov;
+        cb.tell_func  = d->remoto ? NULL : f_tell_ov;
+        cb.close_func = f_close_ov;
+        if (ov_open_callbacks(d->src, &d->vf, NULL, 0, cb) < 0) goto fail;
         d->vf_open = 1;
         vorbis_info *vi = ov_info(&d->vf, -1);
         if (!vi) goto fail;
@@ -598,7 +728,13 @@ Decoder *dec_open(const char *path)
 
     if (k == DEC_OPUS) {
         int e = 0;
-        d->of = op_open_file(path, &e);
+        OpusFileCallbacks cb;
+        memset(&cb, 0, sizeof(cb));
+        cb.read  = f_read_op;
+        cb.seek  = d->remoto ? NULL : f_seek_op;
+        cb.tell  = d->remoto ? NULL : f_tell_op;
+        cb.close = f_close_op;
+        d->of = op_open_callbacks(d->src, &cb, NULL, 0, &e);
         if (!d->of) goto fail;
         /* Opus é SEMPRE 48 kHz por definição do formato — não há taxa nativa
            diferente para reamostrar, e dizer "reamostrado" seria mentira. */
@@ -614,13 +750,49 @@ Decoder *dec_open(const char *path)
     }
 
     if (k == DEC_WAV) {
-        if (wav_open(d, path) != 0) goto fail;
+        if (wav_open(d) != 0) goto fail;
         return dec_pronto(d);
     }
 
 fail:
     dec_close(d);
     return NULL;
+}
+
+Decoder *dec_open(const char *path)
+{
+    DecKind k = dec_kind_of(path);
+    if (k == DEC_NONE) return NULL;
+    return abre_fonte(fonte_arquivo(path), k);
+}
+
+/* Toca direto da rede.
+ *
+ * `kind` vem de fora porque uma URL assinada do Qobuz nao tem extensao — ela
+ * acaba num punhado de parametros de assinatura. Adivinhar o formato pelo
+ * fim da URL daria DEC_NONE em toda faixa, e o sintoma ("nao toca nada da
+ * rede") nao aponta para o nome do arquivo. */
+Decoder *dec_open_url(const char *url, DecKind kind)
+{
+    if (!url || !url[0] || kind == DEC_NONE) return NULL;
+    return abre_fonte(fonte_rede(url), kind);
+}
+
+bool dec_e_remoto(const Decoder *d) { return d && d->remoto; }
+
+long dec_colchao(const Decoder *d)
+{
+    return (d && d->src) ? fonte_colchao(d->src) : 0;
+}
+
+long dec_colchao_max(const Decoder *d)
+{
+    return (d && d->src) ? fonte_colchao_max(d->src) : 0;
+}
+
+const char *dec_erro_rede(const Decoder *d)
+{
+    return (d && d->src) ? fonte_erro(d->src) : "";
 }
 
 void dec_close(Decoder *d)
@@ -633,7 +805,7 @@ void dec_close(Decoder *d)
     }
     if (d->vf_open) ov_clear(&d->vf);   /* fecha o FILE também */
     if (d->of) op_free(d->of);
-    if (d->wf) fclose(d->wf);
+    fonte_fecha(d->src);
     free(d->fbuf);
     rs_free(d->rs);
     free(d->rs_tmp);
@@ -848,7 +1020,7 @@ long long dec_seek(Decoder *d, long long frame)
         return frame;
     case DEC_WAV: {
         long off = d->wav_data + (long)(frame * (d->wav_bits / 8) * d->fmt.channels);
-        if (fseek(d->wf, off, SEEK_SET) != 0) return -1;
+        if (fonte_procura(d->src, off, SEEK_SET) < 0) return -1;
         d->pos = frame;
         return frame;
     }

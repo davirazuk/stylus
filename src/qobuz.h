@@ -10,12 +10,16 @@
    que este app quer ser — quem está com o Vita na mão não deveria precisar
    levantar e ligar um computador para pôr um disco novo.
 
-   O que existe aqui: entrar na conta, buscar álbum, e BAIXAR (não tocar
-   direto da rede). A escolha de baixar em vez de transmitir não é preguiça:
-   o Vita perde o Wi-Fi ao suspender, e um app que só toca com rede é um app
-   que para quando a tela apaga — justamente o que o resto deste programa
-   passou o tempo todo tentando evitar. Baixado, o disco é um disco: toca
-   offline, entra na estante, funciona em avião.
+   O que existe aqui: entrar na conta, buscar álbum, BAIXAR e TOCAR DIRETO.
+
+   As duas coisas, e elas não são a mesma. BAIXAR é o caminho de casa: o
+   disco vira um disco, entra na estante, toca offline, funciona em avião e
+   sobrevive à tela apagada — o Vita perde o Wi-Fi ao suspender, e um app que
+   só toca com rede para quando a tela apaga, que é justamente o que o resto
+   deste programa passou o tempo todo evitando. TRANSMITIR é o caminho de
+   experimentar: ouvir um disco que talvez não valha 400 MB de cartão, agora,
+   sem esperar. A tela diz qual dos dois está acontecendo, porque o que
+   acontece quando o Wi-Fi cai é diferente nos dois.
 
    As chaves (app_id e o segredo) são de quem usa, não deste app, e ficam no
    cartão em qobuz.config. NUNCA vão para o repositório. */
@@ -83,6 +87,18 @@ int  qobuz_faixas(const QobuzConfig *cfg, const char *album_id,
 int  qobuz_baixa(const QobuzConfig *cfg, const char *faixa_id, int formato,
                  const char *destino,
                  void (*prog)(void *ud, long feitos, long total), void *ud);
+
+/* A URL assinada para TOCAR a faixa direto da rede, sem baixar antes.
+   E a mesma que o download usa, e vale cerca de uma hora — muito mais do que
+   uma faixa dura, entao nao ha o que renovar no meio.
+    0 ok | -1 nao falou com o servidor | -2 o Qobuz nao deu URL              */
+int  qobuz_url(const QobuzConfig *cfg, const char *faixa_id, int formato,
+               char *out, int cap);
+
+/* Qual decodificador serve para um formato do Qobuz. O DecKind tem que vir
+   de fora na hora de tocar pela rede: uma URL assinada acaba num punhado de
+   parametros e nao tem extensao nenhuma para adivinhar. */
+int  qobuz_deckind(int formato);
 
 /* Quantos MB uma faixa deste formato costuma ocupar. Serve para a tela poder
    dizer "isto vai ocupar 240 MB" ANTES de ocupar. */
@@ -156,5 +172,15 @@ int  qobuz_busca_async(const QobuzConfig *cfg, const char *termo);
 /* Copia o resultado (até `max`). `*ativo` diz se ainda está buscando e
    `*n` quantos vieram (-1 se a última busca falhou). */
 void qobuz_busca_estado(QobuzAlbum *out, int max, int *n, bool *ativo);
+
+/* ---------- abrir um disco para TOCAR pela rede ----------
+
+   Pedir as faixas custa uma chamada de rede, e ela não pode acontecer no laço
+   de vídeo pelo mesmo motivo que a busca não pode: logo depois de "tocar" é
+   justamente quando a pessoa está olhando a tela. */
+int  qobuz_abre_async(const QobuzConfig *cfg, const QobuzAlbum *alb);
+void qobuz_abre_estado(QobuzFaixa *out, int max, int *n, bool *ativo,
+                       QobuzAlbum *alb);
+void qobuz_abre_limpa(void);
 
 #endif

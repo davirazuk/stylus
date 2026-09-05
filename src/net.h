@@ -1,6 +1,8 @@
 #ifndef STYLUS_NET_H
 #define STYLUS_NET_H
 
+#include <stddef.h>
+
 /* HTTP pequenino e transportável:
    - no Vita usa sceNetHttp (módulos NET/HTTP/HTTPS/SSL já carregados em main);
    - no PC (build de teste, sem VitaSDK) usa libcurl, pra dar pra validar o
@@ -31,5 +33,33 @@ int net_get(const char *url, const char *const *headers, char *resp, int resplen
    0 em sucesso, -1 em erro. */
 int net_download(const char *url, const char *const *headers, const char *path,
                  void (*prog)(void *ud, long feitos, long total), void *ud);
+
+/* ---------- ler um GET AOS POUCOS ----------
+
+   O `net_download` baixa até o fim antes de devolver, e é o que serve para
+   guardar um disco no cartão. Não serve para TOCAR pela rede: aí os bytes têm
+   de chegar ao decodificador enquanto o resto ainda vem.
+
+   POR QUE ISTO MORA AQUI, e não num HTTP próprio da fonte de rede: porque já
+   existe um dono de HTTP neste app, e é este arquivo. A primeira versão da
+   fonte trouxe libcurl junto e apontou o `CAINFO` para um `app0:cacert.pem`
+   que não está no VPK — no aparelho todo HTTPS falharia na verificação, e o
+   app passaria a ter duas pilhas de rede para inicializar e depurar. O
+   sceHttp daqui já está de pé, já fala com o Qobuz e já resolve o problema
+   dos certificados de 2011 (ver a nota lá em cima).
+
+   `de` é o primeiro byte desejado (vira `Range: bytes=de-`), 0 para o começo.
+   Em `*total` vai o tamanho do RECURSO INTEIRO — não o do pedaço —, ou -1
+   quando o servidor não diz. `erro` recebe uma frase curta quando falha. */
+typedef struct NetStream NetStream;
+
+NetStream *net_stream_open(const char *url, const char *const *headers,
+                           long long de, long long *total,
+                           char *erro, int erolen);
+
+/* Lê até `n` bytes. Devolve quantos, 0 no fim, -1 em erro de rede. */
+long net_stream_read(NetStream *s, void *buf, size_t n);
+
+void net_stream_close(NetStream *s);
 
 #endif

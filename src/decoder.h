@@ -52,6 +52,20 @@ DecKind dec_kind_of(const char *path);
 const char *dec_kind_name(DecKind k);
 
 Decoder *dec_open(const char *path);
+
+/* Toca direto da rede, sem baixar antes.
+   `kind` vem de fora: uma URL assinada do Qobuz nao tem extensao nenhuma no
+   fim, e adivinhar pelo nome daria DEC_NONE em toda faixa. */
+Decoder *dec_open_url(const char *url, DecKind kind);
+
+/* Esta faixa vem da rede? A tela usa para dizer que aquilo depende do Wi-Fi. */
+bool dec_e_remoto(const Decoder *d);
+/* Bytes ja adiantados no colchao. Encolhendo = a rede nao esta dando conta,
+   e e a unica coisa que explica um estalo ANTES de ele acontecer. */
+long dec_colchao(const Decoder *d);
+long dec_colchao_max(const Decoder *d);
+/* O que a rede disse quando parou. "" quando nao houve nada. */
+const char *dec_erro_rede(const Decoder *d);
 void     dec_close(Decoder *d);
 void     dec_format(const Decoder *d, DecFormat *f);
 DecKind  dec_kind(const Decoder *d);

@@ -192,6 +192,9 @@ struct Ui {
     int  qb_nres;
     char qb_msg[96];
     unsigned qb_msg_ate;
+    /* streaming: abrir um disco para tocar pela rede */
+    bool qb_abrindo;          /* qobuz_abre_async em curso */
+    QobuzAlbum qb_ab_alb;     /* o álbum que está sendo aberto */
 
     Playlist *plists;
     int nplists;
@@ -820,11 +823,25 @@ static void draw_disc(float cx, float cy, float r, float progress,
    1 encostado. A cerimônia move os dois; fora dela valem 1 e 1. Suspenso, o
    braço clareia menos e a agulha paira alguns pixels acima do sulco — é o
    que distingue "pousado" de "esperando". */
+/* O ângulo em que a agulha lê, no sulco. UM dono, porque a faísca do
+   toque precisa nascer exatamente na ponta — e nasce de outro lugar do
+   arquivo. Duas cópias da mesma expressão já se separaram uma vez.
+
+   SINTOMA: o braço dava uma volta INTEIRA em torno do pivô a cada ~12 s.
+   A conta era `phase * 0.18f` com o `phase` sendo um contador que só cresce
+   (0,05 por quadro): 0,009 rad por quadro, 0,54 rad/s, 2π em 11,6 s. Era
+   para ser um bamboleio — um braço de toca-discos fica praticamente PARADO
+   no ângulo e anda é para dentro, que é o que o raio já faz. Daí o seno. */
+static float agulha_angulo(float phase)
+{
+    return -1.5707963f + sinf(phase * 0.25f) * 0.05f;
+}
+
 static void draw_needle(float cx, float cy, float r, float phase, float progress,
                         bool live, float cue, float down)
 {
     float park = -1.5707963f + 0.95f;         /* o descanso, fora do prato */
-    float play = -1.5707963f + phase * 0.18f;
+    float play = agulha_angulo(phase);
     float ang = park + (play - park) * cue;
 
     float rest_r = r * 1.30f;                 /* suspenso, fora do sulco */
@@ -998,6 +1015,8 @@ static void draw_bg(void)
 static void header(Ui *u, const char *title, const char *hint)
 {
     text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, title);
+    vita2d_draw_rectangle(PAD_X, HEAD_Y + 18, SCRW - 2 * PAD_X, 1,
+                          RGBA8(255, 170, 40, 35));
     if (hint) text_elided(u, (int)PAD_X, HINT_Y, COL_TEXT_DIM, 0.52f,
                           SCRW - 2 * PAD_X, hint);
 }
@@ -1009,6 +1028,8 @@ typedef struct { Btn b, b2; const char *txt; } Dica;
 static void header_hints(Ui *u, const char *title, const Dica *d)
 {
     text(u, (int)PAD_X, HEAD_Y, COL_AMBER, 0.95f, title);
+    vita2d_draw_rectangle(PAD_X, HEAD_Y + 18, SCRW - 2 * PAD_X, 1,
+                          RGBA8(255, 170, 40, 35));
     float x = PAD_X, y = (float)HINT_Y - 4.0f;
     for (; d && d->txt; d++) {
         /* não deixa a fila vazar pela direita: melhor faltar dica que
@@ -1274,6 +1295,8 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
             bool is_sel = (idx == u->sel);
             bool is_now = (a == now);
 
+            /* sombra sutil sob o cartão: profundidade sem skeuomorfismo */
+            vita2d_draw_rectangle(x + 3, y + 3, cw, ch, RGBA8(0, 0, 0, 60));
             vita2d_draw_rectangle(x, y, cw, ch, is_sel ? TINT_SEL : COL_CARD);
 
             /* A capa não é mais centrada: ela ocupa a esquerda e o disco
@@ -1292,10 +1315,10 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
                 alpha_fill(x + 14, y + 14, 11.0f, 0.20f, COL_AMBER);
             }
             if (is_sel) {
-                vita2d_draw_rectangle(x, y, cw, 2, COL_AMBER);
-                vita2d_draw_rectangle(x, y + ch - 2, cw, 2, COL_AMBER);
-                vita2d_draw_rectangle(x, y, 2, ch, COL_AMBER);
-                vita2d_draw_rectangle(x + cw - 2, y, 2, ch, COL_AMBER);
+                vita2d_draw_rectangle(x, y, cw, 3, COL_AMBER);
+                vita2d_draw_rectangle(x, y + ch - 3, cw, 3, COL_AMBER);
+                vita2d_draw_rectangle(x, y, 3, ch, COL_AMBER);
+                vita2d_draw_rectangle(x + cw - 3, y, 3, ch, COL_AMBER);
             }
 
             float tw = cw - 14;
@@ -1426,7 +1449,18 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
 {
     const Album *a = player_current_album(p);
     if (!a) {
-        header(u, "AGORA", "[tri] estante   [L1] recs   [R1] playlists");
+        /* DESENHADA, não escrita. O "□" que morava aqui não existe na fonte
+           do aparelho: virava quadradinho na tela, e era a única dica ainda
+           soletrada — as outras já eram glifo. Foi a migração pela metade do
+           `header()` para o `header_hints()` que deixou esta sobrar. */
+        static const Dica d[] = {
+            { BTN_TRIANGLE, (Btn)-1, "estante" },
+            { BTN_L1,       (Btn)-1, "recs" },
+            { BTN_R1,       (Btn)-1, "playlists" },
+            { BTN_L1, BTN_SQUARE,   "rede" },
+            { 0, 0, NULL }
+        };
+        header_hints(u, "AGORA", d);
         text(u, (int)PAD_X, 130, COL_TEXT, 0.80f, "nada no prato");
         const char *err = player_last_error(p);
         if (err && err[0]) {
@@ -1454,11 +1488,14 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
     u->prog = progress;
     u->dur = dur;
 
-    u->halo_phase += 0.05f;
+    /* Reduzidos ao ciclo: os dois só ALIMENTAM seno e cosseno, e um float que
+       cresce sem teto perde precisão — numa sessão de horas o giro do disco
+       começa a andar aos trancos, e nada na tela explica por quê. */
+    u->halo_phase = fmodf(u->halo_phase + 0.05f, 6.2831853f * 4.0f);
     ritual_step(u, live);
     /* o ângulo acumula com a VELOCIDADE do prato: durante a partida ele
        acelera de verdade, e parada a música ele desacelera até parar */
-    u->disc_angle += 0.075f * u->spin;
+    u->disc_angle = fmodf(u->disc_angle + 0.075f * u->spin, 6.2831853f);
 
     float cue = 1.0f, down = 1.0f;
     if (u->rit == RIT_SPINUP)   { cue = 0.0f; down = 0.0f; }
@@ -1482,7 +1519,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
 
     /* a agulha ENCOSTOU: é aqui que as faíscas nascem, uma vez */
     if (u->rit == RIT_DROP && u->rit_t < 1.2f / 60.0f) {
-        float ang = -1.5707963f + u->halo_phase * 0.18f;
+        float ang = agulha_angulo(u->halo_phase);
         sparks_spawn(u, cx + cosf(ang) * base_r, cy + sinf(ang) * base_r);
     }
     sparks_draw(u);
@@ -1518,6 +1555,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
             { BTN_TRIANGLE, (Btn)-1, "estante" },
             { BTN_L1,       (Btn)-1, "recs" },
             { BTN_R1,       (Btn)-1, "playlists" },
+            { BTN_L1, BTN_SQUARE,   "rede" },
             { BTN_R1, BTN_L1,       "apaga a tela" },
             { BTN_R1, BTN_SQUARE,   "soneca" },
             { BTN_R1, BTN_TRIANGLE, "jogando" },
@@ -1604,14 +1642,44 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
                             ? "  ·  2º plano: sim" : "  ·  2º plano: não";
             snprintf(sl, sizeof(sl), "%s  ·  %ld Hz / %d bits%s%s",
                      sig.kind, sig.rate_file, sig.bits_file, extra, bgm);
+            /* Faixa da rede: o indicador fica junto do caminho do sinal porque
+               é ali que se lê de onde o som vem. "rede" diz o essencial — que
+               o Wi-Fi é necessário — sem ocupar uma linha só para isso. */
+            if (t && t->remote_id[0]) {
+                size_t len = strlen(sl);
+                snprintf(sl + len, sizeof(sl) - len, "  ·  rede");
+            }
         } else {
             /* sem medida, travessão: acusação tirada da ausência de dado é
                a doença que a tela SINAL do desktop pegou */
             snprintf(sl, sizeof(sl), "%s  ·  —", sig.kind);
         }
-        text_elided(u, (int)tx, (int)g.sig_y, 
+        text_elided(u, (int)tx, (int)g.sig_y,
                     (sig.resampled || sig.requantized) ? COL_TEXT_DIM : COL_AMBER,
                     0.48f, tw, sl);
+
+        /* O COLCHÃO, desenhado.
+
+           Tocando pela rede, o que decide se vai haver estalo não é a taxa
+           nem o formato: é quantos segundos já chegaram à frente da agulha.
+           Esse número existia (o dec_colchao), e não aparecia em lugar
+           nenhum — a tela só sabia dizer que a rede tinha caído, depois de
+           já ter caído. Uma barrinha que encolhe avisa ANTES.
+
+           Ela some quando a faixa é do cartão: ali não há colchão nenhum a
+           mostrar, e uma barra sempre cheia só ensinaria a ignorá-la. */
+        if (sig.remoto && sig.colchao_max > 0) {
+            float bw = tw * 0.42f, bh = 3.0f;
+            float by = g.sig_y + 9.0f;
+            float f = (float)sig.colchao / (float)sig.colchao_max;
+            if (f < 0.0f) f = 0.0f;
+            if (f > 1.0f) f = 1.0f;
+            vita2d_draw_rectangle(tx, by, bw, bh, RGBA8(255, 170, 40, 30));
+            /* âmbar enquanto dá, alarme quando o colchão fica curto: abaixo
+               de um oitavo do anel são poucos segundos de folga */
+            unsigned cor = (f < 0.125f) ? COL_ALARM : COL_AMBER;
+            vita2d_draw_rectangle(tx, by, bw * f, bh, cor);
+        }
     }
 
     /* a ORDEM DO LADO: onde não há letra, é para a contracapa que se olha */
@@ -2107,12 +2175,21 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
         static const Dica d[] = {
             { BTN_SQUARE,   (Btn)-1, "buscar" },
             { BTN_CROSS,    (Btn)-1, "baixar" },
+            { BTN_CIRCLE,   (Btn)-1, "tocar" },
             { BTN_SEL,      (Btn)-1, "formato" },
             { BTN_UPDOWN,   (Btn)-1, "navegar" },
             { BTN_TRIANGLE, (Btn)-1, "estante" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
+    }
+
+    /* --- abrindo um disco para tocar pela rede --- */
+    if (u->qb_abrindo) {
+        text_elided(u, (int)PAD_X, 130, COL_AMBER, 0.78f, SCRW - 2 * PAD_X,
+                    u->qb_ab_alb.titulo[0] ? u->qb_ab_alb.titulo : "abrindo");
+        text(u, (int)PAD_X, 162, COL_TEXT_DIM, 0.58f, "buscando faixas na rede…");
+        return;
     }
 
     bool buscando = false;
@@ -2885,6 +2962,34 @@ int ui_handle_input(Ui *u)
         if (edge & SCE_CTRL_L1) { u->view = VIEW_CONTA; action = 0; }
         if (edge & SCE_CTRL_R1) { u->view = VIEW_SHELF; action = 10; }
 
+        /* Streaming: o qobuz_abre_async está em curso. Enquanto não termina,
+           ninguém aperta nada — a lista não existe ainda. Quando termina, a
+           lista de faixas está pronta e o main monta a sessão. */
+        if (u->qb_abrindo) {
+            QobuzFaixa fx[64];
+            int nfx = 0;
+            bool ativo = false;
+            qobuz_abre_estado(fx, 64, &nfx, &ativo, NULL);
+            if (!ativo) {
+                u->qb_abrindo = false;
+                if (nfx > 0) {
+                    /* VAI PARA O DECK, como toda outra ação de tocar. Sem
+                       isto o disco começava a tocar e a tela continuava na
+                       lista de busca — sem prato, sem agulha, sem nada
+                       dizendo que tinha dado certo.
+
+                       E devolve AGORA: o resto desta função ainda trata
+                       UP/DOWN/SELECT, e qualquer um deles sobrescrevia o
+                       `action` no mesmo quadro. O álbum abria, a ação era
+                       trocada por "navegar", e o `qobuz_abre_limpa()` do main
+                       nunca acontecia — o resultado seguinte vinha velho. */
+                    u->view = VIEW_DECK;
+                    return 22;      /* tocar da rede */
+                }
+                qb_diz(u, "não conseguiu abrir o disco");
+            }
+        }
+
         if (job.ativo) {
             /* Baixando, só existe uma ação: parar. Qualquer outra tecla
                mexeria numa lista que a tela nem está mostrando. */
@@ -2943,6 +3048,17 @@ int ui_handle_input(Ui *u)
                                       STYLUS_OWN_MUSIC) != 0)
                     qb_diz(u, "não deu para começar o download");
             }
+            /* CIRCLE: tocar direto da rede, sem baixar. O disco experimental
+               que talvez não valha 400 MB de cartão — ouvir agora, sem esperar. */
+            if ((edge & SCE_CTRL_CIRCLE) && u->qb_nres > 0 &&
+                u->qb_sel < u->qb_nres && !u->qb_abrindo) {
+                if (qobuz_abre_async(qc, &u->qb_res[u->qb_sel]) == 0) {
+                    u->qb_abrindo = true;
+                    u->qb_ab_alb = u->qb_res[u->qb_sel];
+                } else {
+                    qb_diz(u, "não deu para abrir o disco");
+                }
+            }
         }
     } else if (u->view == VIEW_HANDOFF) {
         if (edge & (SCE_CTRL_TRIANGLE | SCE_CTRL_CIRCLE | SCE_CTRL_CROSS)) {
@@ -2970,6 +3086,7 @@ int ui_handle_input(Ui *u)
            as duas estão escritas no rodapé. */
         if (edge & SCE_CTRL_SQUARE) {
             if (cur & SCE_CTRL_R1) { action = 20; r1_usado = 1; }
+            else if (cur & SCE_CTRL_L1) { u->view = VIEW_QOBUZ; action = 0; }
             else u->show_lyrics = !u->show_lyrics;
         }
         if ((edge & SCE_CTRL_L1) && !(cur & SCE_CTRL_R1)) { u->view = VIEW_RECS; action = 8; }
@@ -3116,7 +3233,13 @@ int ui_handle_input(Ui *u)
             if (dx < -70) action = 5;
             else if (dx > 70) action = 6;
         }
-    } else {
+    } else if (u->view == VIEW_RECS || u->view == VIEW_PLAYLISTS) {
+        /* AS DUAS LISTAS, nomeadas. Este ramo era um `else` solto, e por isso
+           pegava também a CONTA e o QOBUZ — que não são listas de disco e não
+           têm toque nenhum de propósito. Um toque no formulário do last.fm
+           caía no braço de baixo, punha VIEW_DECK e disparava a ação 12: a
+           tela pulava para o deck TOCANDO uma playlist. Mexer numa senha não
+           pode tocar música. */
         UiListGeom lg;
         ui_list_geom(SCRW, SCRH, &lg);
         /* nas listas a almofada anda também: é a mesma mão, o mesmo gesto —
@@ -3187,6 +3310,7 @@ int ui_playlist_idx(const Ui *u)  { return u ? u->pl_sel : 0; }
 int ui_rec_idx(const Ui *u)       { return u ? u->rec_sel : 0; }
 int ui_jump_letter(const Ui *u)   { return u ? u->jump_letter : 0; }
 void ui_set_sel(Ui *u, int i)     { if (u) u->sel = i < 0 ? 0 : i; }
+QobuzConfig *ui_qobuz_cfg(Ui *u)  { return u ? &u->qb_cfg : NULL; }
 
 
 int ui_view_dbg(const Ui *u) { return u ? (int)u->view : 0; }

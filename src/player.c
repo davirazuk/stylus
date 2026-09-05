@@ -162,18 +162,44 @@ static void sdl_cb(void *udata, Uint8 *stream, int len)
     }
 }
 
+/* Quem sabe transformar um id de faixa remota numa URL tocável é o módulo do
+   Qobuz, e o player não conhece o Qobuz — nem deve. O resolvedor é injetado
+   pelo main, e é o único fio entre os dois. */
+static PlayerResolve g_resolve;
+static void *g_resolve_ud;
+
+void player_set_resolver(PlayerResolve fn, void *ud)
+{
+    g_resolve = fn;
+    g_resolve_ud = ud;
+}
+
 static int open_track(Player *p, const Track *t)
 {
     if (p->dec) { dec_close(p->dec); p->dec = NULL; }
     if (!t) return -1;
-    /* A pergunta "eu sei tocar isto?" tem UM dono, o decoder.c. Perguntá-la
-       aqui por extensão criaria a segunda metade que discorda da primeira. */
-    if (dec_kind_of(t->path) == DEC_NONE) {
-        snprintf(p->last_error, sizeof(p->last_error),
-                 "%.72s: formato que este app não toca", t->title);
-        return -1;
+    /* Faixa da rede: a URL assinada é resolvida AGORA, não quando a fila foi
+       montada. Ela vale cerca de uma hora, e um disco parado na fila por mais
+       que isso abriria com uma URL morta — o sintoma seria "as primeiras
+       faixas tocam e as últimas não". */
+    if (t->remote_id[0] && g_resolve) {
+        char url[2048];
+        int kind = 0;
+        if (g_resolve(g_resolve_ud, t->remote_id, url, (int)sizeof(url), &kind) == 0)
+            p->dec = dec_open_url(url, (DecKind)kind);
+        else
+            p->dec = NULL;
+    } else {
+        /* A pergunta "eu sei tocar isto?" tem UM dono, o decoder.c. Perguntá-la
+           aqui por extensão criaria a segunda metade que discorda da primeira.
+           Só para faixa LOCAL: na rede o formato vem do resolvedor, não do nome. */
+        if (dec_kind_of(t->path) == DEC_NONE) {
+            snprintf(p->last_error, sizeof(p->last_error),
+                     "%.72s: formato que este app não toca", t->title);
+            return -1;
+        }
+        p->dec = dec_open(t->path);
     }
-    p->dec = dec_open(t->path);
     if (!p->dec) {
         snprintf(p->last_error, sizeof(p->last_error), "%.90s: não abriu", t->title);
         return -1;
@@ -688,6 +714,11 @@ void player_signal(const Player *p, PlayerSignal *out)
     out->resampled = (p->hw_rate > 0 && p->dfmt.rate_native > 0 &&
                       p->hw_rate != p->dfmt.rate_native);
     out->requantized = (p->dfmt.bits_native > 16);
+    out->remoto = dec_e_remoto(p->dec);
+    if (out->remoto) {
+        out->colchao     = dec_colchao(p->dec);
+        out->colchao_max = dec_colchao_max(p->dec);
+    }
     /* A porta que o SDL2 abriu decorre da TAXA: <=47999 vai para a porta BGM,
        a única que segura o som dentro de um jogo. Acima disso é MAIN, e o
        plugin de CFW não a mantém viva. Ver a nota no decoder.c. */

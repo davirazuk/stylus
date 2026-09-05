@@ -6,6 +6,7 @@
 #include "library.h"
 #include "player.h"
 #include "playlist.h"
+#include "qobuz.h"
 
 typedef struct Ui Ui;
 
@@ -56,17 +57,18 @@ void ui_set_sel(Ui *u, int i);
    INFORMATIVA de propósito da que alguém esqueceu de tratar, e a segunda é
    um recurso morto. Estão separadas abaixo por isso.
 
-   O main AGE nestas:
-     -1  sair                      11  tocar as recomendações
-      2  abrir o álbum marcado     12  tocar a playlist marcada
-      4  tocar/pausar              13  salvar o que toca como playlist
-      5  próxima faixa             14  ciclar a repetição
-      6  faixa anterior            15  alternar o sorteio
-      7  recuar 10 s               17  apagar a playlist marcada
-     16  avançar 10 s              18  buscar na fração tocada (ui_scrub)
-     19  pular para a letra (ui_jump_letter)
-     20  ciclar a soneca
-     21  revarrer a estante (depois de um download do Qobuz)
+    O main AGE nestas:
+      -1  sair                      11  tocar as recomendações
+       2  abrir o álbum marcado     12  tocar a playlist marcada
+       4  tocar/pausar              13  salvar o que toca como playlist
+       5  próxima faixa             14  ciclar a repetição
+       6  faixa anterior            15  alternar o sorteio
+       7  recuar 10 s               17  apagar a playlist marcada
+      16  avançar 10 s              18  buscar na fração tocada (ui_scrub)
+      19  pular para a letra (ui_jump_letter)
+      20  ciclar a soneca
+      21  revarrer a estante (depois de um download do Qobuz)
+      22  tocar da rede (o disco foi aberto, as faixas estão prontas)
 
    Estas o main IGNORA de propósito — a UI já fez o que havia para fazer
    (trocou de tela, moveu o cursor) e não há nada do lado do tocador:
@@ -89,5 +91,6 @@ void ui_texto_dbg(char *dst, size_t cap, const char *src);
 /* acessores de estado */
 int ui_selected(const Ui *u);          /* álbum marcado na estante */
 int ui_playlist_idx(const Ui *u);      /* playlist marcada na lista */
+QobuzConfig *ui_qobuz_cfg(Ui *u);     /* config do Qobuz (para o resolvedor) */
 
 #endif

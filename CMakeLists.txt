@@ -50,6 +50,7 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ui_layout.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ime.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/qobuz.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/fonte.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/segpad.c
 )
 

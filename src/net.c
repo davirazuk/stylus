@@ -263,11 +263,81 @@ int net_download(const char *url, const char *const *headers, const char *path,
     return rename(tmp, path) == 0 ? 0 : -1;
 }
 
+/* ---------- leitura aos poucos (ver a nota no net.h) ---------- */
+
+struct NetStream { struct Pedido p; };
+
+NetStream *net_stream_open(const char *url, const char *const *headers,
+                           long long de, long long *total,
+                           char *erro, int erolen)
+{
+    if (total) *total = -1;
+    if (erro && erolen > 0) erro[0] = '\0';
+    if (!url || !url[0]) return NULL;
+
+    /* O Range entra como mais um cabeçalho, junto dos que vieram: assim a
+       montagem do pedido continua tendo um dono só (o `abre`). */
+    char faixa[64];
+    const char *hs[12];
+    int n = 0;
+    for (int i = 0; headers && headers[i] && n < 10; i++) hs[n++] = headers[i];
+    if (de > 0) {
+        snprintf(faixa, sizeof(faixa), "Range: bytes=%lld-", de);
+        hs[n++] = faixa;
+    }
+    hs[n] = NULL;
+
+    NetStream *s = calloc(1, sizeof(*s));
+    if (!s) return NULL;
+    if (abre(&s->p, url, SCE_HTTP_METHOD_GET, NULL, hs) != 0) {
+        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "sem rede");
+        free(s);
+        return NULL;
+    }
+
+    /* O STATUS, que a primeira versão não olhava: um 404 ou um 401 tem corpo,
+       e sem esta conferência o corpo de erro entrava no anel como se fosse
+       áudio. O decodificador então falhava lá adiante, dizendo que o arquivo
+       estava corrompido — o que manda consertar a coisa errada. */
+    int http = 0;
+    if (sceHttpGetStatusCode(s->p.req, &http) < 0) {
+        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "sem resposta");
+        fecha(&s->p); free(s); return NULL;
+    }
+    int esperado = (de > 0) ? 206 : 200;
+    if (http != esperado && !(de == 0 && http == 206)) {
+        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "HTTP %d", http);
+        fecha(&s->p); free(s); return NULL;
+    }
+
+    if (total) {
+        unsigned long long t = 0;
+        if (sceHttpGetResponseContentLength(s->p.req, &t) >= 0 && t > 0)
+            *total = (long long)t + de;   /* com Range o corpo é só o pedaço */
+    }
+    return s;
+}
+
+long net_stream_read(NetStream *s, void *buf, size_t n)
+{
+    if (!s || !buf || n == 0) return -1;
+    return (long)sceHttpReadData(s->p.req, buf, (unsigned int)n);
+}
+
+void net_stream_close(NetStream *s)
+{
+    if (!s) return;
+    fecha(&s->p);
+    free(s);
+}
+
 #else
 /* ------------------------- Caminho PC (teste) -------------------------
    Usa libcurl: valida o upload real do last.fm daqui da máquina. */
 
 #include <curl/curl.h>
+#include <stdlib.h>
+#include <string.h>
 
 static size_t write_cb(char *ptr, size_t n, size_t m, void *ud)
 {
@@ -426,6 +496,136 @@ int net_post(const char *url, const char *body, char *resp, int resplen)
 
     if (res != CURLE_OK) return -1;
     return (http >= 200 && http < 500) ? 0 : -1;
+}
+
+/* ---------- leitura aos poucos, no PC (ver a nota no net.h) ----------
+
+   Aqui é a interface MULTI do curl, e não a easy: a easy só sabe empurrar o
+   corpo inteiro por um callback, e o que se quer é PUXAR. O laço abaixo só
+   roda o curl quando o balde está vazio, então o callback nunca recebe mais
+   do que cabe (o curl entrega no máximo CURL_MAX_WRITE_SIZE por vez). */
+
+#define BALDE_CAP (256 * 1024)
+
+struct NetStream {
+    CURLM *m;
+    CURL *e;
+    struct curl_slist *hdrs;
+    unsigned char balde[BALDE_CAP];
+    size_t ini, fim;      /* [ini, fim) é o que ainda não foi lido */
+    int vivos;            /* transferências ainda correndo */
+    int erro;
+};
+
+static size_t fluxo_write(char *ptr, size_t n, size_t m, void *ud)
+{
+    NetStream *s = ud;
+    size_t bytes = n * m;
+    if (s->fim + bytes > BALDE_CAP) return 0;   /* estoura → curl aborta */
+    memcpy(s->balde + s->fim, ptr, bytes);
+    s->fim += bytes;
+    return bytes;
+}
+
+NetStream *net_stream_open(const char *url, const char *const *headers,
+                           long long de, long long *total,
+                           char *erro, int erolen)
+{
+    if (total) *total = -1;
+    if (erro && erolen > 0) erro[0] = '\0';
+    if (!url || !url[0]) return NULL;
+
+    NetStream *s = calloc(1, sizeof(*s));
+    if (!s) return NULL;
+    s->m = curl_multi_init();
+    s->e = curl_easy_init();
+    if (!s->m || !s->e) { net_stream_close(s); return NULL; }
+
+    for (int i = 0; headers && headers[i]; i++)
+        s->hdrs = curl_slist_append(s->hdrs, headers[i]);
+
+    curl_easy_setopt(s->e, CURLOPT_URL, url);
+    curl_easy_setopt(s->e, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(s->e, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(s->e, CURLOPT_CONNECTTIMEOUT, 15L);
+    curl_easy_setopt(s->e, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(s->e, CURLOPT_USERAGENT, "vitastylus/1.0");
+    curl_easy_setopt(s->e, CURLOPT_WRITEFUNCTION, fluxo_write);
+    curl_easy_setopt(s->e, CURLOPT_WRITEDATA, s);
+    if (s->hdrs) curl_easy_setopt(s->e, CURLOPT_HTTPHEADER, s->hdrs);
+    if (de > 0) {
+        char r[64];
+        snprintf(r, sizeof(r), "%lld-", de);
+        curl_easy_setopt(s->e, CURLOPT_RANGE, r);
+    }
+    curl_multi_add_handle(s->m, s->e);
+    s->vivos = 1;
+
+    /* Roda até os cabeçalhos chegarem (o primeiro corpo, ou o fim). Só
+       depois disso o status e o tamanho existem. */
+    while (s->vivos && s->fim == 0 && !s->erro) {
+        int n = 0;
+        if (curl_multi_perform(s->m, &s->vivos) != CURLM_OK) { s->erro = 1; break; }
+        if (s->vivos && s->fim == 0) curl_multi_poll(s->m, NULL, 0, 200, &n);
+    }
+
+    long http = 0;
+    curl_easy_getinfo(s->e, CURLINFO_RESPONSE_CODE, &http);
+    int esperado = (de > 0) ? 206 : 200;
+    if (s->erro || (http != esperado && !(de == 0 && http == 206))) {
+        if (erro && erolen > 0) {
+            if (http) snprintf(erro, (size_t)erolen, "HTTP %ld", http);
+            else      snprintf(erro, (size_t)erolen, "sem rede");
+        }
+        net_stream_close(s);
+        return NULL;
+    }
+    if (total) {
+        curl_off_t cl = -1;
+        curl_easy_getinfo(s->e, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &cl);
+        if (cl > 0) *total = (long long)cl + de;
+    }
+    return s;
+}
+
+long net_stream_read(NetStream *s, void *buf, size_t n)
+{
+    if (!s || !buf || n == 0) return -1;
+    for (;;) {
+        size_t tem = s->fim - s->ini;
+        if (tem > 0) {
+            size_t take = tem < n ? tem : n;
+            memcpy(buf, s->balde + s->ini, take);
+            s->ini += take;
+            if (s->ini == s->fim) s->ini = s->fim = 0;
+            return (long)take;
+        }
+        if (s->erro) return -1;
+        if (!s->vivos) return 0;                    /* acabou de verdade */
+        int nf = 0;
+        if (curl_multi_perform(s->m, &s->vivos) != CURLM_OK) return -1;
+        if (s->vivos && s->fim == 0) curl_multi_poll(s->m, NULL, 0, 200, &nf);
+
+        /* Uma queda no meio não é fim: o curl marca o resultado da
+           transferência, e é isso que separa "acabou" de "caiu". */
+        if (!s->vivos && s->fim == 0) {
+            CURLMsg *msg;
+            int rest = 0;
+            while ((msg = curl_multi_info_read(s->m, &rest)))
+                if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK)
+                    return -1;
+        }
+    }
+}
+
+void net_stream_close(NetStream *s)
+{
+    if (!s) return;
+    if (s->m && s->e) curl_multi_remove_handle(s->m, s->e);
+    if (s->e) curl_easy_cleanup(s->e);
+    if (s->m) curl_multi_cleanup(s->m);
+    if (s->hdrs) curl_slist_free_all(s->hdrs);
+    free(s);
 }
 
 #endif

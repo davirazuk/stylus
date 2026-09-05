@@ -30,6 +30,14 @@ typedef struct {
     int  number;               /* número da faixa, -1 se desconhecido */
     int  seconds;              /* duração, -1 se desconhecida */
     bool decodable;            /* este VPK sabe tocar (mpg123: MP1/2/3) */
+    /* Faixa que vem da REDE: o id dela no Qobuz. Vazio numa faixa do cartão.
+       Fica aqui, e não numa segunda espécie de faixa ao lado, porque tudo o
+       que já sabe ler um Track — a estante, o deck, os LADOS, o scrobble,
+       as recomendações — passa a saber ler uma faixa transmitida sem uma
+       linha de mudança. Uma segunda espécie seria um segundo tocador.
+       O `path` de uma faixa dessas guarda o destino de DOWNLOAD, e não uma
+       URL: a URL do Qobuz vale uma hora e é resolvida na hora de tocar. */
+    char remote_id[32];
     Album *owner;              /* álbum que contém esta faixa */
 } Track;
 

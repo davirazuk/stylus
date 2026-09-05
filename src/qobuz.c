@@ -1,4 +1,5 @@
 #include "qobuz.h"
+#include "decoder.h"
 
 #include "md5.h"
 #include "net.h"
@@ -186,6 +187,14 @@ static void urlenc(const char *s, char *out, size_t cap)
     out[o] = '\0';
 }
 
+/* MP3 vira DEC_MP3; todo o resto que o Qobuz entrega e FLAC. Sem isto o
+   dec_open_url receberia DEC_NONE e nenhuma faixa abriria — e o sintoma,
+   "nao toca nada da rede", nao aponta para um enum. */
+int qobuz_deckind(int formato)
+{
+    return (formato == QB_MP3) ? DEC_MP3 : DEC_FLAC;
+}
+
 int qobuz_mb_por_faixa(int formato)
 {
     /* Medidas grosseiras de faixa de 4 minutos. Servem para AVISAR antes de
@@ -369,6 +378,9 @@ int qobuz_faixas(const QobuzConfig *cfg, const char *album_id,
    jeito é assinar e ver se volta URL. Guardar um só é guardar "o que
    funcionava no dia em que configurei", e o sintoma da escolha errada é um
    "não deu para baixar" idêntico ao de estar sem rede. */
+int qobuz_url(const QobuzConfig *cfg, const char *faixa_id, int formato,
+              char *out, int cap);
+
 static int url_da_faixa(const QobuzConfig *cfg, const char *faixa_id, int formato,
                         char *out, int cap)
 {
@@ -398,6 +410,18 @@ static int url_da_faixa(const QobuzConfig *cfg, const char *faixa_id, int format
         if (qobuz_json_str(resp, "url", out, cap) && out[0]) return 0;
     }
     return viu_rede ? -2 : -1;
+}
+
+/* A mesma URL assinada que o download usa — so que para TOCAR direto. Vale
+   cerca de uma hora, o que e muito mais do que uma faixa dura; nao ha o que
+   renovar no meio. */
+int qobuz_url(const QobuzConfig *cfg, const char *faixa_id, int formato,
+              char *out, int cap)
+{
+    if (!cfg || !faixa_id || !out || cap <= 0) return -1;
+    if (!cfg->configured) return -1;
+    out[0] = '\0';
+    return url_da_faixa(cfg, faixa_id, formato, out, cap);
 }
 
 int qobuz_baixa(const QobuzConfig *cfg, const char *faixa_id, int formato,
@@ -639,4 +663,79 @@ void qobuz_busca_estado(QobuzAlbum *out, int max, int *n, bool *ativo)
         int q = g_nres < max ? g_nres : max;
         for (int i = 0; i < q; i++) out[i] = g_res[i];
     }
+}
+
+/* ---------- abrir um disco para TOCAR pela rede ----------
+
+   Pedir as faixas é uma chamada de rede de um ou dois segundos. Feita no laço
+   de vídeo, ela congela a tela logo depois de a pessoa apertar "tocar" — que
+   é exatamente o instante em que ela está olhando para ver se funcionou, e
+   dois segundos parados ali não leem como "carregando", leem como travou.
+   Mesmo motivo, mesma forma que a busca. */
+
+#define QB_MAX_FAIXAS 64
+
+static QobuzFaixa   g_fx[QB_MAX_FAIXAS];
+static int          g_nfx;
+static volatile int g_abrindo;
+static QobuzConfig  g_ab_cfg;
+static char         g_ab_id[32];
+static QobuzAlbum   g_ab_alb;
+
+static void abre_corpo(void)
+{
+    int n = qobuz_faixas(&g_ab_cfg, g_ab_id, g_fx, QB_MAX_FAIXAS);
+    g_nfx = n;
+    g_abrindo = 0;
+}
+
+#ifdef __vita__
+static int abre_thread(SceSize args, void *argp)
+{
+    (void)args; (void)argp;
+    abre_corpo();
+    return sceKernelExitDeleteThread(0);
+}
+#endif
+
+int qobuz_abre_async(const QobuzConfig *cfg, const QobuzAlbum *alb)
+{
+    if (!cfg || !alb || !alb->id[0] || g_abrindo) return -1;
+    if (!cfg->configured) return -1;
+    g_ab_cfg = *cfg;
+    g_ab_alb = *alb;
+    snprintf(g_ab_id, sizeof(g_ab_id), "%s", alb->id);
+    g_nfx = 0;
+    g_abrindo = 1;
+#ifdef __vita__
+    SceUID th = sceKernelCreateThread("stylus_qabre", abre_thread,
+                                      0x10000100 + 32, 256 * 1024, 0, 0, NULL);
+    if (th < 0) { g_abrindo = 0; return -1; }
+    if (sceKernelStartThread(th, 0, NULL) < 0) {
+        sceKernelDeleteThread(th);
+        g_abrindo = 0;
+        return -1;
+    }
+#else
+    abre_corpo();
+#endif
+    return 0;
+}
+
+void qobuz_abre_estado(QobuzFaixa *out, int max, int *n, bool *ativo,
+                       QobuzAlbum *alb)
+{
+    if (ativo) *ativo = g_abrindo != 0;
+    if (n) *n = g_nfx;
+    if (alb) *alb = g_ab_alb;
+    if (out && max > 0) {
+        int q = g_nfx < max ? g_nfx : max;
+        for (int i = 0; i < q; i++) out[i] = g_fx[i];
+    }
+}
+
+void qobuz_abre_limpa(void)
+{
+    if (g_abrindo) return;
+    g_nfx = 0;
 }
