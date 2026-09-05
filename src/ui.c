@@ -481,7 +481,10 @@ static void text(Ui *u, int x, int y, unsigned int col, float scale, const char 
    como pastilha com a sigla, e as combinações com um "+" entre as duas. */
 typedef enum {
     BTN_CROSS = 0, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE,
-    BTN_L1, BTN_R1, BTN_L2R2, BTN_SEL, BTN_START,
+    /* Não há BTN_L2R2: o Vita não tem L2 nem R2. Ele existiu aqui,
+       desenhava uma pílula "L2/R2" e nenhuma dica jamais o usou —
+       um botão que a tela sabia desenhar e o aparelho não tem. */
+    BTN_L1, BTN_R1, BTN_SEL, BTN_START,
     BTN_DPAD, BTN_UPDOWN, BTN_TOUCH, BTN_TRAS
 } Btn;
 
@@ -550,7 +553,6 @@ static float glyph(Ui *u, float x, float cy, Btn b)
         return 2 * r;
     case BTN_L1:    return pill(u, x, cy, "L1");
     case BTN_R1:    return pill(u, x, cy, "R1");
-    case BTN_L2R2:  return pill(u, x, cy, "L2/R2");
     case BTN_SEL:   return pill(u, x, cy, "SELECT");
     case BTN_START: return pill(u, x, cy, "START");
     }
@@ -768,7 +770,12 @@ static void draw_disc(float cx, float cy, float r, float progress,
 
     /* raio é tempo: da borda para o centro */
     float read_r = r * (1.0f - progress * 0.86f);
-    alpha_ring(cx, cy, read_r, 2.5f, 0.34f, COL_AMBER_BRIGHT);
+    /* DOIS anéis finos, e não um de 2,5 px: acima de 1,6 o ring_circle cai no
+       caminho de scanline, que desenha um retângulo POR LINHA — uns 600
+       retângulos por quadro só para esta linha. Dois finos custam ~190
+       segmentos e leem igual. Ver a nota do orçamento no desenho_test. */
+    alpha_ring(cx, cy, read_r,        1.0f, 0.34f, COL_AMBER_BRIGHT);
+    alpha_ring(cx, cy, read_r - 1.5f, 1.0f, 0.22f, COL_AMBER_BRIGHT);
 
     if (spect) {
         for (int i = 0; i < SPECT_BANDS; i++) {
@@ -901,11 +908,23 @@ static void draw_needle(float cx, float cy, float r, float phase, float progress
     }
 }
 
+/* O halo: o brilho frio que respira em volta do prato.
+
+   Ele custava ~1400 chamadas de GPU por quadro — quase um QUARTO do teto de
+   6000 do deck (tests/desenho_test.c) — para dois anéis que mal se veem. A
+   culpa era da espessura: 16 e 7 px caem no caminho de scanline do
+   ring_circle, um retângulo por linha de tela, duas vezes por linha.
+
+   Quatro anéis FINOS custam ~380 segmentos e desenham o mesmo esfumado. Com
+   alfa de 0,03 a 0,09 não há banda visível para separar um do outro — e o
+   orçamento que sobra é o que paga o brilho do disco e o resto da tela. */
 static void draw_halo(float cx, float cy, float base_r, float phase)
 {
     float r = base_r * (1.0f + 0.03f * sinf(phase * 1.7f));
-    alpha_ring(cx, cy, r * 1.12f, 16.0f, 0.05f, COL_COLD);
-    alpha_ring(cx, cy, r * 1.05f, 7.0f, 0.09f, COL_COLD);
+    alpha_ring(cx, cy, r * 1.03f, 1.0f, 0.09f, COL_COLD);
+    alpha_ring(cx, cy, r * 1.07f, 1.0f, 0.07f, COL_COLD);
+    alpha_ring(cx, cy, r * 1.11f, 1.0f, 0.05f, COL_COLD);
+    alpha_ring(cx, cy, r * 1.15f, 1.0f, 0.03f, COL_COLD);
 }
 
 /* ---------- a cerimônia ---------- */
@@ -1092,60 +1111,39 @@ static void shelf_empty(Ui *u, Library *lib)
     text_elided(u, (int)tx, 246, COL_TEXT, 0.56f, tw,
                 "copy your records to ux0:music — or wherever you like — and come back.");
 
-    /* Daqui para baixo é diagnóstico: apagado, e só para quando o de cima
-       não bastar. */
-    float y = 288;
-    text(u, (int)tx, (int)y, COL_TEXT_FAINT, 0.52f, "what I saw:");
-    y += 22;
+    /* UMA linha de diagnóstico, e só quando ela muda o que a pessoa faz.
+
+       Aqui morava uma parede: o cabeçalho "what I saw:", a listagem das oito
+       primeiras pastas de ux0:, e até quatro raízes com o código do sistema
+       em hexadecimal. Isso é conteúdo de relatório, não de tela — e o
+       relatório existe: o library_report escreve tudo, e mais, em
+       `varredura.txt` a cada arranque. Quem conserta o app lê o arquivo;
+       quem está com o aparelho na mão quer saber o que fazer.
+
+       Sobrou a única distinção que muda a ação de quem está olhando: o
+       CARTÃO abre ou não abre. Se não abre, mexer em pasta não conserta
+       nada — o conserto é físico. Essa frase fica; o resto foi para o
+       arquivo. */
     {
         int e = 0;
         DirIter *dev = dir_open_err("ux0:", &e);
         if (!dev) {
-            /* A PERGUNTA DECISIVA: se nem o dispositivo abre, o problema não
-               tem nada a ver com música, e nenhuma mudança de pasta conserta.
-               As duas falhas se parecem na tela e pedem consertos opostos. */
-            char l[160];
-            snprintf(l, sizeof(l), "ux0: (the card) will not open: %s  [0x%08X]",
-                     scan_err_str(e), (unsigned)e);
-            text_elided(u, (int)tx + 10, (int)y, COL_ALARM, 0.53f, tw - 10, l);
-            y += 20;
+            text_elided(u, (int)tx, 290, COL_ALARM, 0.56f, tw,
+                        "the card (ux0:) will not open — is it seated properly?");
         } else {
-            char l[420];
-            size_t n = (size_t)snprintf(l, sizeof(l), "ux0: opens, and holds: ");
-            const char *nome;
-            int isdir, vistos = 0;
-            while (vistos < 8 && dir_next(dev, &nome, &isdir)) {
-                if (nome[0] == '.') continue;
-                n += (size_t)snprintf(l + n, sizeof(l) - n, "%s%s",
-                                      vistos ? ", " : "", nome);
-                vistos++;
-                if (n > sizeof(l) - 40) break;
-            }
-            if (!vistos) snprintf(l, sizeof(l), "ux0: opens, but it is EMPTY");
             dir_close(dev);
-            text_elided(u, (int)tx + 10, (int)y, COL_TEXT_DIM, 0.53f, tw - 10, l);
-            y += 20;
         }
     }
-    /* As raízes que falharam, com o CÓDIGO do sistema. "não existe" e "sem
-       permissão" pedem consertos opostos, e a tela já mandou procurar pasta
-       que estava lá o tempo todo. */
-    for (int i = 0; i < lib->nroots && i < 4; i++) {
-        if (lib->roots[i].opened) continue;
-        char line[MAX_PATH_LEN + 32];
-        snprintf(line, sizeof(line), "%s   %s  [0x%08X]",
-                 lib->roots[i].path, scan_err_str(lib->roots[i].err),
-                 (unsigned)lib->roots[i].err);
-        text_elided(u, (int)tx + 10, (int)y, COL_TEXT_FAINT, 0.52f, tw - 10, line);
-        y += 20;
-    }
+    float y = 316;
 
     /* A saída manual continua existindo, e continua sendo a última linha:
        o caminho vem do paths.h porque é ESTA linha que a pessoa vai digitar,
        e ela não pode divergir do que o scanner realmente lê. */
-    text_elided(u, (int)tx, (int)(y + 10), COL_TEXT_FAINT, 0.50f, tw,
+    text_elided(u, (int)tx, (int)y, COL_TEXT_FAINT, 0.50f, tw,
                 "still empty? list the folders, one per line, in "
                 STYLUS_ROOTS_TXT);
+    text_elided(u, (int)tx, (int)y + 20, COL_TEXT_FAINT, 0.50f, tw,
+                "what the scan saw is written to " STYLUS_DATA_DIR "/varredura.txt");
 }
 
 
@@ -1771,23 +1769,31 @@ lyrics_done:;
              /* uma tecla que a tela desenha e não anuncia não existe */
              tem_letra ? (u->show_lyrics ? "   ·   [sq] side order"
                                          : "   ·   [sq] lyrics") : "");
+    /* DUAS linhas, e não uma disputada.
+
+       A soneca e o último erro escreviam ambos em FOOT_Y-20 e se apagavam:
+       com a soneca armada, um erro de leitura simplesmente não aparecia — e
+       o erro é justamente o que a pessoa precisa ver. Agora o erro fica na
+       linha de cima (é o mais urgente e some sozinho quando a próxima faixa
+       abre) e a soneca logo abaixo dele. */
+    const char *err = player_last_error(p);
+    float linha = (float)FOOT_Y - 20.0f;
+    if (err && err[0]) {
+        text_elided(u, (int)PAD_X, (int)linha - 18, COL_ALARM, 0.52f,
+                    SCRW - 2 * PAD_X, err);
+    }
     /* a soneca tem que APARECER quando está armada: um estado que muda o que
        o aparelho vai fazer e não se vê é o pior tipo de estado */
     {
         int sm = player_sleep_mode(p);
         if (sm == 1)
-            text(u, (int)PAD_X, FOOT_Y - 20, COL_ALARM, 0.54f,
+            text(u, (int)PAD_X, (int)linha, COL_ALARM, 0.54f,
                  "sleep: fading out   ·   [R1+sq] off");
         else if (sm == 2)
-            text(u, (int)PAD_X, FOOT_Y - 20, COL_ALARM, 0.54f,
+            text(u, (int)PAD_X, (int)linha, COL_ALARM, 0.54f,
                  "sleep: stops at end of side   ·   [R1+sq] off");
     }
     text_elided(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.54f, SCRW - 2 * PAD_X, ctl);
-
-    const char *err = player_last_error(p);
-    if (err && err[0])
-        text_elided(u, (int)PAD_X, FOOT_Y - 20, COL_ALARM, 0.52f,
-                    SCRW - 2 * PAD_X, err);
 }
 
 /* ---------- lista com miniatura (recs e playlists) ---------- */

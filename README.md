@@ -196,7 +196,7 @@ export PATH=$VITASDK/bin:$PATH
 Pacotes necessários: `libvita2d`, `vitaShaRK`, `freetype`, `libpng`,
 `libjpeg-turbo`, `zlib`, `mpg123`, `SDL2`.
 
-A arte (ícone e LiveArea) é gerada por `tools/make_art.py` — sem PIL, só zlib.
+A arte (ícone e LiveArea) é gerada por `tools/icons.sh` — sem PIL, só zlib.
 Rode se mexer no desenho; o `sce_sys/` fica versionado.
 
 ## Conferências
