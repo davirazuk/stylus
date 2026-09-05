@@ -67,6 +67,13 @@ static void unpack(unsigned int c, int *r, int *g, int *b, int *a)
     *a = (int)((c >> 24) & 0xFF);
 }
 
+unsigned hostgfx_pixel(int x, int y)
+{
+    if (x < 0 || y < 0 || x >= SCRW || y >= SCRH) return 0;
+    return ((unsigned)fb[y][x][0] << 16) | ((unsigned)fb[y][x][1] << 8) |
+            (unsigned)fb[y][x][2];
+}
+
 static void blend_px(int x, int y, int r, int g, int b, int a)
 {
     if (x < 0 || y < 0 || x >= SCRW || y >= SCRH || a <= 0) return;

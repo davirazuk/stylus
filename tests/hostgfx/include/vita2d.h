@@ -57,4 +57,10 @@ long hostgfx_draws(void);
 void hostgfx_draws_reset(void);
 void hostgfx_set_font_path(const char *ttf);
 
+/* Um pixel do quadro composto, 0xRRGGBB. Existe para o teste poder perguntar
+   à TELA, e não ao código, para que lado um glifo aponta — foi um ícone
+   espelhado (os três botões do transporte) que passou por toda leitura de
+   código e só apareceu ao olhar o PNG. */
+unsigned hostgfx_pixel(int x, int y);
+
 #endif

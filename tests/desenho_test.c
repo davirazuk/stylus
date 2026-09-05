@@ -22,6 +22,7 @@
 #include "library.h"
 #include "player.h"
 #include "ui.h"
+#include "ui_layout.h"
 
 void preview_player_set(Player *p, const Album *a, const Track *t, PlayerState st,
                         int pos, int dur, int idx, int count, RepeatMode rep,
@@ -86,6 +87,57 @@ int main(int argc, char **argv)
         hostgfx_draws_reset();
         ui_frame(u, &lib, p);
         ok(hostgfx_draws(), TETO_DECK, "deck");
+
+        /* ---- PARA QUE LADO OS BOTÕES APONTAM ----
+
+           Os três botões do transporte saíram ESPELHADOS e ninguém viu lendo
+           o código: o de tocar apontava para a esquerda, o de anterior
+           mostrava ">>" e o de próxima "<<". Os chamadores estavam certos; a
+           inversão morava no ajudante que empilha os retângulos do triângulo,
+           e ler aquilo não denuncia nada — só olhar a tela denuncia.
+
+           Então aqui se pergunta à TELA, contando pixels acesos de cada lado
+           do centro de cada botão:
+
+             tocar     um triângulo só, apontando à direita: a base (a parte
+                       larga) fica à ESQUERDA, então pesa mais à esquerda.
+             anterior  "|<<": a barra do batente fica à esquerda -> pesa à
+                       esquerda.
+             próxima   ">>|": a barra fica à direita -> pesa à direita.
+
+           Espelhar os ícones inverte os três de uma vez, que foi exatamente
+           o que aconteceu. É medida de FORMA, não de estilo: muda a cor, a
+           espessura ou o tamanho e ela continua valendo. */
+        {
+            UiDeckGeom g;
+            ui_deck_geom(960, 544, &g);
+            preview_player_set(p, a, &a->tracks[0], PLAYER_PAUSED, 60, 240, 0,
+                               a->ntracks, REPEAT_ALL, true, "FLAC",
+                               44100, 16, 44100);
+            ui_frame(u, &lib, p);       /* parado: o botão do meio é o de TOCAR */
+
+            /* conta pixel aceso nas duas metades de cada botão */
+            for (int b = 0; b < 3; b++) {
+                float bx = g.cx + (float)(b - 1) * g.tr_gap;
+                int esq = 0, dir = 0;
+                for (int dy = -8; dy <= 8; dy++) {
+                    for (int dx = -9; dx <= 9; dx++) {
+                        unsigned px = hostgfx_pixel((int)bx + dx, (int)g.tr_y + dy);
+                        /* âmbar aceso: vermelho alto e azul baixo */
+                        int r = (int)((px >> 16) & 0xFF), bl = (int)(px & 0xFF);
+                        if (r < 120 || bl > 110) continue;
+                        if (dx < 0) esq++; else if (dx > 0) dir++;
+                    }
+                }
+                const char *nome = b == 0 ? "anterior: a barra fica a ESQUERDA"
+                                 : b == 1 ? "tocar: o triangulo aponta a DIREITA"
+                                          : "proxima: a barra fica a DIREITA";
+                int certo = (b == 2) ? (dir > esq) : (esq > dir);
+                if (certo) printf("  \033[32m✓\033[0m %s\n", nome);
+                else { printf("  \033[31m✗\033[0m %s (esq=%d dir=%d)\n",
+                              nome, esq, dir); falhas++; }
+            }
+        }
     } else {
         printf("  (sem coleção: só a estante foi medida)\n");
     }

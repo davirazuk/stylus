@@ -46,6 +46,7 @@ PT = {
     "volta", "volte", "ponha", "escreva", "aperte", "veja", "entre",
     "escuta", "escutas", "fila", "conta", "tela", "aparelho", "rede",
     "sulco", "lado", "lados", "capa", "ouvir", "jogo", "jogando",
+    "vira", "acaba", "virar", "trocar", "agora", "pronto", "falta",
 }
 
 # Literais que são DADO, e não texto de tela: nomes de pasta que a descoberta

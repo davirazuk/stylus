@@ -269,6 +269,28 @@ static void ring_circle(float cx, float cy, float r, float th, unsigned int colo
     }
 }
 
+/* Um ARCO, e não um anel: `a0`..`a1` em radianos, com o alfa esmaecendo nas
+   duas pontas. É o que permite desenhar luz que pega num PEDAÇO do disco —
+   um anel inteiro seria outro sulco, não um brilho. */
+static void arco(float cx, float cy, float r, float a0, float a1,
+                 int segs, float alfa, unsigned int rgb)
+{
+    if (r <= 0 || segs < 2 || alfa <= 0) return;
+    float passo = (a1 - a0) / (float)segs;
+    for (int i = 0; i < segs; i++) {
+        float t0 = (float)i / (float)segs;
+        float t1 = (float)(i + 1) / (float)segs;
+        /* seno de 0..pi: apaga nas pontas e cheio no meio, para o brilho não
+           terminar num corte reto — que é o que denuncia o desenho */
+        float m = sinf(((t0 + t1) * 0.5f) * 3.14159265f);
+        unsigned int c = (rgb & 0x00FFFFFF) |
+                         ((unsigned int)(alfa * m * 255.0f) << 24);
+        float b0 = a0 + passo * (float)i, b1 = a0 + passo * (float)(i + 1);
+        vita2d_draw_line(cx + cosf(b0) * r, cy + sinf(b0) * r,
+                         cx + cosf(b1) * r, cy + sinf(b1) * r, c);
+    }
+}
+
 static void alpha_fill(float cx, float cy, float r, float a, unsigned int rgb)
 {
     if (a <= 0) return;
@@ -768,6 +790,37 @@ static void draw_disc(float cx, float cy, float r, float progress,
         alpha_ring(cx, cy, rr, here ? 1.6f : 1.0f, here ? 0.30f : 0.11f, COL_AMBER);
     }
 
+    /* O LUSTRO — a luz da sala pegando no disco.
+
+       O `assets/bg.svg` tem um `lustro` de propósito, com a nota que explica
+       por quê: "sem ele, é um CD". O disco DE DENTRO do app não tinha
+       equivalente nenhum — só o aro. Um círculo preto com anéis é um CD; o
+       que faz o olho ler vinil é a faixa de luz atravessando na diagonal.
+
+       Ela NÃO gira com o disco: a lâmpada está parada na sala, e é o disco
+       que passa por baixo dela. Girar o brilho junto seria um adesivo, e um
+       adesivo é exatamente o que ela não pode parecer.
+
+       São arcos, e não um gradiente: o vita2d não tem gradiente. Sete arcos
+       de dez segmentos custam ~70 linhas — na mesma ordem de grandeza de um
+       sulco, e a conta inteira cabe no que o halo devolveu. */
+    {
+        const float LUZ = -2.15f;              /* em cima e à esquerda */
+        for (int i = 0; i < 7; i++) {
+            float t = (float)i / 6.0f;
+            float rr = r * (0.30f + t * 0.66f);
+            /* mais aberto perto da borda: a faixa de luz é uma DIAGONAL, e
+               num círculo uma diagonal cobre mais ângulo quanto maior o raio */
+            float meio = 0.34f + t * 0.30f;
+            /* o brilho é mais forte no meio do disco e some nas pontas */
+            float f = sinf(t * 3.14159265f);
+            float a = 0.030f + 0.055f * f;
+            /* parado o disco reflete igual; girando, a luz "respira" de leve */
+            a *= 0.80f + 0.20f * spin;
+            arco(cx, cy, rr, LUZ - meio, LUZ + meio, 10, a, RGBA8(207, 224, 255, 255));
+        }
+    }
+
     /* raio é tempo: da borda para o centro */
     float read_r = r * (1.0f - progress * 0.86f);
     /* DOIS anéis finos, e não um de 2,5 px: acima de 1,6 o ring_circle cai no
@@ -872,15 +925,47 @@ static void draw_needle(float cx, float cy, float r, float phase, float progress
     unsigned int tubo = (COL_AMBER & 0x00FFFFFF) | ((unsigned)(150 * a) << 24);
     unsigned int luz  = (COL_AMBER_BRIGHT & 0x00FFFFFF) | ((unsigned)(210 * a) << 24);
 
-    /* A quebra perto da ponta: um braço reto do pivô até a agulha lê como
-       vareta. A dobra é o que dá a ele a silhueta de braço em S. */
-    float bx = pvx + (px - pvx) * 0.80f;
-    float by = pvy + (py - pvy) * 0.80f;
+    /* O S DO BRAÇO, curvo de verdade.
 
-    thick_line(pvx, pvy, bx, by, 7.0f, esc);
-    thick_line(bx, by, px, py, 6.0f, esc);
-    thick_line(pvx, pvy, bx, by, 3.0f, tubo);
-    thick_line(bx, by, px, py, 4.0f, luz);
+       Aqui havia DOIS segmentos retos com um vinco a 80% do caminho. De
+       longe passa; de perto é um cotovelo, e um braço de toca-discos não tem
+       cotovelo — tem uma curva contínua, que existe para a agulha chegar ao
+       sulco tangente e não de esguelha. O vinco era a única coisa que
+       impedia o braço de ler como vareta, e trocava um defeito por outro.
+
+       Uma Bézier quadrática resolve: pivô, um ponto de controle deslocado na
+       PERPENDICULAR à reta, e a concha. O deslocamento é proporcional ao
+       comprimento, então a curva continua a mesma quando a agulha anda para
+       dentro do disco. Doze segmentos bastam nesta escala; acima disso já não
+       se distingue da curva, e cada segmento custa uma linha grossa. */
+    #define ARM_SEGS 12
+    float axs[ARM_SEGS + 1], ays[ARM_SEGS + 1];
+    {
+        float dx = px - pvx, dy = py - pvy;
+        float l = sqrtf(dx * dx + dy * dy);
+        if (l < 1.0f) l = 1.0f;
+        /* a perpendicular, normalizada; o sinal escolhe para que lado o S cai */
+        float nx = -dy / l, ny = dx / l;
+        float k = l * 0.13f;                  /* a barriga da curva */
+        float qx = pvx + dx * 0.55f + nx * k;
+        float qy = pvy + dy * 0.55f + ny * k;
+        for (int i = 0; i <= ARM_SEGS; i++) {
+            float t = (float)i / (float)ARM_SEGS, it = 1.0f - t;
+            axs[i] = it * it * pvx + 2.0f * it * t * qx + t * t * px;
+            ays[i] = it * it * pvy + 2.0f * it * t * qy + t * t * py;
+        }
+    }
+    /* o contorno escuro primeiro, o tubo por cima: é o contorno que separa o
+       braço do disco quando os dois estão sobre o mesmo preto */
+    for (int i = 0; i < ARM_SEGS; i++)
+        thick_line(axs[i], ays[i], axs[i + 1], ays[i + 1],
+                   7.0f - 1.0f * ((float)i / (float)ARM_SEGS), esc);
+    for (int i = 0; i < ARM_SEGS; i++) {
+        float t = (float)i / (float)ARM_SEGS;
+        /* clareia na direção da ponta: o olho segue a luz até a agulha */
+        thick_line(axs[i], ays[i], axs[i + 1], ays[i + 1],
+                   3.0f + t * 1.0f, t > 0.72f ? luz : tubo);
+    }
 
     /* a concha, no fim do braço */
     alpha_fill(px, py, 5.0f, 0.9f * a, RGBA8(10, 13, 20, 255));
@@ -891,7 +976,10 @@ static void draw_needle(float cx, float cy, float r, float phase, float progress
     alpha_ring(pvx, pvy, 8.0f, 2.2f, 0.70f, COL_AMBER);
     alpha_fill(pvx, pvy, 2.2f, 0.8f, COL_AMBER_BRIGHT);
     {
-        float dx = pvx - px, dy = pvy - py;
+        /* a direção do contrapeso sai do PRIMEIRO segmento da curva, e não da
+           reta pivô-agulha: com a curva, as duas já não são a mesma, e usar a
+           reta punha o peso ligeiramente torto em relação ao tubo */
+        float dx = pvx - axs[1], dy = pvy - ays[1];
         float l = sqrtf(dx * dx + dy * dy);
         if (l > 1.0f) {
             float wx = pvx + dx / l * 15.0f, wy = pvy + dy / l * 15.0f;
@@ -1398,7 +1486,22 @@ static void tri_cheio(float px, float py, float w, float h, int dir,
         float d = fabsf(y - py);
         float lw = w * (1.0f - 2.0f * d / h);   /* largura desta fatia */
         if (lw < 0.6f) continue;
-        float x = (dir > 0) ? px + (w - lw) : px - w;
+        /* `dir > 0` APONTA PARA A DIREITA, que é como os três chamadores
+           sempre acharam que era.
+
+           SINTOMA: os três botões do transporte saíam espelhados. O de tocar
+           mostrava um triângulo apontando para a ESQUERDA, o de faixa
+           anterior mostrava ">>" e o de próxima "<<". Toda a fileira dizia o
+           contrário do que fazia, e nada no código parecia errado — os
+           chamadores estão certos; era esta linha que invertia.
+
+           O que enganava: aqui NÃO se desenha um triângulo, e sim uma pilha
+           de retângulos de larguras diferentes. O lado que APONTA é aquele
+           cuja borda MUDA de linha para linha; o lado da borda fixa é a base.
+           A conta antiga fixava a borda errada nos dois ramos. A extensão em
+           x é a mesma de antes ([px, px+w] e [px-w, px]), então a posição dos
+           botões não muda — só a ponta. */
+        float x = (dir > 0) ? px : px - lw;
         vita2d_draw_rectangle(x, y, lw, 1.3f, col);
     }
 }
@@ -1704,7 +1807,7 @@ static void draw_deck(Ui *u, Library *lib, Player *p)
             text_elided(u, (int)tx, (int)g.note_y, COL_ALARM, 0.60f, tw, aviso);
         } else if (falta > 20) {
             snprintf(aviso, sizeof(aviso), "%s in %d min",
-                     (lado + 1 < a->lados.n) ? "vira" : "acaba",
+                     (lado + 1 < a->lados.n) ? "flip" : "ends",
                      (falta + 59) / 60);
             text(u, (int)tx, (int)g.note_y, COL_TEXT_DIM, 0.52f, aviso);
         }
