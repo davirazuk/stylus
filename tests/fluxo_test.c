@@ -213,6 +213,74 @@ int main(int argc, char **argv)
         dec_close(d);
     }
 
+    /* ---- PROCURAR FORA DO ANEL ----
+
+       Este e o caso que travava o app inteiro. O fonte_procura marcava
+       `refaz` e entao dava pthread_join na thread que busca — que, vendo
+       `refaz`, fazia `continue` e nunca saia. O produtor enchia o anel e
+       ficava esperando o consumidor; o consumidor era quem estava dentro do
+       join. Dava para chegar la pelo caminho normal: o MP3 mantem o lseek de
+       proposito, entao qualquer arrastao na barra de uma faixa da rede
+       passava por ali.
+
+       Para exercitar de verdade e preciso um arquivo MAIOR que o anel (4
+       MiB): so assim o r_ini avanca e uma volta ao inicio cai fora do que
+       esta guardado. As fixtures de audio sao pequenas demais, entao aqui se
+       fabrica uma de 6 MiB com um padrao conferivel byte a byte.
+
+       Se este teste TRAVAR em vez de reprovar, o defeito voltou: e disso que
+       ele fala. */
+    {
+        char caminho[512], url[512];
+        snprintf(caminho, sizeof(caminho), "%s/grande.bin", FX);
+        FILE *g = fopen(caminho, "rb");
+        if (!g) {
+            g = fopen(caminho, "wb");
+            if (g) {
+                for (long i = 0; i < 6L * 1024 * 1024; i++)
+                    fputc((int)((i * 37 + (i >> 8)) & 0xFF), g);
+                fclose(g);
+            }
+        } else fclose(g);
+
+        snprintf(url, sizeof(url), "%s/grande.bin", BASE);
+        Fonte *f = fonte_rede(url);
+        okf(f != NULL, "a fonte grande abre", NULL);
+        if (f) {
+            /* le 5 MiB para o anel dar a volta e o inicio ser descartado */
+            static unsigned char lixo[65536];
+            long long lidos = 0;
+            while (lidos < 5L * 1024 * 1024) {
+                long r = fonte_le(f, lixo, sizeof(lixo));
+                if (r <= 0) break;
+                lidos += r;
+            }
+            okf(lidos >= 5L * 1024 * 1024, "leu 5 MiB (o anel deu a volta)", NULL);
+
+            /* agora volta ao COMECO: fora do anel, obriga a reabrir com Range */
+            long long onde = fonte_procura(f, 0, SEEK_SET);
+            okf(onde == 0, "procurar para tras do anel devolve a posicao", NULL);
+
+            unsigned char b[16];
+            long r = fonte_le(f, b, sizeof(b));
+            int bate = (r == (long)sizeof(b));
+            for (int i = 0; i < (int)sizeof(b) && bate; i++)
+                if (b[i] != (unsigned char)((i * 37 + (i >> 8)) & 0xFF)) bate = 0;
+            okf(bate, "e os bytes que voltam sao mesmo os do comeco do arquivo", NULL);
+
+            /* e para a frente, tambem fora do anel */
+            onde = fonte_procura(f, 4L * 1024 * 1024, SEEK_SET);
+            r = fonte_le(f, b, sizeof(b));
+            bate = (onde == 4L * 1024 * 1024 && r == (long)sizeof(b));
+            for (int i = 0; i < (int)sizeof(b) && bate; i++) {
+                long long k = 4L * 1024 * 1024 + i;
+                if (b[i] != (unsigned char)((k * 37 + (k >> 8)) & 0xFF)) bate = 0;
+            }
+            okf(bate, "procurar para a frente do anel tambem reabre e acerta", NULL);
+            fonte_fecha(f);
+        }
+    }
+
     dec_global_exit();
     printf("\n%d conferencias, %d \033[31mfalha%s\033[0m\n",
            checks, fails, fails == 1 ? "" : "s");

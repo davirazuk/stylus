@@ -464,6 +464,51 @@ else
     skip "PULA: sem Pillow"
 fi
 
+printf '\n\033[1mtocar pela rede\033[0m\n'
+# O caminho de rede do decodificador: FLAC pela rede tem de sair IDENTICO ao
+# do cartao, queda no meio tem de virar ERRO (e nao "fim da faixa"), 404 nao
+# pode abrir, e procurar fora do anel tem de reabrir com Range em vez de
+# TRAVAR — que foi o que aconteceu, e o app inteiro parava.
+#
+# O tempo limite nao e zelo: o defeito da procura se manifesta como travamento,
+# entao sem ele uma regressao pendura a conferencia para sempre em vez de
+# reprovar. 124 e o codigo que o `timeout` devolve.
+if ! command -v gcc >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1 \
+   || ! pkg-config --exists libcurl $DEC_PKGS 2>/dev/null; then
+    skip "PULA: sem gcc/python3/bibliotecas"
+elif [ ! -f "${FX:=/tmp/vitastylus_fixtures}/tone.flac" ]; then
+    # o FX vem da secao do decodificador; se ela PULOU, ele nem existe
+    skip "PULA: sem as fixtures de audio"
+else
+    out=$(gcc -std=gnu11 -Wall -Wextra -Werror -I"$SRC" -o /tmp/vitastylus_fluxo \
+          tests/fluxo_test.c "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/net.c \
+          $(pkg-config --cflags --libs $DEC_PKGS libcurl) -lm 2>&1) || true
+    if [ ! -x /tmp/vitastylus_fluxo ]; then
+        fail "o teste de rede nao compila" "$out"
+    else
+        PORTA=8731
+        python3 tools/servidor_teste.py "$PORTA" "$FX" >/tmp/vitastylus_srv.log 2>&1 &
+        SRV=$!
+        # espera o servidor dizer que subiu, em vez de dormir um numero magico
+        i=0
+        while [ $i -lt 40 ] && ! grep -q servindo /tmp/vitastylus_srv.log 2>/dev/null; do
+            i=$((i+1)); sleep 0.1
+        done
+        timeout 180 /tmp/vitastylus_fluxo "http://127.0.0.1:$PORTA" "$FX" \
+            >/tmp/vitastylus_fluxo.out 2>&1
+        rc=$?
+        kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null
+        if [ $rc -eq 0 ]; then
+            pass "o som que vem da rede e o mesmo, e a queda nao vira fim de faixa"
+        elif [ $rc -eq 124 ]; then
+            fail "o teste de rede TRAVOU (procurar fora do anel volta a travar?)" \
+                 "$(tail -5 /tmp/vitastylus_fluxo.out)"
+        else
+            fail "o teste de rede reprovou" "$(cat /tmp/vitastylus_fluxo.out)"
+        fi
+    fi
+fi
+
 printf '\n\033[1mo filtro da estante\033[0m\n'
 # 388 discos em 49 paginas: o filtro e o que torna isso navegavel. O que se
 # mede nao e a tela — e a TRADUCAO do indice filtrado para o indice real da
