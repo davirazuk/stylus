@@ -47,6 +47,12 @@ PT = {
     "escuta", "escutas", "fila", "conta", "tela", "aparelho", "rede",
     "sulco", "lado", "lados", "capa", "ouvir", "jogo", "jogando",
     "vira", "acaba", "virar", "trocar", "agora", "pronto", "falta",
+    # os verbos no infinitivo sao o formato das DICAS de botao, e foi assim
+    # que "editar" e "confirmar" sobreviveram a traducao em massa 
+    "editar", "confirmar", "apagar", "guardar", "parar", "cancelar",
+    "escolher", "navegar", "voltar", "abrir", "fechar", "salvar",
+    "procurar", "mostrar", "seguir", "aplicar",
+    "toca", "tocar", "conta", "contas", "lista", "listas", "letra",
 }
 
 # Literais que são DADO, e não texto de tela: nomes de pasta que a descoberta
@@ -54,13 +60,26 @@ PT = {
 # se chama no cartão de quem escreve em português, e traduzi-los faria a
 # varredura deixar de achar a coleção. Ficam listados aqui, e não numa exceção
 # solta, porque uma exceção que ninguém enumera vira uma porta aberta.
-DADO = {"Música", "Músicas", "Musica", "Musicas", "música", "musicas"}
+DADO = {
+    # nomes de pasta que a descoberta procura no cartão
+    "Música", "Músicas", "Musica", "Musicas", "música", "musicas", "musica",
+    # a assinatura do índice da estante: é um marcador em arquivo, não texto
+    "vitastylus-estante",
+}
 
-# Um literal que é só técnica (caminho, formato, chave de config) não é frase.
-# SEM ESPAÇO no meio: a versão anterior aceitava espaço, e com isso QUALQUER
-# frase sem pontuação passava por "técnica" — "vire o disco para o %s" escapou
-# assim. Uma frase de tela tem espaço; um caminho e uma chave, não.
-TECNICA = re.compile(r"^[\w./:%\-+*#\[\]()|$&=<>,{}\\]*$", re.A)
+# Um literal que é só técnica não é frase de tela. A regra passou por dois
+# erros opostos, e os dois deixaram passar defeito de verdade:
+#
+#   1ª versão: qualquer coisa sem pontuação era "técnica" — e aí toda frase
+#      passava. Foi assim que "vire o disco para o %s" escapou.
+#   2ª versão: exigi que não tivesse ESPAÇO. Aí toda PALAVRA SOLTA virou
+#      técnica — e as dicas de botão são exatamente palavras soltas:
+#      "editar", "confirmar", "conta", "toca" atravessaram inteiras.
+#
+# O que separa de verdade: caminho e chave têm ':' ou '/'; formato puro não
+# tem letra nenhuma. Uma palavra solta em português é texto de tela e TEM de
+# ser conferida.
+TECNICA = re.compile(r"^(?:[^A-Za-zÀ-ÿ]*|[\w.\-+]*[:/][\w./:%\-+*#?=&]*)$", re.A)
 
 
 def literais(txt):

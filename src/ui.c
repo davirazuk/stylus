@@ -175,6 +175,13 @@ struct Ui {
     /* a tela da conta: ver draw_conta */
     int  conta_sel;
     int  conta_campo;         /* que campo o teclado está editando, -1 nenhum */
+    /* A FILA DO LAST.FM, contada de vez em quando e não a cada quadro.
+       O lastfm_queue_size abre o arquivo e conta as linhas; a tela de conta
+       chamava isso 60 vezes por segundo enquanto estivesse aberta. Uma vez
+       por segundo é mais do que suficiente para um número que só muda quando
+       uma faixa termina. */
+    int  fila_lastfm;
+    int  fila_quando;         /* u->clock da última contagem */
     char conta_msg[96];
     unsigned conta_msg_ate;   /* o recado some sozinho; erro que fica é ruído */
     LastfmConfig conta_cfg;
@@ -1336,6 +1343,11 @@ static void shelf_thumb(Ui *u, Album *a, vita2d_texture *tex,
     vita2d_draw_rectangle(ix, cap_y + cap_l - 1, cap_l, 1, RGBA8(0, 0, 0, 140));
 }
 
+/* A estante precisa saber da conta e da fila do last.fm, e as duas moram
+   junto da tela de conta, lá embaixo. */
+static const LastfmConfig *ui_conta_cfg(Ui *u);
+static int ui_fila_lastfm(Ui *u);
+
 static void draw_shelf(Ui *u, Library *lib, Player *p)
 {
     int n = lib->nalbums;
@@ -1452,6 +1464,29 @@ static void draw_shelf(Ui *u, Library *lib, Player *p)
     snprintf(cnt, sizeof(cnt), "%d record%s   ·   page %d of %d",
              n, n == 1 ? "" : "s", page + 1, pages);
     text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt);
+
+    /* A FILA PRESA, dita onde se vê.
+
+       O last.fm inteiro funciona — login no aparelho, fila no cartão, envio
+       em segundo plano — e mesmo assim a fila do dono deste app tinha 139
+       escutas paradas: sem credencial, o envio volta na entrada e a fila só
+       cresce. Nada em tela nenhuma dizia isso. A tela de CONTA diria, mas
+       ela fica a dois [R1] daqui e não é anunciada em lugar nenhum.
+
+       Então a estante diz. Só quando há escuta parada E não há conta: quem
+       já configurou nunca vê esta linha, e quem nunca ouviu nada também
+       não. Um aviso que aparece sempre é um aviso que ninguém lê. */
+    {
+        int fila = ui_fila_lastfm(u);
+        if (fila > 0 && !ui_conta_cfg(u)->configured) {
+            char aviso[128];
+            snprintf(aviso, sizeof(aviso),
+                     "%d play%s waiting for last.fm  ·  set it up in ACCOUNT",
+                     fila, fila == 1 ? "" : "s");
+            int w = text_w(u, 0.52f, aviso);
+            text(u, SCRW - (int)PAD_X - w, FOOT_Y, COL_TEXT_FAINT, 0.52f, aviso);
+        }
+    }
 }
 
 /* ---------- o deck ---------- */
@@ -1992,6 +2027,33 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
     text(u, (int)PAD_X, FOOT_Y, COL_TEXT_DIM, 0.55f, cnt);
 }
 
+/* Quantas escutas esperam para subir. Recontada no máximo uma vez por
+   segundo — ver o campo `fila_lastfm`. Antes disto a tela de conta abria e
+   contava o arquivo A CADA QUADRO, sessenta vezes por segundo, para um
+   número que só muda quando uma faixa termina. */
+/* A configuração do last.fm, lida UMA vez. Ela era carregada só quando a
+   tela de conta abria; a estante, que agora também precisa saber se há conta,
+   veria `configured` falso mesmo com a conta pronta — e mostraria um aviso
+   mentindo para quem já tinha configurado tudo. */
+static const LastfmConfig *ui_conta_cfg(Ui *u)
+{
+    if (!u->conta_lida) {
+        lastfm_config_load(&u->conta_cfg, STYLUS_DATA_DIR);
+        u->conta_lida = true;
+    }
+    return &u->conta_cfg;
+}
+
+static int ui_fila_lastfm(Ui *u)
+{
+    if (!u) return 0;
+    if (u->fila_quando == 0 || u->clock - u->fila_quando >= 60) {
+        u->fila_lastfm = lastfm_queue_size(STYLUS_DATA_DIR);
+        u->fila_quando = u->clock;
+    }
+    return u->fila_lastfm;
+}
+
 /* ---------- a conta ----------
 
    Por que esta tela existe: o last.fm estava implementado inteiro e era
@@ -2051,15 +2113,12 @@ static void conta_diz(Ui *u, const char *msg)
 static void draw_conta(Ui *u, Library *lib, Player *p)
 {
     (void)lib; (void)p;
-    if (!u->conta_lida) {
-        lastfm_config_load(&u->conta_cfg, STYLUS_DATA_DIR);
-        u->conta_lida = true;
-    }
+    ui_conta_cfg(u);
     header(u, "ACCOUNT", NULL);
     {
         static const Dica d[] = {
-            { BTN_CROSS,    (Btn)-1, "editar" },
-            { BTN_CIRCLE,   (Btn)-1, "confirmar" },
+            { BTN_CROSS,    (Btn)-1, "edit" },
+            { BTN_CIRCLE,   (Btn)-1, "confirm" },
             { BTN_UPDOWN,   (Btn)-1, "navigate" },
             { BTN_TRIANGLE, (Btn)-1, "shelf" },
             { BTN_R1,       (Btn)-1, "qobuz" },
@@ -2069,7 +2128,7 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
     }
 
     const LastfmConfig *c = &u->conta_cfg;
-    int fila = lastfm_queue_size(STYLUS_DATA_DIR);
+    int fila = ui_fila_lastfm(u);
     bool ok = c->configured;
 
     /* O MOSTRADOR, à direita: um disco com o número de escutas guardadas.
@@ -2206,7 +2265,7 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
     if (job.ativo || job.ok || job.falhou) {
         {
             static const Dica d[] = {
-                { BTN_CIRCLE,   (Btn)-1, "parar" },
+                { BTN_CIRCLE,   (Btn)-1, "stop" },
                 { BTN_TRIANGLE, (Btn)-1, "shelf" },
                 { 0, 0, NULL }
             };
@@ -2258,8 +2317,9 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
     if (!pronto) {
         {
             static const Dica d[] = {
-                { BTN_CROSS,    (Btn)-1, "editar" },
+                { BTN_CROSS,    (Btn)-1, "edit" },
                 { BTN_UPDOWN,   (Btn)-1, "navigate" },
+                { BTN_L1,       (Btn)-1, "account" },
                 { BTN_TRIANGLE, (Btn)-1, "shelf" },
                 { 0, 0, NULL }
             };
@@ -2313,6 +2373,7 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
             { BTN_CIRCLE,   (Btn)-1, "play" },
             { BTN_SEL,      (Btn)-1, "format" },
             { BTN_UPDOWN,   (Btn)-1, "navigate" },
+            { BTN_L1,       (Btn)-1, "account" },
             { BTN_TRIANGLE, (Btn)-1, "shelf" },
             { 0, 0, NULL }
         };
@@ -2507,11 +2568,11 @@ static void draw_playlists(Ui *u, Library *lib, Player *p)
     {
         static const Dica d[] = {
             { BTN_TRIANGLE, (Btn)-1, "shelf" },
-            { BTN_CIRCLE,   (Btn)-1, "toca" },
+            { BTN_CIRCLE,   (Btn)-1, "play" },
             { BTN_UPDOWN,   (Btn)-1, "navigate" },
             { BTN_SQUARE,   (Btn)-1, "save what is playing" },
             { BTN_SEL,      (Btn)-1, "delete (2x)" },
-            { BTN_R1,       (Btn)-1, "conta" },
+            { BTN_R1,       (Btn)-1, "account" },
             { 0, 0, NULL }
         };
         header_hints(u, "", d);
