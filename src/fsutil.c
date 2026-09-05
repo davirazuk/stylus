@@ -34,6 +34,49 @@ size_t path_join(char *out, size_t cap, const char *parent, const char *child)
     return n;
 }
 
+void path_normalize(char *s)
+{
+    /* Alguns firmwares/SD2VITA precisam da barra depois dos dois-pontos:
+       "ux0:music" não abre, mas "ux0:/music" abre. Se o caminho tem
+       "algo:" seguido de algo que NÃO é barra, insere a barra. */
+    if (!s) return;
+    char *colon = NULL;
+    for (char *p = s; *p; p++)
+        if (*p == ':') { colon = p; break; }
+    if (!colon) return;
+    char *after = colon + 1;
+    if (*after == '/' || *after == '\0') return;   /* já tem barra ou é só o device */
+    size_t len = strlen(after);
+    memmove(after + 1, after, len + 1);
+    *after = '/';
+}
+
+int path_outra_forma(char *out, size_t cap, const char *path)
+{
+    if (!out || !cap || !path) return 0;
+    const char *colon = strchr(path, ':');
+    if (!colon) return 0;                    /* sem "dev:" não há outra forma */
+    const char *after = colon + 1;
+    if (!*after) return 0;                   /* "ux0:" é só o dispositivo */
+
+    size_t n = strlen(path);
+    if (*after == '/') {
+        /* "ux0:/music" -> "ux0:music". Só se sobrar caminho depois da barra:
+           "ux0:/" inteiro é um caminho, e tirar a barra deixaria o device. */
+        if (!after[1]) return 0;
+        if (n >= cap) return 0;
+        size_t pre = (size_t)(after - path);  /* inclui os dois-pontos */
+        memcpy(out, path, pre);
+        memcpy(out + pre, after + 1, n - pre - 1 + 1);
+        return 1;
+    }
+    /* "ux0:music" -> "ux0:/music" */
+    if (n + 2 > cap) return 0;
+    memcpy(out, path, n + 1);
+    path_normalize(out);
+    return 1;
+}
+
 void path_trim_slash(char *s)
 {
     if (!s) return;
@@ -99,7 +142,29 @@ DirIter *dir_open_err(const char *path, int *err)
 {
     if (err) *err = 0;
     if (!path || !*path) return NULL;
+
+    /* AS DUAS FORMAS, e não uma aposta.
+
+       SINTOMA: o relatório que o app deixou no cartão dizia que "ux0:music"
+       não abria — e no MESMO arranque "ux0:/data" abria. As cinco raízes
+       palpitadas eram todas sem a barra depois dos dois-pontos; a única que
+       abriu foi a que a descoberta montou COM a barra. Resultado: a estante
+       adotava a pasta de assets de um jogo e a coleção inteira (3.728
+       arquivos em ux0:music) ficava invisível.
+
+       Aqui não se decide qual forma este firmware prefere: tenta-se a que
+       veio e, se falhar, a outra. Fica no dir_open porque assim vale para
+       TODA pasta — as subpastas da varredura e a sondagem da descoberta
+       também — e não só para as raízes. Normalizar na entrada consertaria
+       menos e ainda mudaria o caminho que a tela mostra. */
     SceUID fd = sceIoDopen(path);
+    if (fd < 0) {
+        char alt[1024];
+        if (path_outra_forma(alt, sizeof(alt), path)) {
+            SceUID f2 = sceIoDopen(alt);
+            if (f2 >= 0) fd = f2;
+        }
+    }
     if (fd < 0) { if (err) *err = (int)fd; return NULL; }
     DirIter *it = calloc(1, sizeof(*it));
     if (!it) { sceIoDclose(fd); return NULL; }

@@ -65,6 +65,34 @@ int main(void)
     mk("fotos");
     arq("fotos/ferias.jpg");
 
+    /* O DEFEITO DO BLOONS.
+
+       Relato de campo, com o relatório do próprio app como prova: a estante
+       do usuário virou 47 efeitos sonoros do Bloons TD 5 enquanto 3.728 MP3
+       em `ux0:music` ficavam invisíveis. `ux0:data` tinha 39 .wav + 6 .mp3 +
+       2 .ogg = exatamente o `audio=47` que o relatório mostrava.
+
+       Três coisas tinham de dar errado juntas, e as três estão aqui:
+       "data" não era pasta de sistema, o .wav contava como prova de coleção,
+       e a ordem alfabética fazia "data" ser sondada antes de "music". */
+    mk("data"); mk("data/btd5"); mk("data/btd5/assets");
+    arq("data/btd5/assets/SwampSpawn.wav");
+    arq("data/btd5/assets/Pop.wav");
+    arq("data/btd5/assets/tema.mp3");     /* jogo também tem mp3 solto */
+    mk("data/outrojogo");
+    arq("data/outrojogo/menu.ogg");
+
+    /* A discoteca de verdade, com o nome óbvio. */
+    mk("music"); mk("music/Pink Floyd"); mk("music/Pink Floyd/The Wall");
+    arq("music/Pink Floyd/The Wall/01 - In the Flesh.mp3");
+    arq("music/Pink Floyd/The Wall/02 - The Thin Ice.mp3");
+
+    /* Uma pasta de jogo SÓ com wav: nem com o nome fora da lista ela entra,
+       porque ninguém guarda discoteca em wav. */
+    mk("jogoqualquer"); mk("jogoqualquer/sfx");
+    arq("jogoqualquer/sfx/click.wav");
+    arq("jogoqualquer/sfx/boom.wav");
+
     Library lib;
     library_init(&lib);
     int n = library_discover(&lib);
@@ -77,6 +105,19 @@ int main(void)
     assert(!achou_raiz(&lib, "app") && "pasta de sistema NAO pode virar raiz");
     assert(!achou_raiz(&lib, "fotos") && "pasta sem audio NAO pode virar raiz");
     assert(lib.roots_discovered && "a flag tem de dizer que foram descobertas");
+
+    /* O defeito do Bloons, travado: */
+    assert(!achou_raiz(&lib, "/data") &&
+           "ux0:data NAO pode virar raiz: e onde o homebrew guarda arquivo");
+    assert(achou_raiz(&lib, "music") &&
+           "a pasta com o nome obvio tem de entrar");
+    assert(!achou_raiz(&lib, "jogoqualquer") &&
+           "pasta so de .wav e banco de som de jogo, nao discoteca");
+
+    /* E a discoteca tem de ser sondada ANTES das outras, senao numa estante
+       cheia ela pode nem caber em MAX_ROOTS. */
+    assert(lib.nroots > 0 && strstr(lib.roots[0].path, "music") &&
+           "a discoteca tem de ser a PRIMEIRA raiz, nao a ultima");
 
     /* E o caminho completo funciona: varrer as raízes achadas dá álbuns. */
     library_scan(&lib);

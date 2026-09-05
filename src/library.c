@@ -144,6 +144,11 @@ int library_add_root(Library *lib, const char *root)
     size_t n = strlen(norm);
     while (n > 0 && (norm[n - 1] == ' ' || norm[n - 1] == '\t' ||
                      norm[n - 1] == '\r' || norm[n - 1] == '\n')) norm[--n] = '\0';
+    /* NÃO se normaliza a grafia aqui: quem tenta as duas formas é o
+       dir_open_err, e por bons motivos (ver a nota lá). Normalizar na entrada
+       consertaria só as raízes — não as subpastas nem a sondagem da
+       descoberta — e ainda trocaria, na tela, o caminho que a pessoa
+       escreveu por outro. */
     path_trim_slash(norm);
     if (!norm[0]) return -1;
     if (root_covered(lib, norm)) return -1;
@@ -457,6 +462,17 @@ static const char *PULAR[] = {
     "app", "appmeta", "bgdl", "cache", "calendar", "license", "message",
     "near", "patch", "pspemu", "psm", "shell", "tai", "temp", "theme",
     "user", "system", "vitastylus", "iconlayout.xml", "id.dat",
+    /* "data" é onde TODO homebrew guarda arquivo, e um jogo guarda o banco de
+       som dele ali. SINTOMA: a estante do usuário virou 47 efeitos sonoros do
+       Bloons TD 5 (`ux0:/data/btd5/.../SwampSpawn.wav`) enquanto 3.728 MP3
+       em ux0:music ficavam invisíveis — a descoberta adotou `ux0:/data`
+       porque achou áudio lá dentro, e achou mesmo. Música do usuário não mora
+       na raiz de `data`; a nossa própria (STYLUS_OWN_MUSIC) é palpite
+       explícito e não passa por aqui. */
+    "data",
+    "downloads", "video", "picture", "photo", "savegames", "shader_cache",
+    "addcont", "nonpdrm", "vitacheat", "vitashell", "customtheme",
+    "custombootsplash", "email", "mms", "sceiotrash",
     NULL
 };
 
@@ -467,6 +483,26 @@ static bool eh_sistema(const char *nome)
     /* Tudo que a Sony prefixa com "sce_" ou "PS" também não é do usuário. */
     if (strncasecmp(nome, "sce_", 4) == 0) return true;
     return false;
+}
+
+/* PROVA de que ali mora uma coleção — não é a mesma pergunta que "isto é
+   áudio?".
+
+   O `.wav` fica de fora DE PROPÓSITO: ninguém guarda a discoteca em WAV, e
+   toda pasta de jogo tem dezenas deles. Foi assim que a estante virou os
+   efeitos sonoros do Bloons TD 5. O `.wav` continua sendo áudio para todo o
+   resto do app — é tocável e aparece na estante quando está numa raiz de
+   verdade; o que ele não faz é ELEGER uma pasta como raiz.
+
+   Idem `.shn`/`.ape`, que são de arquivo morto e não de coleção montada. */
+static const char *EXT_PROVA[] = {
+    ".mp3", ".flac", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".wma",
+    NULL
+};
+
+static bool prova_de_musica(const char *name)
+{
+    return name && in_ext_list(name, EXT_PROVA);
 }
 
 /* Tem algum arquivo de áudio aqui dentro? Para no primeiro. `orcamento`
@@ -493,7 +529,7 @@ static bool tem_audio(const char *dir, int prof, int *orcamento)
         if (isdir == 1) {
             if (nsubs < 16 && !eh_sistema(nome))
                 snprintf(subs[nsubs++], MAX_NAME_LEN, "%s", nome);
-        } else if (isdir == 0 && audio_ext(nome)) {
+        } else if (isdir == 0 && prova_de_musica(nome)) {
             achou = true;
         }
     }
@@ -530,7 +566,32 @@ int library_discover(Library *lib)
         }
         dir_close(dev);
 
+        /* Os nomes ÓBVIOS primeiro. Não é otimização: é ordem de preferência.
+           Num cartão com `music/` e uma pasta de jogo, as duas têm áudio
+           dentro, e quem for sondado primeiro é quem vira raiz — a ordem do
+           diretório é alfabética, então "data" ganhava de "music" sempre.
+           Aqui a discoteca ganha por ser discoteca. */
+        static const char *OBVIOS[] = {
+            "music", "Music", "MUSIC", "musica", "musicas",
+            "Musica", "Musicas", "Música", "Músicas", "songs", "Songs",
+            NULL
+        };
+        for (int o = 0; OBVIOS[o] && lib->nroots < MAX_ROOTS; o++) {
+            for (int j = 0; j < nc; j++) {
+                if (strcasecmp(cands[j], OBVIOS[o]) != 0) continue;
+                if (!cands[j][0]) break;          /* já consumido */
+                char cam[MAX_PATH_LEN];
+                path_join(cam, sizeof(cam), devs[i], cands[j]);
+                int orc = 400;
+                if (tem_audio(cam, 3, &orc) && library_add_root(lib, cam) >= 0)
+                    achadas++;
+                cands[j][0] = '\0';               /* não sondar de novo abaixo */
+                break;
+            }
+        }
+
         for (int j = 0; j < nc && lib->nroots < MAX_ROOTS; j++) {
+            if (!cands[j][0]) continue;
             char cam[MAX_PATH_LEN];
             path_join(cam, sizeof(cam), devs[i], cands[j]);
             if (lib->progress)
@@ -554,8 +615,11 @@ int library_scan(Library *lib)
     int primeira = lib->nroots;
     for (int i = 0; i < lib->nroots; i++) {
         ScanRoot *r = &lib->roots[i];
-        r->opened = dir_exists(r->path);
-        if (!r->opened) continue;
+        int erro = 0;
+        DirIter *d = dir_open_err(r->path, &erro);
+        if (!d) { r->err = erro; continue; }
+        dir_close(d);
+        r->opened = true;
         scan_dir(lib, i, r->path, "", 0);
     }
 
@@ -567,8 +631,11 @@ int library_scan(Library *lib)
         library_discover(lib);
         for (int i = primeira; i < lib->nroots; i++) {
             ScanRoot *r = &lib->roots[i];
-            r->opened = dir_exists(r->path);
-            if (!r->opened) continue;
+            int erro = 0;
+            DirIter *d = dir_open_err(r->path, &erro);
+            if (!d) { r->err = erro; continue; }
+            dir_close(d);
+            r->opened = true;
             scan_dir(lib, i, r->path, "", 0);
         }
     }

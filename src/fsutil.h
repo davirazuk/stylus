@@ -10,6 +10,19 @@
    arquivo e nada explicava. Devolve o comprimento escrito. */
 size_t path_join(char *out, size_t cap, const char *parent, const char *child);
 
+/* Garante "/" depois de ":" em caminhos de dispositivo. Alguns firmwares
+   recusam "ux0:music" mas aceitam "ux0:/music". */
+void path_normalize(char *s);
+
+/* Escreve em `out` a OUTRA grafia do mesmo caminho de dispositivo:
+   "ux0:music" <-> "ux0:/music". Devolve 1 se escreveu, 0 quando não há outra
+   forma (sem "dev:", ou só o dispositivo, ou não coube).
+
+   Existe porque o firmware deste aparelho aceita uma das duas e recusa a
+   outra — e qual das duas não se descobre lendo código. O `dir_open_err`
+   tenta a que veio e, se falhar, esta. Ver a nota lá. */
+int path_outra_forma(char *out, size_t cap, const char *path);
+
 /* Tira barras do fim (menos a que faz parte de "ux0:/"), no lugar. */
 void path_trim_slash(char *s);
 
