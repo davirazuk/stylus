@@ -1905,6 +1905,30 @@ static void draw_recs(Ui *u, Library *lib, Player *p)
 
 enum { CC_KEY = 0, CC_SECRET, CC_USER, CC_ENTRAR, CC_SAIR, CC_N };
 
+/* A GEOMETRIA DAS LINHAS, num lugar só.
+
+   O desenho precisa dela para pintar, e o toque precisa dela para acertar o
+   alvo. Escritas duas vezes, elas se separam na primeira vez que alguém
+   mexer no espaçamento — e o sintoma é o pior tipo: a tela fica certa e o
+   dedo passa a marcar a linha de cima. */
+static void conta_linha(int i, float *x, float *y, float *w, float *h)
+{
+    const float rh = 38.0f;
+    if (x) *x = PAD_X;
+    if (w) *w = SCRW - PAD_X - 250.0f;
+    if (y) *y = 176.0f + (float)i * rh - 2.0f;
+    if (h) *h = rh - 4.0f;
+}
+
+static void qobuz_linha(int i, float *x, float *y, float *w, float *h)
+{
+    const float rh = 44.0f;
+    if (x) *x = PAD_X;
+    if (w) *w = SCRW - 2 * PAD_X;
+    if (y) *y = 186.0f + (float)i * rh - 4.0f;
+    if (h) *h = rh - 8.0f;
+}
+
 /* Mostra o começo e o fim e come o meio: dá para conferir que a colagem foi
    a certa sem estampar a credencial inteira na tela de quem estiver ao lado. */
 static void mascara(const char *v, char *out, size_t cap)
@@ -1966,7 +1990,7 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
         float sc = fila > 999 ? 1.10f : 1.55f;
         int nw = text_w(u, sc, num);
         text(u, (int)(dcx - nw / 2.0f), (int)(dcy + 8), COL_AMBER_BRIGHT, sc, num);
-        const char *leg = fila == 1 ? "escuta" : "escutas";
+        const char *leg = fila == 1 ? "play" : "plays";
         int lw = text_w(u, 0.50f, leg);
         text(u, (int)(dcx - lw / 2.0f), (int)(dcy + 32), COL_TEXT_DIM, 0.50f, leg);
 
@@ -1991,18 +2015,19 @@ static void draw_conta(Ui *u, Library *lib, Player *p)
     static const char *ROT[CC_N] = {
         "API key", "API secret", "username", "sign in", "sign out"
     };
-    float x0 = PAD_X, w = SCRW - PAD_X - 250.0f;
-    float y0 = 176.0f, rh = 38.0f;
+    float x0, w, rh = 38.0f, y0 = 176.0f;
+    conta_linha(0, &x0, NULL, &w, NULL);
     /* o painel: dá aos campos a mesma leitura de objeto que o resto do app tem */
     vita2d_draw_rectangle(x0, y0 - 8, w, CC_N * rh + 12, COL_CARD);
     vita2d_draw_rectangle(x0, y0 - 8, w, 1, RGBA8(255, 170, 40, 40));
 
     for (int i = 0; i < CC_N; i++) {
-        float y = y0 + i * rh;
+        float y = y0 + i * rh, ly, lh;
+        conta_linha(i, NULL, &ly, NULL, &lh);
         bool sel = (i == u->conta_sel);
         if (sel) {
-            vita2d_draw_rectangle(x0, y - 2, w, rh - 4, TINT_SEL_ROW);
-            vita2d_draw_rectangle(x0, y - 2, 2, rh - 4, COL_AMBER);
+            vita2d_draw_rectangle(x0, ly, w, lh, TINT_SEL_ROW);
+            vita2d_draw_rectangle(x0, ly, 2, lh, COL_AMBER);
         }
         text(u, (int)x0 + 12, (int)(y + 16), sel ? COL_AMBER : COL_TEXT, 0.58f, ROT[i]);
 
@@ -2147,11 +2172,12 @@ static void draw_qobuz(Ui *u, Library *lib, Player *p)
         };
         float y0 = 186.0f, rh = 44.0f;
         for (int i = 0; i < QC_N; i++) {
-            float y = y0 + i * rh;
+            float y = y0 + i * rh, lx, ly, lw, lh;
+            qobuz_linha(i, &lx, &ly, &lw, &lh);
             bool sel = (i == u->qb_sel);
             if (sel) {
-                vita2d_draw_rectangle(PAD_X, y - 4, SCRW - 2 * PAD_X, rh - 8, TINT_SEL_ROW);
-                vita2d_draw_rectangle(PAD_X, y - 4, 2, rh - 8, COL_AMBER);
+                vita2d_draw_rectangle(lx, ly, lw, lh, TINT_SEL_ROW);
+                vita2d_draw_rectangle(lx, ly, 2, lh, COL_AMBER);
             }
             text_elided(u, (int)PAD_X + 12, (int)(y + 16),
                         sel ? COL_AMBER : COL_TEXT, 0.56f, SCRW * 0.55f, ROT[i]);
@@ -2876,6 +2902,28 @@ int ui_handle_input(Ui *u)
         if (edge & (SCE_CTRL_TRIANGLE | SCE_CTRL_CIRCLE)) u->jump_open = false;
         if (edge & SCE_CTRL_CROSS) { u->jump_open = false; action = 19; }
         if (edge & SCE_CTRL_START) return -1;
+
+        /* A RÉGUA ACEITA O DEDO.
+
+           Ela desenha 27 células grandes, numa grade, com a letra escolhida
+           acesa — a coisa mais parecida com um botão que este app tem. E
+           ignorava o toque: a função voltava aqui antes de qualquer código
+           de toque rodar. Uma tela cheia de alvos que não respondem ensina
+           que a tela inteira não responde. Um toque marca a letra E vai,
+           que é o que o dedo espera de uma grade assim. */
+        if (tap_released(u)) {
+            float bw = (SCRW - 2 * PAD_X) / 9.0f;
+            for (int i = 0; i < 27; i++) {
+                float x = PAD_X + (i % 9) * bw;
+                float y = 140.0f + (i / 9) * 74.0f - 30.0f;
+                if (!in_rect(u->frente.x, u->frente.y, x, y, bw - 8, 46))
+                    continue;
+                u->jump_letter = i;
+                u->jump_open = false;
+                action = 19;
+                break;
+            }
+        }
         return action;
     }
     if (u->view == VIEW_SHELF) {
@@ -2923,6 +2971,27 @@ int ui_handle_input(Ui *u)
         /* qualquer outra tecla desarma: confirmar tem que exigir a MESMA */
         if (armed_before && action && action != 17) u->pl_armed = false;
     } else if (u->view == VIEW_CONTA) {
+        /* O DEDO ESCOLHE E ATIVA.
+
+           Tocar numa linha marca a linha E dispara o mesmo caminho do [X].
+           Ele SINTETIZA o botão em vez de repetir o que a ativação faz: o
+           que acontece ao entrar numa conta, abrir o teclado ou sair mora
+           logo abaixo, num lugar só, e uma segunda cópia aqui se separaria
+           dela no primeiro ajuste.
+
+           Antes destas linhas, um toque aqui caía no ramo das listas lá
+           embaixo e ia para o deck TOCANDO uma playlist — mexer numa senha
+           não pode tocar música. */
+        if (tap_released(u)) {
+            for (int i = 0; i < CC_N; i++) {
+                float x, y, w, h;
+                conta_linha(i, &x, &y, &w, &h);
+                if (!in_rect(u->frente.x, u->frente.y, x, y, w, h)) continue;
+                u->conta_sel = i;
+                edge |= SCE_CTRL_CROSS;
+                break;
+            }
+        }
         if (edge & SCE_CTRL_UP)   { if (--u->conta_sel < 0) u->conta_sel = CC_N - 1; action = 1; }
         if (edge & SCE_CTRL_DOWN) { if (++u->conta_sel >= CC_N) u->conta_sel = 0; action = 1; }
         if (edge & SCE_CTRL_TRIANGLE) { u->view = VIEW_SHELF; action = 10; }
@@ -3012,6 +3081,18 @@ int ui_handle_input(Ui *u)
                 action = valeu ? 21 : 1;
             }
         } else if (!qc->configured) {
+            /* mesma ideia da tela de conta: o toque marca a linha e sintetiza
+               o [X], para a ativação continuar tendo um dono só */
+            if (tap_released(u)) {
+                for (int i = 0; i < QC_N; i++) {
+                    float x, y, w, h;
+                    qobuz_linha(i, &x, &y, &w, &h);
+                    if (!in_rect(u->frente.x, u->frente.y, x, y, w, h)) continue;
+                    u->qb_sel = i;
+                    edge |= SCE_CTRL_CROSS;
+                    break;
+                }
+            }
             if (edge & SCE_CTRL_UP)   { if (--u->qb_sel < 0) u->qb_sel = QC_N - 1; action = 1; }
             if (edge & SCE_CTRL_DOWN) { if (++u->qb_sel >= QC_N) u->qb_sel = 0; action = 1; }
             if (edge & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE)) {

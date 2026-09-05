@@ -44,6 +44,8 @@ PT = {
     "tocar", "tocando", "pausa", "buscar", "buscando", "baixar", "senha",
     "usuário", "usuario", "segredo", "chave", "sorteio", "soneca", "letra",
     "volta", "volte", "ponha", "escreva", "aperte", "veja", "entre",
+    "escuta", "escutas", "fila", "conta", "tela", "aparelho", "rede",
+    "sulco", "lado", "lados", "capa", "ouvir", "jogo", "jogando",
 }
 
 # Literais que são DADO, e não texto de tela: nomes de pasta que a descoberta

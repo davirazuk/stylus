@@ -32,7 +32,8 @@ void preview_player_set(Player *p, const Album *a, const Track *t, PlayerState s
                         bool shuf, const char *kind, long rate_file, int bits_file,
                         long rate_out);
 
-enum { V_ESTANTE = 0, V_DECK };
+enum { V_ESTANTE = 0, V_DECK, V_RECS, V_PLAYLISTS, V_HANDOFF,
+       V_CONTA, V_QOBUZ };
 
 static int falhas = 0;
 
@@ -147,6 +148,39 @@ int main(void)
         ok(f2 > 0.02f && f2 < 0.08f,
            "deck: e ele anda 9 s numa faixa de 200 s (ou seja: é fino)");
         player_destroy(p);
+    }
+
+    /* ---- as telas que NÃO são lista ----
+
+       Isto trava um defeito de verdade: o ramo do toque para listas era um
+       `else` solto, então CONTA e QOBUZ caíam nele. Um toque no formulário
+       do last.fm ia para o deck e COMEÇAVA A TOCAR uma playlist (ação 12).
+       Mexer numa senha não pode tocar música. */
+    {
+        /* chega à CONTA a partir da estante: triângulo abre o deck, R1 a
+           playlist... o caminho de tecla é longo; aqui basta empurrar a view
+           pelo mesmo caminho que o app usa. */
+        /* estante -[R1]-> playlists -[R1]-> conta */
+        hostctrl_press(SCE_CTRL_TRIANGLE);   /* volta para a estante */
+        ui_handle_input(u);
+        nada(u);
+        for (int i = 0; i < 2; i++) {
+            hostctrl_press(SCE_CTRL_R1);
+            ui_handle_input(u);
+            nada(u);
+        }
+        if (ui_view_dbg(u) == V_CONTA) {
+            /* um toque no meio do painel de campos */
+            nada(u);
+            hosttouch_tap(200, 200);
+            ui_handle_input(u);
+            hosttouch_tap(-1, -1);
+            int ac = ui_handle_input(u);
+            ok(ac != 12 && ui_view_dbg(u) == V_CONTA,
+               "conta: um toque no formulário NÃO pula para o deck tocando");
+        } else {
+            printf("  \033[33m—\033[0m PULA: não cheguei à tela de conta\n");
+        }
     }
 
     ui_destroy(u);
