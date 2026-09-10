@@ -18,9 +18,21 @@ export VITASDK
 export PATH="$VITASDK/bin:$PATH"
 echo "VitaSDK: $VITASDK"
 
+# O carimbo do relatório sai de __DATE__/__TIME__ dentro do library.c, e o make
+# só recompila quem mudou. SINTOMA: o relatório no cartão dizia "build
+# 01:55:06" num binário construído às 02:46, e a sessão seguinte gastou tempo
+# checando se o aparelho estava com uma versão velha (não estava — o eboot.bin
+# era byte a byte o mesmo). Um carimbo que mente sobre a própria idade
+# desqualifica o relatório inteiro.
+touch src/library.c
+
 mkdir -p build
 cd build
 cmake .. "$@"
-make -j"$(nproc 2>/dev/null || echo 2)"
+# `cmake --build` e nao `make`: o diretorio de build guarda o gerador com que
+# foi criado, e um build/ feito com Ninja nao tem Makefile nenhum — o `make`
+# morria com "Nenhum alvo indicado e nenhum arquivo make encontrado" e levava
+# junto o pro-cartao.sh, que chama este script. Assim vale para os dois.
+cmake --build . -j "$(nproc 2>/dev/null || echo 2)"
 echo "═══ construido ═══"
 ls -la *.vpk 2>/dev/null || ls -la *.self

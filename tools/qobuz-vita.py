@@ -83,25 +83,38 @@ def erro(m):
 
 
 def cliente():
-    """Autentica com o config do qobuz-dl. Devolve (Client, DEFAULT)."""
-    if not os.path.isfile(CONFIG):
-        erro(f"sem {CONFIG} — rode `stylus qobuz instalar` primeiro")
-        return None, None
-    logging.getLogger("qopy").setLevel(logging.ERROR)
-    cfg = configparser.ConfigParser()
-    cfg.read(CONFIG)
-    d = cfg["DEFAULT"]
-    try:
-        from qobuz_dl.qopy import Client
-    except ImportError:
-        erro("falta o pacote python qobuz-dl")
-        return None, None
-    # PEGADINHA: `secrets` no config é uma STRING com vírgulas; o qopy espera
-    # uma LISTA. Passar a string crua dá InvalidAppSecretError.
-    secrets = [s for s in d["secrets"].split(",") if s]
-    cl = Client(None, None, d["app_id"], secrets, skip_auth=True)
-    cl.auth_with_token(d["user_id"], d["user_auth_token"])
-    return cl, d
+    """O cliente do Qobuz. Devolve (Cliente, config-ou-None).
+
+    ERA `qobuz_dl.qopy`, E DEIXOU DE SER.
+
+    O pacote continua instalado nesta máquina e continua funcionando; o que
+    incomodava não era ele quebrar, era a ordem: NADA aqui rodava antes de
+    alguém instalar e logar um segundo programa. Isso contradiz o pedido nº 7
+    do dono ("no pc things", standalone) e some sem substituto no dia em que
+    ele formatar a máquina.
+
+    O `tools/qobuz_api.py` fala a mesma API — a MESMA que o `src/qobuz.c` fala
+    no aparelho, e a mesma que o SpotiFLAC fala no desktop dele (conferido
+    linha a linha; ver o cabeçalho de lá) — e vai buscar app_id e segredo no
+    tocador web do Qobuz quando não houver config nenhum.
+
+    O TOKEN DA CONTA continua vindo do config quando existe: ele identifica a
+    pessoa, não o aplicativo, e não há de onde raspar isso."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import qobuz_api
+    cl = qobuz_api.Cliente()
+    plano = cl.conta()
+    if not plano:
+        erro("sem token de conta do Qobuz — a busca funciona, baixar não.")
+        erro(f"  entre uma vez no Qobuz e deixe o token em {CONFIG}")
+    else:
+        print(f"conta: {plano}   (chaves: {cl.origem})")
+    cfg = None
+    if os.path.isfile(CONFIG):
+        cp = configparser.ConfigParser()
+        cp.read(CONFIG)
+        cfg = cp["DEFAULT"]
+    return cl, cfg
 
 
 # Quanto cada formato ocupa por MINUTO de música, medido na prática:
@@ -145,8 +158,7 @@ def limpa(nome):
 
 
 def cmd_buscar(cl, termos, limite):
-    res = cl.search_albums(" ".join(termos), limite)
-    itens = res.get("albums", {}).get("items", [])
+    itens = cl.buscar_albuns(" ".join(termos), limite)
     if not itens:
         print("nada encontrado.")
         return 0
@@ -233,7 +245,7 @@ def cmd_baixar(cl, album_id, formato, destino, limite_faixas, dry_run,
     # Um id que não existe (ou que a loja aposentou) devolvia um traceback de
     # requests na cara de quem usa. O id vem de `buscar`, e ele muda.
     try:
-        meta = cl.get_album_meta(album_id)
+        meta = cl.album(album_id)
     except Exception as e:
         codigo = getattr(getattr(e, "response", None), "status_code", None)
         if codigo == 404:
@@ -321,7 +333,7 @@ def cmd_baixar(cl, album_id, formato, destino, limite_faixas, dry_run,
             ok += 1
             continue
         try:
-            r = cl.get_track_url(f["id"], fmt_id)
+            r = cl.url_do_arquivo(f["id"], fmt_id)
             url = r.get("url")
         except Exception as e:
             erro(f"{nome}: sem URL ({type(e).__name__})")
@@ -385,10 +397,9 @@ def main():
             print(f"  livre no disco: {livre:.0f} MB ({livre / 1024:.2f} GB)")
         return 0
 
-    cl, _ = cliente()
+    cl, _ = cliente()      # já anuncia a conta e de onde vieram as chaves
     if cl is None:
         return 1
-    print(f"conta: {getattr(cl, 'label', '?')}")
 
     if args.cmd == "buscar":
         return cmd_buscar(cl, args.termos, args.limite)

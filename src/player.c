@@ -1,6 +1,7 @@
 #include "player.h"
 
 #include "decoder.h"
+#include "paths.h"
 #include <SDL2/SDL.h>
 
 #include <pthread.h>
@@ -69,6 +70,8 @@ struct Player {
 };
 
 static SDL_AudioDeviceID dev;
+/* o formato com que o `dev` está ABERTO agora — ver a nota em open_track() */
+static int dev_rate, dev_ch;
 static Player *g_player;
 
 /* quadros ainda no anel, isto é: decodificados e ainda não ouvidos */
@@ -157,6 +160,10 @@ static void sdl_cb(void *udata, Uint8 *stream, int len)
             if (p->sleep_gain <= 0.0f) {
                 p->sleep_gain = 0.0f;
                 p->state = PLAYER_PAUSED;
+                /* Pausar o dispositivo de áudio: sem isto, o callback
+                   continua sendo chamado ~43 vezes por segundo para
+                   escrever silêncio — trabalho gratuito no DMA. */
+                SDL_PauseAudioDevice(dev, 1);
             }
         }
     }
@@ -215,8 +222,18 @@ static int open_track(Player *p, const Track *t)
     p->out_channels = p->dfmt.channels;
     p->out_enc_need = (size_t)p->dfmt.channels * 2; /* int16 sempre */
 
-    /* reconfigura o device SDL se o formato mudou */
-    SDL_CloseAudioDevice(dev);
+    /* SÓ REABRE O DEVICE QUANDO O FORMATO MUDA.
+
+       O comentário aqui sempre disse "reconfigura o device SDL se o formato
+       mudou" — e o código não conferia nada: fechava e reabria a porta de
+       áudio a CADA faixa. Numa coleção como esta, 3.728 MP3 todos em
+       44,1 kHz estéreo, o formato nunca muda; o que mudava, entre uma faixa e
+       a seguinte, era a porta de áudio do Vita sendo derrubada e levantada de
+       novo. Isso não é de graça no aparelho: é um buraco e um estalo em toda
+       virada de faixa.
+
+       Reabrir continua necessário quando a taxa ou o número de canais
+       mudam de verdade (um FLAC de 96k depois de um MP3 de 44,1). */
     SDL_AudioSpec want, have;
     SDL_zero(want);
     want.freq = (int)p->dfmt.rate;
@@ -225,24 +242,73 @@ static int open_track(Player *p, const Track *t)
     want.samples = 1024;
     want.callback = sdl_cb;
     want.userdata = p;
-    dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (dev == 0) {
-        snprintf(p->last_error, sizeof(p->last_error), "the audio device would not open");
-        dec_close(p->dec);
-        p->dec = NULL;
-        return -1;
+
+    if (dev == 0 || dev_rate != want.freq || dev_ch != (int)want.channels) {
+        if (dev) SDL_CloseAudioDevice(dev);
+        dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+        if (dev == 0) {
+            dev_rate = dev_ch = 0;
+            snprintf(p->last_error, sizeof(p->last_error),
+                     "the audio device would not open");
+            dec_close(p->dec);
+            p->dec = NULL;
+            return -1;
+        }
+        dev_rate = have.freq;
+        dev_ch   = have.channels;
+        /* O que o APARELHO recebeu, que não é sempre o que se pediu: o Vita
+           sai em 16 bits e num punhado de taxas, e um FLAC de 96k/24 é
+           reamostrado e reduzido antes de virar som. A tela diz isso — a tese
+           do projeto é não mentir sobre o caminho do sinal. */
+        p->hw_rate = have.freq;
+        p->hw_channels = have.channels;
+
+        /* QUAL PORTA DE ÁUDIO O SISTEMA ESCOLHEU — escrito no cartão.
+
+           O SDL2 do Vita decide sozinho, e decide pela TAXA: ele chama
+           sceAudioOutOpenPort com BGM quando a taxa é <= 47999 e com MAIN
+           quando passa disso. Só a porta BGM continua tocando com o app em
+           segundo plano — na MAIN o som morre ao apertar o PS.
+
+           A tela já mostrava "background: yes/no", mas a tela some e ninguém
+           anota. "o segundo plano não funciona" é um pedido antigo, e sem
+           esta linha não dá para saber se a porta veio errada ou se o
+           problema é outro. Uma linha por abertura de device, e o device só
+           reabre quando o formato muda. */
+        {
+            const char *cam = STYLUS_DATA_DIR "/audio.txt";
+            long tam = 0;
+            FILE *g = fopen(cam, "rb");
+            if (g) { fseek(g, 0, SEEK_END); tam = ftell(g); fclose(g); }
+            FILE *f = fopen(cam, tam > 4096 ? "w" : "a");
+            if (f) {
+                long teto = dec_max_rate();
+                fprintf(f, "device open  pedido %d Hz/%dch  obtido %d Hz/%dch"
+                           "  -> porta %s (teto %ld)\n",
+                        want.freq, (int)want.channels,
+                        have.freq, (int)have.channels,
+                        (teto > 0 && have.freq <= teto) ? "BGM" : "MAIN",
+                        teto);
+                fclose(f);
+            }
+        }
     }
-    /* O que o APARELHO recebeu, que não é sempre o que se pediu: o Vita sai
-       em 16 bits e num punhado de taxas, e um FLAC de 96k/24 é reamostrado e
-       reduzido antes de virar som. A tela diz isso — a tese do projeto é não
-       mentir sobre o caminho do sinal. */
-    p->hw_rate = have.freq;
-    p->hw_channels = have.channels;
 
     /* faixa nova, anel vazio: sem isto o resto do PCM da anterior toca por
-       cima do começo desta, e o relógio já conta a nova */
+       cima do começo desta, e o relógio já conta a nova.
+
+       Com o device REAPROVEITADO, o callback pode estar lendo o anel neste
+       exato instante — antes ele não podia, porque o device acabara de ser
+       fechado. O lock é o que faltava passar a existir junto com o
+       reaproveitamento. */
+    if (dev) SDL_LockAudioDevice(dev);
     p->ring_head = p->ring_tail = 0;
     p->decoded_frames = 0;
+    if (dev) SDL_UnlockAudioDevice(dev);
+
+    /* o dec_length() FORA do lock: ele lê do cartão, e segurar o callback de
+       áudio durante uma leitura de cartão é fabricar o mesmo buraco que se
+       acabou de tirar */
     {
         long long len = dec_length(p->dec);
         p->track_frames = len > 0 ? len : 0;
@@ -255,7 +321,11 @@ static int open_track(Player *p, const Track *t)
 static void close_stream(Player *p)
 {
     if (p->dec) { dec_close(p->dec); p->dec = NULL; }
+    /* zerar o formato JUNTO com o device: quem decide reabrir compara
+       dev_rate/dev_ch, e um par sobrevivente de um device já fechado faria a
+       próxima faixa achar que a porta certa ainda está aberta */
     if (dev) { SDL_CloseAudioDevice(dev); dev = 0; }
+    dev_rate = dev_ch = 0;
     p->ring_head = p->ring_tail = 0;
 }
 
@@ -308,9 +378,36 @@ static void *player_thread(void *arg)
 
         /* decodifica em pedaços, respeitando o espaço do ring */
         while (p->thread_run && p->state == PLAYER_PLAYING) {
-            size_t avail = RING_SIZE - ring_filled(p);
-            if (avail < sizeof(buf)) {
-                SDL_Delay(1);
+            /* O ANEL NUNCA PODE ENCHER ATÉ O FIM — daí o "- 1".
+
+               SINTOMA, do dono: "they play like weird skipping". Num anel de
+               potência de dois, CHEIO e VAZIO são o MESMO estado: head ==
+               tail. O ring_filled() é `(head - tail) & RING_MASK`, então com o
+               anel cheiíssimo ele devolve 0 — "vazio".
+
+               A guarda antiga deixava chegar exatamente lá: ela só exigia
+               `RING_SIZE - filled >= 8192`, ou seja, permitia produzir com
+               filled == RING_SIZE - 8192, e o dec_read devolve justamente
+               8192. RING_SIZE é 1 MiB e 8192 cabe nele 128 vezes redondas, de
+               modo que essa igualdade não é canto raro: é o regime NORMAL
+               assim que o anel se enche, no começo de cada faixa.
+
+               O que se ouvia: o callback via "vazio", mandava SILÊNCIO e não
+               andava o tail; o produtor via 1 MiB livre e continuava
+               escrevendo POR CIMA do que ainda não tocou. Quando o tail
+               voltava a andar, o áudio de lá já era de segundos depois — um
+               pulo à frente, e de novo, e de novo.
+
+               Reservar um byte separa os dois estados para sempre: com
+               filled <= RING_SIZE - 1, head == tail passa a significar
+               vazio e mais nada. */
+            size_t livre = RING_SIZE - 1 - ring_filled(p);
+            if (livre < sizeof(buf)) {
+                /* 10 ms em vez de 1: o anel tem 5,8 s de folga, e acordar
+                   mil vezes por segundo para constatar que não há nada a
+                   fazer é trabalho gratuito no scheduler. 10 ms reduz
+                   wakeups 10x sem risco de underflow audível. */
+                SDL_Delay(10);
                 continue;
             }
             long got = dec_read(p->dec, buf, sizeof(buf));
@@ -501,6 +598,18 @@ void player_pause(Player *p)
     pthread_mutex_unlock(&p->mtx);
 }
 
+void player_mute(Player *p)
+{
+    /* Não muda o estado: o decoder continua preenchendo o anel.
+       Apenas silencia a saída — usado pela cerimônia. */
+    if (dev) SDL_PauseAudioDevice(dev, 1);
+}
+
+void player_unmute(Player *p)
+{
+    if (dev) SDL_PauseAudioDevice(dev, 0);
+}
+
 void player_toggle(Player *p)
 {
     pthread_mutex_lock(&p->mtx);
@@ -521,6 +630,29 @@ void player_next(Player *p)
     if (p->nslots > 0) {
         p->cur++;
         if (p->cur >= p->nslots) p->cur = 0;
+        close_stream(p);
+        load_next_ready(p);
+        pthread_cond_broadcast(&p->cond);
+    }
+    pthread_mutex_unlock(&p->mtx);
+}
+
+/* PULA PARA UMA FAIXA PELO ÍNDICE.
+
+   Existia `player_next` e `player_prev` e mais nada — então a lista de faixas
+   que o deck desenha ao lado do disco era só DESENHO: para chegar à faixa 20
+   de um show de 35 eram dezenove apertos, cada um abrindo e fechando um
+   arquivo. Uma lista que a tela mostra e o dedo não alcança é a mesma família
+   do módulo que a barra desenhava e ninguém acionava.
+
+   Sai daqui e não de um `while(next)` na tela: o `cur` é protegido por mutex
+   e mexer nele de fora, dezenove vezes seguidas, é dezenove trocas de faixa
+   de verdade — com o decodificador abrindo cada uma. */
+void player_goto(Player *p, int idx)
+{
+    pthread_mutex_lock(&p->mtx);
+    if (p->nslots > 0 && idx >= 0 && idx < p->nslots && idx != p->cur) {
+        p->cur = idx;
         close_stream(p);
         load_next_ready(p);
         pthread_cond_broadcast(&p->cond);
@@ -689,12 +821,24 @@ void player_spectrum(Player *p, float *out, int nbands)
             s2 = s1;
             s1 = s0;
         }
-        float mag = sqrtf(s1 * s1 + s2 * s2 - coeff * s1 * s2) / 512.0f;
+        float disc = s1 * s1 + s2 * s2 - coeff * s1 * s2;
+        /* NaN NÃO É "< 0". Toda comparação com NaN é falsa, então o clamp
+           antigo (`if (disc < 0) disc = 0;`) deixava um NaN passar INTEIRO —
+           e os de baixo (`v < 0`, `v > 1`) também. Bastava uma amostra
+           estragada chegando do decodificador para `out[b]` sair NaN, virar
+           altura de barra e ir parar numa chamada do vita2d: é assim que se
+           trava a GPU do Vita, e a trava leva o sistema junto.
+
+           Escrito ao contrário (`!(x > 0)`), o NaN cai no ramo do conserto,
+           que é exatamente o que se quer. Este é o defeito que a "correção"
+           anterior não pegou: ela clampeou o negativo, não o NaN. */
+        if (!(disc > 0.0f)) disc = 0.0f;
+        float mag = sqrtf(disc) / 512.0f;
         /* em dB: linear, o grave come a tela inteira e o resto é uma linha */
         float db = 20.0f * log10f(mag + 1e-6f);
         float v = (db + 60.0f) / 60.0f;
-        if (v < 0) v = 0;
-        if (v > 1) v = 1;
+        if (!(v > 0.0f))      v = 0.0f;
+        else if (!(v < 1.0f)) v = 1.0f;
         out[b] = v;
     }
 }

@@ -26,6 +26,11 @@ int  ime_abrir(const char *titulo, const char *inicial, size_t max, bool senha);
    confirmaria a faixa marcada atrás dele. */
 bool ime_aberto(void);
 
+/* O rc do último `ime_abrir` que NÃO abriu, 0 quando abriu. A tela mostra
+   isto: um teclado que não aparece e não explica já custou o recurso inteiro
+   do Qobuz, que parecia problema de rede e era teclado. */
+int  ime_erro(void);
+
 /* A cada quadro: 0 ainda digitando, 1 confirmou (texto em `out`),
    -1 cancelou. */
 int  ime_poll(char *out, size_t cap);

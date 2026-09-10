@@ -4,340 +4,179 @@
 #include <stdbool.h>
 #include <string.h>
 
-#ifdef __vita__
-/* ------------------------- Caminho Vita -------------------------
+/* O MOTIVO DA ÚLTIMA FALHA — comum ao caminho do Vita e ao do PC.
 
-   Sobe do PRÓPRIO aparelho. O app é standalone: quem ouve no Vita não
-   deveria precisar de um PC ligado para a escuta contar.
+   Mora aqui, e não em cada chamador, porque era isso que faltava: cada tela
+   inventava a própria frase ("is the Wi-Fi on?") para causas que não tinham
+   nada a ver uma com a outra. Só é limpo quando uma chamada dá CERTO; assim
+   a frase da falha que matou a rede sobrevive às tentativas seguintes, que
+   voltam memorizadas sem chegar a falar com ninguém. */
+static char g_net_motivo[128];
+static int  g_net_sistema;   /* código cru do sistema (0x8043xxxx no Vita) */
+static int  g_net_http;      /* último status HTTP lido, 0 se nenhum */
 
-   O risco desta cadeia (sysmodule → sceNet → sceNetCtl → sceSsl → sceHttp)
-   não é "não scrobblou" — é travar o aparelho. Três regras contêm isso:
+const char *net_motivo(void)       { return g_net_motivo; }
+int         net_erro_sistema(void) { return g_net_sistema; }
+int         net_http_ultimo(void)  { return g_net_http; }
 
-     1. NADA acontece no arranque. A subida é PREGUIÇOSA: a rede só é
-        iniciada na primeira vez que existe algo para enviar E existe
-        credencial. Um app sem last.fm configurado nunca toca em rede, e
-        portanto nunca pode ser travado por ela.
-     2. Falhou de vez, morreu. Se a inicialização não vinga, `g_rede` vai a
-        -1 e NUNCA mais se tenta. Um erro vira uma decepção silenciosa, não
-        um laço de tentativas dentro de um aparelho tocando música.
-     3. Tudo tem prazo. Conexão, envio e leitura têm timeout curto; sem
-        isso, um AP que aceita a conexão e não responde segura a thread
-        para sempre.
+/* Anota e DEVOLVE o código, para caber num `return anota(...)`. */
+/* Percent-encoding. Veio do `qobuz.c`, onde era `static`, quando o SoundCloud
+   passou a montar a mesma busca: duas cópias da mesma regra é por onde elas
+   começam a divergir, e esta é de REDE. */
+void net_urlenc(const char *s, char *out, size_t cap)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    size_t o = 0;
+    if (!out || cap == 0) return;
+    for (; s && *s && o + 4 < cap; s++) {
+        unsigned char c = (unsigned char)*s;
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
+            out[o++] = (char)c;
+        else {
+            out[o++] = '%';
+            out[o++] = hex[c >> 4];
+            out[o++] = hex[c & 15];
+        }
+    }
+    out[o] = '\0';
+}
 
-   Falta de Wi-Fi NÃO mata: `sceNetCtlInetGetState` é conferido a cada
-   tentativa, e "desconectado" devolve -1 sem queimar o caminho — a fila
-   continua no cartão e sai quando a rede voltar.
+static int anota(int codigo, int sistema, const char *frase)
+{
+    g_net_sistema = sistema;
+    snprintf(g_net_motivo, sizeof(g_net_motivo), "%s", frase ? frase : "");
+    return codigo;
+}
 
-   Sobre o HTTPS: a lista de autoridades do Vita é de 2011 e não tem as
-   raízes que assinam o ws.audioscrobbler.com hoje; com a verificação
-   ligada, TODO handshake falha e o recurso simplesmente não existe. Ela é
-   desligada abaixo, de propósito. O que trafega é um scrobble assinado com
-   a chave de sessão do last.fm — nada de senha, e a chave já está no
-   cartão. É uma troca consciente: sem ela, não há scrobble nenhum. */
+/* Deu certo: a frase antiga não pode ficar para trás mentindo. */
+static void deu_certo(int http)
+{
+    g_net_motivo[0] = '\0';
+    g_net_sistema = 0;
+    g_net_http = http;
+}
 
-#include <stdio.h>
+/* ------------------------- UMA PILHA SÓ, E É O CURL -------------------------
+
+   HISTÓRIA CURTA: este arquivo falava sceHttp no aparelho e libcurl no PC.
+   O sceHttp vai pelo sceSsl do sistema, cujo teto é TLS 1.0 — o enum do SDK
+   (SceHttpSslVersion) para em SCE_HTTPS_TLSV1. Medido desta máquina:
+
+     ws.audioscrobbler.com  aceita AES128-SHA    -> e o last.fm SEMPRE funcionou
+     www.qobuz.com          só TLS 1.2 com AEAD  -> e a busca nunca trouxe nada
+     lrclib.net             cert ECDSA/ChaCha20  -> e letra nenhuma apareceu
+
+   A lista bate, uma a uma, com o que funciona e o que não funciona. E o
+   NAVEGADOR NATIVO do aparelho também não abre site nenhum: a mesma
+   assinatura, num programa que não é nosso.
+
+   O que já foi descartado com prova, para ninguém refazer: não é a API (a
+   requisição exata devolve HTTP 200 e 14 KB), não é o parser (a busca de
+   verdade tira 12 álbuns da resposta de verdade), não é o Wi-Fi (o PKGj
+   baixa), não é o teclado (ele abre).
+
+   O vitasdk traz libcurl com OpenSSL para Vita. Usá-lo aqui não SOMA uma
+   segunda pilha — TIRA uma: o PC já era curl, e agora os dois caminhos são o
+   mesmo código, o que faz um teste daqui valer lá.
+
+   Do sceHttp fica o que ele tinha de bom: a subida PREGUIÇOSA (nada de rede
+   no arranque), o "falhou de vez, morreu" e prazo curto em toda etapa. */
+
+#include <curl/curl.h>
 #include <stdlib.h>
 
-#include <psp2/kernel/threadmgr.h>
-#include <psp2/net/http.h>
+#ifdef __vita__
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
 #include <psp2/sysmodule.h>
 
-/* O SDK não declara isto em lugar nenhum, mas o libSceSsl_stub.a exporta. */
-extern int sceSslInit(unsigned int poolSize);
+#define POOL_NET (512 * 1024)
+static char *g_pool;        /* o pool do sceNet vive enquanto o app viver */
 
-#define POOL_NET   (512 * 1024)
-#define POOL_SSL   (256 * 1024)
-#define POOL_HTTP  ( 64 * 1024)
-#define ESPERA_US  (10 * 1000 * 1000)   /* 10 s por etapa */
-
-static int   g_rede;      /* 0 nunca tentou, 1 de pé, -1 morreu de vez */
-static char *g_pool;      /* o pool do sceNet vive enquanto o app viver */
-
-/* Devolve 0 quando dá para falar HTTP. Só é chamada com algo a enviar. */
-static int rede_de_pe(void)
+/* O curl do Vita fala pelos sockets do sceNet: sem isto de pé, todo
+   curl_easy_perform falha antes de tocar na rede. */
+static int sobe_plataforma(void)
 {
-    if (g_rede) return g_rede > 0 ? 0 : -1;
-    g_rede = -1;   /* pessimista desde já: qualquer saída daqui sem sucesso
-                      explícito deixa a rede morta, inclusive um return no
-                      meio que alguém acrescente depois */
-
-    if (sceSysmoduleLoadModule(SCE_SYSMODULE_NET) < 0)   return -1;
-    if (sceSysmoduleLoadModule(SCE_SYSMODULE_HTTP) < 0)  return -1;
-    if (sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS) < 0) return -1;
+    int rc = sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
+    if (rc < 0) return anota(NET_E_MODULO, rc, "the net module did not load");
 
     g_pool = malloc(POOL_NET);
-    if (!g_pool) return -1;
+    if (!g_pool) return anota(NET_E_MODULO, 0, "no memory for the net pool");
 
     SceNetInitParam np;
     np.memory = g_pool;
     np.size   = POOL_NET;
     np.flags  = 0;
-    /* Um retorno negativo aqui costuma ser "já iniciado" (o sistema pode ter
-       subido a pilha por conta própria), e desistir nesse caso perderia o
-       recurso à toa. Quem decide se dá para falar HTTP é o
-       sceHttpCreateTemplate lá embaixo — esse não tem ambiguidade. */
+    /* Negativo aqui costuma ser "já iniciado" — o sistema pode ter subido a
+       pilha sozinho, e desistir nesse caso perderia o recurso à toa. */
     sceNetInit(&np);
     sceNetCtlInit();
-
-    if (sceSslInit(POOL_SSL) < 0)  { /* idem: pode já estar de pé */ }
-    if (sceHttpInit(POOL_HTTP) < 0) { /* idem */ }
-
-    int t = sceHttpCreateTemplate("vitastylus/1.0 (PS Vita)",
-                                  SCE_HTTP_VERSION_1_1, 1);
-    if (t < 0) return -1;           /* aí sim: não há HTTP nesta máquina */
-    sceHttpDeleteTemplate(t);
-
-    sceHttpsDisableOption(SCE_HTTPS_FLAG_SERVER_VERIFY |
-                          SCE_HTTPS_FLAG_CLIENT_VERIFY |
-                          SCE_HTTPS_FLAG_CN_CHECK |
-                          SCE_HTTPS_FLAG_NOT_AFTER_CHECK |
-                          SCE_HTTPS_FLAG_NOT_BEFORE_CHECK |
-                          SCE_HTTPS_FLAG_KNOWN_CA_CHECK);
-
-    g_rede = 1;
     return 0;
 }
 
-/* Tem Wi-Fi AGORA? Conferido a cada envio, e um "não" nunca é definitivo. */
+/* Tem Wi-Fi AGORA? Conferido a cada envio, e um "não" nunca é definitivo:
+   a fila continua no cartão e sai quando a rede voltar. */
 static bool tem_link(void)
 {
     int estado = 0;
     if (sceNetCtlInetGetState(&estado) < 0) return false;
     return estado == SCE_NETCTL_STATE_CONNECTED;
 }
+#else
+static int  sobe_plataforma(void) { return 0; }
+static bool tem_link(void) { return true; }
+#endif
 
-/* Monta e envia um pedido. Devolve o id do pedido (>=0) com a resposta já
-   começada, ou -1. Quem chama é dono de fechar tudo pelo `fecha`.
+static int g_rede;       /* 0 nunca tentou, 1 de pé, -1 morreu de vez */
+static int g_rede_cod;   /* com que código morreu, para repetir a resposta */
 
-   Está fatorado porque GET e POST diferem em três linhas e mais nada — e as
-   outras trinta (prazos, cabeçalhos, a ordem de destruição) são exatamente
-   o tipo de coisa que diverge entre duas cópias e vira um vazamento de
-   conexão que só aparece depois de vinte pedidos. */
-struct Pedido { int tmpl, conn, req; };
+/* Devolve 0 quando dá para falar HTTP. Só é chamada com algo a enviar.
 
-static void fecha(struct Pedido *p)
+   O pessimismo é de propósito: `g_rede` vai a -1 ANTES da tentativa e só
+   volta a 1 com sucesso explícito, de modo que um `return` acrescentado no
+   meio não deixe a rede meio viva. */
+static int rede_de_pe(void)
 {
-    if (p->req  >= 0) sceHttpDeleteRequest(p->req);
-    if (p->conn >= 0) sceHttpDeleteConnection(p->conn);
-    if (p->tmpl >= 0) sceHttpDeleteTemplate(p->tmpl);
-    p->req = p->conn = p->tmpl = -1;
+    if (g_rede) return g_rede > 0 ? 0 : g_rede_cod;
+    g_rede = -1;
+    int r = sobe_plataforma();
+    if (r == 0 && curl_global_init(CURL_GLOBAL_ALL) != 0)
+        r = anota(NET_E_MODULO, 0, "curl did not start");
+    if (r == 0) g_rede = 1;
+    else        g_rede_cod = r;
+    return r;
 }
 
-static int abre(struct Pedido *p, const char *url, int metodo,
-                const char *body, const char *const *headers)
+/* A porta de entrada de TODA chamada: pilha de pé e link presente. */
+static int rede_ok(void)
 {
-    p->tmpl = p->conn = p->req = -1;
-    if (rede_de_pe() != 0) return -1;
-    if (!tem_link())       return -1;
-
-    p->tmpl = sceHttpCreateTemplate("vitastylus/1.0 (PS Vita)",
-                                    SCE_HTTP_VERSION_1_1, 1);
-    if (p->tmpl < 0) return -1;
-    sceHttpSetConnectTimeOut(p->tmpl, ESPERA_US);
-    sceHttpSetSendTimeOut(p->tmpl, ESPERA_US);
-    sceHttpSetRecvTimeOut(p->tmpl, ESPERA_US);
-
-    p->conn = sceHttpCreateConnectionWithURL(p->tmpl, url, 0);
-    if (p->conn < 0) { fecha(p); return -1; }
-
-    unsigned int n = body ? (unsigned int)strlen(body) : 0;
-    p->req = sceHttpCreateRequestWithURL(p->conn, metodo, url, n);
-    if (p->req < 0) { fecha(p); return -1; }
-
-    if (body)
-        sceHttpAddRequestHeader(p->req, "Content-Type",
-                                "application/x-www-form-urlencoded",
-                                SCE_HTTP_HEADER_OVERWRITE);
-    for (int i = 0; headers && headers[i]; i++) {
-        const char *dp = strchr(headers[i], ':');
-        if (!dp) continue;
-        char nome[64];
-        size_t ln = (size_t)(dp - headers[i]);
-        if (ln >= sizeof(nome)) continue;
-        memcpy(nome, headers[i], ln);
-        nome[ln] = '\0';
-        const char *val = dp + 1;
-        while (*val == ' ') val++;
-        sceHttpAddRequestHeader(p->req, nome, val, SCE_HTTP_HEADER_OVERWRITE);
-    }
-
-    if (sceHttpSendRequest(p->req, body, n) < 0) { fecha(p); return -1; }
+    int r = rede_de_pe();
+    if (r != 0) return r;
+    if (!tem_link())
+        return anota(NET_E_SEMLINK, 0, "no Wi-Fi connection right now");
     return 0;
 }
 
-/* Mesmo critério nos dois caminhos: 5xx é falha de servidor (vale insistir
-   depois); 4xx quem chamou examina, porque "recusado" não deve virar um laço
-   de tentativas eternas. */
-static int status_ok(int http) { return http >= 200 && http < 500; }
+/* As opções que TODA transferência quer.
 
-static int corpo_para_buffer(int req, char *resp, int resplen)
+   A verificação de certificado fica DESLIGADA no aparelho, de propósito e
+   pelo mesmo motivo de antes: a lista de autoridades do Vita é de 2011 e não
+   assina o que se usa hoje. Era isso que o sceHttp já fazia com
+   sceHttpsDisableOption; a troca de pilha não muda a escolha. No PC a
+   verificação fica LIGADA — lá não há motivo para abrir mão dela. */
+static void opcoes_comuns(CURL *c)
 {
-    int usado = 0;
-    for (;;) {
-        int r = sceHttpReadData(req, resp + usado, (unsigned)(resplen - 1 - usado));
-        if (r <= 0) break;
-        usado += r;
-        if (usado >= resplen - 1) break;
-    }
-    resp[usado] = '\0';
-    return usado;
+    curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+#ifdef __vita__
+    curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "vitastylus/1.0 (PS Vita)");
+#endif
 }
 
-int net_post(const char *url, const char *body, char *resp, int resplen)
-{
-    if (!url || !body || !resp || resplen <= 0) return -1;
-    resp[0] = '\0';
-
-    struct Pedido p;
-    if (abre(&p, url, SCE_HTTP_METHOD_POST, body, NULL) != 0) return -1;
-
-    int http = 0, ret = -1;
-    if (sceHttpGetStatusCode(p.req, &http) >= 0) {
-        corpo_para_buffer(p.req, resp, resplen);
-        ret = status_ok(http) ? 0 : -1;
-    }
-    fecha(&p);
-    return ret;
-}
-
-int net_get(const char *url, const char *const *headers, char *resp, int resplen)
-{
-    if (!url || !resp || resplen <= 0) return -1;
-    resp[0] = '\0';
-
-    struct Pedido p;
-    if (abre(&p, url, SCE_HTTP_METHOD_GET, NULL, headers) != 0) return -1;
-
-    int http = 0, ret = -1;
-    if (sceHttpGetStatusCode(p.req, &http) >= 0) {
-        corpo_para_buffer(p.req, resp, resplen);
-        ret = status_ok(http) ? 0 : -1;
-    }
-    fecha(&p);
-    return ret;
-}
-
-int net_download(const char *url, const char *const *headers, const char *path,
-                 void (*prog)(void *ud, long feitos, long total), void *ud)
-{
-    if (!url || !path) return -1;
-
-    struct Pedido p;
-    if (abre(&p, url, SCE_HTTP_METHOD_GET, NULL, headers) != 0) return -1;
-
-    int http = 0;
-    if (sceHttpGetStatusCode(p.req, &http) < 0 || http < 200 || http >= 300) {
-        fecha(&p);
-        return -1;
-    }
-    unsigned long long total = 0;
-    int tem_total = (sceHttpGetResponseContentLength(p.req, &total) >= 0);
-
-    /* Grava num parcial e só renomeia no fim — ver a nota no net.h. */
-    char tmp[512];
-    snprintf(tmp, sizeof(tmp), "%s.parcial", path);
-    FILE *f = fopen(tmp, "wb");
-    if (!f) { fecha(&p); return -1; }
-
-    static char buf[32 * 1024];
-    long feitos = 0;
-    int ok = 1;
-    for (;;) {
-        int r = sceHttpReadData(p.req, buf, sizeof(buf));
-        if (r < 0) { ok = 0; break; }
-        if (r == 0) break;
-        if (fwrite(buf, 1, (size_t)r, f) != (size_t)r) { ok = 0; break; }
-        feitos += r;
-        if (prog) prog(ud, feitos, tem_total ? (long)total : -1);
-    }
-    fclose(f);
-    fecha(&p);
-
-    /* Um arquivo que chegou curto é um arquivo quebrado, e a estante não pode
-       recebê-lo: melhor não existir do que existir pela metade. */
-    if (ok && tem_total && total > 0 && feitos != (long)total) ok = 0;
-    if (!ok) { remove(tmp); return -1; }
-    remove(path);
-    return rename(tmp, path) == 0 ? 0 : -1;
-}
-
-/* ---------- leitura aos poucos (ver a nota no net.h) ---------- */
-
-struct NetStream { struct Pedido p; };
-
-NetStream *net_stream_open(const char *url, const char *const *headers,
-                           long long de, long long *total,
-                           char *erro, int erolen)
-{
-    if (total) *total = -1;
-    if (erro && erolen > 0) erro[0] = '\0';
-    if (!url || !url[0]) return NULL;
-
-    /* O Range entra como mais um cabeçalho, junto dos que vieram: assim a
-       montagem do pedido continua tendo um dono só (o `abre`). */
-    char faixa[64];
-    const char *hs[12];
-    int n = 0;
-    for (int i = 0; headers && headers[i] && n < 10; i++) hs[n++] = headers[i];
-    if (de > 0) {
-        snprintf(faixa, sizeof(faixa), "Range: bytes=%lld-", de);
-        hs[n++] = faixa;
-    }
-    hs[n] = NULL;
-
-    NetStream *s = calloc(1, sizeof(*s));
-    if (!s) return NULL;
-    if (abre(&s->p, url, SCE_HTTP_METHOD_GET, NULL, hs) != 0) {
-        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "no network");
-        free(s);
-        return NULL;
-    }
-
-    /* O STATUS, que a primeira versão não olhava: um 404 ou um 401 tem corpo,
-       e sem esta conferência o corpo de erro entrava no anel como se fosse
-       áudio. O decodificador então falhava lá adiante, dizendo que o arquivo
-       estava corrompido — o que manda consertar a coisa errada. */
-    int http = 0;
-    if (sceHttpGetStatusCode(s->p.req, &http) < 0) {
-        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "no response");
-        fecha(&s->p); free(s); return NULL;
-    }
-    int esperado = (de > 0) ? 206 : 200;
-    if (http != esperado && !(de == 0 && http == 206)) {
-        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "HTTP %d", http);
-        fecha(&s->p); free(s); return NULL;
-    }
-
-    if (total) {
-        unsigned long long t = 0;
-        if (sceHttpGetResponseContentLength(s->p.req, &t) >= 0 && t > 0)
-            *total = (long long)t + de;   /* com Range o corpo é só o pedaço */
-    }
-    return s;
-}
-
-long net_stream_read(NetStream *s, void *buf, size_t n)
-{
-    if (!s || !buf || n == 0) return -1;
-    return (long)sceHttpReadData(s->p.req, buf, (unsigned int)n);
-}
-
-void net_stream_close(NetStream *s)
-{
-    if (!s) return;
-    fecha(&s->p);
-    free(s);
-}
-
-#else
-/* ------------------------- Caminho PC (teste) -------------------------
-   Usa libcurl: valida o upload real do last.fm daqui da máquina. */
-
-#include <curl/curl.h>
-#include <stdlib.h>
-#include <string.h>
 
 static size_t write_cb(char *ptr, size_t n, size_t m, void *ud)
 {
@@ -370,8 +209,12 @@ static size_t balde_cb(char *ptr, size_t n, size_t m, void *ud)
 static int curl_faz(const char *url, const char *const *headers,
                     const char *body, char *resp, int resplen)
 {
+    int pronta = rede_ok();
+    if (pronta != 0) return pronta;
+
     CURL *c = curl_easy_init();
-    if (!c) return -1;
+    if (!c) return anota(NET_E_MODULO, 0, "curl handle refused");
+    opcoes_comuns(c);
     struct curl_slist *hdrs = NULL;
     if (body)
         hdrs = curl_slist_append(hdrs, "Content-Type: application/x-www-form-urlencoded");
@@ -398,8 +241,16 @@ static int curl_faz(const char *url, const char *const *headers,
     if (hdrs) curl_slist_free_all(hdrs);
     curl_easy_cleanup(c);
 
-    if (res != CURLE_OK) return -1;
-    return (http >= 200 && http < 500) ? 0 : -1;
+    /* Os MESMOS códigos do caminho do Vita: um teste que roda aqui só vale
+       alguma coisa se a classificação da falha for a mesma lá. */
+    if (res != CURLE_OK)
+        return anota(NET_E_ENVIO, (int)res, curl_easy_strerror(res));
+    if (http >= 200 && http < 500) { deu_certo((int)http); return 0; }
+
+    g_net_http = (int)http;
+    char frase[64];
+    snprintf(frase, sizeof(frase), "the server answered HTTP %ld", http);
+    return anota(NET_E_HTTP, 0, frase);
 }
 
 int net_get(const char *url, const char *const *headers, char *resp, int resplen)
@@ -442,8 +293,13 @@ int net_download(const char *url, const char *const *headers, const char *path,
     FILE *f = fopen(tmp, "wb");
     if (!f) return -1;
 
+    int pronta = rede_ok();
+    if (pronta != 0) { fclose(f); remove(tmp); return pronta; }
+
     CURL *c = curl_easy_init();
-    if (!c) { fclose(f); remove(tmp); return -1; }
+    if (!c) { fclose(f); remove(tmp);
+              return anota(NET_E_MODULO, 0, "curl handle refused"); }
+    opcoes_comuns(c);
     struct curl_slist *hdrs = NULL;
     for (int i = 0; headers && headers[i]; i++)
         hdrs = curl_slist_append(hdrs, headers[i]);
@@ -476,8 +332,12 @@ int net_post(const char *url, const char *body, char *resp, int resplen)
     if (resplen <= 0) return -1;
     resp[0] = '\0';
 
+    int pronta = rede_ok();
+    if (pronta != 0) return pronta;
+
     CURL *c = curl_easy_init();
-    if (!c) return -1;
+    if (!c) return anota(NET_E_MODULO, 0, "curl handle refused");
+    opcoes_comuns(c);
     struct curl_slist *hdrs = NULL;
     hdrs = curl_slist_append(hdrs, "Content-Type: application/x-www-form-urlencoded");
 
@@ -494,8 +354,16 @@ int net_post(const char *url, const char *body, char *resp, int resplen)
     curl_slist_free_all(hdrs);
     curl_easy_cleanup(c);
 
-    if (res != CURLE_OK) return -1;
-    return (http >= 200 && http < 500) ? 0 : -1;
+    /* Os MESMOS códigos do caminho do Vita: um teste que roda aqui só vale
+       alguma coisa se a classificação da falha for a mesma lá. */
+    if (res != CURLE_OK)
+        return anota(NET_E_ENVIO, (int)res, curl_easy_strerror(res));
+    if (http >= 200 && http < 500) { deu_certo((int)http); return 0; }
+
+    g_net_http = (int)http;
+    char frase[64];
+    snprintf(frase, sizeof(frase), "the server answered HTTP %ld", http);
+    return anota(NET_E_HTTP, 0, frase);
 }
 
 /* ---------- leitura aos poucos, no PC (ver a nota no net.h) ----------
@@ -556,11 +424,17 @@ NetStream *net_stream_open(const char *url, const char *const *headers,
     if (erro && erolen > 0) erro[0] = '\0';
     if (!url || !url[0]) return NULL;
 
+    if (rede_ok() != 0) {
+        if (erro && erolen > 0) snprintf(erro, (size_t)erolen, "%s", net_motivo());
+        return NULL;
+    }
+
     NetStream *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
     s->m = curl_multi_init();
     s->e = curl_easy_init();
     if (!s->m || !s->e) { net_stream_close(s); return NULL; }
+    opcoes_comuns(s->e);
 
     for (int i = 0; headers && headers[i]; i++)
         s->hdrs = curl_slist_append(s->hdrs, headers[i]);
@@ -658,4 +532,3 @@ void net_stream_close(NetStream *s)
     free(s);
 }
 
-#endif

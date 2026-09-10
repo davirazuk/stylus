@@ -80,11 +80,22 @@ int main(int argc, char **argv)
         if (real < 0 || real >= lib.nalbums) { erros++; continue; }
         const Album *a = &lib.albums[real];
         char lo[512], t[64];
+        /* O filtro passou a casar também o NOME DA FAIXA — numa coleção de
+           milhares, procurar uma música pelo nome é a busca mais comum, e
+           antes ela não achava nada. Então o disco casa se o termo estiver
+           no artista, no título do disco OU em qualquer faixa dele. */
         snprintf(lo, sizeof(lo), "%s %s", a->artist, a->album);
         snprintf(t, sizeof(t), "%s", termo);
         for (char *q = lo; *q; q++) if (*q >= 'A' && *q <= 'Z') *q += 32;
         for (char *q = t;  *q; q++) if (*q >= 'A' && *q <= 'Z') *q += 32;
-        if (!strstr(lo, t)) erros++;
+        int casou = strstr(lo, t) != NULL;
+        for (int k = 0; !casou && k < a->ntracks; k++) {
+            char f[512];
+            snprintf(f, sizeof(f), "%s %s", a->tracks[k].title, a->tracks[k].file);
+            for (char *q = f; *q; q++) if (*q >= 'A' && *q <= 'Z') *q += 32;
+            casou = strstr(f, t) != NULL;
+        }
+        if (!casou) erros++;
     }
     ok(erros == 0, "cada posicao filtrada aponta para um disco que CASA o termo");
 
@@ -98,6 +109,23 @@ int main(int argc, char **argv)
     ui_frame(u, &lib, p);
     ok(ui_shelf_count_dbg(u) == 0, "termo impossivel da zero, e a tela nao quebra");
     ui_set_busca(u, "");
+
+    /* [O] DESFAZ O FILTRO. Antes o [O] era um segundo [X] (punha o disco
+       marcado) e limpar o filtro pedia a dança "[quadrado] depois [O]" que a
+       propria tela tinha de ensinar por escrito. Uma tecla, uma acao. */
+    ui_set_busca(u, "zzzqqqxxx-nao-existe");
+    ui_frame(u, &lib, p);
+    hostctrl_press(0);                 ui_handle_input(u);
+    hostctrl_press(SCE_CTRL_CIRCLE);   ui_handle_input(u);
+    hostctrl_press(0);                 ui_handle_input(u);
+    ui_frame(u, &lib, p);
+    ok(ui_shelf_count_dbg(u) == lib.nalbums, "[O] limpa o filtro e devolve a estante");
+
+    /* e sem filtro o [O] NAO poe disco nenhum: continua na estante */
+    hostctrl_press(0);                 ui_handle_input(u);
+    hostctrl_press(SCE_CTRL_CIRCLE);   ui_handle_input(u);
+    hostctrl_press(0);                 ui_handle_input(u);
+    ok(ui_view_dbg(u) == 0, "e sem filtro o [O] nao toca nada por acidente");
 
     player_destroy(p);
     ui_destroy(u);

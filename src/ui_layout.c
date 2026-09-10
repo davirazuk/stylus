@@ -3,11 +3,20 @@
 void ui_frame_geom(int scrw, int scrh, UiFrameGeom *g)
 {
     (void)scrw;
-    g->pad_x  = 28.0f;
-    g->head_y = 26;
-    g->body_y = 58.0f;
-    g->foot_y = (float)scrh - 34.0f;
-    g->hint_y = (float)scrh - 14.0f;
+    g->pad_x  = UI_PAD_X;
+    g->head_y = UI_HEAD_Y;
+    g->body_y = UI_BODY_Y;
+    /* O RODAPÉ DESCEU 16 px, e o motivo é que a FILA DE ATALHOS MORREU.
+
+       Havia duas linhas embaixo: o rodapé (estado, contagens) em `foot_y` e a
+       fila de teclas em `hint_y`, encostada na borda. A fila virou a tela de
+       Controls, e ninguém reclamou o espaço que ela deixou — as listas
+       continuaram apertadas contra um rodapé que estava alto para dar lugar a
+       uma linha que não existe mais.
+
+       O `hint_y` saiu junto: um campo que ninguém lê é uma promessa de que
+       ainda há uma fila ali embaixo. */
+    g->foot_y = (float)scrh - UI_FOOT_DY;
     g->body_h = (g->foot_y - 22.0f) - g->body_y;
 }
 
@@ -15,19 +24,24 @@ void ui_shelf_geom(int scrw, int scrh, UiShelfGeom *g)
 {
     UiFrameGeom f;
     ui_frame_geom(scrw, scrh, &f);
-    g->gap = 18.0f;
+    /* 14 e não 18: com seis colunas o vão aparece seis vezes na largura, e
+       cada pixel dele sai da capa, que é o que se olha. */
+    g->gap = 14.0f;
     g->card_w = ((float)scrw - 2 * f.pad_x - (UI_SHELF_COLS - 1) * g->gap) / UI_SHELF_COLS;
     g->card_h = (f.body_h - (UI_SHELF_ROWS - 1) * g->gap) / UI_SHELF_ROWS;
     g->x0 = f.pad_x;
     g->y0 = f.body_y;
-    g->cover_pad = 7.0f;
-    /* a capa CEDE o que os dois rótulos precisam. Quando dois pisos dividem
-       uma medida, quem cede é o DESENHO — a informação não. */
-    g->label_dy = g->card_h - 26.0f;
-    g->sub_dy   = g->card_h - 8.0f;
-    g->cover_side = g->card_h - 46.0f - g->cover_pad;
-    if (g->cover_side > g->card_w - 2 * g->cover_pad)
-        g->cover_side = g->card_w - 2 * g->cover_pad;
+    g->cover_pad = 0.0f;      /* sem moldura, não há borda de onde afastar */
+
+    /* DUAS linhas de rótulo, não três. O nome do disco em uma só, cortado no
+       fim, e o artista embaixo. A terceira linha existia porque o card era
+       largo o bastante para o nome quebrar em duas; num de 139 px, quebrar em
+       duas dá dois pedaços igualmente ilegíveis em vez de um começo legível.
+       A capa CEDE o que os rótulos precisam — quem cede é o desenho. */
+    g->label_dy = g->card_h - 20.0f;    /* o nome do disco */
+    g->sub_dy   = g->card_h - 3.0f;     /* o artista */
+    g->cover_side = g->card_h - 42.0f;
+    if (g->cover_side > g->card_w) g->cover_side = g->card_w;
     if (g->cover_side < 0) g->cover_side = 0;
 }
 
@@ -53,13 +67,20 @@ void ui_deck_geom(int scrw, int scrh, UiDeckGeom *g)
     g->bar_y = 264.0f;
     g->bar_h = 6.0f;
     if (g->bar_y > f.foot_y - 120.0f) g->bar_y = f.foot_y - 120.0f;
-    g->sig_y  = g->bar_y + 20.0f;
-    g->note_y = g->bar_y + 44.0f;
-    /* A lista começa ABAIXO das duas: com +34 (o valor antigo) a primeira
-       faixa caía exatamente entre elas e as letras se sobrepunham. Ler o
-       código não pega isso — só medir. */
-    g->list_y = g->note_y + 18.0f;
-    g->list_step = 22.0f;
+    /* Estes quatro afastamentos são função do TAMANHO DA LETRA, e a letra
+       cresceu: o corpo da tela saiu de ~10 px para 15–17 (ver a nota da
+       tipografia no ui.c). Com os valores de antes — +20, +44, +18, passo 22 —
+       o caminho do sinal subia em cima da barra de progresso, que tem 6 px de
+       altura e é onde o dedo busca. Encostar texto no único controle da tela
+       é pior que apertado: some o alvo.
+
+       A regra para mexer nisto: o afastamento tem de passar da ALTURA da
+       linha, não do que sobra no desenho. 26 px para uma linha de 15 e 24 de
+       passo para uma de 17 é o mínimo que ainda respira. */
+    g->sig_y  = g->bar_y + 26.0f;
+    g->note_y = g->bar_y + 50.0f;
+    g->list_y = g->note_y + 22.0f;
+    g->list_step = 24.0f;
     g->list_rows = (int)((f.foot_y - 26.0f - g->list_y) / g->list_step);
     if (g->list_rows > 6) g->list_rows = 6;
     if (g->list_rows < 0) g->list_rows = 0;
@@ -81,7 +102,11 @@ void ui_list_geom(int scrw, int scrh, UiListGeom *g)
     g->x = f.pad_x;
     g->w = (float)scrw - 2 * f.pad_x;
     g->y0 = f.body_y;
-    g->row_h = 38.0f;
+    /* 48 e nao 38: a linha e um ALVO DE DEDO numa tela de 5 polegadas a
+       220 ppi, onde 38 px sao 4,4 mm — abaixo do que uma ponta de dedo
+       acerta sem mirar. 48 dao ~5,6 mm e ainda cabem as duas linhas de texto
+       (17 px em cima, 15 embaixo) sem se encostarem. */
+    g->row_h = 48.0f;
     g->rows = (int)((f.foot_y - 12.0f - g->y0) / g->row_h);
     if (g->rows < 1) g->rows = 1;
 }

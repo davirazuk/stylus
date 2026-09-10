@@ -182,6 +182,79 @@ static void test_name_split(void)
     }
 }
 
+/* O RÓTULO DA ESTANTE. É a função que decide o que se lê num card de 212 px,
+   e ela poda coisa do nome da pasta — então o que ela NÃO pode fazer é podar
+   demais. Os dois últimos casos são a rede de segurança: um disco chamado só
+   "1979" e uma pasta que é só o nome do artista não podem virar card em
+   branco. */
+/* AS RAÍZES QUE SÃO A MESMA PASTA.
+
+   Este teste existe por causa de um defeito que NASCEU de um conserto: ao
+   passar a chamar sceAppUtilMusicMount(), o "music0:" começou a abrir — e o
+   "ux0:music" também, que antes dava EPERM. As duas na lista padrão, e a
+   estante do aparelho foi de 388 discos para 776, cada um duas vezes. */
+static void test_raizes_iguais(void)
+{
+    printf("\n\033[1mraízes que são a mesma pasta\033[0m\n");
+    struct { const char *a, *b; int mesma; } cases[] = {
+        { "ux0:music",       "music0:",           1 },
+        { "music0:",         "ux0:music",         1 },
+        { "music0:/",        "ux0:music",         1 },
+        { "ux0:music",       "MUSIC0:",           1 },  /* o Vita ignora caixa */
+        { "ux0:music",       "ux0:music/rock",    1 },  /* contida */
+        { "music0:",         "ux0:music/rock",    1 },  /* contida, por alias */
+        { "ux0:music",       "ux0:data/vitastylus/music", 0 },
+        { "music0:",         "uma0:music",        0 },
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        Library lib;
+        library_init(&lib);
+        library_add_root(&lib, cases[i].a);
+        library_add_root(&lib, cases[i].b);
+        int esperado = cases[i].mesma ? 1 : 2;
+        char what[160];
+        snprintf(what, sizeof(what), "\"%s\" + \"%s\" → %d raiz(es)",
+                 cases[i].a, cases[i].b, esperado);
+        okf(lib.nroots == esperado, what, "deu %d", lib.nroots);
+        library_free(&lib);
+    }
+}
+
+static void test_rotulo(void)
+{
+    printf("\n\033[1mrótulo da estante\033[0m\n");
+    struct { const char *artista, *album, *tit, *sub; } cases[] = {
+        { "Radiohead", "1993-02-11 - Radiohead - Signal Radio Session, England [FM]",
+          "Signal Radio Session, England [FM]", "Radiohead  ·  1993-02-11" },
+        { "The Strokes", "2002 - The Strokes - MTV $2 Dollar Bill",
+          "MTV $2 Dollar Bill", "The Strokes  ·  2002" },
+        { "Arctic Monkeys", "2013-10 - Arctic Monkeys - Earls Court",
+          "Earls Court", "Arctic Monkeys  ·  2013-10" },
+        /* sem data na frente: só o artista repetido sai */
+        { "Radiohead", "Radiohead - Lost Treasures 1993-1997",
+          "Lost Treasures 1993-1997", "Radiohead" },
+        /* um ano DENTRO do nome não é prefixo de data */
+        { "Alex G", "1993 Tapes", "1993 Tapes", "Alex G" },
+        /* nada a podar */
+        { "Alvvays", "Antisocialites", "Antisocialites", "Alvvays" },
+        /* a poda comeria tudo: fica o nome cru */
+        { "Alvvays", "Alvvays", "Alvvays", "Alvvays" },
+        { "", "1979", "1979", "—" },
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        Album a;
+        memset(&a, 0, sizeof(a));
+        snprintf(a.artist, sizeof(a.artist), "%s", cases[i].artista);
+        snprintf(a.album,  sizeof(a.album),  "%s", cases[i].album);
+        char tit[256], sub[256];
+        album_display(&a, tit, sizeof(tit), sub, sizeof(sub));
+        char what[512];
+        snprintf(what, sizeof(what), "\"%s\" → \"%s\"", cases[i].album, cases[i].tit);
+        okf(!strcmp(tit, cases[i].tit) && !strcmp(sub, cases[i].sub), what,
+            "deu \"%s\" / \"%s\"", tit, sub);
+    }
+}
+
 static void test_ext(void)
 {
     printf("\n\033[1mextensões\033[0m\n");
@@ -288,7 +361,7 @@ static void test_scan(void)
         ok(0, "Portishead/Dummy com duas faixas", "");
 
     /* faixas soltas na raiz: UM álbum, não três */
-    Album *soltas = album_named(&lib, "", "(no folder)");
+    Album *soltas = album_named(&lib, "", "loose tracks");
     okf(soltas && soltas->ntracks == 3,
         "as faixas soltas na raiz viram UM disco, não um por arquivo",
         "%s", soltas ? "contagem errada" : "não existe álbum para elas");
@@ -325,8 +398,14 @@ static void test_scan(void)
         "%d faixas, %d tocáveis", m4a ? m4a->ntracks : -1,
         m4a ? m4a->ndecodable : -1);
 
-    Album *cd1 = album_named(&lib, "The Beatles", "CD1");
-    okf(cd1 != NULL, "Artista/Disco/CD1: o artista é o PRIMEIRO segmento", "");
+    /* Artista/Disco/CD1+CD2 — os dois discos viram UM álbum do pai, e o
+       artista continua sendo o primeiro segmento (era um álbum "CD1"
+       solto antes do merge de multidisco) */
+    Album *cd1 = album_named(&lib, "The Beatles", "White Album");
+    okf(cd1 && cd1->ntracks == 2,
+        "Artista/Disco/CD1+CD2: o artista é o PRIMEIRO segmento, num álbum só",
+        "%s/%s com %d faixas", cd1 ? cd1->artist : "?",
+        cd1 ? cd1->album : "?", cd1 ? cd1->ntracks : -1);
 
     /* a estante ordenada por artista */
     int sorted = 1;
@@ -447,7 +526,8 @@ static void test_layout(void)
 
         snprintf(what, sizeof(what), "%s: os rótulos ficam dentro do card", telas[s].nome);
         okf(g.sub_dy <= g.card_h + 0.5f && g.label_dy < g.sub_dy,
-            what, "rótulo +%.0f, sub +%.0f, card alto %.0f", g.label_dy, g.sub_dy, g.card_h);
+            what, "rótulo +%.0f, sub +%.0f, card alto %.0f",
+            g.label_dy, g.sub_dy, g.card_h);
 
         UiDeckGeom d;
         ui_deck_geom(W, H, &d);
@@ -599,7 +679,7 @@ static void test_lyrics(void)
 
     Lyrics l;
     memset(&l, 0, sizeof(l));
-    lyrics_load(&l, mp3);
+    lyrics_load(&l, mp3, "Artist", "Album", "Title", 180);
 
     okf(l.n == 6, "o .lrc rende SEIS linhas (o refrão conta duas vezes)",
         "deu %d", l.n);
@@ -643,7 +723,7 @@ static void test_lyrics(void)
     write_file(sem, "x");
     Lyrics l2;
     memset(&l2, 0, sizeof(l2));
-    lyrics_load(&l2, sem);
+    lyrics_load(&l2, sem, NULL, NULL, NULL, -1);
     okf(l2.n == 0 && l2.loaded,
         "faixa sem .lrc fica marcada como carregada (nada de I/O por quadro)", "");
 }
@@ -656,6 +736,8 @@ int main(void)
 
     test_path_join();
     test_name_split();
+    test_raizes_iguais();
+    test_rotulo();
     test_ext();
     test_roots();
     test_scan();

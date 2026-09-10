@@ -50,6 +50,7 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ui_layout.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ime.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/qobuz.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/soundcloud.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/fonte.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/segpad.c
 )
@@ -72,6 +73,15 @@ target_link_libraries(${PROJECT_NAME}
   ogg
   SDL2
   SDL2main
+  # A pilha HTTP do aparelho. O sceHttp saiu (o sceSsl dele para em TLS 1.0 e
+  # os servidores do Qobuz e do lrclib exigem 1.2 com AEAD); quem fala agora é
+  # o curl com OpenSSL que o vitasdk traz — o MESMO código do caminho do PC.
+  # A ordem importa no link estático: curl antes de ssl/crypto/z/zstd.
+  curl
+  ssl
+  crypto
+  z
+  zstd
   SceGxm_stub
   SceCtrl_stub
   SceTouch_stub
@@ -90,17 +100,36 @@ target_link_libraries(${PROJECT_NAME}
   SceIofilemgr_stub
   SceNet_stub
   SceNetCtl_stub
-  SceHttp_stub
-  SceSsl_stub
+  SceSysmem_stub
+  SceKernelThreadMgr_stub
+  SceKernelModulemgr_stub
+  SceProcessmgr_stub
   SceHid_stub
   SceMotion_stub
   SceAudioIn_stub
   SceCommonDialog_stub
+  # a Shell: é dela o papel de "tocador de música" (ver o main.c)
+  SceShellSvc_stub
   pthread
   m
 )
 
-vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
+# UNSAFE não é bravata: sem ele o vita.cmake passa "-s" ao vita-make-fself e
+# o app sobe como homebrew "safe". Nesse modo o sandbox do HENkaku só deixa o
+# app enxergar "ux0:data" e "app0:" — o resto do cartão não existe para ele.
+#
+# SINTOMA: o relatório que o app deixa no cartão dizia, no mesmo arranque,
+#     [ ] ux0:music                    DID NOT OPEN: 0x80010001
+#     [ ] ux0:data/vitastylus/music    DID NOT OPEN: 0x80010002
+# EPERM na pasta que EXISTE (3.729 arquivos, 122 álbuns) e ENOENT na que não
+# existe. Um caminho mal escrito dá ENOENT nos dois; permissão negada só num.
+# Isso não é grafia de caminho — foi por ler isso como grafia que a tentativa
+# anterior (tentar "ux0:music" e "ux0:/music") não mudou nada.
+#
+# Custo: o VitaShell avisa "unsafe homebrew" ao instalar, e o aparelho precisa
+# de "Enable unsafe homebrew" ligado no HENkaku Settings. Este já tem — o
+# VitaShell, o PKGj e o AutoPlugin2 no cartão também são unsafe.
+vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}

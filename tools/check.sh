@@ -159,11 +159,18 @@ fi
 
 printf '\n\033[1mo que a tela promete\033[0m\n'
 # Uma tecla escrita no rodapé e não tratada pelo input é a família do
-# stylus-welcome: promessa sem destino. E o Vita NÃO TEM L2/R2.
-if grep -q 'SCE_CTRL_R2\|SCE_CTRL_L2' "$SRC"/ui.c; then
-    fail "o Vita não tem L2/R2: essa tecla não existe em aparelho nenhum"
+# stylus-welcome: promessa sem destino.
+#
+# O L2/R2 NAO e "tecla que nao existe" — essa razao estava errada aqui e no
+# ui.c. SCE_CTRL_L2 E o SCE_CTRL_LTRIGGER (0x100), o proprio ombro esquerdo do
+# Vita. O motivo de nao usar e outro: a leitura normaliza LTRIGGER->L1 e
+# RTRIGGER->R1, entao ligar algo a L2/R2 poria DUAS acoes na MESMA tecla
+# fisica. Casa so em USO (um teste "& SCE_CTRL_L2"), nao em comentario — a
+# versao antiga reprovava o proprio texto que explicava isto.
+if grep -qE '&[[:space:]]*SCE_CTRL_[LR]2\b' "$SRC"/ui.c; then
+    fail "L2/R2 e o MESMO ombro que ja vira L1/R1: duas acoes na mesma tecla"
 else
-    pass "nenhuma tecla que o aparelho não tem"
+    pass "nenhum ombro com duas acoes"
 fi
 for k in 'quad' 'tri' 'sel'; do
     if grep -q "\[$k\]" "$SRC"/ui.c; then
@@ -188,7 +195,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
-          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c "$SRC"/soundcloud.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_desenho ]; then
         fail "o teste de desenho não compila" "$out"
@@ -237,7 +244,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
-          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c "$SRC"/soundcloud.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_atalhos ]; then
         fail "o teste de atalhos não compila" "$out"
@@ -265,7 +272,7 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists freetype2 libpng $DEC_P
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c \
-          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
+          "$SRC"/ime.c "$SRC"/lastfm.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c "$SRC"/soundcloud.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_toque ]; then
         fail "o teste do toque não compila" "$out"
@@ -387,7 +394,8 @@ printf '\n\033[1mnenhuma credencial no repositorio\033[0m\n'
 # depois. Esta conferencia e barata e o erro que ela pega e irreversivel.
 ruim=""
 # hexadecimal longo solto num literal de string (formato de chave de API)
-h=$(grep -rInE '"[0-9a-f]{32,}"' "$SRC" tools 2>/dev/null | grep -viE 'md5|hash|test|assert|esperado|sha|checksum|soma' || true)
+# DEFAULT permite chaves de app embutidas de propósito (lastfm default key)
+h=$(grep -rInE '"[0-9a-f]{32,}"' "$SRC" tools 2>/dev/null | grep -viE 'md5|hash|test|assert|esperado|sha|checksum|soma|default' || true)
 [ -n "$h" ] && ruim="$ruim\n$h"
 # token do qobuz / chave de sessao do last.fm escritos a mao
 t=$(grep -rInE '(user_auth_token|app_secret|api_secret|session_key|sk)[[:space:]]*=[[:space:]]*"[A-Za-z0-9]{8,}"' "$SRC" tools 2>/dev/null || true)
@@ -410,7 +418,7 @@ printf '\n\033[1mqobuz: assinatura e leitura da resposta\033[0m\n'
 # O fixture usa a ESTRUTURA REAL de propósito — ver o comentario no teste.
 if command -v gcc >/dev/null 2>&1 && pkg-config --exists libcurl 2>/dev/null; then
     out=$(gcc -std=gnu11 -Wall -Wextra -I"$SRC" -o /tmp/vitastylus_qobuz \
-          tests/qobuz_test.c "$SRC"/qobuz.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/fsutil.c \
+          tests/qobuz_test.c "$SRC"/qobuz.c "$SRC"/soundcloud.c "$SRC"/md5.c "$SRC"/net.c "$SRC"/fsutil.c \
           $(pkg-config --cflags --libs libcurl) 2>&1) || true
     if [ ! -x /tmp/vitastylus_qobuz ]; then
         fail "o teste do qobuz não compila" "$out"
@@ -419,6 +427,30 @@ if command -v gcc >/dev/null 2>&1 && pkg-config --exists libcurl 2>/dev/null; th
     else
         fail "qobuz: assinatura ou leitura da resposta erradas" \
              "$(cat /tmp/vitastylus_qobuz.out)"
+    fi
+else
+    skip "PULA: sem gcc ou sem libcurl"
+fi
+
+printf '\n\033[1mo stream do soundcloud\033[0m\n'
+# A escolha da transcodificação é uma varredura à mão sobre JSON, e o que ela
+# decide não aparece na tela: errar entrega uma PLAYLIST ao decodificador de
+# MP3 e a faixa não toca, com cara de rede caída. A fixture é a resposta
+# gravada de uma faixa real — e ela traz três HLS, UMA DELAS anunciada como
+# audio/mpeg, que é a armadilha exata.
+if command -v gcc >/dev/null 2>&1 && pkg-config --exists libcurl 2>/dev/null; then
+    out=$(gcc -std=gnu11 -Wall -Wextra -I"$SRC" -o /tmp/vitastylus_sc \
+          tests/soundcloud_test.c "$SRC"/soundcloud.c "$SRC"/qobuz.c "$SRC"/md5.c \
+          "$SRC"/net.c "$SRC"/fsutil.c \
+          $(pkg-config --cflags --libs libcurl) 2>&1) || true
+    if [ ! -x /tmp/vitastylus_sc ]; then
+        fail "o teste do soundcloud não compila" "$out"
+    elif [ ! -f tests/fixtures-sc-busca.json ]; then
+        fail "falta tests/fixtures-sc-busca.json (a resposta real da busca)"
+    elif /tmp/vitastylus_sc tests/fixtures-soundcloud.json >/tmp/vitastylus_sc.out 2>&1; then
+        pass "escolhe a progressiva, recusa HLS e previa; a busca descarta o SNIP"
+    else
+        fail "soundcloud: escolha de stream errada" "$(cat /tmp/vitastylus_sc.out)"
     fi
 else
     skip "PULA: sem gcc ou sem libcurl"
@@ -524,7 +556,7 @@ else
           "$SRC"/ui.c "$SRC"/ui_layout.c "$SRC"/library.c "$SRC"/fsutil.c \
           "$SRC"/decoder.c "$SRC"/fonte.c "$SRC"/sides.c "$SRC"/lyrics.c "$SRC"/rec.c \
           "$SRC"/playlist.c "$SRC"/scrobble.c "$SRC"/ime.c "$SRC"/lastfm.c \
-          "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c \
+          "$SRC"/md5.c "$SRC"/net.c "$SRC"/qobuz.c "$SRC"/soundcloud.c \
           $(pkg-config --cflags --libs freetype2 libpng libcurl $DEC_PKGS) -ljpeg -lm 2>&1) || true
     if [ ! -x /tmp/vitastylus_filtro ]; then
         fail "o teste do filtro nao compila" "$out"
@@ -553,6 +585,78 @@ if command -v gcc >/dev/null 2>&1; then
     fi
 else
     skip "PULA: sem gcc"
+fi
+
+printf '\n\033[1mo contraste da tela\033[0m\n'
+# O aparelho e um Vita 2000: LCD, nao OLED. O preto dele e um cinza aceso, e a
+# paleta de fosforo do projeto foi pensada para um preto que some. Medindo, o
+# COL_TEXT_FAINT dava 1,91:1 e o COL_TEXT_DIM 3,14:1 — invisivel e abaixo do
+# minimo — e sao eles que levam o nome do artista, as contagens e as dicas.
+# O PNG do preview nao pega: o monitor de quem revisa tem contraste melhor que
+# a tela do aparelho, entao no PC "da para ler".
+if command -v python3 >/dev/null 2>&1; then
+    out=$(python3 tools/contraste.py "$SRC"/ui.c 2>&1)
+    if [ -z "$out" ]; then
+        pass "a paleta se le no LCD do Vita 2000"
+    else
+        fail "cor de texto sem contraste no aparelho" "$out"
+    fi
+else
+    skip "PULA: sem python3"
+fi
+
+printf '\n\033[1mo disco nao e um circulo chapado\033[0m\n'
+# "the vinyl looks like a black circle and the cd a white circle" — duas vezes,
+# com o desenho todo no lugar nas duas. O que faltava era DISTANCIA entre os
+# tons: medido, todo traco do vinil ficava entre 1,27 e 1,53:1 contra o corpo e
+# todo traco do CD entre 1,04 e 1,13:1, e o LCD do aparelho nao separa isso.
+# Aqui a conferencia olha o PIXEL QUE SAIU, e nao o codigo: renderiza o deck
+# nas duas midias e mede a textura da superficie. Um prato liso responde 1,00.
+VARR_MUSICA="${VITASTYLUS_MUSICA:-$HOME/staging-vita/vita-mp3/}"
+if ! command -v python3 >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+    skip "PULA: sem python3/gcc"
+elif ! python3 -c 'import PIL' 2>/dev/null; then
+    skip "PULA: sem Pillow"
+elif [ ! -d "$VARR_MUSICA" ]; then
+    skip "PULA: sem colecao em $VARR_MUSICA"
+elif ! pkg-config --exists freetype2 libpng flac vorbisfile opusfile libmpg123 2>/dev/null; then
+    skip "PULA: faltam as bibliotecas do shim"
+else
+    DISCO_OUT="${TMPDIR:-/tmp}/vitastylus-disco.$$"
+    if ./tools/preview.sh "$VARR_MUSICA" "$DISCO_OUT" >/dev/null 2>&1; then
+        d_out=""
+        for png in 3-deck-tocando 9c-cd; do
+            [ -f "$DISCO_OUT/$png.png" ] || continue
+            m=$(python3 tools/disco.py "$DISCO_OUT/$png.png" 2>&1)
+            [ -n "$m" ] && d_out="$d_out$png: $m
+"
+        done
+        if [ -z "$d_out" ]; then
+            pass "vinil e CD tem superficie, nao so silhueta"
+        else
+            fail "o disco chega achatado no aparelho" "$d_out"
+        fi
+    else
+        skip "PULA: o preview nao construiu"
+    fi
+    rm -rf "$DISCO_OUT"
+fi
+
+printf '\n\033[1mo tamanho da letra\033[0m\n'
+# A tela escreve tamanho em PIXEL (T_CORPO, T_MIUDO...), nunca em "escala"
+# solta — e MEDIR com uma escala enquanto se DESENHA com outra descentraliza
+# o texto sem aparecer na revisao. As duas coisas ja morderam; o porque esta
+# no cabecalho do tipografia.py. Um grep nao serve aqui: ele tropeca no
+# "cap_l * 0.5f", que e geometria e nao letra.
+if command -v python3 >/dev/null 2>&1; then
+    out=$(python3 tools/tipografia.py "$SRC"/ui.c 2>&1)
+    if [ -z "$out" ]; then
+        pass "todo texto usa a escala tipografica, e mede com ela mesma"
+    else
+        fail "escala solta em chamada de texto" "$out"
+    fi
+else
+    skip "PULA: sem python3 nesta maquina"
 fi
 
 printf '\n\033[1mo idioma da tela\033[0m\n'
@@ -601,6 +705,53 @@ if [ -f "$ELF" ] && [ -x "$RE" ]; then
     fi
 else
     skip "PULA: sem build/vitastylus (rode ./build.sh antes)"
+fi
+
+# DIAGNÓSTICO COMPILADO POR ENGANO. O flag -DSTYLUS_CYCLE entrou no
+# CMakeCache de uma sessão de depuração e o build seguinte o reutilizou em
+# silêncio — o VPK no cartão virou um carrossel de cenas numeradas que a
+# pessoa só percebe ao apertar volume. Cache sujo não é erro de código, é
+# erro de BOLSA: não há como vê-lo ao compilar. Aqui ele grita.
+# O `ciclo_diagnostico` é static: some com -DSTYLUS_CYCLE, mas o FIM da
+# função (a tecla de estado 8→0 deixa o carrossel em repouso) não deixa
+# rastro fácil — por isso esta conferência olha o SÍMBOLO mesmo.
+if [ -f "$ELF" ] && [ -x "$RE" ]; then
+    if "$RE" -s "$ELF" 2>/dev/null | grep -qE 'ciclo_diagnostico|g_congela_disco|g_disco_plano'; then
+        fail "carrossel de diagnóstico COMPILADO no binário" \
+             "o cache do CMake tem -DSTYLUS_CYCLE rolando (veja build/CMakeCache.txt)"
+    else
+        pass "nenhum carrossel de diagnóstico no binário"
+    fi
+else
+    skip "PULA: sem build/vitastylus (rode ./build.sh antes)"
+fi
+
+# ── A VARREDURA ──────────────────────────────────────────────────────────
+# Aperta toda tecla e toca toda parte da tela, em toda tela, sob o
+# AddressSanitizer, desenhando DEPOIS DE CADA APERTO. É a única conferência
+# deste projeto que caça TRAVAMENTO sem aparelho — as fotos do preview.sh
+# mostram cada tela em repouso, e nenhum travamento acontece em repouso.
+#
+# Ela custava doze minutos e por isso ficaria de fora daqui — e conferência
+# que se pula é conferência que não existe. Custa vinte segundos desde que o
+# shim parou de rasterizar glifo que ninguém olha (ver o `avanco` no
+# vita2d_host.c). Vinte segundos por um caça-travamento é barato.
+printf '\n\033[1ma varredura (toda tecla, toda tela, sob ASAN)\033[0m\n'
+VARR_MUSICA="${VITASTYLUS_MUSICA:-$HOME/staging-vita/vita-mp3/}"
+if ! command -v gcc >/dev/null 2>&1; then
+    skip "PULA: sem gcc nesta máquina"
+elif [ ! -d "$VARR_MUSICA" ]; then
+    skip "PULA: sem coleção em $VARR_MUSICA (VITASTYLUS_MUSICA aponta outra)"
+elif ! pkg-config --exists freetype2 libpng flac vorbisfile opusfile libmpg123 2>/dev/null; then
+    skip "PULA: faltam as bibliotecas do shim de vídeo/áudio"
+else
+    out=$(./tools/varredura.sh "$VARR_MUSICA" 2>&1)
+    if [ $? -eq 0 ]; then
+        pass "$(printf '%s' "$out" | grep -E 'pior quadro|pior preenchimento' | sed 's/^ *//')"
+    else
+        fail "a varredura achou algo" \
+             "$(printf '%s' "$out" | grep -E 'ERROR|SUMMARY|✗|runtime error' | head -8)"
+    fi
 fi
 
 printf '\n\033[1mmemória\033[0m\n'

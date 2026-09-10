@@ -71,6 +71,11 @@ int main(void)
 {
     vita2d_init();
     Ui *u = ui_create();
+    /* A ALMOFADA DE TRÁS AGORA É UM AJUSTE, e nasce DESLIGADA — o dono do
+       app pediu ("it is making me skip shit accidentally"). O caminho dela
+       continua inteiro e testado; o que mudou é quem manda nele. Ligar aqui
+       é o teste de duas coisas ao mesmo tempo: o gesto e o interruptor. */
+    ui_set_toque_tras(u, true);
     if (!u) { printf("não criei a UI\n"); return 2; }
 
     printf("\033[1mo toque nos dois painéis\033[0m\n");

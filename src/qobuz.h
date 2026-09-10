@@ -53,6 +53,7 @@ typedef struct {
     char id[32];
     char titulo[160];
     char artista[128];
+    char capa[200];      /* URL da capa pequena (image.small), "" se não veio */
     int  faixas;
     int  ano;
     bool hires;
@@ -64,6 +65,29 @@ typedef struct {
     int  numero;
     int  segundos;
 } QobuzFaixa;
+
+/* UMA FAIXA DO CATÁLOGO QUE É A MESMA MÚSICA DE UMA DO CARTÃO.
+
+   `confianca` é 0..100 e não é enfeite: o app MOSTRA o que achou antes de
+   trocar. Título e artista batem em toda versão da mesma música — estúdio,
+   acústica, quatro ao vivo e um cover — e é a duração que separa a GRAVAÇÃO.
+   Um casamento fraco apresentado como certo troca, em silêncio, a gravação
+   que a pessoa escolheu por outra. */
+typedef struct {
+    char id[32];
+    char titulo[160];
+    char artista[128];
+    char album[160];
+    char album_id[32];   /* id do álbum de origem, para carregar todas as faixas */
+    char capa[200];      /* URL da capa pequena (image.small) — vira o rótulo do deck */
+    int  segundos;
+    int  confianca;      /* 0..100 */
+    bool hires;          /* o catálogo tem esta em 24 bits */
+} QobuzCasamento;
+
+/* Por que a última chamada falhou, "" quando não falhou. A tela mostra isto
+   em vez de repetir "is the Wi-Fi on?" para cinco causas diferentes. */
+const char *qobuz_motivo(void);
 
 void qobuz_config_load(QobuzConfig *cfg, const char *dir);
 int  qobuz_config_save(const QobuzConfig *cfg, const char *dir);
@@ -173,6 +197,20 @@ int  qobuz_busca_async(const QobuzConfig *cfg, const char *termo);
    `*n` quantos vieram (-1 se a última busca falhou). */
 void qobuz_busca_estado(QobuzAlbum *out, int max, int *n, bool *ativo);
 
+/* AS CAPAS DOS RESULTADOS, EM SEGUNDO PLANO.
+
+   Uma lista de discos sem capa é uma lista de textos: numa loja de música é
+   pela capa que se reconhece o disco. Cada uma é um JPEG de ~20 KB, e baixar
+   doze delas no laço de vídeo congelaria a tela — daí a thread.
+
+   Vão para arquivo em `dir` (uma por id), então valem para a sessão
+   seguinte: procurar "radiohead" de novo não rebaixa nada. Devolve 0 quando
+   a busca começou. */
+int  qobuz_capas_async(const QobuzAlbum *lista, int n, const char *dir);
+
+/* O caminho onde a capa de `id` está (ou vai estar). Sempre preenche. */
+void qobuz_capa_arquivo(const char *dir, const char *id, char *out, int cap);
+
 /* ---------- abrir um disco para TOCAR pela rede ----------
 
    Pedir as faixas custa uma chamada de rede, e ela não pode acontecer no laço
@@ -182,5 +220,31 @@ int  qobuz_abre_async(const QobuzConfig *cfg, const QobuzAlbum *alb);
 void qobuz_abre_estado(QobuzFaixa *out, int max, int *n, bool *ativo,
                        QobuzAlbum *alb);
 void qobuz_abre_limpa(void);
+
+/* ---------- a MESMA música, em lossless ----------
+
+   "Estou ouvindo este MP3; ache-o no Qobuz e toque a versão em FLAC." A
+   busca é de rede e por isso é assíncrona, como todas as outras aqui.
+
+   Devolve 0 se começou, -1 se já havia uma em curso ou faltou título,
+   -2 se não há conta configurada. O RESULTADO vem pelo estado:
+   `estado` 1 achou, 0 não achou (o `qobuz_motivo` diz o que chegou perto),
+   negativo é falha de rede. */
+int  qobuz_casa_async(const QobuzConfig *cfg, const char *titulo,
+                       const char *artista, int segundos);
+void qobuz_casa_estado(QobuzCasamento *out, int *estado, bool *ativo);
+
+/* ---------- GET FLAC: estado da busca assíncrona ----------
+
+   Quando o casamento encontra um album_id, case 25 lança qobuz_abre_async
+   em vez de chamar qobuz_faixas de forma síncrona — sem congelar a tela e
+   sem o risco de corrida no buffer estático de qobuz_faixas.
+
+   O formato (FLAC / hi-res) é guardado aqui porque abre_async não sabe
+   que veio de GET FLAC — e case 22 (loja) usa o formato configurado. */
+void qobuz_setflac_pending(int fmt);
+bool qobuz_getflac_pending(void);
+int  qobuz_getflac_fmt(void);
+void qobuz_getflac_done(void);
 
 #endif

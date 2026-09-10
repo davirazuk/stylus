@@ -12,11 +12,38 @@ conferência existe para pegar.
 import os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# .../vita/player/tools -> a raiz do repo do STYLUS
-DESKTOP = os.path.abspath(os.path.join(HERE, "..", "..", "..",
-                                       "airootfs/usr/share/stylus/lib"))
 
-if not os.path.isfile(os.path.join(DESKTOP, "vinyl.py")):
+# ONDE PROCURAR O vinyl.py.
+#
+# Só havia um palpite: ".../vita/player/tools/../../.." — o vitastylus DENTRO
+# do repo do STYLUS. Quando ele virou repo separado (que é como está na
+# máquina do dono, em ~/vitastylus), esse palpite passou a errar, e a
+# conferência PULOU calada. Uma conferência que pula é uma que não existe: os
+# lados ficaram sem comparação com o desktop justamente enquanto o dono
+# relatava "detecting disks and sides in a weird way".
+#
+# Agora são vários caminhos, do mais explícito ao mais provável. O
+# STYLUS_SOURCE é o mesmo que o sync.sh da máquina usa.
+LIB = "airootfs/usr/share/stylus/lib"
+CANDIDATOS = []
+if os.environ.get("STYLUS_SOURCE"):
+    # STYLUS_SOURCE aponta para o airootfs; sobe um para a raiz do clone
+    CANDIDATOS.append(os.path.join(os.environ["STYLUS_SOURCE"],
+                                   "usr/share/stylus/lib"))
+CANDIDATOS += [
+    os.path.abspath(os.path.join(HERE, "..", "..", "..", LIB)),
+    os.path.expanduser(os.path.join("~/stylus", LIB)),
+    os.path.abspath(os.path.join(HERE, "..", "..", "stylus", LIB)),
+    "/usr/share/stylus/lib",
+]
+
+DESKTOP = None
+for c in CANDIDATOS:
+    if os.path.isfile(os.path.join(c, "vinyl.py")):
+        DESKTOP = c
+        break
+
+if DESKTOP is None:
     print("PULA: o vinyl.py do desktop não está aqui (repo do vitastylus sozinho)")
     sys.exit(77)
 

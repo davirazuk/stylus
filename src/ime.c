@@ -57,6 +57,7 @@ static void de_u16(const SceWChar16 *in, char *out, size_t cap)
 
 static bool        g_aberto;
 static bool        g_modulo;
+static int         g_erro;      /* o rc do último ime_abrir que não abriu */
 static SceWChar16  g_titulo[SCE_IME_DIALOG_MAX_TITLE_LENGTH];
 static SceWChar16  g_inicial[IME_MAX];
 static SceWChar16  g_buf[IME_MAX];
@@ -64,10 +65,14 @@ static SceWChar16  g_buf[IME_MAX];
 int ime_abrir(const char *titulo, const char *inicial, size_t max, bool senha)
 {
     if (g_aberto) return -1;
-    if (!g_modulo) {
-        if (sceSysmoduleLoadModule(SCE_SYSMODULE_IME) < 0) return -1;
+    g_erro = 0;
+    /* O SCE_SYSMODULE_IME é do sceIme *embutido*; o teclado de tela cheia
+       daqui é sceImeDialog, que mora no SceCommonDialog e está sempre
+       ligado. Exigir o módulo era uma PORTA A MAIS na frente do teclado:
+       falhou o load, ninguém digitava nada, e sem uma linha de erro. Tenta,
+       aproveita se vier, e segue sem ele. */
+    if (!g_modulo && sceSysmoduleLoadModule(SCE_SYSMODULE_IME) >= 0)
         g_modulo = true;
-    }
     if (max == 0 || max > IME_MAX - 1) max = IME_MAX - 1;
 
     para_u16(titulo ? titulo : "", g_titulo, SCE_IME_DIALOG_MAX_TITLE_LENGTH);
@@ -92,10 +97,16 @@ int ime_abrir(const char *titulo, const char *inicial, size_t max, bool senha)
     p.initialText        = g_inicial;
     p.inputTextBuffer    = g_buf;
 
-    if (sceImeDialogInit(&p) < 0) return -1;
+    /* GUARDA O MOTIVO. 0x80020407 é NOT_CONFIGURED, e quer dizer que o
+       sceCommonDialogSetConfigParam não foi chamado no arranque — foi
+       exatamente esse o defeito que deixou a busca do Qobuz morta. */
+    int rc = sceImeDialogInit(&p);
+    if (rc < 0) { g_erro = rc; return -1; }
     g_aberto = true;
     return 0;
 }
+
+int ime_erro(void) { return g_erro; }
 
 bool ime_aberto(void) { return g_aberto; }
 
@@ -128,6 +139,7 @@ void ime_desenhar(void)
    linkar a UI inteira; nenhum teste digita. */
 int  ime_abrir(const char *t, const char *i, size_t m, bool s)
 { (void)t; (void)i; (void)m; (void)s; return -1; }
+int  ime_erro(void) { return 0; }
 bool ime_aberto(void) { return false; }
 int  ime_poll(char *out, size_t cap) { (void)out; (void)cap; return -1; }
 void ime_desenhar(void) { }

@@ -50,6 +50,42 @@ cp "$VPK" "$CARTAO/vitastylus.vpk"
 sync
 echo "  $CARTAO/vitastylus.vpk  ($(du -h "$VPK" | cut -f1))"
 
+# As chaves do Qobuz. Sem elas a tela de Qobuz existe mas não serve para nada,
+# porque a alternativa é digitar um segredo de 32 dígitos no teclado da tela —
+# e o cartão passou semanas sem nenhum qobuz.config justamente por isso.
+if [ -f "$HOME/.config/qobuz-dl/config.ini" ]; then
+	echo "── as chaves do Qobuz ──"
+	./tools/qobuz-chaves.py "$CARTAO" || echo "  (segue sem Qobuz)"
+fi
+
+# O HOSPEDEIRO DE EXTENSÕES vai junto, e NÃO está no repositório (ver o
+# .gitignore). Fica em ux0:spotiflac/ — no cartão, que é o que o dono carrega.
+# Vai o interpretador e nada mais: nenhum registro, nenhuma extensão. A fonte
+# é dele e ele a aponta com `repo add`.
+if [ -f tools/spotiflac.js ]; then
+	# O client_id do SoundCloud, pelo mesmo motivo das chaves do Qobuz: ele mora
+# no JavaScript do site e raspá-lo é trabalho de PC, não de aparelho.
+echo "── a chave do SoundCloud ──"
+./tools/soundcloud-chaves.py "$CARTAO" || echo "  (segue sem SoundCloud)"
+
+echo "── o hospedeiro de extensões ──"
+	mkdir -p "$CARTAO/spotiflac"
+	cp tools/spotiflac.js "$CARTAO/spotiflac/"
+	# as extensões que já estão instaladas nesta máquina viajam junto; a pasta
+	# nasce vazia numa máquina limpa, e é assim que tem de ser
+	SFH="$HOME/.local/share/vitastylus/spotiflac"
+	if [ -d "$SFH/extensions" ]; then
+		cp -r "$SFH/extensions" "$CARTAO/spotiflac/" 2>/dev/null || true
+	fi
+	# O REGISTRO VAI JUNTO. Sem ele a cópia do cartão instala e remove, mas
+	# não atualiza nem descobre nada — e `repo add` de novo, na outra máquina,
+	# é a configuração que este arquivo existe para evitar.
+	[ -f "$SFH/repos.json" ] && cp "$SFH/repos.json" "$CARTAO/spotiflac/" 2>/dev/null || true
+	n=$(ls "$CARTAO/spotiflac/extensions" 2>/dev/null | wc -l)
+	echo "  $CARTAO/spotiflac/spotiflac.js  ($n extensão(ões) junto)"
+	echo "  roda no PC (precisa de node); o Vita não executa JavaScript."
+fi
+
 echo "── a música ──"
 # As raízes que o app varre, na ordem. A primeira que existir é a que importa.
 achou=""

@@ -20,8 +20,11 @@
 #include "player.h"
 
 /* os números de View, na ordem do enum do ui.c */
-enum { V_ESTANTE = 0, V_DECK, V_RECS, V_PLAYLISTS, V_JOGANDO };
-static const char *NOME[] = { "estante", "deck", "recs", "playlists", "jogando" };
+enum { V_ESTANTE = 0, V_DECK, V_RECS, V_PLAYLISTS, V_JOGANDO, V_CONTA,
+       V_QOBUZ, V_AJUSTES, V_CONTROLES, V_ARTISTAS, V_HOME };
+static const char *NOME[] = { "estante", "deck", "recs", "playlists",
+                              "jogando", "conta", "qobuz", "ajustes",
+                              "controles", "artistas", "home" };
 
 static int falhas = 0;
 
@@ -31,7 +34,7 @@ static void ok(int cond, const char *o_que, int obtido, int esperado)
     falhas++;
     printf("  \033[31m✗\033[0m %s\n", o_que);
     printf("      terminou em \"%s\", esperava \"%s\"\n",
-           NOME[obtido & 7], NOME[esperado & 7]);
+           NOME[obtido % 11], NOME[esperado % 11]);
 }
 
 /* aperta e solta um botão */
@@ -88,8 +91,8 @@ int main(void)
     ok(ui_view_dbg(u) == V_DECK, "deck: segurar [R1] NÃO troca de tela sozinho",
        ui_view_dbg(u), V_DECK);
     hostctrl_press(0);            ui_handle_input(u);
-    ok(ui_view_dbg(u) == V_PLAYLISTS, "deck: e soltar [R1] sem combinar abre playlists",
-       ui_view_dbg(u), V_PLAYLISTS);
+    ok(ui_view_dbg(u) == V_QOBUZ, "deck: e soltar [R1] sem combinar anda uma aba",
+       ui_view_dbg(u), V_QOBUZ);
 
     /* Os outros dois combos com [R1] não trocam de tela, então a prova é a
        ação — e eram tão inalcançáveis quanto o primeiro. */
@@ -111,25 +114,82 @@ int main(void)
     /* e sai do repouso sem virar outra coisa */
     toca(u, SCE_CTRL_CIRCLE);
 
-    ao_deck(u);
-    toca(u, SCE_CTRL_L1);
-    ok(ui_view_dbg(u) == V_RECS, "deck: [L1] abre as recomendações",
-       ui_view_dbg(u), V_RECS);
+    /* A TRAVA (L1+R1, o L1 primeiro): congela tudo até repetir o gesto.
+       R1+L1 (o R1 primeiro) continua apagando a tela — a ordem separa os
+       dois, e era por NÍVEL antes: travava e destravava a cada quadro com
+       as duas seguradas, e travado nada navega (este teste girava aqui). */
+    {
+        /* trava: depois do gesto, os ombros sozinhos não andam */
+        toca_com(u, SCE_CTRL_L1, SCE_CTRL_R1);
+        int v0 = ui_view_dbg(u);
+        toca(u, SCE_CTRL_R1);
+        toca(u, SCE_CTRL_L1);
+        ok(ui_view_dbg(u) == v0, "travado: ombros sozinhos não andam",
+           ui_view_dbg(u), v0);
+        /* destrava com o mesmo gesto: os ombros voltam a andar */
+        toca_com(u, SCE_CTRL_L1, SCE_CTRL_R1);
+        toca(u, SCE_CTRL_R1);
+        ok(ui_view_dbg(u) != v0, "destrava: [R1] volta a andar",
+           ui_view_dbg(u), v0);
+        ao_deck(u);
+    }
 
     ao_deck(u);
     toca(u, SCE_CTRL_TRIANGLE);
     ok(ui_view_dbg(u) == V_ESTANTE, "deck: triângulo volta à estante",
        ui_view_dbg(u), V_ESTANTE);
 
-    toca(u, SCE_CTRL_L1);
-    ok(ui_view_dbg(u) == V_RECS, "estante: [L1] abre as recomendações",
-       ui_view_dbg(u), V_RECS);
-    toca(u, SCE_CTRL_TRIANGLE);
+    /* A FILA DE ABAS. O dono do app disse "qobuz simply doesn't exist" — e
+       era verdade: chegar lá custava TRÊS R1 às cegas (estante → listas →
+       conta → qobuz), sem que nenhuma tela dissesse a palavra antes da
+       última. Agora L1/R1 andam numa fila só, desenhada no topo.
+       A ordem é SHELF · PLAYING · QOBUZ · LISTS · RECS · ACCOUNT · SETTINGS.
+       SETTINGS entrou na fila quando as opções que eram atalho escondido
+       viraram tela — uma aba a mais é o preço de não ter combo secreto. */
+    const int anel[] = { V_HOME, V_ESTANTE, V_ARTISTAS, V_DECK, V_QOBUZ,
+                         V_PLAYLISTS, V_RECS, V_CONTA, V_AJUSTES };
+    const int n_anel = (int)(sizeof(anel) / sizeof(anel[0]));
+
+    ao_deck(u);
     toca(u, SCE_CTRL_R1);
-    ok(ui_view_dbg(u) == V_PLAYLISTS, "estante: [R1] abre as playlists",
-       ui_view_dbg(u), V_PLAYLISTS);
-    toca(u, SCE_CTRL_TRIANGLE);
-    ok(ui_view_dbg(u) == V_ESTANTE, "playlists: triângulo volta à estante",
+    ok(ui_view_dbg(u) == V_QOBUZ, "deck: UM [R1] chega ao Qobuz",
+       ui_view_dbg(u), V_QOBUZ);
+
+    /* volta à estante e percorre o anel inteiro para a frente */
+    /* começa na CABEÇA do anel, seja ela qual for — o anel ganhou a HOME na
+       frente e este laço supunha que a estante era a primeira. */
+    while (ui_view_dbg(u) != anel[0]) toca(u, SCE_CTRL_R1);
+    for (int i = 1; i <= n_anel; i++) {
+        toca(u, SCE_CTRL_R1);
+        int esperado = anel[i % n_anel];
+        char q[96];
+        snprintf(q, sizeof(q), "[R1] %d/%d: chega em \"%s\"", i, n_anel,
+                 NOME[esperado % 11]);
+        ok(ui_view_dbg(u) == esperado, q, ui_view_dbg(u), esperado);
+    }
+
+    /* O OMBRO DE VERDADE. Os testes acima apertam SCE_CTRL_L1/R1, que é o que
+       um controle externo manda. O ombro do PRÓPRIO Vita manda outro bit —
+       LTRIGGER/RTRIGGER — e por isso o app inteiro ficou com as teclas de
+       ombro mortas em aparelho, passando em todo teste. Este aperta o bit do
+       aparelho. */
+    while (ui_view_dbg(u) != V_ESTANTE) toca(u, SCE_CTRL_R1);
+    /* a aba seguinte à estante passou a ser ARTISTS — ver o anel acima */
+    toca(u, SCE_CTRL_RTRIGGER);
+    ok(ui_view_dbg(u) == V_ARTISTAS, "o ombro DIREITO do Vita (RTRIGGER) anda na fila",
+       ui_view_dbg(u), V_ARTISTAS);
+    toca(u, SCE_CTRL_LTRIGGER);
+    ok(ui_view_dbg(u) == V_ESTANTE, "e o ESQUERDO (LTRIGGER) volta",
+       ui_view_dbg(u), V_ESTANTE);
+
+    /* e para trás: [L1] da estante dá a volta e cai na última */
+    ok(ui_view_dbg(u) == V_ESTANTE, "o ombro deixou onde se esperava",
+       ui_view_dbg(u), V_ESTANTE);
+    toca(u, SCE_CTRL_L1);
+    ok(ui_view_dbg(u) == V_HOME, "estante: [L1] volta para a home",
+       ui_view_dbg(u), V_HOME);
+    toca(u, SCE_CTRL_R1);
+    ok(ui_view_dbg(u) == V_ESTANTE, "e [R1] desfaz o passo",
        ui_view_dbg(u), V_ESTANTE);
 
     ui_destroy(u);

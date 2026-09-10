@@ -50,6 +50,36 @@ static void ok(long obtido, long teto, const char *tela)
     printf("      a 60 fps são %.1f milhões por segundo\n", obtido * 60 / 1e6);
 }
 
+/* A PORTEIRA DA GPU RECUSA MESMO?
+
+   Uma coordenada NaN entregue ao sceGxm trava a GPU do Vita, e a trava
+   derruba o sistema inteiro — é o que enchia o cartão de
+   `psp2core-*-GPUCRASH.psp2dmp`. O ui.c passou a filtrar TODA chamada de
+   desenho, e o problema de um filtro que funciona é que ele fica invisível:
+   o relatório diz "zero recusas" tanto quando ele está de pé quanto quando
+   alguém o desligou sem querer.
+
+   Então empurra-se um NaN de propósito e confere-se as duas metades: que a
+   porteira CONTOU, e que o desenho NÃO SAIU. A segunda importa mais — contar
+   e deixar passar seria pior que não contar. */
+static void ok_porteira(void)
+{
+    unsigned long antes_r = ui_gpu_recusas();
+    long antes_d = hostgfx_draws();
+    ui_gpu_forca_nan();
+    unsigned long recusou = ui_gpu_recusas() - antes_r;
+    long saiu = hostgfx_draws() - antes_d;
+
+    if (recusou == 5 && saiu == 0) {
+        printf("  \033[32m✓\033[0m a porteira: 5 coordenadas sujas recusadas, 0 chegaram à GPU\n");
+        printf("      a primeira: %s\n", ui_gpu_primeira());
+        return;
+    }
+    falhas++;
+    printf("  \033[31m✗\033[0m a porteira deixou passar: %lu recusas (esperado 5), "
+           "%ld desenho(s) emitidos (esperado 0)\n", recusou, saiu);
+}
+
 int main(int argc, char **argv)
 {
     const char *raiz = argc > 1 ? argv[1] : NULL;
@@ -72,6 +102,19 @@ int main(int argc, char **argv)
     hostgfx_draws_reset();
     ui_frame(u, &lib, p);
     ok(hostgfx_draws(), TETO_ESTANTE, "estante");
+    printf("      (a porteira contou %ld neste quadro)\n", ui_gpu_pior());
+    ok_porteira();
+    /* A JANELA DE TEXTURA QUE PASSAVA DO FIM — o defeito que travava a GPU.
+       Zero é o estado são. Antes do conserto do `draw_cover_round` este
+       número era diferente de zero em toda tela com rótulo redondo. */
+    if (ui_gpu_aparadas() == 0) {
+        printf("  \033[32m✓\033[0m nenhuma janela de textura passa do fim da textura\n");
+    } else {
+        falhas++;
+        printf("  \033[31m✗\033[0m %lu janela(s) de textura fora dos limites — a GPU do Vita trava com isso\n",
+               ui_gpu_aparadas());
+        printf("      a primeira: %s\n", ui_gpu_apara1());
+    }
 
     /* deck com um disco tocando */
     Album *a = lib.nalbums ? &lib.albums[0] : NULL;
@@ -87,6 +130,7 @@ int main(int argc, char **argv)
         hostgfx_draws_reset();
         ui_frame(u, &lib, p);
         ok(hostgfx_draws(), TETO_DECK, "deck");
+    printf("      (a porteira contou %ld no pior quadro ate agora)\n", ui_gpu_pior());
 
         /* ---- PARA QUE LADO OS BOTÕES APONTAM ----
 

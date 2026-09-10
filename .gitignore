@@ -7,3 +7,11 @@ build/
 qobuz.config
 lastfm.config
 lastfm-queue.tsv
+
+# O HOSPEDEIRO DE EXTENSÕES fica FORA do repositório, por pedido do dono.
+#
+# Ele não traz fonte nem extensão nenhuma — é só o interpretador —, mas o
+# assunto inteiro (registro, loja, pacotes de terceiro) é dele e não vai para
+# o GitHub. Mora no cartão, em `ux0:spotiflac/`, que é onde o `pro-cartao.sh`
+# o deixa. Se este arquivo sumir do seu clone, é isto: ele nunca foi commitado.
+tools/spotiflac.js

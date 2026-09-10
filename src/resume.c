@@ -15,6 +15,11 @@ int resume_save(const char *dir, const Resume *r)
     fprintf(f, "pos=%d\n", r->position_sec);
     fprintf(f, "repeat=%d\n", r->repeat);
     fprintf(f, "shuffle=%d\n", r->shuffle ? 1 : 0);
+    fprintf(f, "midia=%d\n", r->midia);
+    fprintf(f, "toque_tras=%d\n", r->toque_tras ? 1 : 0);
+    fprintf(f, "tema=%d\n", r->tema);
+    fprintf(f, "fonte=%d\n", r->fonte);
+    fprintf(f, "bg_trava=%d\n", r->bg_trava ? 1 : 0);
     fclose(f);
     return 0;
 }
@@ -42,6 +47,16 @@ void resume_load(const char *dir, Resume *r)
             r->repeat = atoi(line + 7);
         } else if (strncmp(line, "shuffle=", 8) == 0) {
             r->shuffle = atoi(line + 8) != 0;
+        } else if (strncmp(line, "midia=", 6) == 0) {
+            r->midia = atoi(line + 6);
+        } else if (strncmp(line, "toque_tras=", 11) == 0) {
+            r->toque_tras = atoi(line + 11) != 0;
+        } else if (strncmp(line, "fonte=", 6) == 0) {
+            r->fonte = atoi(line + 6);
+        } else if (strncmp(line, "tema=", 5) == 0) {
+            r->tema = atoi(line + 5);
+        } else if (strncmp(line, "bg_trava=", 9) == 0) {
+            r->bg_trava = atoi(line + 9) != 0;
         }
     }
     fclose(f);

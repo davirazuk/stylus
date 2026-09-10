@@ -6,6 +6,7 @@
 #include "library.h"
 #include "player.h"
 #include "playlist.h"
+#include "rec.h"
 #include "qobuz.h"
 
 typedef struct Ui Ui;
@@ -15,7 +16,44 @@ typedef struct Ui Ui;
    cruza os dois — um sozinho seria promessa, não medida. */
 void ui_set_bgm(Ui *u, bool ok);
 
+/* As escolhas da tela de ajustes. O main as guarda junto do resto da sessão,
+   porque uma preferência que se perde ao fechar o app não é uma preferência. */
+int  ui_midia(const Ui *u);
+void ui_set_midia(Ui *u, int m);
+bool ui_toque_tras(const Ui *u);
+/* "segurar o botão PS": a Shell não suspende quem segura o PS_BTN, e é assim
+   que o ElevenMPV-A continua tocando fora da frente. Fica DESLIGADO por
+   padrão e é AJUSTE, não decisão minha: travar o PS muda o que o aparelho
+   inteiro faz quando se aperta, e isso tem de ser reversível por quem está
+   com ele na mão. */
+bool ui_bg_trava(const Ui *u);
+void ui_set_bg_trava(Ui *u, bool on);
+
+/* DE ONDE A BUSCA PROCURA (0 Qobuz, 1 SoundCloud). Escolha da pessoa, na aba
+   SETTINGS, e sobrevive ao fechar o app — ver o `fonte` do resume.h. */
+int  ui_fonte(const Ui *u);
+void ui_set_fonte(Ui *u, int f);
+
+/* A faixa do SoundCloud escolhida na lista de resultados. Devolve 0 quando
+   não há uma — o main usa isto para montar a sessão de UMA faixa (ação 27).
+   Fica aqui, e não num ponteiro para dentro do Ui, porque quem toca é o main
+   e a lista pode ser substituída pela busca seguinte no meio do caminho. */
+int  ui_sc_escolhida(const Ui *u, char *id, int id_cap,
+                     char *artista, int art_cap,
+                     char *titulo, int tit_cap, int *segundos);
+int  ui_tema(const Ui *u);
+void ui_set_tema(Ui *u, int t);
+void ui_set_toque_tras(Ui *u, bool on);
+
 void ui_set_data(Ui *u, Playlist *plists, int nplists, const Track **recs, int nrecs);
+
+/* O HISTÓRICO, para a tela HOME poder dizer "o que você mais toca".
+
+   A UI recebia só a lista de recomendações já pronta; para montar seções
+   ("mais tocados", "nunca tocados") ela precisa da CONTAGEM, que mora no
+   Rec. Passa-se o ponteiro, não uma cópia: quem é dono continua sendo o
+   main, e a tela só lê. */
+void ui_set_rec(Ui *u, const Rec *rec);
 
 Ui *ui_create(void);
 void ui_destroy(Ui *u);
@@ -35,6 +73,8 @@ int ui_rec_idx(const Ui *u);
    encenar a descida da agulha seria mentira sobre o que aconteceu. */
 void ui_begin_ritual(Ui *u);
 void ui_skip_ritual(Ui *u);
+/* true na primeira chamada DEPOIS da cerimônia terminar. Consumido uma vez. */
+bool ui_ritual_done(Ui *u);
 
 /* Repouso: a tela apaga e a música segue. É o mais perto de "ouvir enquanto
    faz outra coisa" que um app comum de Vita chega — o aparelho suspende
@@ -99,5 +139,50 @@ void ui_texto_dbg(char *dst, size_t cap, const char *src);
 int ui_selected(const Ui *u);          /* álbum marcado na estante */
 int ui_playlist_idx(const Ui *u);      /* playlist marcada na lista */
 QobuzConfig *ui_qobuz_cfg(Ui *u);     /* config do Qobuz (para o resolvedor) */
+
+/* A TROCA POR LOSSLESS. Quem dispara a busca é o main (ação 24), porque é
+   ele que tem a faixa que está no prato; a tela só precisa saber que ela
+   está em curso, para o botão dizer "looking…" em vez de aceitar um segundo
+   aperto que começaria tudo de novo. */
+void ui_set_casando(Ui *u, bool on);
+void ui_diz_casa(Ui *u, const char *msg);
+
+/* Só o preview usa: impede a tela da loja de reler o qobuz.config por cima da
+   conta de mentira que ele montou. Ver a nota no ui.c. */
+void ui_qobuz_finge_conta(Ui *u);
+
+/* Qual faixa o dedo escolheu na lista do deck (ação 26). -1 quando nenhuma. */
+int  ui_deck_alvo(const Ui *u);
+
+/* A PORTEIRA DA GPU, para quem quiser conferir de fora (o teste, o
+   `gpu.txt`). Uma coordenada NaN entregue ao sceGxm trava a GPU do Vita e a
+   trava derruba o sistema — a porteira recusa antes, e conta. Zero recusas é
+   o estado são; qualquer número acima disso é um defeito de conta em algum
+   desenho, e `ui_gpu_primeira` diz qual. Ver a nota no topo do ui.c. */
+void          ui_gpu_forca_nan(void);  /* só o teste: empurra NaN na porteira */
+unsigned long ui_gpu_recusas(void);
+/* Janelas de textura que passavam do fim da textura e foram aparadas. Ler
+   fora do bloco mapeado TRAVA a GPU do Vita — ver a nota no `gg_tex_part`.
+   Zero é o estado são; qualquer número acima é geometria errada em quem
+   desenha. */
+unsigned long ui_gpu_aparadas(void);
+/* Primitivas com coordenada FINITA mas muito fora da tela. O tiler do SGX
+   percorre a área coberta: um triângulo gigante é tempo de GPU que o
+   watchdog do aparelho mata. Zero é o estado são. */
+unsigned long ui_gpu_longe(void);
+const char   *ui_gpu_longe1(void);
+const char   *ui_gpu_apara1(void);
+const char   *ui_gpu_primeira(void);
+long          ui_gpu_pior(void);      /* desenhos no pior quadro até agora */
+long          ui_gpu_ultimo(void);    /* desenhos no quadro anterior */
+/* PREENCHIMENTO, em TELAS CHEIAS (960x544 = 1,0). O contador de chamadas não
+   vê custo de pixel: sete chamadas que cobrem a tela sete vezes passam por
+   ele como sete. Ver a nota do `gg_px_caixa` no ui.c. */
+double        ui_gpu_telas_agora(void);
+double        ui_gpu_telas_ultimo(void);
+double        ui_gpu_telas_pior(void);
+int           ui_gpu_pior_tela(void); /* que View fez o pior quadro, -1 se nenhuma */
+void          ui_gpu_pior_por_tipo(char *out, int cap);  /* rect=.. glyph=.. */
+int           ui_gpu_estourou(void);  /* o teto por quadro chegou a pegar */
 
 #endif

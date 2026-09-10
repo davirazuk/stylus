@@ -43,8 +43,16 @@ void player_stop(Player *p);
 void player_play(Player *p);
 void player_pause(Player *p);
 void player_toggle(Player *p);
+/* Mudo temporário: pausa o dispositivo de áudio SEM mudar o estado do player.
+   O decoder continua preenchendo o ring buffer. Usado pela cerimônia: o som
+   só sai quando a agulha toca o disco. */
+void player_mute(Player *p);
+void player_unmute(Player *p);
 void player_next(Player *p);   /* avança uma faixa dentro do álbum */
 void player_prev(Player *p);
+/* Pula direto para a faixa `idx` da lista carregada. É o que faz a lista
+   desenhada no deck poder ser TOCADA — ver a nota no player.c. */
+void player_goto(Player *p, int idx);
 int player_seek(Player *p, int seconds);
 
 /* repetição e sorteio (modo do que toca na sessão atual) */

@@ -14,6 +14,15 @@ typedef struct {
     int  position_sec;      /* posição em segundos na faixa */
     int  repeat;            /* 0=off 1=all 2=one */
     bool shuffle;
+    /* Que MÍDIA o prato mostra: 0 vinil, 1 CD. Mora aqui junto de repeat e
+       shuffle porque é da mesma natureza — uma escolha da pessoa que tem de
+       sobreviver ao fechar o app. Quem escolheu CD uma vez não quer
+       reescolher a cada abertura. */
+    int  midia;
+    bool toque_tras;        /* a almofada de trás responde? */
+    int  tema;              /* índice do tema da paleta */
+    int  fonte;             /* onde a busca procura: 0 Qobuz, 1 SoundCloud */
+    bool bg_trava;          /* segura o PS para seguir tocando fora da frente */
     bool valid;
 } Resume;
 

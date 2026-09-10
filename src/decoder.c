@@ -826,8 +826,6 @@ static long dec_read_raw(Decoder *d, void *buf, size_t bytes);
    já pediu a reamostragem ao mpg123 na abertura, e reamostrar duas vezes é
    perder qualidade de graça. Falhar aqui NÃO derruba a faixa — toca na taxa
    nativa, sem áudio de fundo, que é o que acontecia antes. */
-static Decoder *dec_pronto(Decoder *d);
-
 static void dec_talvez_reamostrar(Decoder *d)
 {
     if (!d || d->kind == DEC_MP3) return;

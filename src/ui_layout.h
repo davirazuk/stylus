@@ -11,21 +11,57 @@
  * parar numa fileira que não existia na tela. Nada disso estoura, e ler o
  * código não pega: os números parecem razoáveis. Só medir pega. */
 
-#define UI_SHELF_COLS 4
-#define UI_SHELF_ROWS 2
+/* A MOLDURA, COM UM DONO SÓ.
+
+   Estes quatro números estavam escritos DUAS vezes: aqui, no ui_frame_geom,
+   e como `#define` no topo do ui.c. Enquanto ninguém mexeu, as duas cópias
+   concordaram; na primeira vez que o rodapé desceu (quando a fila de atalhos
+   morreu e liberou 16 px), só uma das cópias soube — e o sintoma foi a nona
+   linha da lista continuar cortada, com a geometria "certa" e a tela errada.
+
+   É a mesma doença que o comentário lá embaixo descreve sobre a estante. Um
+   dono só, e as duas metades leem daqui. */
+#define UI_PAD_X   28.0f
+#define UI_HEAD_Y  26
+#define UI_BODY_Y  58.0f
+#define UI_FOOT_DY 18.0f    /* distância do rodapé até o fim da tela */
+
+/* SEIS POR TRÊS, e não quatro por dois.
+
+   Oito discos de 388 são quarenta e nove páginas. A grade era pequena porque
+   o card era GRANDE — moldura, sombra em três camadas, borda de seleção e
+   três linhas de texto —, e o card era grande porque não havia capa: um
+   quadrado vazio precisa de decoração para parecer alguma coisa.
+
+   Agora há arte em 339 dos 388, e a lição do Sonara vale: A ARTE É O CARD.
+   Sem moldura e sem sombra, a capa de 100 px se reconhece de relance, cabem
+   dezoito por tela (22 páginas em vez de 49) e some o "muro de caixas" que
+   dezoito molduras teriam feito.
+
+   De quebra saem oito retângulos por card — sombra, fundo e as quatro bordas
+   — que no aparelho são oito sceGxmDraw cada. */
+#define UI_SHELF_COLS 6
+#define UI_SHELF_ROWS 3
 #define UI_SHELF_PAGE (UI_SHELF_COLS * UI_SHELF_ROWS)
 
 typedef struct {
     float pad_x;
     float body_y, body_h;    /* a faixa entre o cabeçalho e o rodapé */
-    float foot_y, hint_y;
+    float foot_y;
     int   head_y;
 } UiFrameGeom;
 
 typedef struct {
     float card_w, card_h, gap, x0, y0;
     float cover_side, cover_pad;
-    float label_dy, sub_dy;  /* linha de base dos rótulos, do topo do card */
+    /* Linhas de base dos rótulos, do topo do card. São DUAS: o nome do disco
+       numa, o artista na outra.
+
+       Eram TRÊS — o nome quebrava em duas linhas — porque o card tinha 212 px
+       de largura e cabiam quatro por tela. Com dezoito por tela a coluna tem
+       139: quebrar o nome em duas dá dois pedaços igualmente ilegíveis, em
+       vez de um começo legível seguido de reticências. */
+    float label_dy, sub_dy;
 } UiShelfGeom;
 
 typedef struct {

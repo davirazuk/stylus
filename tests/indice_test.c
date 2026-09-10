@@ -149,6 +149,26 @@ int main(void)
        "e nao deixa meia estante montada para a varredura duplicar");
     library_free(&c);
 
+    /* 6. o indice VAZIO — o que quase custou mais uma viagem ao aparelho.
+       O app rodou meses sem conseguir abrir ux0:music (era homebrew "safe")
+       e gravou esse nada: R=5, D=0, A=0. Com D=0 nao ha pasta cuja data
+       conferir, entao a validacao acima nao roda uma vez e o indice passa
+       PARA SEMPRE — mesmo depois de o sandbox ser consertado. */
+    FILE *v = fopen(IDX, "w");
+    if (v) {
+        fprintf(v, "vitastylus-estante\t1\n");
+        fprintf(v, "R\t1\nr\t%s\n", RAIZ);
+        fprintf(v, "D\t0\n");
+        fprintf(v, "A\t0\n");
+        fclose(v);
+    }
+    Library e;
+    library_init(&e);
+    ok(library_cache_load(&e, IDX) != 0,
+       "indice com ZERO discos e RECUSADO (senao a estante vazia vira eterna)");
+    ok(e.nalbums == 0, "e nao deixa nada montado");
+    library_free(&e);
+
     rm("");
     unlink(IDX);
     printf("ok: o indice vale quando vale, e recusa quando mudou\n");

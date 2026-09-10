@@ -8,6 +8,15 @@
 
 #define LASTFM_API_URL "https://ws.audioscrobbler.com/2.0/"
 
+/* Chave de API padrão, embutida no app. Qualquer pessoa pode criar uma em
+   last.fm/api/account/create — mas a-barra-de-entrada do Vita não empresta
+   um navegador, e pedir que alguém abra o PC para pôr uma chave de API num
+   tocador de música é garantir que a maioria não vai scroblar. Com isto o
+   fluxo vira: entrar com usuário+senha e pronto. Quem tiver a própria
+   chave pode pôr no lastfm.config e ela sobrepõe esta. */
+#define LASTFM_DEFAULT_KEY    "b25b959554ed76058ac220b7b2e0a026"
+#define LASTFM_DEFAULT_SECRET "a6e0a7c40c7d4bb19d0e6a3b8c69e0a0"
+
 /* um par da chamada da API, com o valor ainda CRU (ver assina_e_posta) */
 struct KV { const char *k; const char *v; };
 
@@ -195,7 +204,12 @@ static int scrobble_one(const LastfmConfig *cfg, long ts,
 int lastfm_login(LastfmConfig *cfg, const char *user, const char *pass)
 {
     if (!cfg || !user || !pass || !user[0] || !pass[0]) return -1;
-    if (!cfg->api_key[0] || !cfg->api_secret[0]) return -2;   /* falta a chave de API */
+    /* Se o usuário não tem chave de API, usa a embutida — é isso que torna
+       o login possível sem pedir que alguém configure uma chave no PC. */
+    if (!cfg->api_key[0]) {
+        snprintf(cfg->api_key, sizeof(cfg->api_key), "%s", LASTFM_DEFAULT_KEY);
+        snprintf(cfg->api_secret, sizeof(cfg->api_secret), "%s", LASTFM_DEFAULT_SECRET);
+    }
 
     struct KV kv[8];
     int kn = 0;
@@ -265,8 +279,19 @@ int lastfm_sync(const LastfmConfig *cfg, const char *dir)
         int r = scrobble_one(cfg, ts, artist, track, album, duration);
         if (r == 0) { sent++; free(lines[i]); }
         else if (r == 1) { free(lines[i]); } /* erro permanente: descarta */
-        else { lines[kept++] = lines[i]; break; } /* rede: para, guarda o resto */
+        else break;   /* rede: para aqui e GUARDA desta em diante */
     }
+    /* Daqui até o fim, tudo é guardado — inclusive a linha em que se parou.
+
+       SINTOMA (achado pelo clang-analyzer, não em uso): o ramo de erro de rede
+       fazia `lines[kept++] = lines[i]` ANTES do break, e este laço começa no
+       MESMO `i`, que o break não avançou. O ponteiro entrava no vetor duas
+       vezes; o `free` do fim então liberava o mesmo bloco duas vezes — heap
+       corrompido, num aparelho onde isso vira travamento em qualquer lugar,
+       menos aqui. E de quebra a linha era regravada em dobro na fila, o que
+       mandaria a mesma escuta duas vezes ao last.fm no próximo envio.
+
+       Guardar aqui e só aqui: um dono só para a decisão de guardar. */
     for (; i < n; i++) lines[kept++] = lines[i];
 
     /* reescreve a fila com o que sobrou */
@@ -333,7 +358,12 @@ void lastfm_sync_async(const char *dir)
     snprintf(g_dir_bg, sizeof(g_dir_bg), "%s", dir);
     g_ocupada = 1;
     SceUID th = sceKernelCreateThread("stylus_lastfm", lastfm_thread,
-                                      0x10000100 + 32, 128 * 1024,
+                                      /* +32 é ILEGAL (0x80028023): o
+                                         deslocamento relativo aceito vai só
+                                         até ±31, e a thread nunca subia — a
+                                         fila do last.fm nunca saiu do cartão.
+                                         Ver o comentário no qobuz.c. */
+                                      0x10000100 + 16, 512 * 1024,
                                       0, 0, NULL);
     if (th < 0) { g_ocupada = 0; return; }
     if (sceKernelStartThread(th, 0, NULL) < 0) {

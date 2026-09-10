@@ -109,6 +109,13 @@ def main(argv):
         for s in literais(txt):
             if not s.strip() or TECNICA.match(s) or s in DADO:
                 continue
+            # NOME DE ARQUIVO NÃO É PROSA. A tela precisa poder dizer
+            # "run tools/pro-cartao.sh" — o arquivo se chama assim, e escrever
+            # outro nome para agradar a esta conferência seria mandar a pessoa
+            # rodar um comando que não existe. Só os tokens com extensão saem;
+            # o resto da frase continua sendo conferido palavra por palavra.
+            s = re.sub(r"\S+\.(?:sh|py|c|h|cfg|config|json|txt|idx|db|vpk)\b",
+                       " ", s)
             achado = None
             if ACENTO.search(s):
                 achado = "acento"

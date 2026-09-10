@@ -94,6 +94,85 @@ int track_name_split(const char *filename, char *out, size_t cap)
     return num;
 }
 
+/* ---------------- o rótulo da estante ---------------- */
+
+/* O que o CARD mostra não é o nome da pasta.
+
+   SINTOMA: quatro cards de Radiohead lado a lado dizendo "1993-02-11 -...",
+   "1993-04-02 -...", "1993-10-15 -..." e "1996-05-27 -...". O nome da pasta
+   de um bootleg é "data - artista - lugar", o card tem 212 px, e a elisão
+   cortava pela direita — ou seja, mostrava exatamente o pedaço que TODOS
+   têm igual e escondia o único que distingue um do outro. Aumentar a letra
+   para caber a leitura PIOROU isto: quanto maior o texto, mais cedo o corte.
+
+   Então a data sai da frente e volta na linha de baixo, e o artista sai
+   quando ele já está escrito logo abaixo. Sobra o que a pessoa procura:
+
+     "1993-02-11 - Radiohead - Signal Radio Session, England [FM]"
+      →  Signal Radio Session, England [FM]
+         Radiohead · 1993-02-11
+
+   Nada aqui renomeia pasta nenhuma — o `key` e o `path` continuam intactos,
+   e é por eles que o scrobble e a retomada acham o disco. Isto é só tela.
+
+   Puro de propósito: quem decide o que se lê na estante é testável sem abrir
+   janela (ver tools/host_test.c). */
+
+/* Um prefixo de data: AAAA, AAAA-MM ou AAAA-MM-DD seguido de " - ".
+   Devolve o resto, ou NULL quando não há data na frente. */
+static const char *pula_data(const char *s, char *data, size_t dcap)
+{
+    int i = 0;
+    while (s[i] >= '0' && s[i] <= '9') i++;
+    if (i != 4) return NULL;             /* ano tem quatro dígitos, sempre */
+
+    int j = i;
+    for (int p = 0; p < 2; p++) {        /* -MM e depois -DD, os dois opcionais */
+        if (s[j] != '-') break;
+        int k = j + 1, d = 0;
+        while (s[k] >= '0' && s[k] <= '9') { k++; d++; }
+        if (d != 2) break;
+        j = k;
+    }
+    if (strncmp(s + j, " - ", 3) != 0) return NULL;
+    if (data && dcap) snprintf(data, dcap, "%.*s", j, s);
+    return s + j + 3;
+}
+
+void album_display(const Album *a, char *titulo, size_t tcap, char *sub, size_t scap)
+{
+    if (titulo && tcap) titulo[0] = '\0';
+    if (sub && scap)    sub[0] = '\0';
+    if (!a) return;
+
+    char data[16] = "";
+    const char *t = a->album;
+
+    const char *sem_data = pula_data(t, data, sizeof(data));
+    if (sem_data && *sem_data) t = sem_data;
+
+    /* o artista só sai da frente porque ele REAPARECE na linha de baixo */
+    size_t al = strlen(a->artist);
+    if (al && strncasecmp(t, a->artist, al) == 0 && strncmp(t + al, " - ", 3) == 0
+        && t[al + 3])
+        t += al + 3;
+
+    /* Se sobrou nada, a poda comeu o nome inteiro (um disco chamado só
+       "1979", uma pasta que é só o nome do artista). Melhor o nome cru que
+       um card em branco. */
+    if (!*t) t = a->album;
+
+    if (titulo && tcap) snprintf(titulo, tcap, "%s", t);
+
+    if (sub && scap) {
+        const char *ar = a->artist[0] ? a->artist : "";
+        if (ar[0] && data[0])      snprintf(sub, scap, "%s  ·  %s", ar, data);
+        else if (ar[0])            snprintf(sub, scap, "%s", ar);
+        else if (data[0])          snprintf(sub, scap, "%s", data);
+        else                       snprintf(sub, scap, "%s", "—");
+    }
+}
+
 /* ---------------- raízes ---------------- */
 
 /* Os palpites, do mais provável ao menos. Um cartão SD2VITA aparece como
@@ -101,8 +180,46 @@ int track_name_split(const char *filename, char *out, size_t cap)
    2000 como imc0:. Uma instalação com o SD2VITA em ux0: ainda pode ter a
    música no cartão oficial — é por isso que são todos varridos, não só o
    primeiro que abrir. */
+static int g_mount_init_rc = 0, g_mount_rc = 0, g_mount_feito = 0;
+static int g_qb_achou = -1, g_qb_conf = -1;
+static int g_bgm_rc = 1, g_bgm_visto = 0;   /* 1 = valor impossível p/ um rc */
+static long g_bgm_teto = 0;
+static int g_dlg_rc = 1, g_dlg_visto = 0;   /* 1 = valor impossível p/ um rc */
+
+void library_set_qobuz(int achou, int configurado)
+{
+    g_qb_achou = achou;
+    g_qb_conf = configurado;
+}
+
+void library_set_bgm(int porta_rc, long teto_hz)
+{
+    g_bgm_rc = porta_rc;
+    g_bgm_teto = teto_hz;
+    g_bgm_visto = 1;
+}
+
+void library_set_dialog(int rc)
+{
+    g_dlg_rc = rc;
+    g_dlg_visto = 1;
+}
+
+void library_set_music_mount(int init_rc, int mount_rc)
+{
+    g_mount_init_rc = init_rc;
+    g_mount_rc = mount_rc;
+    g_mount_feito = 1;
+}
+
 static const char *DEFAULT_ROOTS[] = {
+    /* ux0:music PRIMEIRO, music0: como reserva. Os dois são a mesma pasta
+       (ver root_canon) e o de cima é o que tem significado fora daqui: é o
+       nome que o app de Música do Vita usa, que a tela do "ouvir enquanto
+       joga" manda abrir, e que vai no scrobble. O music0: fica para o caso
+       de um firmware em que só o ponto de montagem abra. */
     "ux0:music",
+    "music0:",
     STYLUS_OWN_MUSIC,
     "uma0:music",
     "imc0:music",
@@ -117,13 +234,54 @@ int library_default_roots(const char **out, int max)
     return n;
 }
 
+/* "music0:" e "ux0:music" SÃO A MESMA PASTA.
+
+   SINTOMA: o relatório do cartão trouxe as duas abertas, cada uma com
+   audio=3729, e a estante ficou com 776 discos onde há 388 — cada disco
+   duas vezes, e com ele os lados e a ordem das faixas.
+
+   O `music0:` é o ponto de montagem que o sceAppUtilMusicMount() entrega; o
+   `ux0:music` é o mesmo conteúdo pelo caminho do cartão. O detalhe cruel: o
+   ux0:music só passou a ABRIR depois que o mount foi acrescentado. Ou seja,
+   esta duplicata NASCEU do conserto anterior — antes dele, só uma das duas
+   abria e ninguém via o problema.
+
+   O root_covered abaixo só sabia comparar PREFIXO, e "music0:" não é prefixo
+   de "ux0:music" nem o contrário. Por isso a forma canônica: comparar o que
+   os dois nomes SIGNIFICAM, não como estão escritos.
+
+   E não era só a estante em dobro: o decodificador abre a faixa com fopen(),
+   que é o newlib — o mesmo newlib cuja tradução de caminho já obrigou a
+   varredura a trocar opendir por sceIoDopen (ver fsutil.h). Metade dos discos
+   ficou com caminho "music0:/...", e um disco que não abre é um disco que não
+   toca. Preferir ux0:music não é gosto: é o caminho que o resto do sistema
+   sabe abrir. */
+static void root_canon(const char *p, char *out, size_t cap)
+{
+    if (!cap) return;
+    out[0] = '\0';
+    if (!p) return;
+    if (strncasecmp(p, "music0:", 7) == 0) {
+        const char *resto = p + 7;
+        while (*resto == '/') resto++;
+        if (*resto) snprintf(out, cap, "ux0:music/%s", resto);
+        else        snprintf(out, cap, "%s", "ux0:music");
+        return;
+    }
+    snprintf(out, cap, "%s", p);
+}
+
 /* "ux0:music" contém "ux0:music/rock": aceitar as duas varre o mesmo disco
    duas vezes e a estante mostra tudo em dobro. */
-static bool root_covered(const Library *lib, const char *cand)
+static bool root_covered(const Library *lib, const char *cand_bruto)
 {
+    char cand_buf[MAX_PATH_LEN], have_buf[MAX_PATH_LEN];
+    root_canon(cand_bruto, cand_buf, sizeof(cand_buf));
+    const char *cand = cand_buf;
     size_t cl = strlen(cand);
     for (int i = 0; i < lib->nroots; i++) {
-        const char *have = lib->roots[i].path;
+        root_canon(lib->roots[i].path, have_buf, sizeof(have_buf));
+        const char *have = have_buf;
         size_t hl = strlen(have);
         if (cl == hl && strcasecmp(have, cand) == 0) return true;
         /* o sistema de arquivos do Vita não distingue maiúsculas: "ux0:MUSIC"
@@ -201,12 +359,27 @@ static void set_artist_album(const char *rel_dir, char *artist, size_t artist_ca
     if (artist && artist_cap) artist[0] = '\0';
     if (album && album_cap) album[0] = '\0';
     if (!rel_dir || !rel_dir[0]) {
-        snprintf(album, album_cap, "%s", "(no folder)");
+        snprintf(album, album_cap, "%s", "loose tracks");
         return;
     }
     const char *last = strrchr(rel_dir, '/');
     if (!last) {
+        /* Disco na RAIZ, sem pasta de artista: "1993-02-11 - Radiohead -
+           Signal Radio Session". O nome do disco continua sendo a pasta
+           inteira — é o `album_display` que tira a data e o artista dela na
+           hora de escrever —, mas o ARTISTA dá para saber daqui, e sem isso
+           estes discos ficam fora da tela de ARTISTS por não ter nenhum.
+           A tag do arquivo, quando existir, sobrescreve isto depois. */
         snprintf(album, album_cap, "%s", rel_dir);
+        const char *sem_data = pula_data(rel_dir, NULL, 0);
+        if (sem_data && *sem_data) {
+            const char *sep = strstr(sem_data, " - ");
+            size_t m = sep ? (size_t)(sep - sem_data) : 0;
+            if (m > 0 && m < artist_cap) {
+                memcpy(artist, sem_data, m);
+                artist[m] = '\0';
+            }
+        }
         return;
     }
     size_t alen = (size_t)(last - rel_dir);
@@ -214,6 +387,40 @@ static void set_artist_album(const char *rel_dir, char *artist, size_t artist_ca
        senão "Radiohead/OK Computer" e "Radiohead/Kid A" viram dois artistas. */
     const char *first = memchr(rel_dir, '/', alen);
     if (first) alen = (size_t)(first - rel_dir);
+
+    /* "1993-02-11 - Radiohead - Signal Radio Session/AMEC2013" —
+       O ARTISTA ESTÁ NO MEIO, e o segmento inteiro não é nome de ninguém.
+
+       SINTOMA: a tela de ARTISTS mostrava 113 nomes numa coleção que tem umas
+       trinta, e metade deles era uma DATA: "1998-04-02 -…", "2006-06 -…",
+       "2013-10-26 -…". Cada show ao vivo virava um artista só dele. Uma tela
+       que existe para agrupar, mostrando um grupo por item, é uma lista de
+       discos com o nome errado.
+
+       A forma é a mesma que o `album_display` já conhece — data, " - ",
+       artista, " - ", título — então a data sai pelo mesmo `pula_data` e o
+       artista é o que vem até o " - " seguinte. Onde não houver esse segundo
+       separador, vale tudo o que sobrou depois da data: um disco chamado
+       "2007 - In Rainbows" numa pasta de artista é o disco, não o artista, e
+       aí o `first` já era o artista mesmo. */
+    {
+        char cand[MAX_NAME_LEN];
+        size_t n = alen < sizeof(cand) ? alen : sizeof(cand) - 1;
+        memcpy(cand, rel_dir, n);
+        cand[n] = '\0';
+        const char *sem_data = pula_data(cand, NULL, 0);
+        if (sem_data && *sem_data) {
+            const char *sep = strstr(sem_data, " - ");
+            size_t m = sep ? (size_t)(sep - sem_data) : strlen(sem_data);
+            if (m > 0 && m < artist_cap) {
+                memcpy(artist, sem_data, m);
+                artist[m] = '\0';
+                snprintf(album, album_cap, "%s", last + 1);
+                return;
+            }
+        }
+    }
+
     if (alen >= artist_cap) alen = artist_cap - 1;
     memcpy(artist, rel_dir, alen);
     artist[alen] = '\0';
@@ -312,18 +519,38 @@ static void marca_pasta(Library *lib, const char *abs)
     lib->nstamps++;
 }
 
+/* -------- detecção de pastas de disco (multi-disc) --------
+   Pastas como "Disc 01", "Disc 2", "CD 1", "CD03" etc. indicam discos
+   separados de um mesmo álbum. O scanner deve mesclar as faixas destas
+   pastas no álbum-pai, em vez de criar um álbum separado para cada disco. */
+static int is_disc_dir(const char *name)
+{
+    if (!name || !name[0]) return 0;
+    const char *p = name;
+    /* "Disc" ou "CD" */
+    if ((p[0] == 'D' || p[0] == 'd') && (p[1] == 'i' || p[1] == 'I') &&
+        (p[2] == 's' || p[2] == 'S') && (p[3] == 'c' || p[3] == 'C')) {
+        p += 4;
+    } else if ((p[0] == 'C' || p[0] == 'c') && (p[1] == 'D' || p[1] == 'd')) {
+        p += 2;
+    } else {
+        return 0;
+    }
+    /* espaço opcional */
+    if (*p == ' ' || *p == '_') p++;
+    /* pelo menos um dígito */
+    if (*p < '0' || *p > '9') return 0;
+    while (*p >= '0' && *p <= '9') p++;
+    /* pode terminar aqui ou ter sufixo como "Disc 1 - Bonus" */
+    return (*p == '\0' || *p == ' ' || *p == '-' || *p == '_');
+}
+
 static void scan_dir(Library *lib, int root_idx, const char *abs, const char *rel, int depth)
 {
     if (depth > SCAN_MAX_DEPTH) return;
-    /* dir_open, não opendir: no aparelho o opendir devolveu NULL para
-       "ux0:music" nas três formas, e a API do sistema não tem essa dúvida.
-       Ver a nota grande no fsutil.h. */
     int erro = 0;
     DirIter *d = dir_open_err(abs, &erro);
     if (!d) {
-        /* guarda o motivo NA RAIZ, não numa subpasta qualquer: é a raiz que
-           a tela mostra, e uma subpasta que some no meio da varredura não é
-           a mesma história que a raiz não abrir */
         if (depth == 0 && root_idx >= 0 && root_idx < lib->nroots)
             lib->roots[root_idx].err = erro;
         return;
@@ -342,7 +569,11 @@ static void scan_dir(Library *lib, int root_idx, const char *abs, const char *re
         path_join(child_rel, sizeof(child_rel), rel, nome);
 
         if (isdir == 1) {
-            scan_dir(lib, root_idx, child_abs, child_rel, depth + 1);
+            /* ═══ MESCLAGEM DE DISCOS ════════════════════════════════════════
+               Se a pasta se chama "Disc 01", "CD 2" etc., as faixas dela
+               pertencem ao ÁLBUM-PAI — não a um álbum separado. */
+            const char *merge_rel = is_disc_dir(nome) ? rel : child_rel;
+            scan_dir(lib, root_idx, child_abs, merge_rel, depth + 1);
             continue;
         }
         if (isdir != 0) continue;
@@ -359,13 +590,12 @@ static void scan_dir(Library *lib, int root_idx, const char *abs, const char *re
             a->root_idx = root_idx;
             snprintf(a->key, MAX_PATH_LEN, "%s", rel);
             set_artist_album(rel, a->artist, MAX_NAME_LEN, a->album, MAX_NAME_LEN);
+            a->mtime = dir_mtime(abs);
         }
         add_track(a, child_abs, nome);
     }
     dir_close(d);
 }
-
-/* ---------------- ordenação ---------------- */
 
 /* Compara nome de arquivo tratando dígitos como NÚMERO: sem isso "10" vem
    antes de "2" e um disco de doze faixas toca 1, 10, 11, 12, 2, 3… */
@@ -379,7 +609,20 @@ static int natcmp(const char *a, const char *b)
             if (na != nb) return na < nb ? -1 : 1;
             continue;
         }
-        int ca = *a, cb = *b;
+        /* `unsigned char` NÃO É ENFEITE AQUI.
+
+           O `char` puro é ASSINADO no x86 e NÃO ASSINADO no ARM — e esta
+           função roda nos dois: no aparelho, e no teste de host que deveria
+           provar o que o aparelho faz. Num nome acentuado (esta coleção tem
+           vários, e a própria descoberta procura por "Músicas") o primeiro
+           byte de "ú" é 0xC3: vira -61 no PC e 195 no Vita.
+
+           Resultado: a estante saía numa ordem no teste e noutra no aparelho,
+           com os acentuados ANTES de tudo aqui e DEPOIS de tudo lá. Nenhum
+           teste podia pegar, porque o teste é justamente o lado que discorda.
+           Com unsigned char os dois concordam, e byte alto vem depois do
+           ASCII, que é a única ordem defensável sem uma tabela de collation. */
+        int ca = (unsigned char)*a, cb = (unsigned char)*b;
         if (ca >= 'A' && ca <= 'Z') ca += 32;
         if (cb >= 'A' && cb <= 'Z') cb += 32;
         if (ca != cb) return ca < cb ? -1 : 1;
@@ -704,27 +947,163 @@ int library_scan(Library *lib)
 
 /* Os códigos que o sceIo* devolve, nos casos que importam aqui.
 
-   "does not exist" e "permission denied" pedem consertos OPOSTOS, e a tela dizia
-   "(não existe)" para os dois — mandando a pessoa procurar a pasta que já
-   está lá. Um número que ninguém sabe ler não serve; o nome, sim. */
+   No Vita o erro de arquivo é 0x80010000 | errno, e o errno é o do newlib —
+   em DECIMAL. A tabela antiga tratava o byte baixo como se o hexadecimal já
+   fosse o número e errava quase todas: 0x13 é 19 (ENODEV, "não existe esse
+   aparelho") e estava escrito "read only"; 0x18 é 24 (EMFILE) e estava "not a
+   folder"; 0x1C é 28 (ENOSPC) e estava "out of memory".
+
+   SINTOMA: o relatório do cartão dizia "unknown error" na única linha que
+   importava — 0x80010001, EPERM, que não estava na lista — e "read only" em
+   três aparelhos que só estavam AUSENTES. Quem leu o relatório concluiu que o
+   problema era o nome do caminho e passou a tentar duas grafias; o problema
+   era permissão, e a estante continuou vazia. Um relatório que erra o nome do
+   erro é pior que um que só mostra o número: manda procurar no lugar errado. */
 const char *scan_err_str(int err)
 {
     if (err == 0) return "";
-    switch ((unsigned)err) {
-    case 0x80010002u: return "does not exist";
-    case 0x8001000Du: return "permission denied";
-    case 0x80010013u: return "read only";
-    case 0x80010014u: return "device busy";
-    case 0x80010016u: return "invalid path";
-    case 0x80010018u: return "not a folder";
-    case 0x8001001Cu: return "out of memory";
-    case 0x80010024u: return "too many open files";
-    /* no PC os erros são os do errno, pequenos */
+
+    /* no PC vem o errno cru; no Vita vem embrulhado */
+    unsigned u = (unsigned)err;
+    int e = ((u & 0xFFFF0000u) == 0x80010000u) ? (int)(u & 0xFFFFu) : (int)u;
+
+    switch (e) {
+    case 1:  return "not allowed (app is 'safe' homebrew)";
     case 2:  return "does not exist";
+    case 9:  return "bad handle";
+    case 12: return "out of memory";
     case 13: return "permission denied";
+    case 16: return "device busy";
+    case 19: return "no such device";
     case 20: return "not a folder";
+    case 22: return "invalid path";
+    case 24: return "too many open files";
+    case 28: return "card full";
+    case 30: return "read only";
+    case 36: return "path too long";
     default: return "unknown error";
     }
+}
+
+/* A SONDA.
+
+   Duas explicações diferentes produzem exatamente a mesma tela vazia, e
+   escolher errado entre elas já custou duas viagens ao aparelho:
+
+     (a) o sandbox de homebrew "safe" — ux0: inteiro fechado menos ux0:data;
+     (b) ux0:music ser pasta de MÍDIA do Content Manager, fechada para
+         qualquer app comum, safe ou não.
+
+   O relatório antigo só sondava pastas de música, e por isso não separava as
+   duas. Estas linhas separam: se ux0:app e ux0:tai ABREM e ux0:music não, é
+   (b) — e mexer em "Enable unsafe homebrew" não vai adiantar nada. Se nada
+   fora de ux0:data abrir, é (a).
+
+   Custa uns dez sceIoDopen por arranque, uma vez, e evita uma viagem. */
+static void library_sonda(FILE *f)
+{
+#ifdef __vita__
+    static const char *ALVOS[] = {
+        "ux0:",             /* a raiz: abre?                          */
+        "ux0:data",         /* a única pasta que o modo safe libera    */
+        "ux0:app",          /* fora da lista branca, e NÃO é mídia     */
+        "ux0:tai",          /* idem — e é onde mora o MusicPremium     */
+        "ux0:pkgj",         /* idem, de um app que sabidamente funciona*/
+        "ux0:music",        /* mídia                                  */
+        "ux0:/music",       /* a mesma, com a outra grafia            */
+        "music0:",          /* o que o sceAppUtilMusicMount entrega    */
+        "music0:/",         /* idem, com barra                        */
+        "ux0:photo",        /* mídia                                  */
+        "ux0:video",        /* mídia                                  */
+        "ux0:downloads",    /* comum                                  */
+        NULL
+    };
+    fprintf(f, "\nmusic mount sceAppUtilInit=0x%08X  MusicMount=0x%08X%s\n",
+            (unsigned)g_mount_init_rc, (unsigned)g_mount_rc,
+            g_mount_feito ? "" : "  (NOT CALLED)");
+    if (g_bgm_visto)
+        fprintf(f, "bgm port    sceAppMgrAcquireBgmPort=0x%08X (%s)  cap=%ld Hz\n",
+                (unsigned)g_bgm_rc, g_bgm_rc >= 0 ? "granted" : "REFUSED",
+                g_bgm_teto);
+    if (g_dlg_visto)
+        fprintf(f, "dialog cfg  sceCommonDialogSetConfigParam=0x%08X (%s)\n",
+                (unsigned)g_dlg_rc,
+                g_dlg_rc == 0 ? "keyboard can open" : "NO KEYBOARD");
+    if (g_qb_achou >= 0)
+        fprintf(f, "qobuz       config file %s, credentials %s\n",
+                g_qb_achou ? "found" : "MISSING",
+                g_qb_conf ? "complete (search screen)"
+                          : "incomplete (setup screen)");
+    /* O MUSICPREMIUM ESTÁ MESMO CARREGADO?
+
+       "tocar dentro do jogo" não é a porta BGM sozinha: a porta faz o som
+       sobreviver à tela apagada e à LiveArea, e só. Quem impede o sistema de
+       SUSPENDER o app quando um jogo entra na frente é o plugin de kernel
+       MusicPremium. (O VitaWave, citado como referência, promete no próprio
+       README apenas "screen is off or in LiveArea" — ele também não toca
+       dentro de jogo.)
+
+       E o plugin só vale se estiver em ur0:tai E listado no ur0:tai/config.txt
+       sob *KERNEL. O cartão tem uma cópia em ux0:tai, que é onde ela NÃO
+       basta. Do PC não dá para conferir — ur0: é a memória interna. Daqui
+       dá: o app roda no aparelho e, como homebrew unsafe, lê ur0: à vontade.
+       Sem esta conferência, "o segundo plano não funciona" continua sendo
+       indistinguível de "o plugin nunca subiu". */
+    {
+        fprintf(f, "\nmusicpremium (background audio INSIDE a game)\n");
+        static const char *SKPRX[] = { "ur0:tai/music_premium.skprx",
+                                       "ux0:tai/music_premium.skprx", NULL };
+        for (int i = 0; SKPRX[i]; i++) {
+            FILE *m = fopen(SKPRX[i], "rb");
+            fprintf(f, "  [%c] %-30s %s\n", m ? 'x' : ' ', SKPRX[i],
+                    m ? "present" : "missing");
+            if (m) fclose(m);
+        }
+        const char *CFG = "ur0:tai/config.txt";
+        FILE *c = fopen(CFG, "r");
+        if (!c) {
+            fprintf(f, "  [ ] %-30s COULD NOT READ\n", CFG);
+        } else {
+            char linha[256];
+            int citado = 0, kernel = 0, em_kernel = 0;
+            while (fgets(linha, sizeof(linha), c)) {
+                if (strstr(linha, "*KERNEL")) { kernel = 1; em_kernel = 1; }
+                else if (linha[0] == '*')     { em_kernel = 0; }
+                else if (strstr(linha, "music_premium")) {
+                    citado = 1;
+                    fprintf(f, "  ->  listed%s: %.90s",
+                            em_kernel ? " under *KERNEL" : " but NOT under *KERNEL",
+                            linha);
+                    if (linha[strlen(linha) - 1] != '\n') fprintf(f, "\n");
+                }
+            }
+            fclose(c);
+            fprintf(f, "  [%c] %-30s %s\n", citado ? 'x' : ' ', CFG,
+                    !kernel ? "no *KERNEL section!"
+                            : citado ? "plugin is listed"
+                                     : "PLUGIN NOT LISTED — this is why");
+        }
+    }
+
+    fprintf(f, "\nprobe       (tells a sandbox apart from a media folder)\n");
+    for (int i = 0; ALVOS[i]; i++) {
+        int e = 0;
+        DirIter *d = dir_open_err(ALVOS[i], &e);
+        if (d) {
+            int n = 0;
+            const char *nome;
+            int isdir;
+            while (n < 9999 && dir_next(d, &nome, &isdir)) n++;
+            dir_close(d);
+            fprintf(f, "  [x] %-16s opened, %d entries\n", ALVOS[i], n);
+        } else {
+            fprintf(f, "  [ ] %-16s 0x%08X (%s)\n", ALVOS[i], (unsigned)e,
+                    scan_err_str(e));
+        }
+    }
+#else
+    (void)f;
+#endif
 }
 
 void library_report(const Library *lib, const char *path)
@@ -770,6 +1149,7 @@ void library_report(const Library *lib, const char *path)
     char st[512];
     library_status(lib, st, sizeof(st));
     fprintf(f, "state       %s\n", st);
+    library_sonda(f);
     fclose(f);
 }
 
@@ -851,7 +1231,12 @@ void library_free(Library *lib)
    um layout novo: mudou a struct, muda o número, e todo índice antigo passa
    a ser simplesmente descartado. */
 #define CACHE_MAGIC "vitastylus-estante"
-#define CACHE_VER   1
+/* 2: a linha do álbum ganhou a DATA DA PASTA no fim. Subir a versão faz o
+   índice velho ser recusado e a estante revarrida uma vez — que é o que se
+   quer: um índice sem a data faria a fileira "recém-chegados" da home mentir
+   (tudo com data zero, ordenada por acidente) em vez de simplesmente
+   aparecer na varredura seguinte. */
+#define CACHE_VER   3
 
 static void escapa(char *s)
 {
@@ -864,6 +1249,11 @@ static void escapa(char *s)
 int library_cache_save(const Library *lib, const char *path)
 {
     if (!lib || !path) return -1;
+    /* Nada a guardar. O carregamento já RECUSA um índice de zero disco (ver a
+       nota lá), então gravá-lo só produz um arquivo que ninguém vai aceitar —
+       e um que engana quem for ler o cartão para entender por que a estante
+       está vazia. Foi exatamente o que aconteceu. */
+    if (lib->nalbums <= 0) return -1;
     /* Grava num parcial e renomeia: um índice cortado no meio (bateria
        acabando, cartão retirado) não pode virar uma estante pela metade. */
     char tmp[MAX_PATH_LEN];
@@ -887,8 +1277,8 @@ int library_cache_save(const Library *lib, const char *path)
         snprintf(art, sizeof(art), "%s", a->artist);
         snprintf(alb, sizeof(alb), "%s", a->album);
         escapa(key); escapa(art); escapa(alb);
-        fprintf(f, "a\t%d\t%d\t%s\t%s\t%s\n",
-                a->root_idx, a->ntracks, key, art, alb);
+        fprintf(f, "a\t%d\t%d\t%s\t%s\t%s\t%lld\n",
+                a->root_idx, a->ntracks, key, art, alb, a->mtime);
         for (int j = 0; j < a->ntracks; j++) {
             const Track *t = &a->tracks[j];
             char tp[MAX_PATH_LEN], ti[MAX_TITLE_LEN], fl[MAX_NAME_LEN];
@@ -980,8 +1370,27 @@ int library_cache_load(Library *lib, const char *path)
         c[0][0] != 'A') goto falhou;
     int nalb = atoi(c[1]);
 
+    /* UM ÍNDICE VAZIO NÃO É ÍNDICE.
+
+       SINTOMA: o app rodou meses com a estante vazia (o VPK era homebrew
+       "safe" e o sandbox do HENkaku não deixava abrir ux0:music — ver o
+       CMakeLists). Ao sair, ele GRAVOU esse nada como índice: R=5, D=0, A=0.
+       E um índice com D=0 não tem pasta nenhuma para conferir a data, então
+       o laço de validação acima não roda uma vez sequer e o índice passa —
+       para sempre. Consertado o sandbox, o arranque seguinte carregaria o
+       "nenhum álbum" do cartão e NÃO VARRERIA. O conserto pareceria não ter
+       funcionado, e a próxima pessoa iria procurar de novo no lugar errado.
+
+       Guardar "não achei nada" nunca compensa: varrer uma coleção que não
+       existe é justamente o caso barato, e um zero em cache é indistinguível
+       de uma varredura que falhou — que foi exatamente o que aconteceu. */
+    if (nalb <= 0) goto falhou;
+
     for (int i = 0; i < nalb; i++) {
-        if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 6 ||
+        /* 7 campos desde a versão 2 do índice: a data da pasta entrou no fim.
+           A versão já foi conferida lá em cima, então um arquivo com 6 aqui é
+           corrompido, não velho — e o `goto falhou` manda revarrer. */
+        if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 7 ||
             c[0][0] != 'a') goto falhou;
         Album *a = ensure_album(lib);
         if (!a) goto falhou;
@@ -991,6 +1400,7 @@ int library_cache_load(Library *lib, const char *path)
         snprintf(a->key, MAX_PATH_LEN, "%s", c[3]);
         snprintf(a->artist, MAX_NAME_LEN, "%s", c[4]);
         snprintf(a->album, MAX_NAME_LEN, "%s", c[5]);
+        a->mtime = atoll(c[6]);
         for (int j = 0; j < nt; j++) {
             if (!fgets(linha, sizeof(linha), f) || campos(linha, c, 8) != 6 ||
                 c[0][0] != 't') goto falhou;
@@ -1049,7 +1459,7 @@ int album_load_meta(Album *alb)
         if (dt.number > 0 && t->number < 0) t->number = dt.number;
         if (dt.seconds > 0) { t->seconds = dt.seconds; total += dt.seconds; known++; }
         if (!alb->artist[0] && dt.artist[0]) snprintf(alb->artist, MAX_NAME_LEN, "%s", dt.artist);
-        if (dt.album[0] && (!alb->album[0] || !strcmp(alb->album, "(no folder)")))
+        if (dt.album[0] && (!alb->album[0] || !strcmp(alb->album, "loose tracks")))
             snprintf(alb->album, MAX_NAME_LEN, "%s", dt.album);
         dec_tags_free(&dt);
     }
@@ -1074,12 +1484,118 @@ int album_load_meta(Album *alb)
     return 0;
 }
 
+/* OS NOMES DE ARQUIVO DE CAPA — UMA lista, e é esta.
+
+   O lado desktop deste projeto teve CINCO listas destas, discordando entre
+   si, e a que ninguém olhava não achava capa nenhuma. Uma só, aqui.
+
+   `cover.jpg` primeiro porque é o que o `tools/musica-para-o-vita.py`
+   escreve; os outros são o que um acervo vindo do Windows ou de um ripador
+   costuma trazer. `back.jpg` e `albumartsmall.jpg` NÃO entram de propósito:
+   a contracapa e a miniatura de 32 px não são a capa, e um "pega a primeira
+   imagem em ordem alfabética" põe justamente essas duas na frente. */
+static const char *CAPA_NOMES[] = {
+    "cover.jpg", "cover.jpeg", "folder.jpg", "front.jpg", "album.jpg",
+    "cover.png", "folder.png", "front.png", NULL
+};
+
+/* A CAPA COMO ARQUIVO, ao lado das faixas.
+
+   POR QUE ISTO EXISTE: o app só sabia ler arte EMBUTIDA no áudio, e esta
+   coleção quase não tem — 388 discos, um punhado de arquivos com APIC. Toda
+   a estante era capa gerada. E o cartão do aparelho tinha, o tempo todo,
+   324 `cover.jpg` de 500x500 dentro das pastas dos discos: postos lá pelo
+   `musica-para-o-vita.py` para o app Música da Sony, e invisíveis para este.
+   Duas metades do mesmo sistema, uma escrevendo e a outra sem saber ler —
+   a mesma família do módulo da polybar que ninguém desenhava.
+
+   Compara SEM MAIÚSCULA: um acervo passado por um Windows guarda
+   `Folder.jpg` e `Cover.jpg`, e comparar cru descartaria metade. */
+static int capa_do_diretorio(const char *dir, unsigned char **out, size_t *len)
+{
+    if (!dir || !dir[0]) return 1;
+    DIR *d = opendir(dir);
+    if (!d) return 1;
+
+    char achado[MAX_PATH_LEN];
+    achado[0] = '\0';
+    int melhor = 9999;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        for (int i = 0; CAPA_NOMES[i]; i++) {
+            if (i >= melhor) break;          /* já tenho um nome preferido */
+            if (strcasecmp(e->d_name, CAPA_NOMES[i]) != 0) continue;
+            path_join(achado, sizeof(achado), dir, e->d_name);
+            melhor = i;
+            break;
+        }
+    }
+    closedir(d);
+    if (!achado[0]) return 1;
+
+    FILE *f = fopen(achado, "rb");
+    if (!f) return 1;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    /* 4 MB de teto: uma capa de 500x500 tem ~100 KB, e um arquivo maior que
+       isto numa pasta de disco é outra coisa (um scan de encarte inteiro).
+       Decodificá-lo custaria a memória de vídeo de várias capas de verdade. */
+    if (n <= 4 || n > 4 * 1024 * 1024) { fclose(f); return 1; }
+    unsigned char *buf = malloc((size_t)n);
+    if (!buf) { fclose(f); return 1; }
+    size_t lidos = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    if (lidos != (size_t)n) { free(buf); return 1; }
+    *out = buf;
+    *len = lidos;
+    return 0;
+}
+
 int album_load_cover(Album *alb)
 {
     if (!alb) return -1;
     if (alb->cover_loaded) return alb->cover ? 0 : 1;
     alb->cover_loaded = true;
     if (!alb->tracks || alb->ntracks == 0) return 1;
+
+    /* O ARQUIVO PRIMEIRO, a arte embutida depois.
+
+       Nesta ordem porque o arquivo é mais barato (uma leitura contra abrir e
+       varrer os metadados de até oito faixas) e porque quem pôs um cover.jpg
+       na pasta escolheu aquela imagem — é uma decisão de quem monta o acervo,
+       e ela ganha da que veio de fábrica dentro do MP3. */
+    {
+        const char *p0 = alb->tracks[0].path;
+        const char *barra = strrchr(p0, '/');
+        if (barra && barra > p0) {
+            char dir[MAX_PATH_LEN];
+            size_t n = (size_t)(barra - p0);
+            if (n < sizeof(dir)) {
+                memcpy(dir, p0, n);
+                dir[n] = '\0';
+                if (capa_do_diretorio(dir, &alb->cover, &alb->cover_len) == 0)
+                    return 0;
+                /* ═══ FALLBACK: diretório-pai ═══════════════════════════════════
+                   Álbuns multi-disco mesclados (via is_disc_dir) têm a primeira
+                   faixa numa subpasta "Disc 01" etc. Se não achou capa ali,
+                   sobe um nível — é onde o batch ripper costuma colocar. */
+                const char *barra2 = NULL;
+                for (const char *q = barra - 1; q > dir; q--)
+                    if (*q == '/') { barra2 = q; break; }
+                if (barra2 && barra2 > dir) {
+                    char pai[MAX_PATH_LEN];
+                    size_t pn = (size_t)(barra2 - dir);
+                    if (pn < sizeof(pai)) {
+                        memcpy(pai, dir, pn);
+                        pai[pn] = '\0';
+                        if (capa_do_diretorio(pai, &alb->cover, &alb->cover_len) == 0)
+                            return 0;
+                    }
+                }
+            }
+        }
+    }
 
     /* Uma passada por faixa, não duas. A versão anterior chamava o leitor
        DUAS vezes por arquivo — a primeira só para medir o tamanho da capa —

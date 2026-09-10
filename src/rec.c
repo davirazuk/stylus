@@ -130,7 +130,10 @@ void rec_build_list(const Rec *r, Library *lib, const Track **out, int *n, int m
             if (j < naa) {
                 aa[j].aff += aff;
             } else if (naa < N) {
-                snprintf(aa[j = naa].artist, sizeof(aa[j].artist), "%s", a->artist);
+                /* `aa[j = naa]` escondia uma atribuição dentro do índice, e
+                   o `j` nunca mais era lido — dois jeitos de escrever o mesmo
+                   lugar na mesma linha. */
+                snprintf(aa[naa].artist, sizeof(aa[naa].artist), "%s", a->artist);
                 aa[naa].aff = aff;
                 naa++;
             }

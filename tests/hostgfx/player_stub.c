@@ -80,11 +80,41 @@ void player_signal(const Player *p, PlayerSignal *out)
 /* Espectro canned: uma curva com queda nos agudos, que é a forma de música
    de verdade. Não é medida — no preview não há som — e por isso o número
    nunca é usado para afirmar nada, só para a barra existir na imagem. */
+/* O ESPECTRO HOSTIL.
+
+   Este stub devolvia um senoide bem-comportado, sempre em 0..1 — e por isso a
+   varredura passou verde por cima de um GPUCRASH que só acontecia COM MÚSICA
+   TOCANDO. O espectro de verdade vem do Goertzel, que vem do áudio: um
+   `sqrtf` de negativo, uma divisão por um bloco silencioso, um clamp que
+   escapou, e sai NaN ou um número enorme. Uma coordenada NaN dentro do sceGxm
+   não dá erro — a GPU trava e derruba o sistema.
+
+   Um falso que só produz valores bons prova o caso fácil. Este agora envenena
+   algumas bandas de propósito: NaN, infinito, negativo e absurdo. O desenho
+   tem de aguentar os quatro sem passar nada disso para a GPU. */
+static int g_veneno;
+void hostplayer_espectro_hostil(int on) { g_veneno = on; }
+
 void player_spectrum(Player *p, float *out, int nbands)
 {
     if (!out || nbands <= 0) return;
     if (!p || p->state != PLAYER_PLAYING) {
         for (int i = 0; i < nbands; i++) out[i] = 0.0f;
+        return;
+    }
+    if (g_veneno) {
+        static unsigned n;
+        n++;
+        for (int i = 0; i < nbands; i++) {
+            switch ((i + n) % 6) {
+            case 0:  out[i] = 0.0f / 0.0f;      break;   /* NaN */
+            case 1:  out[i] = 1.0f / 0.0f;      break;   /* +inf */
+            case 2:  out[i] = -1.0f / 0.0f;     break;   /* -inf */
+            case 3:  out[i] = -7.5f;            break;   /* negativo */
+            case 4:  out[i] = 1.0e30f;          break;   /* absurdo */
+            default: out[i] = 0.5f;             break;   /* um bom, no meio */
+            }
+        }
         return;
     }
     p->fase += 0.21f;

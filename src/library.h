@@ -54,10 +54,24 @@ struct Album {
     int seconds_total;           /* soma das durações conhecidas, -1 se nenhuma */
     Sides lados;                 /* a tese do sistema: o disco tem LADOS */
     bool meta_loaded;            /* já leu as tags (título/duração) */
+    /* QUANDO ESTA PASTA MUDOU pela última vez.
+
+       É o que responde "o que eu acabei de pôr no cartão?", que numa coleção
+       de 388 discos é a pergunta mais frequente de quem está BAIXANDO música
+       — e a estante em ordem alfabética não responde. A varredura já lia esta
+       data para conferir o índice; ela só não era guardada em lugar nenhum
+       que a tela alcançasse. */
+    long long mtime;
     /* capa embutida do primeiro arquivo que tiver APIC front cover */
     unsigned char *cover;
     size_t cover_len;
     bool cover_loaded;
+    /* Capa que vem da REDE: id do álbum no Qobuz e a URL pequena dela.
+       Um álbum do cartão tem as duas vazias; um `g_remote_alb` (loja ou GET
+       FLAC) tem ambas, e é assim que o deck acha a capa sem precisar de um
+       campo novo em todo o caminho de leitura de track. */
+    char qb_kapa[32];
+    char qb_kapa_url[200];
 };
 
 /* O que a varredura encontrou em cada raiz — para a tela poder DIZER por que
@@ -164,6 +178,33 @@ const char *scan_err_str(int err);
    por faixa. NÃO reordena — a ordem sai do nome do arquivo na varredura, e
    reordenar aqui invalidaria os `Track *` que o player e as recomendações já
    estão segurando. Idempotente. */
+/* O rótulo da estante: o que o card MOSTRA, que não é o nome da pasta.
+   Tira a data da frente e o artista repetido, e devolve as duas linhas
+   prontas. Ver a nota grande no library.c. */
+/* O que o sceAppUtilInit/MusicMount devolveram no arranque. Fica guardado
+   aqui só para o relatório do cartão poder dizer — é o número que separa
+   "o app não pediu a biblioteca de música" de "pediu e o sistema recusou". */
+void library_set_music_mount(int init_rc, int mount_rc);
+
+/* O estado do qobuz.config no arranque, também só para o relatório: separa
+   "a tela do Qobuz pede as chaves porque o arquivo não existe" de "existe e
+   não foi aceito". Sem isto, as duas telas são iguais de longe. */
+void library_set_qobuz(int achou, int configurado);
+
+/* A PORTA BGM no arranque, idem. "tocar dentro de um jogo" depende dela, e
+   quando não funciona não há nada na tela que diga se a porta foi RECUSADA
+   (aí o problema é o plugin/o sistema) ou se ela foi concedida e o som morre
+   depois por outro motivo. O rc cru vai junto porque é o que se procura. */
+void library_set_bgm(int porta_rc, long teto_hz);
+
+/* O rc do sceCommonDialogSetConfigParam, idem. Enquanto ele não era chamado,
+   NENHUM teclado abria e nada na tela dizia isso — ver o comentário no
+   main.c. Um número no relatório é o que impede a próxima sessão de
+   procurar de novo no lugar errado (rede, API, parser). */
+void library_set_dialog(int rc);
+
+void album_display(const Album *a, char *titulo, size_t tcap, char *sub, size_t scap);
+
 int album_load_meta(Album *alb);
 
 /* Carrega (uma vez) a capa embutida. 0 achou, 1 não tem, -1 erro. */
