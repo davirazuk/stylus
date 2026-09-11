@@ -582,7 +582,31 @@ def track_paths(folder):
                         if n.lower().endswith(AUDIO_EXT)), key=_track_sort_key)
     except OSError:
         return []
-    return [os.path.join(folder, n) for n in names]
+    if names:
+        return [os.path.join(folder, n) for n in names]
+
+    # Sem áudio direto na pasta: é disco duplo (Disc 01/Disc 02). Antes daqui
+    # a função devolvia [] e quem chamava dava a PASTA ao mpv — que enfileira
+    # o cover.jpg junto, tropeça nele e fecha. Sintoma: você manda tocar e não
+    # toca nada, sem erro nenhum. As partes entram na ordem, e viram um lado
+    # só, que é o que um disco duplo é quando se põe para ouvir.
+    try:
+        subdirs = sorted((d for d in os.listdir(folder)
+                          if os.path.isdir(os.path.join(folder, d))),
+                         key=_track_sort_key)
+    except OSError:
+        return []
+    fora = []
+    for d in subdirs:
+        sub = os.path.join(folder, d)
+        try:
+            nomes = sorted((n for n in os.listdir(sub)
+                            if n.lower().endswith(AUDIO_EXT)),
+                           key=_track_sort_key)
+        except OSError:
+            continue
+        fora.extend(os.path.join(sub, n) for n in nomes)
+    return fora
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -738,34 +762,88 @@ def shelf(root=None, artist=None, min_tracks=SHELF_MIN_TRACKS):
     return _shelf_one(root, artist, min_tracks)
 
 
+# Quantos níveis abaixo da raiz a estante procura. Quatro cobre tudo que
+# acontece de verdade: Artista/Álbum, Gênero/Artista/Álbum, e um nível a mais
+# para quem separa por década ou por "comprados em 2019".
+SHELF_MAX_DEPTH = 4
+# Pastas de disco duplo. Elas têm as faixas, mas o DISCO é a pasta de cima —
+# uma estante com "Disc 01" e "Disc 02" como dois álbuns está errada.
+_DISC_FOLDER = re.compile(r"^(disc|disco|cd|side|lado)\s*0*\d+$", re.I)
+
+
+def _conta_audio(p):
+    try:
+        return sum(1 for f in os.listdir(p) if f.lower().endswith(AUDIO_EXT))
+    except OSError:
+        return 0
+
+
 def _shelf_one(root, artist=None, min_tracks=SHELF_MIN_TRACKS):
+    """As pastas que contam como disco, olhando TODA a árvore.
+
+    Isto olhava exatamente dois níveis: raiz/artista/álbum, e mais nada. Três
+    coisas somem com essa regra, e todas as três são comuns:
+
+      * a coleção organizada por gênero (raiz/Gênero/Artista/Álbum) — nada
+        aparecia, porque no nível do álbum só havia pastas;
+      * o disco solto na raiz (raiz/Álbum), que é como um download chega;
+      * o disco duplo (Álbum/Disc 01, Disc 02), onde a pasta do álbum não tem
+        áudio nenhum e as de dentro estavam fundas demais.
+
+    E some em SILÊNCIO, que é o pior: a estante abre com menos discos e nada
+    diz que faltou alguma coisa.
+
+    A regra agora é uma só: pasta com áudio suficiente dentro É um disco. Com
+    duas exceções que a experiência pede — pasta de disco duplo conta para a
+    pasta de cima, e pasta com data no nome (2019-08-01) é gravação ao vivo
+    organizada por data, que não é um álbum.
+    """
     base = os.path.join(root, artist) if artist else root
     if not os.path.isdir(base):
         return []
-    try:
-        tops = [base] if artist else [os.path.join(root, d)
-                                      for d in sorted(os.listdir(root))]
-    except OSError:
-        return []
-    out = []
-    for t in tops:
-        if not os.path.isdir(t):
-            continue
+
+    achados = []
+
+    def desce(p, nivel):
+        if nivel > SHELF_MAX_DEPTH:
+            return
         try:
-            entries = sorted(os.listdir(t))
+            entradas = sorted(os.listdir(p))
         except OSError:
-            continue
-        for d in entries:
-            p = os.path.join(t, d)
-            if not os.path.isdir(p) or _DATED_FOLDER.match(d):
+            return
+        subdirs = [d for d in entradas if os.path.isdir(os.path.join(p, d))]
+
+        # Disco duplo: as faixas estão nas subpastas, o disco é ESTA pasta.
+        discos = [d for d in subdirs if _DISC_FOLDER.match(d)]
+        if discos and _conta_audio(p) < min_tracks:
+            total = sum(_conta_audio(os.path.join(p, d)) for d in discos)
+            if total >= min_tracks:
+                achados.append(p)
+                return                      # não desce: as partes não são discos
+
+        if _conta_audio(p) >= min_tracks and not _DATED_FOLDER.match(
+                os.path.basename(p)):
+            achados.append(p)
+            # Ainda desce: um "Álbum/Bônus" com faixas próprias é outro disco.
+
+        for d in subdirs:
+            if _DATED_FOLDER.match(d):
                 continue
-            try:
-                n = sum(1 for f in os.listdir(p) if f.lower().endswith(AUDIO_EXT))
-            except OSError:
-                continue
-            if n >= min_tracks:
-                out.append(p)
-    return out
+            desce(os.path.join(p, d), nivel + 1)
+
+    # A própria raiz não entra como disco (a coleção inteira não é um álbum),
+    # mas tudo abaixo dela sim.
+    if artist:
+        desce(base, 1)
+    else:
+        try:
+            for d in sorted(os.listdir(base)):
+                sub = os.path.join(base, d)
+                if os.path.isdir(sub) and not _DATED_FOLDER.match(d):
+                    desce(sub, 1)
+        except OSError:
+            return []
+    return achados
 
 
 def last_played():
@@ -860,14 +938,12 @@ class Album:
 
     # -- structure ---------------------------------------------------------
     def _scan(self):
-        try:
-            names = sorted(
-                (n for n in os.listdir(self.folder) if n.lower().endswith(AUDIO_EXT)),
-                key=_track_sort_key)
-        except Exception:
-            names = []
-        for n in names:
-            p = os.path.join(self.folder, n)
+        # track_paths e não um listdir próprio: as duas listas TÊM que ser a
+        # mesma, senão o índice que o mpv devolve aponta para outra faixa e o
+        # braço desenha no lugar errado. Eram duas listas, e o disco duplo
+        # ficava com zero faixa aqui enquanto o lançador tocava as de dentro.
+        for p in track_paths(self.folder):
+            n = os.path.basename(p)
             title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", os.path.splitext(n)[0]).strip()
             self.tracks.append({"path": p, "title": title, "duration": 0.0, "start": 0.0})
         for cand in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg", "cover.jpeg"):
